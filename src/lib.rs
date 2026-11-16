@@ -15,6 +15,7 @@ pub mod ir;
 mod join;
 pub mod observe;
 pub mod postdom;
+pub mod provenance;
 pub mod readable;
 pub mod reduce;
 pub mod simplify;
