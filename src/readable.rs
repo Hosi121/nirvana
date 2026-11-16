@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
+use crate::allocation::allocate_locals;
 use crate::block_verify::Validation;
 use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::hir::ViewPath;
@@ -59,11 +60,15 @@ pub struct ReadableC {
     pub object_views: Vec<ObjectView>,
     /// Storage widths of named local values; parameters remain uint64_t.
     pub locals: Vec<LocalValue>,
+    /// Number of individual IR local registers before assigning C storage.
+    pub local_value_count: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LocalValue {
+    /// First member, retained for callers that inspect a representative value.
     pub register: Reg,
+    pub registers: Vec<Reg>,
     pub name: String,
     pub width: Width,
 }
@@ -76,6 +81,8 @@ pub struct ReadableOptions {
     /// Name proven constant byte offsets from input-register pointer bases.
     /// This does not infer source types or assume that input bases are disjoint.
     pub recover_objects: bool,
+    /// Reuse storage across noninterfering local values. Parameters stay fixed.
+    pub coalesce_locals: bool,
 }
 
 struct Render {
@@ -338,6 +345,12 @@ impl Printer {
             let point = Some((address, index));
             match &assignment.destination {
                 Place::Register(reg) => {
+                    if self.read.contains(&reg.0)
+                        && let Expr::Register(source) = assignment.value
+                        && self.register(*reg) == self.register(source)
+                    {
+                        continue;
+                    }
                     if self.read.contains(&reg.0) {
                         self.value_statement(
                             code,
@@ -433,6 +446,12 @@ impl Printer {
                 let Place::Register(reg) = assignment.destination else {
                     return None;
                 };
+                if self.read.contains(&reg.0)
+                    && let Expr::Register(source) = assignment.value
+                    && self.register(reg) == self.register(source)
+                {
+                    continue;
+                }
                 if self.read.contains(&reg.0) {
                     clauses.push(format!(
                         "{} = {}",
@@ -794,20 +813,62 @@ fn emit_reduced_c(
         arguments.extend(["uint8_t *memory", "uint64_t base", "uint64_t size"].map(String::from));
     }
     let value_widths = ValueWidths::analyze(program);
+    let eligible: Vec<_> = read
+        .iter()
+        .filter(|r| !names.contains_key(r))
+        .map(|&r| Reg(r))
+        .collect();
+    let local_value_count = eligible.len();
+    // Keep storage classes separate so reusing a wide pointer temporary never
+    // erases an inferred byte/word type merely to save another declaration.
+    let mut colors: Vec<_> = (0..eligible.len()).collect();
+    if options.coalesce_locals {
+        let mut next_color = 0;
+        for width in [Width::U64, Width::U32, Width::U16, Width::U8] {
+            let members: Vec<_> = eligible
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| value_widths.width(**r) == width)
+                .map(|(i, &r)| (i, r))
+                .collect();
+            let registers: Vec<_> = members.iter().map(|(_, r)| *r).collect();
+            let allocated = allocate_locals(program, &registers).and_then(|a| {
+                registers
+                    .iter()
+                    .map(|&r| a.color(r))
+                    .collect::<Option<Vec<_>>>()
+            });
+            let palette = allocated.unwrap_or_else(|| (0..members.len()).collect());
+            let palette_size = palette.iter().max().map_or(0, |c| c + 1);
+            for ((index, _), color) in members.into_iter().zip(palette) {
+                colors[index] = next_color + color;
+            }
+            next_color += palette_size;
+        }
+    }
+    let mut groups: BTreeMap<usize, Vec<Reg>> = BTreeMap::new();
+    for (&reg, color) in eligible.iter().zip(colors) {
+        groups.entry(color).or_default().push(reg);
+    }
     let mut widths = BTreeMap::new();
     let mut locals = Vec::new();
-    for reg in &read {
-        if !names.contains_key(reg) {
-            let name = format!("v{}", locals.len());
-            names.insert(*reg, name.clone());
-            let width = value_widths.width(Reg(*reg));
-            widths.insert(*reg, width);
-            locals.push(LocalValue {
-                register: Reg(*reg),
-                name,
-                width,
-            });
+    for (color, registers) in groups {
+        let width = registers
+            .iter()
+            .map(|&r| value_widths.width(r))
+            .max_by_key(|w| w.bits())
+            .unwrap_or(Width::U64);
+        let name = format!("v{color}");
+        for reg in &registers {
+            names.insert(reg.0, name.clone());
+            widths.insert(reg.0, width);
         }
+        locals.push(LocalValue {
+            register: registers[0],
+            registers,
+            name,
+            width,
+        });
     }
     let arguments = if arguments.is_empty() {
         "void".into()
@@ -984,5 +1045,6 @@ fn emit_reduced_c(
         stack_views,
         object_views,
         locals,
+        local_value_count,
     })
 }

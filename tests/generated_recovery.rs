@@ -276,6 +276,7 @@ fn generated_holdout_sources_match_native_ir_and_readable_c() {
                 readable::ReadableOptions {
                     stack_register: Some(Reg(x86::RSP)),
                     recover_objects: true,
+                    coalesce_locals: true,
                 },
             )
             .unwrap_or_else(|error| panic!("{name} {optimization}: {error}"));
@@ -306,6 +307,22 @@ fn generated_holdout_sources_match_native_ir_and_readable_c() {
                     .count(),
                 inputs.len(),
             );
+            if let Some(directory) = std::env::var_os("NIRVANA_RECOVERY_ARTIFACTS") {
+                let directory = std::path::PathBuf::from(directory);
+                std::fs::create_dir_all(&directory).unwrap();
+                let opt = optimization.trim_start_matches('-');
+                std::fs::copy(
+                    scratch.0.join(format!("{name}.c")),
+                    directory.join(format!("{name}-{opt}.c")),
+                )
+                .unwrap();
+                std::fs::copy(&original, directory.join(format!("{name}-{opt}.o"))).unwrap();
+                std::fs::copy(
+                    &generated,
+                    directory.join(format!("{name}-{opt}-readable.c")),
+                )
+                .unwrap();
+            }
             comparisons += inputs.len();
         }
     }

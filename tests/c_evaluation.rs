@@ -171,6 +171,157 @@ fn sequencing_limits_return_an_error_instead_of_emitting_an_unordered_expression
 }
 
 #[test]
+fn coalesced_load_chains_use_one_local_and_keep_faulting_memory_effects() {
+    let p = Program::new(
+        0,
+        4,
+        vec![instruction(
+            0,
+            vec![
+                Assignment {
+                    destination: Reg(1).into(),
+                    value: load(r(0)),
+                },
+                store(b(BinaryOp::Add, r(0), c(8)), Width::U64, r(1)),
+                Assignment {
+                    destination: Reg(2).into(),
+                    value: load(b(BinaryOp::Add, r(0), c(8))),
+                },
+                store(r(0), Width::U64, b(BinaryOp::Add, r(2), c(1))),
+                Assignment {
+                    destination: Reg(3).into(),
+                    value: load(r(0)),
+                },
+            ],
+            Control::Return(r(3)),
+        )],
+    )
+    .unwrap();
+    let separate = emit_readable_c_with_options(&p, ReadableOptions::default()).unwrap();
+    let coalesced = emit_readable_c_with_options(
+        &p,
+        ReadableOptions {
+            coalesce_locals: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(separate.locals.len(), 3);
+    assert_eq!(coalesced.locals.len(), 1);
+    assert_eq!(coalesced.locals[0].registers.len(), 3);
+    compare(&p, &[[0x1000, 0], [0x1008, 0], [0xffff, 0]]);
+}
+
+#[test]
+fn native_c_goto_fallback_sequences_dispatch_faults_before_entering_a_cycle() {
+    let increment = || Assignment {
+        destination: Reg(2).into(),
+        value: b(BinaryOp::Add, r(2), c(1)),
+    };
+    let p = Program::new(
+        0,
+        3,
+        vec![
+            instruction(
+                0,
+                vec![
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: c(0),
+                    },
+                    store(c(0x1000), Width::U8, c(2)),
+                ],
+                Control::Branch {
+                    condition: b(
+                        BinaryOp::Eq,
+                        Expr::load(r(0), Width::U8),
+                        Expr::load(r(1), Width::U8),
+                    ),
+                    target: 2,
+                },
+            ),
+            instruction(
+                1,
+                vec![increment()],
+                Control::Branch {
+                    condition: b(BinaryOp::Ule, c(3), r(2)),
+                    target: 3,
+                },
+            ),
+            instruction(
+                2,
+                vec![increment()],
+                Control::Branch {
+                    condition: b(BinaryOp::Ult, r(2), c(3)),
+                    target: 1,
+                },
+            ),
+            instruction(3, vec![], Control::Return(r(2))),
+        ],
+    )
+    .unwrap();
+    assert!(
+        emit_readable_c_with_options(&p, ReadableOptions::default())
+            .unwrap()
+            .fallback_reason
+            .is_some()
+    );
+    compare(
+        &p,
+        &[
+            [0x1000, 0x1008],
+            [0x1008, 0x1000],
+            [0x1000, 0x1000],
+            [0xffff, 0x1008],
+            [0x1000, 0xffff],
+            [0xffff, 0xffff],
+        ],
+    );
+}
+
+#[test]
+fn native_c_while_setup_fault_after_multiple_iterations_keeps_body_writes() {
+    let p = Program::new(
+        0,
+        4,
+        vec![
+            instruction(0, vec![], Control::Next),
+            instruction(
+                1,
+                vec![
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(r(0), Width::U8),
+                    },
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: Expr::load(r(1), Width::U8),
+                    },
+                ],
+                Control::Branch {
+                    condition: b(BinaryOp::Eq, r(2), c(0)),
+                    target: 3,
+                },
+            ),
+            instruction(
+                2,
+                vec![
+                    store(c(0x1008), Width::U8, c(255)),
+                    Assignment {
+                        destination: Reg(0).into(),
+                        value: b(BinaryOp::Add, r(0), c(1)),
+                    },
+                ],
+                Control::Jump(1),
+            ),
+            instruction(3, vec![], Control::Return(c(7))),
+        ],
+    )
+    .unwrap();
+    compare(&p, &[[0x1000, 0x1008], [0x100f, 0x1008], [0x1000, 0xffff]]);
+}
+
+#[test]
 fn native_c_while_setup_loads_repeat_in_order_including_final_visit_and_fault() {
     let p = Program::new(
         0,
@@ -259,6 +410,7 @@ fn compare(program: &Program, inputs: &[[u64; 2]]) {
             ReadableOptions {
                 stack_register: None,
                 recover_objects: views,
+                coalesce_locals: true,
             },
         )
         .unwrap();

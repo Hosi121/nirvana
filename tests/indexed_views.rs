@@ -110,6 +110,7 @@ fn check(program: &Program, bases: &[u64]) {
         ReadableOptions {
             stack_register: None,
             recover_objects: true,
+            coalesce_locals: true,
         },
     )
     .unwrap();

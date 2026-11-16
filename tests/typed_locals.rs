@@ -55,6 +55,7 @@ fn narrowed_unsigned_locals_preserve_u64_products_above_int_and_u32_limits() {
             ReadableOptions {
                 stack_register: None,
                 recover_objects: views,
+                coalesce_locals: true,
             },
         )
         .unwrap();

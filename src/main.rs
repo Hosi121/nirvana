@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named stack views.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -40,11 +40,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut input = None;
     let mut limit = 100_000;
     let mut solver = None;
+    let mut coalesce_locals = true;
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--symbol" => symbol = args.next().ok_or("--symbol requires a name")?,
             "--emit" => format = args.next().ok_or("--emit requires a format")?,
             "--raw" => raw = true,
+            "--no-coalesce-locals" => coalesce_locals = false,
             "--verify-reduction" => {
                 solver = Some(Solver::new(
                     args.next().ok_or("--verify-reduction requires a Z3 path")?,
@@ -69,6 +71,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     if solver.is_some() && (format != "readable-c" || input.is_some()) {
         return Err(
             "--verify-reduction requires --emit readable-c and cannot be used with --run".into(),
+        );
+    }
+    if !coalesce_locals && (format != "readable-c" || input.is_some()) {
+        return Err(
+            "--no-coalesce-locals requires --emit readable-c and cannot be used with --run".into(),
         );
     }
     let bytes = std::fs::read(path)?;
@@ -111,6 +118,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let options = readable::ReadableOptions {
                 stack_register: Some(nirvana::ir::Reg(x86::RSP)),
                 recover_objects: true,
+                coalesce_locals,
             };
             let output = if let Some(solver) = solver {
                 let (output, validation) =

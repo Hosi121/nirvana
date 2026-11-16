@@ -61,6 +61,7 @@ fn spilled_input_pointer_fields_share_memory_with_stack_and_overlapping_fields()
         ReadableOptions {
             stack_register: Some(Reg(0)),
             recover_objects: true,
+            coalesce_locals: true,
         },
     )
     .unwrap();
@@ -178,6 +179,7 @@ fn differing_origins_at_a_merge_do_not_make_a_fictitious_field() {
         ReadableOptions {
             stack_register: None,
             recover_objects: true,
+            coalesce_locals: true,
         },
     )
     .unwrap();
@@ -203,6 +205,7 @@ fn impure_address_summaries_do_not_declare_unusable_objects() {
         ReadableOptions {
             stack_register: None,
             recover_objects: true,
+            coalesce_locals: true,
         },
     )
     .unwrap();

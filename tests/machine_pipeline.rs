@@ -249,6 +249,7 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 readable::ReadableOptions {
                     stack_register: Some(nirvana::ir::Reg(x86::RSP)),
                     recover_objects: true,
+                    coalesce_locals: true,
                 },
             )
             .unwrap();
@@ -349,6 +350,36 @@ fn cli_runs_a_real_object_and_reports_unsupported_input() {
     let code = String::from_utf8(result.stdout).unwrap();
     assert!(code.contains("nirvana_readable("));
     assert!(!code.contains("r["));
+    let lifted = frontend::lift_elf(&std::fs::read(&object_path).unwrap(), "fixture").unwrap();
+    let options = readable::ReadableOptions {
+        stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+        recover_objects: true,
+        coalesce_locals: true,
+    };
+    assert_eq!(
+        code,
+        readable::emit_readable_c_with_options(&lifted.program, options)
+            .unwrap()
+            .code
+    );
+    let separate = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .arg(&object_path)
+        .args(["--emit", "readable-c", "--no-coalesce-locals"])
+        .output()
+        .unwrap();
+    assert!(separate.status.success());
+    assert_eq!(
+        String::from_utf8(separate.stdout).unwrap(),
+        readable::emit_readable_c_with_options(
+            &lifted.program,
+            readable::ReadableOptions {
+                coalesce_locals: false,
+                ..options
+            }
+        )
+        .unwrap()
+        .code
+    );
     let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
         .arg(&object_path)
         .args(["--emit", "structured-cfg"])
@@ -502,6 +533,7 @@ fn check_checked_c_fixture(
         readable::ReadableOptions {
             stack_register: Some(nirvana::ir::Reg(x86::RSP)),
             recover_objects: true,
+            coalesce_locals: true,
         },
     )
     .unwrap();
