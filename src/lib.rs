@@ -18,6 +18,7 @@ pub mod postdom;
 pub mod provenance;
 pub mod readable;
 pub mod reduce;
+pub mod sequence;
 pub mod simplify;
 pub mod stack;
 pub mod structure;
