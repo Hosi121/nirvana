@@ -1,5 +1,9 @@
 # nirvana
 
+<p align="center">
+  <img src="assets/nirvana-logo.png" alt="Nirvana — C decompiler" width="640">
+</p>
+
 機械語からCを復元するデコンパイラを、命令デコードから自作するプロジェクト。
 現在は、**x86-64のELFオブジェクトから関数の機械語を読み、自作デコーダ→IR→CFGの構造化→C生成**までつながっています。
 実装はRustの標準ライブラリのみを使います。外部依存はありません。
