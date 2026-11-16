@@ -70,6 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stack_register: Some(Reg(nirvana::x86::RSP)),
             recover_objects: true,
             coalesce_locals: false,
+            compact_memory: false,
         };
         let stack_only = emit_readable_c_with_options(
             &program,

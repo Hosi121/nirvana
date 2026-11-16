@@ -277,6 +277,7 @@ fn generated_holdout_sources_match_native_ir_and_readable_c() {
                     stack_register: Some(Reg(x86::RSP)),
                     recover_objects: true,
                     coalesce_locals: true,
+                    compact_memory: true,
                 },
             )
             .unwrap_or_else(|error| panic!("{name} {optimization}: {error}"));

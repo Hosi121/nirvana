@@ -119,6 +119,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 stack_register: Some(nirvana::ir::Reg(x86::RSP)),
                 recover_objects: true,
                 coalesce_locals,
+                compact_memory: true,
             };
             let output = if let Some(solver) = solver {
                 let (output, validation) =

@@ -33,6 +33,7 @@ fn options() -> ReadableOptions {
         stack_register: Some(Reg(0)),
         recover_objects: false,
         coalesce_locals: true,
+        compact_memory: false,
     }
 }
 

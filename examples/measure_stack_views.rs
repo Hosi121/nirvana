@@ -44,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     stack_register: Some(Reg(nirvana::x86::RSP)),
                     recover_objects: false,
                     coalesce_locals: false,
+                    compact_memory: false,
                 },
             )?;
             let r: usize = output.stack_views.iter().map(|v| v.read_sites).sum();

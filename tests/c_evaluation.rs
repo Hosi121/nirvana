@@ -380,6 +380,62 @@ fn native_c_while_setup_loads_repeat_in_order_including_final_visit_and_fault() 
     );
 }
 
+#[test]
+fn native_c_width_normalization_keeps_dependencies_in_loop_and_diamond_guards() {
+    // Width analysis exposes x ^ x. General algebra run only at C rendering
+    // used to drop the last read after local allocation, producing a variable
+    // that GCC rejected as unused-but-set under the fixture flags.
+    for op in [BinaryOp::Xor, BinaryOp::Eq, BinaryOp::Ult, BinaryOp::Ule] {
+        let same = || b(op, b(BinaryOp::And, r(2), c(0xffff_ffff)), r(2));
+        let read = || {
+            vec![Assignment {
+                destination: Reg(2).into(),
+                value: Expr::load(r(0), Width::U8),
+            }]
+        };
+        let loop_program = Program::new(
+            0,
+            3,
+            vec![
+                instruction(
+                    0,
+                    read(),
+                    Control::Branch {
+                        condition: b(BinaryOp::Eq, same(), r(1)),
+                        target: 2,
+                    },
+                ),
+                instruction(1, vec![store(c(0xffff), Width::U8, c(9))], Control::Jump(0)),
+                instruction(2, vec![], Control::Return(c(7))),
+            ],
+        )
+        .unwrap();
+        let diamond = Program::new(
+            0,
+            3,
+            vec![
+                instruction(
+                    0,
+                    read(),
+                    Control::Branch {
+                        condition: same(),
+                        target: 2,
+                    },
+                ),
+                instruction(1, vec![], Control::Return(c(7))),
+                instruction(2, vec![], Control::Return(c(11))),
+            ],
+        )
+        .unwrap();
+        for program in [&loop_program, &diamond] {
+            compare(
+                program,
+                &[[0x1000, 0], [0x1000, 1], [0xffff, 0], [0xffff, 1]],
+            );
+        }
+    }
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
     let scratch = Scratch::new();
     let mut text = String::new();
@@ -404,13 +460,14 @@ fn compare(program: &Program, inputs: &[[u64; 2]]) {
             .collect();
         expected.push(vec![fault, address, words[0], words[1], value]);
     }
-    for views in [false, true] {
+    for (views, compact_memory) in [(false, false), (true, false), (false, true), (true, true)] {
         let output = emit_readable_c_with_options(
             program,
             ReadableOptions {
                 stack_register: None,
                 recover_objects: views,
                 coalesce_locals: true,
+                compact_memory,
             },
         )
         .unwrap();

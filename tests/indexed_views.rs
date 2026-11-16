@@ -156,6 +156,7 @@ fn materialized_index_addresses_capture_the_index_before_a_cfg_edge_update() {
             stack_register: None,
             recover_objects: true,
             coalesce_locals: true,
+            compact_memory: false,
         },
     )
     .unwrap();
@@ -170,27 +171,33 @@ fn materialized_index_addresses_capture_the_index_before_a_cfg_edge_update() {
 }
 
 fn check(program: &Program, bases: &[u64]) {
-    let output = emit_readable_c_with_options(
-        program,
-        ReadableOptions {
-            stack_register: None,
-            recover_objects: true,
-            coalesce_locals: true,
-        },
-    )
-    .unwrap();
-    assert!(!output.object_views.is_empty());
-    assert!(output.object_views.iter().any(|o| !o.indexed.is_empty()));
-    assert!(output.code.contains("nirvana_view_index(object_0.base"));
-    let args = output
-        .parameters
-        .iter()
-        .map(|r| format!("r[{}]", r.0))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let register_count = program.register_count();
-    let harness = format!(
-        r#"
+    for compact_memory in [false, true] {
+        let output = emit_readable_c_with_options(
+            program,
+            ReadableOptions {
+                stack_register: None,
+                recover_objects: true,
+                coalesce_locals: true,
+                compact_memory,
+            },
+        )
+        .unwrap();
+        assert!(!output.object_views.is_empty());
+        assert!(output.object_views.iter().any(|o| !o.indexed.is_empty()));
+        assert!(output.code.contains(if compact_memory {
+            "element("
+        } else {
+            "nirvana_view_index(object_0.base"
+        }));
+        let args = output
+            .parameters
+            .iter()
+            .map(|r| format!("r[{}]", r.0))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let register_count = program.register_count();
+        let harness = format!(
+            r#"
 #include <stdio.h>
 #include <inttypes.h>
 int main(void) {{
@@ -206,36 +213,37 @@ int main(void) {{
     }}
 }}
 "#
-    );
-    let scratch = Scratch::new();
-    let mut inputs = String::new();
-    let mut expected = Vec::new();
-    for &base in bases {
-        for index in [0, 1, 2, 3, 4, 63, u64::MAX] {
-            writeln!(inputs, "{base} {index}").unwrap();
-            let memory: Vec<u8> = (0..64).map(|i| (i * 17 + 5) as u8).collect();
-            let mut registers = vec![0; program.register_count()];
-            registers[..4].copy_from_slice(&[base, index, 13, 17]);
-            let result = program
-                .execute_with_memory(&registers, 4096, &memory, 2)
-                .unwrap();
-            let mut row = vec![result.value];
-            row.extend(
-                result
-                    .memory
-                    .chunks_exact(8)
-                    .map(|w| u64::from_le_bytes(w.try_into().unwrap())),
-            );
-            expected.push(row);
+        );
+        let scratch = Scratch::new();
+        let mut inputs = String::new();
+        let mut expected = Vec::new();
+        for &base in bases {
+            for index in [0, 1, 2, 3, 4, 63, u64::MAX] {
+                writeln!(inputs, "{base} {index}").unwrap();
+                let memory: Vec<u8> = (0..64).map(|i| (i * 17 + 5) as u8).collect();
+                let mut registers = vec![0; program.register_count()];
+                registers[..4].copy_from_slice(&[base, index, 13, 17]);
+                let result = program
+                    .execute_with_memory(&registers, 4096, &memory, 2)
+                    .unwrap();
+                let mut row = vec![result.value];
+                row.extend(
+                    result
+                        .memory
+                        .chunks_exact(8)
+                        .map(|w| u64::from_le_bytes(w.try_into().unwrap())),
+                );
+                expected.push(row);
+            }
         }
-    }
-    for opt in ["-O0", "-O2"] {
-        let source = scratch.0.join(format!("index{opt}.c"));
-        std::fs::write(&source, output.code.clone() + &harness).unwrap();
-        let compiled = source.with_extension("o");
-        let binary = source.with_extension("bin");
-        object(&source, &compiled, opt, "nirvana_readable");
-        link(&[&compiled], &binary);
-        assert_eq!(run_fields(&binary, &inputs, 9), expected);
+        for opt in ["-O0", "-O2"] {
+            let source = scratch.0.join(format!("index{opt}.c"));
+            std::fs::write(&source, output.code.clone() + &harness).unwrap();
+            let compiled = source.with_extension("o");
+            let binary = source.with_extension("bin");
+            object(&source, &compiled, opt, "nirvana_readable");
+            link(&[&compiled], &binary);
+            assert_eq!(run_fields(&binary, &inputs, 9), expected);
+        }
     }
 }

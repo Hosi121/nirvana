@@ -132,6 +132,17 @@ fn binary(op: B, left: Value, right: Value) -> Value {
     }
     let pure = left.pure && right.pure;
     let possible = possible(op, left.possible, right.possible, b);
+    // Width normalization can expose identities which were hidden behind a
+    // mask. Fold before dependency collection (and before C can diagnose a
+    // tautological self-comparison). Equal loads still execute independently.
+    if pure && left.expression == right.expression {
+        match op {
+            B::Sub | B::Xor | B::Ne | B::Ult => return Value::constant(0),
+            B::Eq | B::Ule => return Value::constant(1),
+            B::And | B::Or => return left,
+            _ => {}
+        }
+    }
     if possible == 0 && pure {
         return Value::constant(0);
     }

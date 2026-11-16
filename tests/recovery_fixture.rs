@@ -188,12 +188,11 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
             }
             // Keep defaults for additional presentation options introduced by
             // the integrator; semantic checks apply to all six source shapes.
-            #[allow(clippy::needless_update)]
             let options = readable::ReadableOptions {
                 stack_register: Some(Reg(x86::RSP)),
                 recover_objects: true,
                 coalesce_locals: true,
-                ..Default::default()
+                compact_memory: true,
             };
             let output = readable::emit_readable_c_with_options(&program, options).unwrap();
             let indexed_reads: usize = output

@@ -58,9 +58,26 @@ pub(super) enum AccessView {
     },
 }
 impl AccessView {
-    pub(super) fn render(&self, index: impl FnOnce(&Expr) -> String) -> String {
+    pub(super) fn render(&self, compact: bool, index: impl FnOnce(&Expr) -> String) -> String {
         match self {
             Self::Fixed(name) => name.clone(),
+            Self::Indexed {
+                base,
+                index: expr,
+                offset,
+                stride,
+            } if compact => {
+                let base = if *offset == 0 {
+                    base.clone()
+                } else {
+                    format!("field({base}, {})", super::syntax::argument(*offset as u64))
+                };
+                format!(
+                    "element({base}, {}, {})",
+                    index(expr),
+                    super::syntax::argument(*stride)
+                )
+            }
             Self::Indexed {
                 base,
                 index: expr,
@@ -299,6 +316,16 @@ impl MemoryViews {
         if result.stack.is_none() && result.objects.is_empty() {
             None
         } else {
+            if options.compact_memory {
+                let multiple = result.objects.len() > 1;
+                for (index, object) in result.objects.iter_mut().enumerate() {
+                    object.name = if multiple {
+                        format!("input{index}")
+                    } else {
+                        "input".into()
+                    };
+                }
+            }
             Some(result)
         }
     }

@@ -250,6 +250,7 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                     stack_register: Some(nirvana::ir::Reg(x86::RSP)),
                     recover_objects: true,
                     coalesce_locals: true,
+                    compact_memory: true,
                 },
             )
             .unwrap();
@@ -261,8 +262,8 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                     "{name}: {:?}",
                     output.stack_views
                 );
-                assert!(output.code.contains("nirvana_view_load(&m, stack_"));
-                assert!(output.code.contains("nirvana_view_store(&m, stack_"));
+                assert!(output.code.contains("read64(stack_"));
+                assert!(output.code.contains("write64(stack_"));
             }
             println!(
                 "{name} {optimization}: {} stack views, {} named reads, {} named writes",
@@ -355,6 +356,7 @@ fn cli_runs_a_real_object_and_reports_unsupported_input() {
         stack_register: Some(nirvana::ir::Reg(x86::RSP)),
         recover_objects: true,
         coalesce_locals: true,
+        compact_memory: true,
     };
     assert_eq!(
         code,
@@ -534,6 +536,7 @@ fn check_checked_c_fixture(
             stack_register: Some(nirvana::ir::Reg(x86::RSP)),
             recover_objects: true,
             coalesce_locals: true,
+            compact_memory: false,
         },
     )
     .unwrap();
