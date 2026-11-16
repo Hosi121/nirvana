@@ -4,6 +4,7 @@
 //! executable IR with guest memory. Basic-block recovery, graph analysis,
 //! structuring and C emission use no external disassembler or compiler framework.
 
+pub mod allocation;
 pub mod analysis;
 pub mod block_verify;
 pub mod cfg;
