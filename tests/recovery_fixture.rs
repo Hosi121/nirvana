@@ -181,7 +181,7 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 &program,
                 readable::ReadableOptions {
                     stack_register: Some(Reg(x86::RSP)),
-                    ..Default::default()
+                    recover_objects: true,
                 },
             )
             .unwrap();

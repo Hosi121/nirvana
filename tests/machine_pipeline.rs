@@ -248,6 +248,7 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 &program,
                 readable::ReadableOptions {
                     stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+                    recover_objects: true,
                 },
             )
             .unwrap();
@@ -500,6 +501,7 @@ fn check_checked_c_fixture(
         solver,
         readable::ReadableOptions {
             stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+            recover_objects: true,
         },
     )
     .unwrap();

@@ -31,6 +31,7 @@ fn store(address: Expr, width: Width, value: Expr) -> Assignment {
 fn options() -> ReadableOptions {
     ReadableOptions {
         stack_register: Some(Reg(0)),
+        recover_objects: false,
     }
 }
 

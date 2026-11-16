@@ -8,13 +8,39 @@ use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::hir::ViewPath;
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
 use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
+use crate::sequence::{Evaluation, SequenceError, sequence};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
 use crate::verify::Solver;
 
 mod views;
-pub use views::StackView;
-use views::{StackViews, VIEW_HELPERS, rendered_reads};
+use views::{MemoryViews, VIEW_HELPERS, rendered_reads};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReadableError {
+    Reduction(ReductionError),
+    Sequencing(SequenceError),
+}
+impl std::fmt::Display for ReadableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Reduction(error) => error.fmt(f),
+            Self::Sequencing(error) => error.fmt(f),
+        }
+    }
+}
+impl std::error::Error for ReadableError {}
+impl From<ReductionError> for ReadableError {
+    fn from(error: ReductionError) -> Self {
+        Self::Reduction(error)
+    }
+}
+impl From<SequenceError> for ReadableError {
+    fn from(error: SequenceError) -> Self {
+        Self::Sequencing(error)
+    }
+}
+pub use views::{ObjectField, ObjectView, StackView};
 
 #[derive(Clone, Debug)]
 pub struct ReadableC {
@@ -29,6 +55,7 @@ pub struct ReadableC {
     pub structure_evidence: Option<StructureEvidence>,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
+    pub object_views: Vec<ObjectView>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -36,6 +63,9 @@ pub struct ReadableOptions {
     /// The input register holding the entry stack address. No architecture is
     /// assumed by default; the x86 frontend supplies RSP explicitly.
     pub stack_register: Option<Reg>,
+    /// Name proven constant byte offsets from input-register pointer bases.
+    /// This does not infer source types or assume that input bases are disjoint.
+    pub recover_objects: bool,
 }
 
 struct Render {
@@ -63,7 +93,8 @@ impl Render {
 struct Printer {
     names: BTreeMap<usize, String>,
     read: BTreeSet<usize>,
-    views: Option<StackViews>,
+    views: Option<MemoryViews>,
+    first_temporary: usize,
 }
 
 impl Printer {
@@ -80,10 +111,10 @@ impl Printer {
         match expr {
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
             Expr::Const(value) => atom(format!("UINT64_C({value})"), true),
-            Expr::Register(reg) => atom(self.names[&reg.0].clone(), true),
+            Expr::Register(reg) => atom(self.register(*reg), true),
             Expr::Load { address, width } => atom(
                 if let Some(view) = self.views.as_ref().and_then(|v| v.at(point, address)) {
-                    format!("nirvana_view_load(&m, {}, {})", view.name, width.bytes())
+                    format!("nirvana_view_load(&m, {}, {})", view, width.bytes())
                 } else {
                     format!(
                         "nirvana_load(&m, {}, {})",
@@ -162,114 +193,58 @@ impl Printer {
         }
     }
 
-    fn assignments(
-        &self,
-        code: &mut String,
-        indent: usize,
-        address: u64,
-        assignments: &[Assignment],
-    ) {
-        for (index, assignment) in assignments.iter().enumerate() {
-            if let Place::Register(reg) = assignment.destination
-                && !self.read.contains(&reg.0)
-                && !assignment.value.uses_memory()
-            {
-                continue;
-            }
-            let point = Some((address, index));
-            let value = self.expression_at(&assignment.value, point).text;
-            if let Place::Memory { address, width } = &assignment.destination
-                && assignment.value.uses_memory()
-            {
-                // C evaluates argument expressions before entering a function.
-                // The IR checks the destination before a possibly faulting RHS.
-                // Capture a raw address once, then check it in a full statement.
-                let view = self.views.as_ref().and_then(|v| v.at(point, address));
-                line(code, indent, "{");
-                let destination = if let Some(view) = view {
-                    format!("{}.address", view.name)
-                } else {
-                    line(
-                        code,
-                        indent + 1,
-                        &format!(
-                            "const uint64_t nirvana_address = {};",
-                            self.expression_at(address, point).text
-                        ),
-                    );
-                    "nirvana_address".into()
-                };
-                line(
-                    code,
-                    indent + 1,
-                    &format!(
-                        "(void)nirvana_offset(&m, {destination}, {});",
-                        width.bytes()
-                    ),
-                );
-                let store = if let Some(view) = view {
-                    format!(
-                        "nirvana_view_store(&m, {}, {}, {value});",
-                        view.name,
-                        width.bytes()
-                    )
-                } else {
-                    format!(
-                        "nirvana_store(&m, {destination}, {}, {value});",
-                        width.bytes()
-                    )
-                };
-                line(code, indent + 1, &store);
-                line(code, indent, "}");
-                continue;
-            }
-            let statement = match &assignment.destination {
-                Place::Register(reg) if self.read.contains(&reg.0) => {
-                    format!("{} = {value};", self.names[&reg.0])
-                }
-                Place::Register(_) => format!("(void)({value});"),
-                Place::Memory { address, width } => {
-                    if let Some(view) = self.views.as_ref().and_then(|v| v.at(point, address)) {
-                        format!(
-                            "nirvana_view_store(&m, {}, {}, {value});",
-                            view.name,
-                            width.bytes()
-                        )
-                    } else {
-                        format!(
-                            "nirvana_store(&m, {}, {}, {value});",
-                            self.expression_at(address, point).text,
-                            width.bytes()
-                        )
-                    }
-                }
-            };
-            line(code, indent, &statement);
+    fn register(&self, reg: Reg) -> String {
+        if reg.0 >= self.first_temporary {
+            format!("nirvana_value_{}", reg.0 - self.first_temporary)
+        } else {
+            self.names[&reg.0].clone()
         }
     }
 
-    fn nodes(
+    fn evaluations(
         &self,
         code: &mut String,
-        nodes: &[Node],
         indent: usize,
-        depth: usize,
-        nonlocal: bool,
+        steps: &[Evaluation],
+        point: Option<(u64, usize)>,
     ) {
-        for node in nodes {
-            match node {
-                Node::Evaluate(value) => {
+        for step in steps {
+            match step {
+                Evaluation::Assign { destination, value } => line(
+                    code,
+                    indent,
+                    &format!(
+                        "{} = {};",
+                        self.register(*destination),
+                        self.expression(value).text
+                    ),
+                ),
+                Evaluation::Load {
+                    destination,
+                    address,
+                    original_address,
+                    width,
+                } => {
+                    let value = if let Some(view) = self
+                        .views
+                        .as_ref()
+                        .and_then(|v| v.at(point, original_address))
+                    {
+                        format!("nirvana_view_load(&m, {view}, {})", width.bytes())
+                    } else {
+                        format!(
+                            "nirvana_load(&m, {}, {})",
+                            self.expression(address).text,
+                            width.bytes()
+                        )
+                    };
                     line(
                         code,
                         indent,
-                        &format!("(void)({});", self.expression(value).text),
+                        &format!("{} = {value};", self.register(*destination)),
                     );
                 }
-                Node::Step {
-                    address,
-                    assignments,
-                } => self.assignments(code, indent, *address, assignments),
-                Node::If {
+                Evaluation::If {
                     condition,
                     taken,
                     not_taken,
@@ -279,12 +254,192 @@ impl Printer {
                         indent,
                         &format!("if ({}) {{", self.expression(condition).text),
                     );
-                    self.nodes(code, taken, indent + 1, depth, nonlocal);
-                    if !not_taken.is_empty() {
-                        line(code, indent, "} else {");
-                        self.nodes(code, not_taken, indent + 1, depth, nonlocal);
-                    }
+                    self.evaluations(code, indent + 1, taken, point);
+                    line(code, indent, "} else {");
+                    self.evaluations(code, indent + 1, not_taken, point);
                     line(code, indent, "}");
+                }
+            }
+        }
+    }
+
+    fn ordered_expression(
+        &self,
+        code: &mut String,
+        indent: usize,
+        expr: &Expr,
+        point: Option<(u64, usize)>,
+        next: &mut usize,
+    ) -> Result<Render, SequenceError> {
+        if !needs_sequence(expr) {
+            return Ok(self.expression_at(expr, point));
+        }
+        let plan = sequence(expr, *next)?;
+        for reg in *next..plan.next_register {
+            line(
+                code,
+                indent,
+                &format!("uint64_t {};", self.register(Reg(reg))),
+            );
+        }
+        *next = plan.next_register;
+        self.evaluations(code, indent, &plan.steps, point);
+        Ok(self.expression(&plan.value))
+    }
+
+    fn value_statement(
+        &self,
+        code: &mut String,
+        indent: usize,
+        expr: &Expr,
+        point: Option<(u64, usize)>,
+        prefix: &str,
+        suffix: &str,
+    ) -> Result<(), SequenceError> {
+        let scoped = needs_sequence(expr);
+        if scoped {
+            line(code, indent, "{");
+        }
+        let inner = indent + usize::from(scoped);
+        let mut next = self.first_temporary;
+        let value = self.ordered_expression(code, inner, expr, point, &mut next)?;
+        line(code, inner, &format!("{prefix}{}{suffix}", value.text));
+        if scoped {
+            line(code, indent, "}");
+        }
+        Ok(())
+    }
+
+    fn assignments(
+        &self,
+        code: &mut String,
+        indent: usize,
+        address: u64,
+        assignments: &[Assignment],
+    ) -> Result<(), SequenceError> {
+        for (index, assignment) in assignments.iter().enumerate() {
+            let point = Some((address, index));
+            match &assignment.destination {
+                Place::Register(reg) => {
+                    if self.read.contains(&reg.0) {
+                        self.value_statement(
+                            code,
+                            indent,
+                            &assignment.value,
+                            point,
+                            &format!("{} = ", self.register(*reg)),
+                            ";",
+                        )?;
+                    } else if assignment.value.uses_memory() {
+                        self.value_statement(
+                            code,
+                            indent,
+                            &assignment.value,
+                            point,
+                            "(void)(",
+                            ");",
+                        )?;
+                    }
+                }
+                Place::Memory { address, width } => {
+                    // Evaluate and check the destination before a possibly
+                    // faulting RHS, capturing an address exactly once.
+                    let scoped = assignment.value.uses_memory() || needs_sequence(address);
+                    if scoped {
+                        line(code, indent, "{");
+                    }
+                    let inner = indent + usize::from(scoped);
+                    let mut next = self.first_temporary;
+                    let view = self.views.as_ref().and_then(|v| v.at(point, address));
+                    let destination = if let Some(view) = &view {
+                        format!("{view}.address")
+                    } else {
+                        let value =
+                            self.ordered_expression(code, inner, address, point, &mut next)?;
+                        if scoped {
+                            line(
+                                code,
+                                inner,
+                                &format!("const uint64_t nirvana_address = {};", value.text),
+                            );
+                            "nirvana_address".into()
+                        } else {
+                            value.text
+                        }
+                    };
+                    if scoped {
+                        line(
+                            code,
+                            inner,
+                            &format!(
+                                "(void)nirvana_offset(&m, {destination}, {});",
+                                width.bytes()
+                            ),
+                        );
+                    }
+                    let value = self
+                        .ordered_expression(code, inner, &assignment.value, point, &mut next)?
+                        .text;
+                    let statement = if let Some(view) = view {
+                        format!(
+                            "nirvana_view_store(&m, {view}, {}, {value});",
+                            width.bytes()
+                        )
+                    } else {
+                        format!(
+                            "nirvana_store(&m, {destination}, {}, {value});",
+                            width.bytes()
+                        )
+                    };
+                    line(code, inner, &statement);
+                    if scoped {
+                        line(code, indent, "}");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn nodes(
+        &self,
+        code: &mut String,
+        nodes: &[Node],
+        indent: usize,
+        depth: usize,
+        nonlocal: bool,
+    ) -> Result<(), SequenceError> {
+        for node in nodes {
+            match node {
+                Node::Evaluate(value) => {
+                    self.value_statement(code, indent, value, None, "(void)(", ");")?;
+                }
+                Node::Step {
+                    address,
+                    assignments,
+                } => self.assignments(code, indent, *address, assignments)?,
+                Node::If {
+                    condition,
+                    taken,
+                    not_taken,
+                } => {
+                    let scoped = needs_sequence(condition);
+                    if scoped {
+                        line(code, indent, "{");
+                    }
+                    let inner = indent + usize::from(scoped);
+                    let mut next = self.first_temporary;
+                    let value = self.ordered_expression(code, inner, condition, None, &mut next)?;
+                    line(code, inner, &format!("if ({}) {{", value.text));
+                    self.nodes(code, taken, inner + 1, depth, nonlocal)?;
+                    if !not_taken.is_empty() {
+                        line(code, inner, "} else {");
+                        self.nodes(code, not_taken, inner + 1, depth, nonlocal)?;
+                    }
+                    line(code, inner, "}");
+                    if scoped {
+                        line(code, indent, "}");
+                    }
                 }
                 Node::Loop(body) => {
                     let (header, middle, footer) = match body.as_slice() {
@@ -295,7 +450,10 @@ impl Printer {
                                 not_taken,
                             },
                             rest @ ..,
-                        ] if is_break(taken) && not_taken.is_empty() => {
+                        ] if is_break(taken)
+                            && not_taken.is_empty()
+                            && !needs_sequence(condition) =>
+                        {
                             let condition = invert(condition);
                             (
                                 format!("while ({}) {{", self.expression(&condition).text),
@@ -312,7 +470,8 @@ impl Printer {
                             },
                         ] if is_continue(taken)
                             && is_break(not_taken)
-                            && !contains_continue(prefix) =>
+                            && !contains_continue(prefix)
+                            && !needs_sequence(condition) =>
                         {
                             (
                                 "do {".into(),
@@ -323,7 +482,7 @@ impl Printer {
                         _ => ("for (;;) {".into(), body.as_slice(), "}".into()),
                     };
                     line(code, indent, &header);
-                    self.nodes(code, middle, indent + 1, depth + 1, nonlocal);
+                    self.nodes(code, middle, indent + 1, depth + 1, nonlocal)?;
                     line(code, indent, &footer);
                     if nonlocal && depth > 0 {
                         line(code, indent, "if (nirvana_transfer != 0) {");
@@ -351,16 +510,15 @@ impl Printer {
                     );
                     line(code, indent, "break;");
                 }
-                Node::Return(value) => line(
-                    code,
-                    indent,
-                    &format!("return {};", self.expression(value).text),
-                ),
+                Node::Return(value) => {
+                    self.value_statement(code, indent, value, None, "return ", ";")?
+                }
             }
         }
+        Ok(())
     }
 
-    fn gotos(&self, code: &mut String, program: &Program) {
+    fn gotos(&self, code: &mut String, program: &Program) -> Result<(), SequenceError> {
         let cfg = program.cfg();
         let block_at = |address| cfg.block_at(address).expect("validated destination");
         line(code, 1, &format!("goto {};", cfg.entry()));
@@ -368,7 +526,7 @@ impl Printer {
             let block = cfg.block(id);
             writeln!(code, "{id}:").unwrap();
             for instruction in &program.instructions()[block.instructions.clone()] {
-                self.assignments(code, 1, instruction.address, &instruction.assignments);
+                self.assignments(code, 1, instruction.address, &instruction.assignments)?;
             }
             let instruction = &program.instructions()[block.instructions.end - 1];
             match &instruction.control {
@@ -382,30 +540,70 @@ impl Printer {
                 ),
                 Control::Jump(target) => line(code, 1, &format!("goto {};", block_at(*target))),
                 Control::Branch { condition, target } => {
+                    let scoped = needs_sequence(condition);
+                    if scoped {
+                        line(code, 1, "{");
+                    }
+                    let inner = 1 + usize::from(scoped);
+                    let mut next = self.first_temporary;
+                    let value = self.ordered_expression(code, inner, condition, None, &mut next)?;
                     line(
                         code,
-                        1,
-                        &format!(
-                            "if ({}) goto {};",
-                            self.expression(condition).text,
-                            block_at(*target)
-                        ),
+                        inner,
+                        &format!("if ({}) goto {};", value.text, block_at(*target)),
                     );
                     line(
                         code,
-                        1,
+                        inner,
                         &format!(
                             "goto {};",
                             block_at(instruction.address + u64::from(instruction.size))
                         ),
                     );
+                    if scoped {
+                        line(code, 1, "}");
+                    }
                 }
                 Control::Return(value) => {
-                    line(code, 1, &format!("return {};", self.expression(value).text))
+                    self.value_statement(code, 1, value, None, "return ", ";")?;
                 }
             }
         }
+        Ok(())
     }
+}
+
+// A single load has no competing faulting operand. Keep that common machine
+// shape compact; multiple/nested loads need explicit evaluation statements.
+fn needs_sequence(expression: &Expr) -> bool {
+    let mut pending = vec![expression];
+    let mut loads = 0;
+    while let Some(expr) = pending.pop() {
+        match expr {
+            Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Load { address, .. } => {
+                loads += 1;
+                if loads > 1 {
+                    return true;
+                }
+                pending.push(address);
+            }
+            Expr::Binary(_, a, b) => {
+                pending.push(b);
+                pending.push(a);
+            }
+            Expr::Select {
+                condition,
+                taken,
+                not_taken,
+            } => {
+                pending.push(not_taken);
+                pending.push(taken);
+                pending.push(condition);
+            }
+        }
+    }
+    false
 }
 
 fn bounded_shift(expression: &Expr) -> bool {
@@ -491,15 +689,15 @@ fn compact(nodes: &[Node]) -> Vec<Node> {
         .collect()
 }
 
-pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReductionError> {
+pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReadableError> {
     emit_readable_c_with_options(program, ReadableOptions::default())
 }
 
 pub fn emit_readable_c_with_options(
     program: &Program,
     options: ReadableOptions,
-) -> Result<ReadableC, ReductionError> {
-    Ok(emit_reduced_c(reduce(program)?, options))
+) -> Result<ReadableC, ReadableError> {
+    emit_reduced_c(reduce(program)?, options)
 }
 
 /// Validate only the IR reduction. Structuring and C emission have their own
@@ -507,7 +705,7 @@ pub fn emit_readable_c_with_options(
 pub fn emit_readable_c_with_checked_reduction(
     program: &Program,
     solver: &Solver,
-) -> Result<(ReadableC, Validation), ReductionError> {
+) -> Result<(ReadableC, Validation), ReadableError> {
     emit_readable_c_with_checked_reduction_and_options(program, solver, ReadableOptions::default())
 }
 
@@ -515,20 +713,20 @@ pub fn emit_readable_c_with_checked_reduction_and_options(
     program: &Program,
     solver: &Solver,
     options: ReadableOptions,
-) -> Result<(ReadableC, Validation), ReductionError> {
+) -> Result<(ReadableC, Validation), ReadableError> {
     let checked = reduce_checked(program, solver)?;
     Ok((
-        emit_reduced_c(checked.function, options),
+        emit_reduced_c(checked.function, options)?,
         checked.validation,
     ))
 }
 
-fn emit_reduced_c(reduced: ReducedFunction, options: ReadableOptions) -> ReadableC {
+fn emit_reduced_c(
+    reduced: ReducedFunction,
+    options: ReadableOptions,
+) -> Result<ReadableC, ReadableError> {
     let program = reduced.program();
-    let views = options
-        .stack_register
-        .filter(|r| reduced.parameters().contains(r))
-        .and_then(|r| StackViews::recover(program, r));
+    let views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, &views);
     let mut names = BTreeMap::new();
     let mut arguments = Vec::new();
@@ -580,9 +778,10 @@ fn emit_reduced_c(reduced: ReducedFunction, options: ReadableOptions) -> Readabl
             names: names.clone(),
             read: read.clone(),
             views: None,
+            first_temporary: program.register_count(),
         };
-        for view in &views.views {
-            let base = Expr::Register(views.register);
+        for view in views.stack_views() {
+            let base = Expr::Register(options.stack_register.expect("stack view base"));
             let base = if view.offset < 0 {
                 Expr::binary(BinaryOp::Sub, base, Expr::Const(view.offset.unsigned_abs()))
             } else if view.offset > 0 {
@@ -612,11 +811,77 @@ fn emit_reduced_c(reduced: ReducedFunction, options: ReadableOptions) -> Readabl
             );
         }
     }
+    if let Some(views) = &views {
+        let printer = Printer {
+            names: names.clone(),
+            read: read.clone(),
+            views: None,
+            first_temporary: program.register_count(),
+        };
+        for object in &views.objects {
+            line(
+                &mut code,
+                1,
+                &format!(
+                    "/* input register {}: address views, potentially aliased */",
+                    object.register.0
+                ),
+            );
+            line(&mut code, 1, "const struct {");
+            for field in &object.fields {
+                line(
+                    &mut code,
+                    2,
+                    &format!("struct nirvana_view {};", field.name),
+                );
+            }
+            line(&mut code, 1, &format!("}} {} = {{", object.name));
+            for field in &object.fields {
+                let base = ViewPath::Object {
+                    name: object.name.clone(),
+                    base: Expr::Register(object.register),
+                };
+                let address = if field.offset < 0 {
+                    Expr::binary(
+                        BinaryOp::Sub,
+                        base.address(),
+                        Expr::Const(field.offset.unsigned_abs()),
+                    )
+                } else {
+                    crate::simplify::simplify(
+                        &ViewPath::Field {
+                            base: Box::new(base),
+                            offset: field.offset as u64,
+                        }
+                        .address(),
+                    )
+                };
+                line(
+                    &mut code,
+                    2,
+                    &format!("{{{}}},", printer.expression(&address).text),
+                );
+            }
+            line(&mut code, 1, "};");
+        }
+    }
     for local in locals {
         line(&mut code, 1, &format!("uint64_t {local};"));
     }
-    let stack_views = views.as_ref().map(|v| v.views.clone()).unwrap_or_default();
-    let printer = Printer { names, read, views };
+    let stack_views = views
+        .as_ref()
+        .map(|v| v.stack_views().to_vec())
+        .unwrap_or_default();
+    let object_views = views
+        .as_ref()
+        .map(|v| v.objects.clone())
+        .unwrap_or_default();
+    let printer = Printer {
+        names,
+        read,
+        views,
+        first_temporary: program.register_count(),
+    };
     let (fallback_reason, structure_stats, structure_evidence) =
         match StructuredFunction::recover(program) {
             Ok(function) => {
@@ -625,16 +890,16 @@ fn emit_reduced_c(reduced: ReducedFunction, options: ReadableOptions) -> Readabl
                     line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
                     line(&mut code, 1, "int nirvana_continue = 0;");
                 }
-                printer.nodes(&mut code, &compact(function.body()), 1, 0, nonlocal);
+                printer.nodes(&mut code, &compact(function.body()), 1, 0, nonlocal)?;
                 (None, Some(function.stats()), Some(function.evidence()))
             }
             Err(reason) => {
-                printer.gotos(&mut code, program);
+                printer.gotos(&mut code, program)?;
                 (Some(reason), None, None)
             }
         };
     code.push_str("}\n");
-    ReadableC {
+    Ok(ReadableC {
         code,
         parameters: reduced.parameters().to_vec(),
         uses_memory: program.uses_memory(),
@@ -643,5 +908,6 @@ fn emit_reduced_c(reduced: ReducedFunction, options: ReadableOptions) -> Readabl
         structure_stats,
         structure_evidence,
         stack_views,
-    }
+        object_views,
+    })
 }

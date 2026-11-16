@@ -110,6 +110,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         "readable-c" => {
             let options = readable::ReadableOptions {
                 stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+                recover_objects: true,
             };
             let output = if let Some(solver) = solver {
                 let (output, validation) =
