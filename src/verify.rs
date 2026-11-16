@@ -22,6 +22,9 @@ pub enum UnknownReason {
     SolverUnknown,
     InvalidResponse(String),
     InvalidCounterexample,
+    BlockShape,
+    BoundaryMapping,
+    ReplayLimit,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -138,46 +141,50 @@ impl Encoder {
             Expr::Binary(op, left, right) => {
                 let l = self.expression(left, depth + 1)?;
                 let r = self.expression(right, depth + 1)?;
-                match op {
-                    BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule => {
-                        let op = match op {
-                            BinaryOp::Eq => "=",
-                            BinaryOp::Ne => "distinct",
-                            BinaryOp::Ult => "bvult",
-                            _ => "bvule",
-                        };
-                        format!("(ite ({op} {l} {r}) #x0000000000000001 #x0000000000000000)")
-                    }
-                    BinaryOp::Shl | BinaryOp::Shr => {
-                        let op = if *op == BinaryOp::Shl {
-                            "bvshl"
-                        } else {
-                            "bvlshr"
-                        };
-                        format!("({op} {l} (bvand {r} #x000000000000003f))")
-                    }
-                    BinaryOp::UMulHigh => format!(
-                        "((_ extract 127 64) (bvmul ((_ zero_extend 64) {l}) ((_ zero_extend 64) {r})))"
-                    ),
-                    _ => {
-                        let op = match op {
-                            BinaryOp::Add => "bvadd",
-                            BinaryOp::Sub => "bvsub",
-                            BinaryOp::Mul => "bvmul",
-                            BinaryOp::And => "bvand",
-                            BinaryOp::Or => "bvor",
-                            BinaryOp::Xor => "bvxor",
-                            _ => unreachable!(),
-                        };
-                        format!("({op} {l} {r})")
-                    }
-                }
+                binary_term(op, &l, &r)
             }
         };
         let name = format!("e{}", self.definitions.len());
         self.definitions
             .push(format!("(define-fun {name} () (_ BitVec 64) {term})\n"));
         Ok(name)
+    }
+}
+
+pub(crate) fn binary_term(op: &BinaryOp, l: &str, r: &str) -> String {
+    match op {
+        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule => {
+            let op = match op {
+                BinaryOp::Eq => "=",
+                BinaryOp::Ne => "distinct",
+                BinaryOp::Ult => "bvult",
+                _ => "bvule",
+            };
+            format!("(ite ({op} {l} {r}) #x0000000000000001 #x0000000000000000)")
+        }
+        BinaryOp::Shl | BinaryOp::Shr => {
+            let op = if *op == BinaryOp::Shl {
+                "bvshl"
+            } else {
+                "bvlshr"
+            };
+            format!("({op} {l} (bvand {r} #x000000000000003f))")
+        }
+        BinaryOp::UMulHigh => format!(
+            "((_ extract 127 64) (bvmul ((_ zero_extend 64) {l}) ((_ zero_extend 64) {r})))"
+        ),
+        _ => {
+            let op = match op {
+                BinaryOp::Add => "bvadd",
+                BinaryOp::Sub => "bvsub",
+                BinaryOp::Mul => "bvmul",
+                BinaryOp::And => "bvand",
+                BinaryOp::Or => "bvor",
+                BinaryOp::Xor => "bvxor",
+                _ => unreachable!(),
+            };
+            format!("({op} {l} {r})")
+        }
     }
 }
 
@@ -224,6 +231,9 @@ impl Solver {
         self.timeout = timeout.clamp(Duration::from_millis(1), Duration::from_secs(30));
         self
     }
+    pub(crate) fn limited_to(&self, timeout: Duration) -> Self {
+        self.clone().with_timeout(self.timeout.min(timeout))
+    }
     pub fn check(&self, before: &Expr, after: &Expr) -> Verdict {
         match pure_query(before, after) {
             Ok(query) => self.check_query(&query),
@@ -263,18 +273,26 @@ impl Solver {
     }
 
     fn run(&self, query: &PureQuery, model: bool) -> Result<String, UnknownReason> {
-        let mut script = format!(
-            "(set-option :timeout {})\n(set-option :produce-models true)\n(set-option :pp.bv-literals true)\n{}(check-sat)\n",
-            self.timeout.as_millis(),
-            query.smt2
-        );
-        if model {
-            let names = query
+        let names = if model {
+            query
                 .registers
                 .iter()
                 .map(|index| format!("r{index}"))
-                .collect::<Vec<_>>()
-                .join(" ");
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.run_smt(&query.smt2, &names)
+    }
+
+    pub(crate) fn run_smt(&self, smt2: &str, values: &[String]) -> Result<String, UnknownReason> {
+        let mut script = format!(
+            "(set-option :timeout {})\n(set-option :produce-models true)\n(set-option :pp.bv-literals true)\n{}(check-sat)\n",
+            self.timeout.as_millis(),
+            smt2
+        );
+        if !values.is_empty() {
+            let names = values.join(" ");
             script.push_str(&format!("(get-value ({names}))\n"));
         }
         let mut child = Command::new(&self.executable)
@@ -348,6 +366,18 @@ impl Solver {
 }
 
 fn parse_values(output: &str, expected: &[usize]) -> Result<BTreeMap<usize, u64>, UnknownReason> {
+    let names: Vec<_> = expected.iter().map(|index| format!("r{index}")).collect();
+    let values = parse_named_values(output, &names)?;
+    Ok(expected
+        .iter()
+        .map(|&index| (index, values[&format!("r{index}")]))
+        .collect())
+}
+
+pub(crate) fn parse_named_values(
+    output: &str,
+    expected: &[String],
+) -> Result<BTreeMap<String, u64>, UnknownReason> {
     let error = || UnknownReason::InvalidResponse("malformed get-value response".into());
     let separated = output.replace('(', " ( ").replace(')', " ) ");
     let mut tokens = separated.split_whitespace();
@@ -361,11 +391,7 @@ fn parse_values(output: &str, expected: &[usize]) -> Result<BTreeMap<usize, u64>
             Some("(") => {}
             _ => return Err(error()),
         }
-        let index = tokens
-            .next()
-            .and_then(|token| token.strip_prefix('r'))
-            .and_then(|s| s.parse::<usize>().ok())
-            .ok_or_else(error)?;
+        let name = tokens.next().ok_or_else(error)?;
         let token = tokens.next().ok_or_else(error)?;
         let value = if let Some(hex) = token.strip_prefix("#x") {
             u64::from_str_radix(hex, 16).map_err(|_| error())?
@@ -375,8 +401,8 @@ fn parse_values(output: &str, expected: &[usize]) -> Result<BTreeMap<usize, u64>
             return Err(error());
         };
         if tokens.next() != Some(")")
-            || !expected.contains(&index)
-            || values.insert(index, value).is_some()
+            || !expected.iter().any(|expected| expected == name)
+            || values.insert(name.to_string(), value).is_some()
         {
             return Err(error());
         }

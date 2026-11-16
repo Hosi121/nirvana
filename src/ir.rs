@@ -310,6 +310,25 @@ pub struct RunReport {
     pub state: Snapshot,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BlockExit {
+    Next(Address),
+    Returned(u64),
+    Fault(MemoryFault),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockReport {
+    pub exit: BlockExit,
+    pub state: Snapshot,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BlockError {
+    UnknownBlock(Address),
+    Input(ExecutionError),
+}
+
 impl RunReport {
     /// Compatibility projection. Use the report itself to inspect partial state.
     pub fn into_execution(self) -> Result<Execution, ExecutionError> {
@@ -466,13 +485,17 @@ impl Machine {
         };
         RunReport {
             status,
-            state: Snapshot {
-                registers: self.registers,
-                trace: self.trace,
-                memory: self.memory,
-                memory_base: self.memory_base,
-                instruction: self.instruction,
-            },
+            state: self.snapshot(),
+        }
+    }
+
+    fn snapshot(self) -> Snapshot {
+        Snapshot {
+            registers: self.registers,
+            trace: self.trace,
+            memory: self.memory,
+            memory_base: self.memory_base,
+            instruction: self.instruction,
         }
     }
 }
@@ -542,6 +565,61 @@ impl Program {
 
     pub fn execute(&self, input: &[u64], step_limit: usize) -> Result<Execution, ExecutionError> {
         self.execute_with_memory(input, 0, &[], step_limit)
+    }
+
+    /// Execute exactly one basic block, stopping before its successor. A block
+    /// is finite and has no internal control transfer, so no unwind bound is used.
+    pub fn run_block_with_memory(
+        &self,
+        start: Address,
+        input: &[u64],
+        memory_base: u64,
+        memory: &[u8],
+    ) -> Result<BlockReport, BlockError> {
+        let id = self
+            .cfg
+            .block_at(start)
+            .ok_or(BlockError::UnknownBlock(start))?;
+        let block = self.cfg.block(id);
+        let mut machine = Machine::with_memory(
+            self.register_count,
+            input,
+            memory_base,
+            memory,
+            block.instructions.len(),
+        )
+        .map_err(BlockError::Input)?;
+        let result = (|| -> Result<BlockExit, Stop> {
+            for instruction in &self.instructions[block.instructions.clone()] {
+                machine.step(instruction.address, &instruction.assignments)?;
+                match &instruction.control {
+                    Control::Next => {}
+                    Control::Jump(target) => return Ok(BlockExit::Next(*target)),
+                    Control::Branch { condition, target } => {
+                        return Ok(BlockExit::Next(if condition.evaluate(&machine)? != 0 {
+                            *target
+                        } else {
+                            instruction.address + u64::from(instruction.size)
+                        }));
+                    }
+                    Control::Return(value) => {
+                        return Ok(BlockExit::Returned(value.evaluate(&machine)?));
+                    }
+                }
+            }
+            Ok(BlockExit::Next(block.end))
+        })();
+        let exit = match result {
+            Ok(exit) => exit,
+            Err(Stop::Fault(fault)) => BlockExit::Fault(fault),
+            Err(Stop::Limit) => {
+                unreachable!("one validated basic block has a finite instruction count")
+            }
+        };
+        Ok(BlockReport {
+            exit,
+            state: machine.snapshot(),
+        })
     }
 
     pub fn uses_memory(&self) -> bool {
