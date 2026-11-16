@@ -1,0 +1,36 @@
+{
+  "nodes": [
+    "frozen-contract",
+    "hir",
+    "stack",
+    "integrate",
+    "native-and-regression-verification",
+    "commit"
+  ],
+  "edges": [
+    [
+      "frozen-contract",
+      "hir"
+    ],
+    [
+      "frozen-contract",
+      "stack"
+    ],
+    [
+      "hir",
+      "integrate"
+    ],
+    [
+      "stack",
+      "integrate"
+    ],
+    [
+      "integrate",
+      "native-and-regression-verification"
+    ],
+    [
+      "native-and-regression-verification",
+      "commit"
+    ]
+  ]
+}
