@@ -1,5 +1,6 @@
 use nirvana::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, Width};
-use nirvana::reduce::{Observation, reduce};
+use nirvana::observe::{Comparison, Contract};
+use nirvana::reduce::reduce;
 
 #[path = "../examples/programs/mod.rs"]
 mod programs;
@@ -34,20 +35,29 @@ fn program(count: usize, rows: Vec<(Vec<Assignment>, Control)>) -> Program {
 }
 fn compare(program: &Program, input: &[u64], memory: &[u8], limit: usize) {
     let reduced = reduce(program).unwrap();
-    let expected = program
-        .execute_with_memory(input, 0, memory, limit)
-        .map(|e| Observation {
-            value: e.value,
-            memory: e.memory,
-            trace: e.trace,
-        });
+    let expected = program.run_with_memory(input, 0, memory, limit).unwrap();
+    let actual = reduced.run_with_memory(input, 0, memory, limit).unwrap();
+    // This reduction preserves original step boundaries as an additional
+    // regression invariant, including partial state on faults and cutoffs.
     assert_eq!(
-        reduced.execute_with_memory(input, 0, memory, limit),
-        expected,
+        (&actual.status, &actual.state.memory, &actual.state.trace),
+        (
+            &expected.status,
+            &expected.state.memory,
+            &expected.state.trace
+        ),
         "input={input:?}, limit={limit}, original={:?}, reduced={:?}",
         program.instructions(),
         reduced.program().instructions()
     );
+    let comparison = Contract::return_memory()
+        .with_instruction_trace()
+        .compare(&expected, &actual);
+    if expected.status == nirvana::ir::RunStatus::Suspended {
+        assert!(matches!(comparison, Comparison::Inconclusive { .. }));
+    } else {
+        assert_eq!(comparison, Comparison::MatchForInput);
+    }
 }
 
 #[test]

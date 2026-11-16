@@ -109,7 +109,7 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 
 ## 検証
 
-106件のテストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
+114件のテストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
 複数入口の循環、到達不能な前任ブロック、入力の欠落や重複、IRの演算とC生成を対象にしています。
 
 加えて、4命令の小プログラム4,000通りについて次を照合します。
@@ -161,3 +161,6 @@ GCC 13.3の同じ機械語では、代入数は `diamond -O2` で22→3、`arith
 [docs/control-structure.md](docs/control-structure.md)、機械語からIRまでの範囲は
 [docs/machine-frontend.md](docs/machine-frontend.md)、式と変数への還元は
 [docs/readable-c.md](docs/readable-c.md)を参照してください。
+
+同値性の前提・観測対象・検証範囲は[docs/equivalence.md](docs/equivalence.md)に記録しています。
+失敗前の副作用を含む実行比較には、状態を保持する `run_with_memory` を使います。

@@ -89,8 +89,8 @@ fn check(expression: &Expr, inputs: &[[u64; 3]]) {
         ] {
             for limit in [0, 1] {
                 assert_eq!(
-                    original.execute_with_memory(registers, base, memory, limit),
-                    changed.execute_with_memory(registers, base, memory, limit),
+                    original.run_with_memory(registers, base, memory, limit),
+                    changed.run_with_memory(registers, base, memory, limit),
                     "expression={expression:?}, registers={registers:?}, base={base:#x}, limit={limit}"
                 );
             }

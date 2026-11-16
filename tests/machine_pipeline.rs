@@ -5,6 +5,7 @@
 mod native;
 
 use native::{Scratch, fixture_root, link, object, run, run_fields};
+use nirvana::observe::{Comparison, Contract};
 use nirvana::{emit, frontend, readable, reduce, structure::StructuredFunction, x86};
 use std::fmt::Write as _;
 
@@ -174,25 +175,25 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
             let mut memory_results = Vec::new();
             for (input, expected) in inputs.iter().zip(&native) {
                 let (registers, memory) = prepare(input);
-                let execution = program
-                    .execute_with_memory(&registers, BASE, &memory, 10_000)
+                let report = program
+                    .run_with_memory(&registers, BASE, &memory, 10_000)
                     .unwrap_or_else(|error| {
                         panic!("{name} {optimization}, input={input:?}: {error}")
                     });
+                let execution = report.clone().into_execution().unwrap();
                 assert_eq!(
                     &visible_result(&execution),
                     expected,
                     "{name} {optimization}, input={input:?}"
                 );
+                let reduced_report = reduced
+                    .run_with_memory(&registers, BASE, &memory, 10_000)
+                    .unwrap();
                 assert_eq!(
-                    reduced
-                        .execute_with_memory(&registers, BASE, &memory, 10_000)
-                        .unwrap(),
-                    reduce::Observation {
-                        value: execution.value,
-                        memory: execution.memory.clone(),
-                        trace: execution.trace.clone()
-                    },
+                    Contract::return_memory()
+                        .with_instruction_trace()
+                        .compare(&report, &reduced_report),
+                    Comparison::MatchForInput,
                     "reduction differs for {name} {optimization}, input={input:?}"
                 );
                 let mut memory_result = expected.clone();
@@ -200,9 +201,9 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 memory_results.push(memory_result);
                 if let Some(tree) = &tree {
                     assert_eq!(
-                        tree.execute_with_memory(&registers, BASE, &memory, 10_000)
+                        tree.run_with_memory(&registers, BASE, &memory, 10_000)
                             .unwrap(),
-                        execution,
+                        report,
                         "structured IR differs for {name} {optimization}, input={input:?}"
                     );
                 }

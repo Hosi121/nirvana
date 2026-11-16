@@ -10,6 +10,7 @@ pub mod elf;
 pub mod emit;
 pub mod frontend;
 pub mod ir;
+pub mod observe;
 pub mod postdom;
 pub mod readable;
 pub mod reduce;

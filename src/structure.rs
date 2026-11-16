@@ -7,7 +7,9 @@ use std::fmt;
 
 use crate::analysis::ControlFlowAnalysis;
 use crate::cfg::{Address, BlockId, Target};
-use crate::ir::{Assignment, Control, Execution, ExecutionError, Expr, Machine, Program};
+use crate::ir::{
+    Assignment, Control, Execution, ExecutionError, Expr, Machine, Program, RunReport, Stop,
+};
 use crate::postdom::{PostDomNode, PostDominators};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -158,12 +160,25 @@ impl StructuredFunction {
         memory: &[u8],
         step_limit: usize,
     ) -> Result<Execution, ExecutionError> {
+        self.run_with_memory(input, memory_base, memory, step_limit)?
+            .into_execution()
+    }
+
+    pub fn run_with_memory(
+        &self,
+        input: &[u64],
+        memory_base: u64,
+        memory: &[u8],
+        step_limit: usize,
+    ) -> Result<RunReport, ExecutionError> {
         let mut machine =
             Machine::with_memory(self.register_count, input, memory_base, memory, step_limit)?;
-        match execute_nodes(&self.body, &mut machine)? {
-            Signal::Return(value) => Ok(machine.finish(value)),
+        let result = match execute_nodes(&self.body, &mut machine) {
+            Ok(Signal::Return(value)) => Ok(value),
+            Err(stop) => Err(stop),
             _ => unreachable!("recovered function must return or exhaust its step limit"),
-        }
+        };
+        Ok(machine.finish(result))
     }
 }
 
@@ -415,7 +430,7 @@ enum Signal {
     Return(u64),
 }
 
-fn execute_nodes(nodes: &[Node], machine: &mut Machine) -> Result<Signal, ExecutionError> {
+fn execute_nodes(nodes: &[Node], machine: &mut Machine) -> Result<Signal, Stop> {
     for node in nodes {
         let signal = match node {
             Node::Evaluate(value) => {

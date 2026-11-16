@@ -87,7 +87,7 @@ impl Expr {
         }
     }
 
-    pub(crate) fn evaluate(&self, machine: &Machine) -> Result<u64, ExecutionError> {
+    pub(crate) fn evaluate(&self, machine: &Machine) -> Result<u64, MemoryFault> {
         Ok(match self {
             Self::Const(value) => *value,
             Self::Register(Reg(index)) => machine.registers[*index],
@@ -271,6 +271,75 @@ pub struct Execution {
     pub memory: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessKind {
+    Read,
+    Write,
+}
+
+/// A fault in the checked guest-memory model, not a host CPU exception.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryFault {
+    pub access: AccessKind,
+    pub address: u64,
+    pub width: Width,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RunStatus {
+    Returned(u64),
+    Fault(MemoryFault),
+    /// The observation budget ran out. This does not establish divergence.
+    Suspended,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Snapshot {
+    pub registers: Vec<u64>,
+    pub memory_base: u64,
+    pub memory: Vec<u8>,
+    /// Instructions started, including an instruction which faulted midway.
+    pub trace: Vec<Address>,
+    /// Current/faulting instruction, or the next attempted step on suspension.
+    pub instruction: Option<Address>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunReport {
+    pub status: RunStatus,
+    pub state: Snapshot,
+}
+
+impl RunReport {
+    /// Compatibility projection. Use the report itself to inspect partial state.
+    pub fn into_execution(self) -> Result<Execution, ExecutionError> {
+        match self.status {
+            RunStatus::Returned(value) => Ok(Execution {
+                value,
+                registers: self.state.registers,
+                memory: self.state.memory,
+                trace: self.state.trace,
+            }),
+            RunStatus::Fault(fault) => Err(ExecutionError::MemoryAccess {
+                address: fault.address,
+                width: fault.width,
+            }),
+            RunStatus::Suspended => Err(ExecutionError::StepLimit),
+        }
+    }
+}
+
+pub(crate) enum Stop {
+    Fault(MemoryFault),
+    Limit,
+}
+
+impl From<MemoryFault> for Stop {
+    fn from(fault: MemoryFault) -> Self {
+        Self::Fault(fault)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutionError {
     RegisterCount { expected: usize, actual: usize },
@@ -302,6 +371,7 @@ pub(crate) struct Machine {
     remaining: usize,
     memory: Vec<u8>,
     memory_base: u64,
+    instruction: Option<Address>,
 }
 
 impl Machine {
@@ -318,6 +388,7 @@ impl Machine {
             remaining: limit,
             memory: Vec::new(),
             memory_base: 0,
+            instruction: None,
         })
     }
 
@@ -334,9 +405,13 @@ impl Machine {
         Ok(machine)
     }
 
-    fn offset(&self, address: u64, width: Width) -> Result<usize, ExecutionError> {
+    fn offset(&self, address: u64, width: Width, access: AccessKind) -> Result<usize, MemoryFault> {
         if address.checked_add(width.bytes() as u64 - 1).is_none() {
-            return Err(ExecutionError::MemoryAccess { address, width });
+            return Err(MemoryFault {
+                access,
+                address,
+                width,
+            });
         }
         let offset = address
             .checked_sub(self.memory_base)
@@ -347,23 +422,24 @@ impl Machine {
                     .checked_add(width.bytes())
                     .is_some_and(|end| end <= self.memory.len())
             })
-            .ok_or(ExecutionError::MemoryAccess { address, width })
+            .ok_or(MemoryFault {
+                access,
+                address,
+                width,
+            })
     }
 
-    fn load(&self, address: u64, width: Width) -> Result<u64, ExecutionError> {
-        let offset = self.offset(address, width)?;
+    fn load(&self, address: u64, width: Width) -> Result<u64, MemoryFault> {
+        let offset = self.offset(address, width, AccessKind::Read)?;
         let mut bytes = [0; 8];
         bytes[..width.bytes()].copy_from_slice(&self.memory[offset..offset + width.bytes()]);
         Ok(u64::from_le_bytes(bytes))
     }
 
-    pub fn step(
-        &mut self,
-        address: Address,
-        assignments: &[Assignment],
-    ) -> Result<(), ExecutionError> {
+    pub fn step(&mut self, address: Address, assignments: &[Assignment]) -> Result<(), Stop> {
+        self.instruction = Some(address);
         if self.remaining == 0 {
-            return Err(ExecutionError::StepLimit);
+            return Err(Stop::Limit);
         }
         self.remaining -= 1;
         self.trace.push(address);
@@ -372,7 +448,7 @@ impl Machine {
                 Place::Register(reg) => self.registers[reg.0] = assignment.value.evaluate(self)?,
                 Place::Memory { address, width } => {
                     let address = address.evaluate(self)?;
-                    let offset = self.offset(address, *width)?;
+                    let offset = self.offset(address, *width, AccessKind::Write)?;
                     let value = assignment.value.evaluate(self)?.to_le_bytes();
                     self.memory[offset..offset + width.bytes()]
                         .copy_from_slice(&value[..width.bytes()]);
@@ -382,12 +458,21 @@ impl Machine {
         Ok(())
     }
 
-    pub fn finish(self, value: u64) -> Execution {
-        Execution {
-            value,
-            registers: self.registers,
-            trace: self.trace,
-            memory: self.memory,
+    pub fn finish(self, result: Result<u64, Stop>) -> RunReport {
+        let status = match result {
+            Ok(value) => RunStatus::Returned(value),
+            Err(Stop::Fault(fault)) => RunStatus::Fault(fault),
+            Err(Stop::Limit) => RunStatus::Suspended,
+        };
+        RunReport {
+            status,
+            state: Snapshot {
+                registers: self.registers,
+                trace: self.trace,
+                memory: self.memory,
+                memory_base: self.memory_base,
+                instruction: self.instruction,
+            },
         }
     }
 }
@@ -495,31 +580,47 @@ impl Program {
         memory: &[u8],
         step_limit: usize,
     ) -> Result<Execution, ExecutionError> {
+        self.run_with_memory(input, memory_base, memory, step_limit)?
+            .into_execution()
+    }
+
+    /// Retain complete state at return, memory fault, or budget exhaustion.
+    /// An outer error denotes an invalid invocation (input-register count).
+    pub fn run_with_memory(
+        &self,
+        input: &[u64],
+        memory_base: u64,
+        memory: &[u8],
+        step_limit: usize,
+    ) -> Result<RunReport, ExecutionError> {
         let mut machine =
             Machine::with_memory(self.register_count, input, memory_base, memory, step_limit)?;
         let mut address = self.cfg.block(self.cfg.entry()).start;
-        loop {
-            let index = self
-                .instructions
-                .binary_search_by_key(&address, |instruction| instruction.address)
-                .expect("validated reachable instruction");
-            let instruction = &self.instructions[index];
-            machine.step(address, &instruction.assignments)?;
-            address = match &instruction.control {
-                Control::Next => address + u64::from(instruction.size),
-                Control::Jump(target) => *target,
-                Control::Branch { condition, target } => {
-                    if condition.evaluate(&machine)? != 0 {
-                        *target
-                    } else {
-                        address + u64::from(instruction.size)
+        let result = (|| -> Result<u64, Stop> {
+            loop {
+                let index = self
+                    .instructions
+                    .binary_search_by_key(&address, |instruction| instruction.address)
+                    .expect("validated reachable instruction");
+                let instruction = &self.instructions[index];
+                machine.step(address, &instruction.assignments)?;
+                address = match &instruction.control {
+                    Control::Next => address + u64::from(instruction.size),
+                    Control::Jump(target) => *target,
+                    Control::Branch { condition, target } => {
+                        if condition.evaluate(&machine)? != 0 {
+                            *target
+                        } else {
+                            address + u64::from(instruction.size)
+                        }
                     }
-                }
-                Control::Return(value) => {
-                    let value = value.evaluate(&machine)?;
-                    return Ok(machine.finish(value));
-                }
-            };
-        }
+                    Control::Return(value) => {
+                        let value = value.evaluate(&machine)?;
+                        return Ok(value);
+                    }
+                };
+            }
+        })();
+        Ok(machine.finish(result))
     }
 }

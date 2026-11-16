@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::cfg::Target;
-use crate::ir::{Control, ExecutionError, Expr, IrInstruction, Place, Program, ProgramError, Reg};
+use crate::ir::{
+    Control, ExecutionError, Expr, IrInstruction, Place, Program, ProgramError, Reg, RunReport,
+};
 use crate::simplify::{node_count, simplify};
 
 type Live = BTreeSet<usize>;
@@ -73,6 +75,25 @@ impl ReducedFunction {
         memory: &[u8],
         limit: usize,
     ) -> Result<Observation, ExecutionError> {
+        let execution = self
+            .run_with_memory(input, base, memory, limit)?
+            .into_execution()?;
+        Ok(Observation {
+            value: execution.value,
+            memory: execution.memory,
+            trace: execution.trace,
+        })
+    }
+
+    /// The report contains the reduced program's extended register file.
+    /// Compare it with the return-and-memory observation contract.
+    pub fn run_with_memory(
+        &self,
+        input: &[u64],
+        base: u64,
+        memory: &[u8],
+        limit: usize,
+    ) -> Result<RunReport, ExecutionError> {
         if input.len() != self.original_register_count {
             return Err(ExecutionError::RegisterCount {
                 expected: self.original_register_count,
@@ -81,14 +102,8 @@ impl ReducedFunction {
         }
         let mut registers = vec![0; self.program.register_count()];
         registers[..input.len()].copy_from_slice(input);
-        let execution = self
-            .program
-            .execute_with_memory(&registers, base, memory, limit)?;
-        Ok(Observation {
-            value: execution.value,
-            memory: execution.memory,
-            trace: execution.trace,
-        })
+        self.program
+            .run_with_memory(&registers, base, memory, limit)
     }
 }
 
