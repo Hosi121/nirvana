@@ -1,0 +1,8 @@
+[package]
+name = "nirvana"
+version = "0.1.0"
+edition = "2024"
+description = "A decompiler built from scratch, starting with control-flow recovery"
+publish = false
+
+[dependencies]

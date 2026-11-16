@@ -1,0 +1,21 @@
+# id<TAB>handwritten IR id or -<TAB>source features
+diamond	diamond	if-else,merge
+nested	nested	nested-if,merge
+early-return	early-return	early-return,multiple-returns
+sum	sum	while,zero-iterations,induction
+nested-loops	nested-loops	nested-for,induction
+irreducible	irreducible	goto,two-entry-cycle
+shared-tail	shared-tail	shared-tail,early-return
+multi-exit	multi-exit	loop,multiple-exits,shared-tail
+multi-exit-prefix	multi-exit-prefix	loop,header-effects,multiple-exits
+nested-multi-exit	nested-multi-exit	nested-loops,break,exit-effects
+loop-returns	loop-returns	loop,multiple-returns
+nonlocal-exit	nonlocal-exit	nested-loops,goto,nonlocal-exit
+copy-limit	copy-limit	if-chain,shared-tail,early-return
+arithmetic	arithmetic	wrapping,comparisons,masked-shifts
+switch	-	switch,fallthrough,default
+do-while	-	do-while,mandatory-first-iteration
+short-circuit	-	short-circuit,sequenced-side-effects
+array-walk	-	stack-array,indexed-load,bounded-loop
+struct-fields	-	struct,field-access,swap
+call-chain	-	external-call,relocation,separate-translation-unit

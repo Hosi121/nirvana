@@ -1,0 +1,12 @@
+#include "../fixture.h"
+
+uint64_t fixture(uint64_t r[4]) {
+    r[0] &= UINT64_C(3);
+    r[3] = 0;
+    for (r[1] = 0; r[1] < r[0]; ++r[1]) {
+        for (r[2] = 0; r[2] < UINT64_C(3); ++r[2]) {
+            r[3] += r[1] + r[2];
+        }
+    }
+    return r[3];
+}
