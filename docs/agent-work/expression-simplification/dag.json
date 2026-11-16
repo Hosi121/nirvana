@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    "parent-reduction-and-readable-c",
+    "agent-expression-simplification",
+    "parent-integration"
+  ],
+  "edges": [
+    [
+      "parent-reduction-and-readable-c",
+      "parent-integration"
+    ],
+    [
+      "agent-expression-simplification",
+      "parent-integration"
+    ]
+  ]
+}
