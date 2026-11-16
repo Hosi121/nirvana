@@ -71,6 +71,10 @@ pub fn link(objects: &[&Path], output: &Path) {
 }
 
 pub fn run(binary: &Path, input: &str) -> Vec<Vec<u64>> {
+    run_fields(binary, input, 5)
+}
+
+pub fn run_fields(binary: &Path, input: &str, fields: usize) -> Vec<Vec<u64>> {
     let mut child = Command::new(binary)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -123,7 +127,7 @@ pub fn run(binary: &Path, input: &str) -> Vec<Vec<u64>> {
                 .split_whitespace()
                 .map(|word| word.parse().unwrap())
                 .collect();
-            assert_eq!(result.len(), 5);
+            assert_eq!(result.len(), fields);
             result
         })
         .collect()

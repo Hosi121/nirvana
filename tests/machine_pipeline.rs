@@ -4,8 +4,8 @@
 #[path = "support/native.rs"]
 mod native;
 
-use native::{Scratch, fixture_root, link, object, run};
-use nirvana::{emit, frontend, structure::StructuredFunction, x86};
+use native::{Scratch, fixture_root, link, object, run, run_fields};
+use nirvana::{emit, frontend, readable, reduce, structure::StructuredFunction, x86};
 use std::fmt::Write as _;
 
 const BASE: u64 = 0x1000;
@@ -41,6 +41,35 @@ fn generated_harness(uses_memory: bool) -> String {
     } else {
         "nirvana_fn(r)"
     };
+    harness_for(call, false)
+}
+
+fn readable_harness(output: &readable::ReadableC) -> String {
+    let mut arguments: Vec<_> = output
+        .parameters
+        .iter()
+        .map(|reg| format!("r[{}]", reg.0))
+        .collect();
+    if output.uses_memory {
+        arguments.extend(["memory", "UINT64_C(4096)", "sizeof(memory)"].map(String::from));
+    }
+    harness_for(&format!("nirvana_readable({})", arguments.join(", ")), true)
+}
+
+fn memory_digest(memory: &[u8]) -> u64 {
+    memory.iter().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
+fn harness_for(call: &str, with_digest: bool) -> String {
+    let digest = if with_digest {
+        "uint64_t hash = UINT64_C(14695981039346656037);\n        for (unsigned i = 0; i < sizeof(memory); ++i) hash = (hash ^ memory[i]) * UINT64_C(1099511628211);"
+    } else {
+        ""
+    };
+    let digest_format = if with_digest { " %\" PRIu64 \"" } else { "" };
+    let digest_argument = if with_digest { ", hash" } else { "" };
     format!(
         r#"
 #include <inttypes.h>
@@ -61,8 +90,9 @@ int main(void) {{
             input[i] = 0;
             for (unsigned j = 0; j < 8; ++j) input[i] |= (uint64_t)memory[4096 + i * 8 + j] << (j * 8);
         }}
-        printf("%" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
-               value, input[0], input[1], input[2], input[3]);
+        {digest}
+        printf("%" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "{digest_format}\n",
+               value, input[0], input[1], input[2], input[3]{digest_argument});
     }}
     return 0;
 }}
@@ -99,6 +129,8 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
     let mut lifted = 0;
     let mut structured = 0;
     let mut comparisons = 0;
+    let mut original_assignments = 0;
+    let mut reduced_assignments = 0;
     for optimization in ["-O0", "-O2"] {
         let directory = scratch.0.join(optimization);
         std::fs::create_dir(&directory).unwrap();
@@ -132,12 +164,14 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
             };
             lifted += 1;
             let program = function.program;
+            let reduced = reduce::reduce(&program).unwrap();
             let tree = StructuredFunction::recover(&program).ok();
             structured += usize::from(tree.is_some());
             let original_binary = directory.join(format!("{name}-original"));
             link(&[&object_path, &harness, &helpers], &original_binary);
             let native = run(&original_binary, &input_text);
             assert_eq!(native.len(), inputs.len());
+            let mut memory_results = Vec::new();
             for (input, expected) in inputs.iter().zip(&native) {
                 let (registers, memory) = prepare(input);
                 let execution = program
@@ -150,6 +184,20 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                     expected,
                     "{name} {optimization}, input={input:?}"
                 );
+                assert_eq!(
+                    reduced
+                        .execute_with_memory(&registers, BASE, &memory, 10_000)
+                        .unwrap(),
+                    reduce::Observation {
+                        value: execution.value,
+                        memory: execution.memory.clone(),
+                        trace: execution.trace.clone()
+                    },
+                    "reduction differs for {name} {optimization}, input={input:?}"
+                );
+                let mut memory_result = expected.clone();
+                memory_result.push(memory_digest(&execution.memory));
+                memory_results.push(memory_result);
                 if let Some(tree) = &tree {
                     assert_eq!(
                         tree.execute_with_memory(&registers, BASE, &memory, 10_000)
@@ -176,6 +224,25 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 native,
                 "machine-derived C differs for {name} {optimization}"
             );
+            let output = readable::emit_readable_c(&program).unwrap();
+            original_assignments += output.reduction_stats.original_assignments;
+            reduced_assignments += output.reduction_stats.reduced_assignments;
+            let source = directory.join(format!("{name}-readable.c"));
+            std::fs::write(&source, output.code.clone() + &readable_harness(&output)).unwrap();
+            let compiled = directory.join(format!("{name}-readable.o"));
+            object(&source, &compiled, optimization, "nirvana_readable");
+            let binary = directory.join(format!("{name}-readable"));
+            link(&[&compiled], &binary);
+            assert_eq!(
+                run_fields(&binary, &input_text, 6),
+                memory_results,
+                "readable C differs for {name} {optimization}"
+            );
+            println!(
+                "{name} {optimization}: assignments {} -> {}",
+                output.reduction_stats.original_assignments,
+                output.reduction_stats.reduced_assignments
+            );
         }
     }
     assert!(
@@ -183,6 +250,10 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
         "only {lifted} of 40 C/optimization configurations lifted"
     );
     assert_eq!(comparisons, lifted * 63);
+    assert!(reduced_assignments < original_assignments);
+    println!(
+        "readable mode: {original_assignments} -> {reduced_assignments} assignments across {lifted} configurations"
+    );
     println!(
         "machine pipeline: {lifted}/40 configurations lifted, {structured} structured, {comparisons} inputs match native C and recompiled lifted C"
     );
@@ -208,6 +279,19 @@ fn cli_runs_a_real_object_and_reports_unsupported_input() {
         String::from_utf8(result.stdout).unwrap().trim(),
         "32 12 32 3 4"
     );
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .arg(&object_path)
+        .args(["--emit", "readable-c"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let code = String::from_utf8(result.stdout).unwrap();
+    assert!(code.contains("nirvana_readable("));
+    assert!(!code.contains("r["));
     let raw = scratch.0.join("unsupported.bin");
     std::fs::write(&raw, [0x0f, 0x0b]).unwrap();
     let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
@@ -233,16 +317,30 @@ fn machine_multiply_overflow_affects_recompiled_c_like_the_native_compiler() {
     let values = [0, 1, 2, (1u64 << 63) - 1, 1 << 63, u64::MAX - 1, u64::MAX];
     let mut text = String::new();
     let mut expected = Vec::new();
+    let mut expected_memory = Vec::new();
+    let reduced = reduce::reduce(&program).unwrap();
     for left in values {
         for right in values {
             let input = [left, right, 0, 0];
             writeln!(text, "{left} {right} 0 0").unwrap();
             let (registers, memory) = prepare(&input);
-            expected.push(visible_result(
-                &program
+            let execution = program
+                .execute_with_memory(&registers, BASE, &memory, 10)
+                .unwrap();
+            assert_eq!(
+                reduced
                     .execute_with_memory(&registers, BASE, &memory, 10)
                     .unwrap(),
-            ));
+                reduce::Observation {
+                    value: execution.value,
+                    memory: execution.memory.clone(),
+                    trace: execution.trace.clone()
+                }
+            );
+            let mut row = visible_result(&execution);
+            expected.push(row.clone());
+            row.push(memory_digest(&execution.memory));
+            expected_memory.push(row);
         }
     }
     for optimization in ["-O0", "-O2"] {
@@ -269,5 +367,13 @@ fn machine_multiply_overflow_affects_recompiled_c_like_the_native_compiler() {
         object(&source, &object_path, optimization, "nirvana_fn");
         link(&[&object_path], &binary);
         assert_eq!(run(&binary, &text), expected);
+        let output = readable::emit_readable_c(&program).unwrap();
+        let source = scratch.0.join(format!("readable{optimization}.c"));
+        std::fs::write(&source, output.code.clone() + &readable_harness(&output)).unwrap();
+        let compiled = source.with_extension("o");
+        let binary = source.with_extension("bin");
+        object(&source, &compiled, optimization, "nirvana_readable");
+        link(&[&compiled], &binary);
+        assert_eq!(run_fields(&binary, &text, 6), expected_memory);
     }
 }

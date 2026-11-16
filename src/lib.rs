@@ -11,6 +11,7 @@ pub mod emit;
 pub mod frontend;
 pub mod ir;
 pub mod postdom;
+pub mod readable;
 pub mod reduce;
 pub mod simplify;
 pub mod structure;

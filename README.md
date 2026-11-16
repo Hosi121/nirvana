@@ -19,11 +19,26 @@ python3 tools/build_fixtures.py
 cargo run -- target/c-fixtures/cc-0/O2/diamond.o --run 12,2,3,4
 cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit ir
 cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit c
+cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit readable-c
 ```
 
 `--run`はfixtureの入力状態4要素を設定し、返り値と最終状態を出します。上の入力の結果は`32 12 32 3 4`です。
 `.o`内の`fixture`シンボルを既定の入口とし、`--symbol`で別の関数を指定できます。
 対象はELF64・little-endian・x86-64の再配置可能オブジェクトです。再配置の解決、外部呼び出し、SIMDなどは未対応です。
+
+`--emit readable-c` は、返り値とゲストメモリ全体を保ちながら、不要なレジスタ・フラグ計算を除きます。
+例えば `diamond -O2` の関数本体は、境界検査用のヘルパーと変数宣言を除くと次の形になります。
+
+```c
+v0 = nirvana_load(&m, arg0, 8);
+v1 = v0 <= 9 ? v0 * 3 : 20 + v0;
+nirvana_store(&m, 8 + arg0, 8, v1);
+return v1;
+```
+
+`nirvana_readable` の引数は、必要な入力レジスタを値で受け取る `arg0, arg1, ...` と、メモリ領域です。
+元レジスタとの対応は生成Cのコメントに出します。入力の型・引数名・構造体を復元したものではありません。
+従来の全レジスタ入出力を使う場合は `--emit c` を選べます。
 
 手書きIRからの構造化例も残しています。
 
@@ -83,6 +98,8 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 - REX・ModR/M・SIB・RIP相対アドレス、8/16/32/64-bitの部分レジスタを扱う。
 - 整数演算・比較・フラグ・条件分岐・条件付きmove・スタック操作をIRへ変換する。
 - 境界検査付きのlittle-endianメモリをIRと生成Cで読み書きする。
+- ブロック内の値定義、生存性、コピー伝播、式の簡約から、返り値とメモリに必要な計算を残す。
+- 読みやすい出力モードで、値引数・ローカル変数・三項演算子・`while`・`do/while`を生成する。
 
 到達可能な未解決エッジがあるとき、支配関係・ループ・可約性の解析はエラーを返します。
 既知の辺だけで調べた到達可能性は取得できますが、完全性は主張しません。
@@ -92,7 +109,7 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 
 ## 検証
 
-93件のテストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
+106件のテストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
 複数入口の循環、到達不能な前任ブロック、入力の欠落や重複、IRの演算とC生成を対象にしています。
 
 加えて、4命令の小プログラム4,000通りについて次を照合します。
@@ -126,15 +143,21 @@ python3 tools/build_fixtures.py
 そのうち30構成は構造化でき、残り3構成は`goto`付きCで検証しています。
 この検査の入力に手書きIRや外部逆アセンブラの出力は使っていません。
 
+同じ2,079入力で、還元IRの返り値・全メモリ・実行経路も元IRと完全一致します。
+読みやすいCを再コンパイルした結果は、返り値と状態ワードに加え、メモリ全体のダイジェストでも照合します。
+別に、任意CFG 256個の還元、式の固定シード生成、Cの整数昇格・優先順位・シフトの境界値を検査します。
+GCC 13.3の同じ機械語では、代入数は `diamond -O2` で22→3、`arithmetic -O2` で237→6でした。
+
 残り7構成は、ジャンプテーブル・外部呼び出し・stack protector・定数参照などの再配置が必要なため拒否します。
 この小さなcorpusでの結果です。任意の実バイナリの復元精度や既存製品への優位性は未検証です。
 
 ## 次の段階
 
-次の候補は、再配置と読み取り専用データの配置、呼び出しと間接分岐、SSAによる変数の復元です。
+次の候補は、再配置と読み取り専用データの配置、呼び出しと間接分岐、全体SSAと型・スタック変数の復元です。
 現在の機械語フロントエンドはx86-64に限定し、関数境界はELFシンボルのサイズから取得します。
-レジスタ・フラグ・補助変数が残るため、出力Cの可読性の改善も必要です。
+ブロックをまたぐ値の統合や最適化済みループには、出力Cの可読性をさらに改善する余地があります。
 
 最初のCFGの設計は[docs/design.md](docs/design.md)、今回の構造化・実行検査の設計と制約は
 [docs/control-structure.md](docs/control-structure.md)、機械語からIRまでの範囲は
-[docs/machine-frontend.md](docs/machine-frontend.md)を参照してください。
+[docs/machine-frontend.md](docs/machine-frontend.md)、式と変数への還元は
+[docs/readable-c.md](docs/readable-c.md)を参照してください。

@@ -1,7 +1,7 @@
-use nirvana::{emit, frontend, x86};
+use nirvana::{emit, frontend, readable, x86};
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|ir|cfg|decoded]\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|decoded]\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c preserves the return and guest memory, with value arguments.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -89,6 +89,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     match format.as_str() {
+        "readable-c" => {
+            let output = readable::emit_readable_c(&program)?;
+            if let Some(reason) = output.fallback_reason {
+                eprintln!("retaining goto control flow: {reason}");
+            }
+            print!("{}", output.code);
+        }
         "c" => {
             let output = emit::emit_c(&program);
             if let Some(reason) = output.fallback_reason {

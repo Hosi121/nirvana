@@ -6,7 +6,7 @@ use crate::cfg::{BlockId, Target};
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 
-const MULTIPLY_HELPER: &str = r#"
+pub(crate) const MULTIPLY_HELPER: &str = r#"
 static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {
     uint64_t a0 = a & UINT64_C(0xffffffff), a1 = a >> 32;
     uint64_t b0 = b & UINT64_C(0xffffffff), b1 = b >> 32;
@@ -17,7 +17,7 @@ static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {
 }
 "#;
 
-const MEMORY_HELPERS: &str = r#"
+pub(crate) const MEMORY_HELPERS: &str = r#"
 #include <stdlib.h>
 struct nirvana_memory { uint8_t *bytes; uint64_t base, size; };
 static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) {
