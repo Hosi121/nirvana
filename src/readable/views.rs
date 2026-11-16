@@ -1,5 +1,6 @@
 //! Stack-view discovery and register dependencies for C rendering.
 
+use crate::indexed::recover_indexed;
 use crate::ir::{AccessKind, Control, Expr, Place, Program, Reg, Width};
 use crate::provenance::AddressAnalysis;
 use crate::stack::StackAnalysis;
@@ -33,6 +34,49 @@ pub struct ObjectView {
     pub name: String,
     pub register: Reg,
     pub fields: Vec<ObjectField>,
+    pub indexed: Vec<IndexedView>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IndexedView {
+    pub offset: i64,
+    pub stride: u64,
+    pub byte_size: usize,
+    pub read_sites: usize,
+    pub write_sites: usize,
+}
+
+pub(super) enum AccessView {
+    Fixed(String),
+    Indexed {
+        base: String,
+        index: Expr,
+        offset: i64,
+        stride: u64,
+    },
+}
+impl AccessView {
+    pub(super) fn render(&self, index: impl FnOnce(&Expr) -> String) -> String {
+        match self {
+            Self::Fixed(name) => name.clone(),
+            Self::Indexed {
+                base,
+                index: expr,
+                offset,
+                stride,
+            } => format!(
+                "nirvana_view_index({base}, {}, UINT64_C({stride}), UINT64_C({}))",
+                index(expr),
+                *offset as u64
+            ),
+        }
+    }
+    fn index(&self) -> Option<&Expr> {
+        match self {
+            Self::Fixed(_) => None,
+            Self::Indexed { index, .. } => Some(index),
+        }
+    }
 }
 
 pub(super) struct MemoryViews {
@@ -40,6 +84,7 @@ pub(super) struct MemoryViews {
     origins: Option<AddressAnalysis>,
     pub(super) objects: Vec<ObjectView>,
     by_origin: BTreeMap<(usize, i64), (usize, usize)>,
+    by_index: BTreeMap<(usize, i64, u64), usize>,
 }
 
 impl MemoryViews {
@@ -56,52 +101,86 @@ impl MemoryViews {
             .recover_objects
             .then(|| AddressAnalysis::analyze(program, parameters));
         let mut fields: BTreeMap<(usize, i64), ObjectField> = BTreeMap::new();
+        let mut indexed: BTreeMap<(usize, i64, u64), IndexedView> = BTreeMap::new();
         if let Some(origins) = &origins {
             for access in memory_sites(program).unwrap_or_default() {
-                let Some(origin) =
-                    origins.origin_before(access.instruction, access.assignment, access.address)
-                else {
-                    continue;
+                let query = |expr: &Expr| {
+                    origins.origin_before(access.instruction, access.assignment, expr)
                 };
-                if options.stack_register == Some(origin.register) {
-                    continue;
+                if let Some(origin) = query(access.address) {
+                    if options.stack_register == Some(origin.register) {
+                        continue;
+                    }
+                    let field = fields
+                        .entry((origin.register.0, origin.offset))
+                        .or_insert_with(|| ObjectField {
+                            name: String::new(),
+                            offset: origin.offset,
+                            byte_size: 0,
+                            read_sites: 0,
+                            write_sites: 0,
+                            overlaps: Vec::new(),
+                        });
+                    field.byte_size = field.byte_size.max(access.width.bytes());
+                    match access.kind {
+                        AccessKind::Read => field.read_sites += 1,
+                        AccessKind::Write => field.write_sites += 1,
+                    }
+                } else if let Some(index) =
+                    recover_indexed(access.address, |e| query(e).map(|o| (o.register, o.offset)))
+                {
+                    let view = indexed
+                        .entry((index.register.0, index.offset, index.stride))
+                        .or_insert(IndexedView {
+                            offset: index.offset,
+                            stride: index.stride,
+                            byte_size: 0,
+                            read_sites: 0,
+                            write_sites: 0,
+                        });
+                    view.byte_size = view.byte_size.max(access.width.bytes());
+                    match access.kind {
+                        AccessKind::Read => view.read_sites += 1,
+                        AccessKind::Write => view.write_sites += 1,
+                    }
                 }
-                let field = fields
-                    .entry((origin.register.0, origin.offset))
-                    .or_insert_with(|| ObjectField {
-                        name: String::new(),
-                        offset: origin.offset,
-                        byte_size: 0,
-                        read_sites: 0,
-                        write_sites: 0,
-                        overlaps: Vec::new(),
-                    });
-                field.byte_size = field.byte_size.max(access.width.bytes());
-                match access.kind {
-                    AccessKind::Read => field.read_sites += 1,
-                    AccessKind::Write => field.write_sites += 1,
-                }
-                if fields.len() > 256 {
+                if fields.len() + indexed.len() > 256 {
                     fields.clear();
+                    indexed.clear();
                     break;
                 }
             }
         }
-        let mut objects: Vec<ObjectView> = Vec::new();
+        let mut groups: BTreeMap<usize, ObjectView> = BTreeMap::new();
         for ((register, _), mut field) in fields {
-            if objects.last().is_none_or(|o| o.register.0 != register) {
-                objects.push(ObjectView {
-                    name: format!("object_{}", objects.len()),
-                    register: Reg(register),
-                    fields: Vec::new(),
-                });
-            }
+            let object = groups.entry(register).or_insert_with(|| ObjectView {
+                name: String::new(),
+                register: Reg(register),
+                fields: Vec::new(),
+                indexed: Vec::new(),
+            });
             field.name = if field.offset < 0 {
                 format!("field_m{}", field.offset.unsigned_abs())
             } else {
                 format!("field_{}", field.offset)
             };
-            objects.last_mut().unwrap().fields.push(field);
+            object.fields.push(field);
+        }
+        for ((register, _, _), index) in indexed {
+            groups
+                .entry(register)
+                .or_insert_with(|| ObjectView {
+                    name: String::new(),
+                    register: Reg(register),
+                    fields: Vec::new(),
+                    indexed: Vec::new(),
+                })
+                .indexed
+                .push(index);
+        }
+        let mut objects: Vec<_> = groups.into_values().collect();
+        for (index, object) in objects.iter_mut().enumerate() {
+            object.name = format!("object_{index}");
         }
         for object in &mut objects {
             for a in 0..object.fields.len() {
@@ -129,6 +208,16 @@ impl MemoryViews {
                     .map(move |(f, field)| ((object.register.0, field.offset), (o, f)))
             })
             .collect();
+        let by_index = objects
+            .iter()
+            .enumerate()
+            .flat_map(|(o, object)| {
+                object
+                    .indexed
+                    .iter()
+                    .map(move |i| ((object.register.0, i.offset, i.stride), o))
+            })
+            .collect();
         if stack.is_none() && objects.is_empty() {
             return None;
         }
@@ -137,27 +226,42 @@ impl MemoryViews {
             origins,
             objects,
             by_origin,
+            by_index,
         })
     }
 
-    pub(super) fn at(&self, point: Option<(u64, usize)>, address: &Expr) -> Option<String> {
+    pub(super) fn at(&self, point: Option<(u64, usize)>, address: &Expr) -> Option<AccessView> {
         if let Some(view) = self
             .stack
             .as_ref()
             .and_then(|stack| stack.at(point, address))
         {
-            return Some(view.name.clone());
+            return Some(AccessView::Fixed(view.name.clone()));
         }
         let (instruction, assignment) = point?;
-        let origin = self
-            .origins
-            .as_ref()?
-            .origin_before(instruction, assignment, address)?;
-        let &(o, f) = self.by_origin.get(&(origin.register.0, origin.offset))?;
-        Some(format!(
-            "{}.{}",
-            self.objects[o].name, self.objects[o].fields[f].name
-        ))
+        let query = |expr: &Expr| {
+            self.origins
+                .as_ref()?
+                .origin_before(instruction, assignment, expr)
+        };
+        if let Some(origin) = query(address) {
+            let &(o, f) = self.by_origin.get(&(origin.register.0, origin.offset))?;
+            Some(AccessView::Fixed(format!(
+                "{}.{}",
+                self.objects[o].name, self.objects[o].fields[f].name
+            )))
+        } else {
+            let index = recover_indexed(address, |e| query(e).map(|o| (o.register, o.offset)))?;
+            let &o = self
+                .by_index
+                .get(&(index.register.0, index.offset, index.stride))?;
+            Some(AccessView::Indexed {
+                base: format!("{}.base", self.objects[o].name),
+                index: index.index,
+                offset: index.offset,
+                stride: index.stride,
+            })
+        }
     }
 
     pub(super) fn stack_views(&self) -> &[StackView] {
@@ -342,6 +446,10 @@ impl StackViews {
 pub(super) const VIEW_HELPERS: &str = r#"
 /* Views retain checked guest-memory accesses and may overlap or alias. */
 struct nirvana_view { uint64_t address; };
+static inline struct nirvana_view nirvana_view_index(struct nirvana_view base, uint64_t index, uint64_t stride, uint64_t offset) {
+    struct nirvana_view result = {base.address + offset + index * stride};
+    return result;
+}
 static inline uint64_t nirvana_view_load(struct nirvana_memory *m, struct nirvana_view view, unsigned width) {
     return nirvana_load(m, view.address, width);
 }
@@ -355,6 +463,20 @@ static inline void nirvana_view_store(struct nirvana_memory *m, struct nirvana_v
 // omit only pure assignments with no remaining consumer. This is conservative
 // across ordering and CFG edges and does not promote or remove memory effects.
 pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> BTreeSet<usize> {
+    fn read_address(
+        expr: &Expr,
+        point: Option<(u64, usize)>,
+        views: &Option<MemoryViews>,
+        result: &mut BTreeSet<usize>,
+    ) {
+        if let Some(view) = views.as_ref().and_then(|v| v.at(point, expr)) {
+            if let Some(index) = view.index() {
+                read(index, point, views, result);
+            }
+        } else {
+            read(expr, point, views, result);
+        }
+    }
     fn read(
         expr: &Expr,
         point: Option<(u64, usize)>,
@@ -367,9 +489,7 @@ pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> 
                 result.insert(reg.0);
             }
             Expr::Load { address, .. } => {
-                if views.as_ref().and_then(|v| v.at(point, address)).is_none() {
-                    read(address, point, views, result);
-                }
+                read_address(address, point, views, result);
             }
             Expr::Binary(_, l, r) => {
                 read(l, point, views, result);
@@ -404,13 +524,7 @@ pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> 
                         }
                     }
                     Place::Memory { address, .. } => {
-                        if views
-                            .as_ref()
-                            .and_then(|v| v.at(Some(point), address))
-                            .is_none()
-                        {
-                            read(address, Some(point), views, &mut result);
-                        }
+                        read_address(address, Some(point), views, &mut result);
                         read(&assignment.value, Some(point), views, &mut result);
                     }
                 }

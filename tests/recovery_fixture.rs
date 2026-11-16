@@ -185,6 +185,28 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 },
             )
             .unwrap();
+            let indexed_reads: usize = output
+                .object_views
+                .iter()
+                .flat_map(|o| &o.indexed)
+                .map(|i| i.read_sites)
+                .sum();
+            if name == "strided-input" && optimization == "-O2" {
+                assert!(
+                    indexed_reads > 0,
+                    "strided input should expose an indexed view"
+                );
+            }
+            println!(
+                "{name} {optimization}: {} objects, {} indexed reads, {} narrow locals",
+                output.object_views.len(),
+                indexed_reads,
+                output
+                    .locals
+                    .iter()
+                    .filter(|v| v.width != nirvana::ir::Width::U64)
+                    .count()
+            );
             let generated = directory.join(format!("{name}-readable.c"));
             std::fs::write(&generated, output.code.clone() + &readable_harness(&output)).unwrap();
             let compiled = generated.with_extension("o");

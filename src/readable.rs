@@ -6,11 +6,12 @@ use std::fmt::Write;
 use crate::block_verify::Validation;
 use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::hir::ViewPath;
-use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
+use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
 use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
 use crate::sequence::{Evaluation, SequenceError, sequence};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
+use crate::value_width::ValueWidths;
 use crate::verify::Solver;
 
 mod views;
@@ -40,7 +41,7 @@ impl From<SequenceError> for ReadableError {
         Self::Sequencing(error)
     }
 }
-pub use views::{ObjectField, ObjectView, StackView};
+pub use views::{IndexedView, ObjectField, ObjectView, StackView};
 
 #[derive(Clone, Debug)]
 pub struct ReadableC {
@@ -56,6 +57,15 @@ pub struct ReadableC {
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
     pub object_views: Vec<ObjectView>,
+    /// Storage widths of named local values; parameters remain uint64_t.
+    pub locals: Vec<LocalValue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalValue {
+    pub register: Reg,
+    pub name: String,
+    pub width: Width,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -95,6 +105,7 @@ struct Printer {
     read: BTreeSet<usize>,
     views: Option<MemoryViews>,
     first_temporary: usize,
+    widths: BTreeMap<usize, Width>,
 }
 
 impl Printer {
@@ -111,9 +122,12 @@ impl Printer {
         match expr {
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
             Expr::Const(value) => atom(format!("UINT64_C({value})"), true),
-            Expr::Register(reg) => atom(self.register(*reg), true),
+            Expr::Register(reg) => atom(
+                self.register(*reg),
+                self.widths.get(&reg.0).copied().unwrap_or(Width::U64) == Width::U64,
+            ),
             Expr::Load { address, width } => atom(
-                if let Some(view) = self.views.as_ref().and_then(|v| v.at(point, address)) {
+                if let Some(view) = self.address_view(point, address) {
                     format!("nirvana_view_load(&m, {}, {})", view, width.bytes())
                 } else {
                     format!(
@@ -193,6 +207,13 @@ impl Printer {
         }
     }
 
+    fn address_view(&self, point: Option<(u64, usize)>, address: &Expr) -> Option<String> {
+        self.views
+            .as_ref()?
+            .at(point, address)
+            .map(|view| view.render(|index| self.expression(index).text))
+    }
+
     fn register(&self, reg: Reg) -> String {
         if reg.0 >= self.first_temporary {
             format!("nirvana_value_{}", reg.0 - self.first_temporary)
@@ -225,11 +246,7 @@ impl Printer {
                     original_address,
                     width,
                 } => {
-                    let value = if let Some(view) = self
-                        .views
-                        .as_ref()
-                        .and_then(|v| v.at(point, original_address))
-                    {
+                    let value = if let Some(view) = self.address_view(point, original_address) {
                         format!("nirvana_view_load(&m, {view}, {})", width.bytes())
                     } else {
                         format!(
@@ -350,7 +367,7 @@ impl Printer {
                     }
                     let inner = indent + usize::from(scoped);
                     let mut next = self.first_temporary;
-                    let view = self.views.as_ref().and_then(|v| v.at(point, address));
+                    let view = self.address_view(point, address);
                     let destination = if let Some(view) = &view {
                         format!("{view}.address")
                     } else {
@@ -747,12 +764,20 @@ fn emit_reduced_c(
         }
         arguments.extend(["uint8_t *memory", "uint64_t base", "uint64_t size"].map(String::from));
     }
+    let value_widths = ValueWidths::analyze(program);
+    let mut widths = BTreeMap::new();
     let mut locals = Vec::new();
     for reg in &read {
         if !names.contains_key(reg) {
             let name = format!("v{}", locals.len());
             names.insert(*reg, name.clone());
-            locals.push(name);
+            let width = value_widths.width(Reg(*reg));
+            widths.insert(*reg, width);
+            locals.push(LocalValue {
+                register: Reg(*reg),
+                name,
+                width,
+            });
         }
     }
     let arguments = if arguments.is_empty() {
@@ -779,6 +804,7 @@ fn emit_reduced_c(
             read: read.clone(),
             views: None,
             first_temporary: program.register_count(),
+            widths: widths.clone(),
         };
         for view in views.stack_views() {
             let base = Expr::Register(options.stack_register.expect("stack view base"));
@@ -817,6 +843,7 @@ fn emit_reduced_c(
             read: read.clone(),
             views: None,
             first_temporary: program.register_count(),
+            widths: widths.clone(),
         };
         for object in &views.objects {
             line(
@@ -828,6 +855,9 @@ fn emit_reduced_c(
                 ),
             );
             line(&mut code, 1, "const struct {");
+            if !object.indexed.is_empty() {
+                line(&mut code, 2, "struct nirvana_view base;");
+            }
             for field in &object.fields {
                 line(
                     &mut code,
@@ -836,6 +866,16 @@ fn emit_reduced_c(
                 );
             }
             line(&mut code, 1, &format!("}} {} = {{", object.name));
+            if !object.indexed.is_empty() {
+                line(
+                    &mut code,
+                    2,
+                    &format!(
+                        "{{{}}},",
+                        printer.expression(&Expr::Register(object.register)).text
+                    ),
+                );
+            }
             for field in &object.fields {
                 let base = ViewPath::Object {
                     name: object.name.clone(),
@@ -865,8 +905,12 @@ fn emit_reduced_c(
             line(&mut code, 1, "};");
         }
     }
-    for local in locals {
-        line(&mut code, 1, &format!("uint64_t {local};"));
+    for local in &locals {
+        line(
+            &mut code,
+            1,
+            &format!("uint{}_t {};", local.width.bits(), local.name),
+        );
     }
     let stack_views = views
         .as_ref()
@@ -881,6 +925,7 @@ fn emit_reduced_c(
         read,
         views,
         first_temporary: program.register_count(),
+        widths,
     };
     let (fallback_reason, structure_stats, structure_evidence) =
         match StructuredFunction::recover(program) {
@@ -909,5 +954,6 @@ fn emit_reduced_c(
         structure_evidence,
         stack_views,
         object_views,
+        locals,
     })
 }
