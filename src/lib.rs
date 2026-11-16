@@ -16,4 +16,5 @@ pub mod readable;
 pub mod reduce;
 pub mod simplify;
 pub mod structure;
+pub mod verify;
 pub mod x86;
