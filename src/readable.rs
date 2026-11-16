@@ -418,6 +418,48 @@ impl Printer {
         Ok(())
     }
 
+    fn loop_header<'a>(&self, body: &'a [Node]) -> Option<(String, &'a [Node])> {
+        let header = crate::loop_shape::while_header(body)?;
+        let mut clauses = Vec::new();
+        for step in header.setup {
+            let Node::Step {
+                address,
+                assignments,
+            } = step
+            else {
+                return None;
+            };
+            for (index, assignment) in assignments.iter().enumerate() {
+                let Place::Register(reg) = assignment.destination else {
+                    return None;
+                };
+                if self.read.contains(&reg.0) {
+                    clauses.push(format!(
+                        "{} = {}",
+                        self.register(reg),
+                        self.expression_at(&assignment.value, Some((*address, index)))
+                            .text
+                    ));
+                } else if assignment.value.uses_memory() {
+                    clauses.push(
+                        self.expression_at(&assignment.value, Some((*address, index)))
+                            .text,
+                    );
+                }
+            }
+        }
+        clauses.push(
+            self.expression(&crate::simplify::simplify(&header.condition))
+                .text,
+        );
+        let condition = if clauses.len() == 1 {
+            clauses.pop().unwrap()
+        } else {
+            format!("({})", clauses.join(", "))
+        };
+        Some((format!("while ({condition}) {{"), header.body))
+    }
+
     fn nodes(
         &self,
         code: &mut String,
@@ -459,45 +501,32 @@ impl Printer {
                     }
                 }
                 Node::Loop(body) => {
-                    let (header, middle, footer) = match body.as_slice() {
-                        [
-                            Node::If {
-                                condition,
-                                taken,
-                                not_taken,
-                            },
-                            rest @ ..,
-                        ] if is_break(taken)
-                            && not_taken.is_empty()
-                            && !needs_sequence(condition) =>
-                        {
-                            let condition = invert(condition);
-                            (
-                                format!("while ({}) {{", self.expression(&condition).text),
-                                rest,
-                                "}".into(),
-                            )
-                        }
-                        [
-                            prefix @ ..,
-                            Node::If {
-                                condition,
-                                taken,
-                                not_taken,
-                            },
-                        ] if is_continue(taken)
-                            && is_break(not_taken)
-                            && !contains_continue(prefix)
-                            && !needs_sequence(condition) =>
-                        {
-                            (
-                                "do {".into(),
-                                prefix,
-                                format!("}} while ({});", self.expression(condition).text),
-                            )
-                        }
-                        _ => ("for (;;) {".into(), body.as_slice(), "}".into()),
-                    };
+                    let (header, middle, footer) =
+                        if let Some((header, middle)) = self.loop_header(body) {
+                            (header, middle, String::from("}"))
+                        } else {
+                            match body.as_slice() {
+                                [
+                                    prefix @ ..,
+                                    Node::If {
+                                        condition,
+                                        taken,
+                                        not_taken,
+                                    },
+                                ] if is_continue(taken)
+                                    && is_break(not_taken)
+                                    && !contains_continue(prefix)
+                                    && !needs_sequence(condition) =>
+                                {
+                                    (
+                                        "do {".into(),
+                                        prefix,
+                                        format!("}} while ({});", self.expression(condition).text),
+                                    )
+                                }
+                                _ => ("for (;;) {".into(), body.as_slice(), "}".into()),
+                            }
+                        };
                     line(code, indent, &header);
                     self.nodes(code, middle, indent + 1, depth + 1, nonlocal)?;
                     line(code, indent, &footer);

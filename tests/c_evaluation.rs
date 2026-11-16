@@ -170,14 +170,75 @@ fn sequencing_limits_return_an_error_instead_of_emitting_an_unordered_expression
     );
 }
 
+#[test]
+fn native_c_while_setup_loads_repeat_in_order_including_final_visit_and_fault() {
+    let p = Program::new(
+        0,
+        4,
+        vec![
+            instruction(
+                0,
+                vec![
+                    store(c(0x1000), Width::U8, c(2)),
+                    store(c(0x1008), Width::U8, c(5)),
+                ],
+                Control::Next,
+            ),
+            instruction(
+                1,
+                vec![
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(r(0), Width::U8),
+                    },
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: Expr::load(r(1), Width::U8),
+                    },
+                ],
+                Control::Branch {
+                    condition: b(BinaryOp::Eq, r(2), r(3)),
+                    target: 3,
+                },
+            ),
+            instruction(
+                2,
+                vec![store(
+                    c(0x1000),
+                    Width::U8,
+                    b(BinaryOp::Add, Expr::load(c(0x1000), Width::U8), c(1)),
+                )],
+                Control::Jump(1),
+            ),
+            instruction(3, vec![], Control::Return(Expr::load(c(0x1000), Width::U8))),
+        ],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(&p, ReadableOptions::default()).unwrap();
+    assert!(output.code.contains("while (("), "{}", output.code);
+    compare(
+        &p,
+        &[
+            [0x1000, 0x1008],
+            [0x1008, 0x1000],
+            [0x1000, 0x1000],
+            [0x1008, 0x1008],
+            [0xffff, 0x1008],
+            [0x1000, 0xffff],
+        ],
+    );
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
     let scratch = Scratch::new();
     let mut text = String::new();
     let mut expected = Vec::new();
     for input in inputs {
         writeln!(text, "{} {}", input[0], input[1]).unwrap();
+        let mut registers = vec![0; program.register_count()];
+        registers[..2].copy_from_slice(input);
         let report = program
-            .run_with_memory(input, 0x1000, &(1..=16).collect::<Vec<u8>>(), 1000)
+            .run_with_memory(&registers, 0x1000, &(1..=16).collect::<Vec<u8>>(), 1000)
             .unwrap();
         let (fault, address, value) = match report.status {
             RunStatus::Fault(f) => (1, f.address, 0),
@@ -212,6 +273,7 @@ fn compare(program: &Program, inputs: &[[u64; 2]]) {
             "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) { nirvana_test_address=address;"
         );
         let prefix = "#include <stdint.h>\n#include <setjmp.h>\nstatic uint64_t nirvana_test_address;\n_Noreturn void nirvana_test_abort(void);\n#define abort nirvana_test_abort\n";
+        let register_count = program.register_count();
         let harness = format!(
             r#"
 #undef abort
@@ -227,7 +289,7 @@ int main(void) {{
     while (scanf("%" SCNu64 " %" SCNu64,&a,&b)==2) {{
         for(unsigned i=0;i<16;++i) memory[i]=(uint8_t)(i+1);
         result=0;fault=0;
-        uint64_t r[2]={{a,b}};
+        uint64_t r[{register_count}]={{a,b}};
         if(setjmp(jump)==0) result=nirvana_readable({args},memory,UINT64_C(4096),sizeof(memory));
         else fault=1;
         uint64_t words[2]={{0,0}};
