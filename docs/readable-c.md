@@ -49,7 +49,7 @@ Cの比較結果はint型なので、それを算術や左シフトに使う場�
 GCC 13.3.0、x86_64-linux-gnu、既存fixtureと同じC11・fno-lto・O0/O2で比較しました。
 対応する33構成の代入数は合計5,023→668です。個別では `diamond -O2` が22→3、
 `arithmetic -O2` が237→6でした。ヘルパーの削除やコンパイラ設定の変更による差ではありません。
-通常131テストと別途SMT6テスト、Clippy（警告をエラー扱い）、rustfmtが通過しています。
+通常133テストと別途SMT6テスト、Clippy（警告をエラー扱い）、rustfmtが通過しています。
 SMTの範囲は[純粋な式](pure-expression-verification.md)と、
 任意モードの[メモリ付きIR還元](block-verification.md)です。
 基本の構造化ASTには[独立したグラフの対応検査](structure-verification.md)も適用します。

@@ -21,7 +21,7 @@ fn examples_preserve_registers_returns_and_instruction_traces() {
     for &name in programs::NAMES {
         let program = programs::named(name).unwrap();
         let recovered = StructuredFunction::recover(&program);
-        let expected_fallback = matches!(name, "irreducible" | "copy-limit");
+        let expected_fallback = name == "irreducible";
         assert_eq!(
             recovered.is_err(),
             expected_fallback,
@@ -307,13 +307,15 @@ fn shared_tail_duplication_is_bounded_and_reported() {
     let function = StructuredFunction::recover(&program).unwrap();
     let stats = function.stats();
     assert_eq!(stats.unique_blocks, 5);
-    assert_eq!(stats.emitted_block_copies, 6);
-    assert_eq!(stats.extra_block_copies, 1);
+    assert_eq!(stats.emitted_block_copies, 5);
+    assert_eq!(stats.extra_block_copies, 0);
     assert_eq!(emit_c(&program).structure_stats, Some(stats));
-    assert!(matches!(
-        StructuredFunction::recover_with_copy_limit(&program, 1),
-        Err(StructureError::CopyLimit { limit: 1, .. })
-    ));
+    assert_eq!(
+        StructuredFunction::recover_with_copy_limit(&program, 1)
+            .unwrap()
+            .stats(),
+        stats
+    );
     assert!(matches!(
         StructuredFunction::recover_with_copy_limit(&program, 0),
         Err(StructureError::CopyLimit { limit: 0, .. })
@@ -321,20 +323,28 @@ fn shared_tail_duplication_is_bounded_and_reported() {
 }
 
 #[test]
-fn duplication_limit_falls_back_instead_of_expanding_the_tree_without_bound() {
+fn shared_returns_are_hoisted_without_relaxing_the_copy_limit() {
     let program = programs::named("copy-limit").unwrap();
-    assert!(matches!(
-        StructuredFunction::recover(&program),
-        Err(StructureError::CopyLimit { limit: 2, .. })
-    ));
+    let function = StructuredFunction::recover_with_copy_limit(&program, 1).unwrap();
+    assert_eq!(function.stats().extra_block_copies, 0);
+    assert_eq!(
+        function.evidence().compared_copies,
+        function.evidence().original_steps
+    );
     let output = emit_c(&program);
-    assert!(output.fallback_reason.is_some());
-    assert_eq!(output.structure_stats, None);
+    assert!(output.fallback_reason.is_none());
+    assert_eq!(output.structure_stats, Some(function.stats()));
     let expanded = StructuredFunction::recover_with_copy_limit(&program, 3).unwrap();
-    assert_eq!(expanded.stats().extra_block_copies, 2);
+    assert_eq!(expanded.stats().extra_block_copies, 0);
     for input in 0..16 {
         let input = [input, 0, 0, 0];
         assert_eq!(program.execute(&input, 100), expanded.execute(&input, 100));
+        for limit in 0..12 {
+            assert_eq!(
+                program.run_with_memory(&input, 0, &[], limit),
+                function.run_with_memory(&input, 0, &[], limit)
+            );
+        }
     }
 }
 

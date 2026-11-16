@@ -61,7 +61,7 @@ fn recovered_shapes_and_shared_copies_have_exact_flow_evidence() {
                 assert!(evidence.compared_copies >= evidence.original_steps);
                 assert!(evidence.flow_nodes > evidence.compared_copies);
                 if *name == "shared-tail" {
-                    assert!(evidence.compared_copies > evidence.original_steps);
+                    assert_eq!(evidence.compared_copies, evidence.original_steps);
                 }
                 let graph = FlowGraph::from_nodes(function.body()).unwrap();
                 assert!(graph.to_dot().starts_with("digraph structured_flow"));

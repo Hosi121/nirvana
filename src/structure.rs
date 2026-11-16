@@ -10,6 +10,7 @@ use crate::cfg::{Address, BlockId, Target};
 use crate::ir::{
     Assignment, Control, Execution, ExecutionError, Expr, Machine, Program, RunReport, Stop,
 };
+use crate::join::ForwardDag;
 use crate::postdom::{PostDomNode, PostDominators};
 use crate::structure_verify::{self, StructureEvidence, ValidationError};
 
@@ -96,11 +97,12 @@ struct LoopContext {
 
 struct Builder<'a> {
     program: &'a Program,
-    analysis: ControlFlowAnalysis,
-    postdom: Option<PostDominators>,
+    analysis: &'a ControlFlowAnalysis,
+    postdom: Option<&'a PostDominators>,
     visited: BTreeSet<BlockId>,
     copies: Vec<usize>,
     copy_limit: usize,
+    forward_dag: Option<ForwardDag>,
 }
 
 impl StructuredFunction {
@@ -118,15 +120,48 @@ impl StructuredFunction {
         if !analysis.is_reducible() {
             return Err(StructureError::Irreducible);
         }
+        let postdom = PostDominators::compute(program.cfg()).ok();
+        let baseline = Self::recover_using(program, copy_limit, &analysis, postdom.as_ref(), false);
+        // The existing strategy already minimizes copies in this case. Avoid
+        // extra analysis and keep its established layout unchanged.
+        if matches!(&baseline, Ok(function) if function.stats.extra_block_copies == 0)
+            || copy_limit == 0
+        {
+            return baseline;
+        }
+        let proposed = Self::recover_using(program, copy_limit, &analysis, postdom.as_ref(), true);
+        match (baseline, proposed) {
+            (Ok(old), Ok(new))
+                if new.stats.emitted_block_copies <= old.stats.emitted_block_copies
+                    && new.evidence.compared_copies <= old.evidence.compared_copies
+                    && (new.stats.emitted_block_copies < old.stats.emitted_block_copies
+                        || new.evidence.compared_copies < old.evidence.compared_copies) =>
+            {
+                Ok(new)
+            }
+            (Ok(old), _) => Ok(old),
+            (Err(_), Ok(new)) => Ok(new),
+            (Err(reason), Err(_)) => Err(reason),
+        }
+    }
+
+    fn recover_using(
+        program: &Program,
+        copy_limit: usize,
+        analysis: &ControlFlowAnalysis,
+        postdom: Option<&PostDominators>,
+        forward_joins: bool,
+    ) -> Result<Self, StructureError> {
         let mut builder = Builder {
             program,
             analysis,
             // Lack of real exits must not invent joins. Simple infinite loops
             // can still be reconstructed without using post-dominance.
-            postdom: PostDominators::compute(program.cfg()).ok(),
+            postdom,
             visited: BTreeSet::new(),
             copies: vec![0; program.cfg().blocks().len()],
             copy_limit,
+            forward_dag: forward_joins.then(|| ForwardDag::new(program.cfg(), analysis)),
         };
         let body = builder.region(program.cfg().entry(), None, &[], None)?;
         if &builder.visited != builder.analysis.reachable() {
@@ -366,7 +401,7 @@ impl Builder<'_> {
                         current = if taken_ends { not_taken } else { taken };
                         continue;
                     }
-                    let join = match self
+                    let strict_join = match self
                         .postdom
                         .as_ref()
                         .and_then(|postdom| postdom.immediate_post_dominator(current))
@@ -374,6 +409,18 @@ impl Builder<'_> {
                         Some(PostDomNode::Block(join)) => Some(join),
                         Some(PostDomNode::Exit) => None,
                         None => return Err(StructureError::MissingJoin(current)),
+                    };
+                    let join = if let Some(dag) = &mut self.forward_dag {
+                        dag.common_join(
+                            taken,
+                            not_taken,
+                            stop.or(strict_join),
+                            contexts.last().map(|context| &context.body),
+                        )
+                        .or(stop)
+                        .or(strict_join)
+                    } else {
+                        strict_join
                     };
                     let taken_body = self.region(taken, join, contexts, None)?;
                     let not_body = self.region(not_taken, join, contexts, None)?;

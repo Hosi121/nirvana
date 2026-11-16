@@ -11,6 +11,7 @@ pub mod elf;
 pub mod emit;
 pub mod frontend;
 pub mod ir;
+mod join;
 pub mod observe;
 pub mod postdom;
 pub mod readable;
