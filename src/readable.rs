@@ -16,7 +16,7 @@ use crate::value_width::ValueWidths;
 use crate::verify::Solver;
 
 mod views;
-use views::{MemoryViews, VIEW_HELPERS, rendered_reads};
+use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReadableError {
@@ -113,6 +113,7 @@ struct Printer {
     views: Option<MemoryViews>,
     first_temporary: usize,
     widths: BTreeMap<usize, Width>,
+    address_uses: BTreeSet<usize>,
 }
 
 impl Printer {
@@ -212,6 +213,14 @@ impl Printer {
                 }
             }
         }
+    }
+
+    fn address_value(&self, reg: Reg, point: Option<(u64, usize)>, value: &Expr) -> Option<String> {
+        if !self.address_uses.contains(&reg.0) {
+            return None;
+        }
+        self.address_view(point, value)
+            .map(|view| format!("{view}.address"))
     }
 
     fn address_view(&self, point: Option<(u64, usize)>, address: &Expr) -> Option<String> {
@@ -347,19 +356,24 @@ impl Printer {
                 Place::Register(reg) => {
                     if self.read.contains(&reg.0)
                         && let Expr::Register(source) = assignment.value
+                        && self.names.contains_key(&source.0)
                         && self.register(*reg) == self.register(source)
                     {
                         continue;
                     }
                     if self.read.contains(&reg.0) {
-                        self.value_statement(
-                            code,
-                            indent,
-                            &assignment.value,
-                            point,
-                            &format!("{} = ", self.register(*reg)),
-                            ";",
-                        )?;
+                        if let Some(value) = self.address_value(*reg, point, &assignment.value) {
+                            line(code, indent, &format!("{} = {value};", self.register(*reg)));
+                        } else {
+                            self.value_statement(
+                                code,
+                                indent,
+                                &assignment.value,
+                                point,
+                                &format!("{} = ", self.register(*reg)),
+                                ";",
+                            )?;
+                        }
                     } else if assignment.value.uses_memory() {
                         self.value_statement(
                             code,
@@ -448,17 +462,19 @@ impl Printer {
                 };
                 if self.read.contains(&reg.0)
                     && let Expr::Register(source) = assignment.value
+                    && self.names.contains_key(&source.0)
                     && self.register(reg) == self.register(source)
                 {
                     continue;
                 }
                 if self.read.contains(&reg.0) {
-                    clauses.push(format!(
-                        "{} = {}",
-                        self.register(reg),
-                        self.expression_at(&assignment.value, Some((*address, index)))
-                            .text
-                    ));
+                    let value = self
+                        .address_value(reg, Some((*address, index)), &assignment.value)
+                        .unwrap_or_else(|| {
+                            self.expression_at(&assignment.value, Some((*address, index)))
+                                .text
+                        });
+                    clauses.push(format!("{} = {value}", self.register(reg)));
                 } else if assignment.value.uses_memory() {
                     clauses.push(
                         self.expression_at(&assignment.value, Some((*address, index)))
@@ -792,7 +808,12 @@ fn emit_reduced_c(
 ) -> Result<ReadableC, ReadableError> {
     let program = reduced.program();
     let views = MemoryViews::recover(program, reduced.parameters(), options);
-    let read = rendered_reads(program, &views);
+    let read = rendered_reads(program, views.as_ref());
+    let address_uses = if options.recover_objects {
+        address_registers(program)
+    } else {
+        BTreeSet::new()
+    };
     let mut names = BTreeMap::new();
     let mut arguments = Vec::new();
     let mut code = String::from("#include <stdint.h>\n");
@@ -895,6 +916,7 @@ fn emit_reduced_c(
             views: None,
             first_temporary: program.register_count(),
             widths: widths.clone(),
+            address_uses: address_uses.clone(),
         };
         for view in views.stack_views() {
             let base = Expr::Register(options.stack_register.expect("stack view base"));
@@ -934,6 +956,7 @@ fn emit_reduced_c(
             views: None,
             first_temporary: program.register_count(),
             widths: widths.clone(),
+            address_uses: address_uses.clone(),
         };
         for object in &views.objects {
             line(
@@ -1016,6 +1039,7 @@ fn emit_reduced_c(
         views,
         first_temporary: program.register_count(),
         widths,
+        address_uses,
     };
     let (fallback_reason, structure_stats, structure_evidence) =
         match StructuredFunction::recover(program) {

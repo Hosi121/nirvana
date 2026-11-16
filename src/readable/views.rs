@@ -44,6 +44,8 @@ pub struct IndexedView {
     pub byte_size: usize,
     pub read_sites: usize,
     pub write_sites: usize,
+    /// Address constructions retained in a register before later memory use.
+    pub address_sites: usize,
 }
 
 pub(super) enum AccessView {
@@ -137,6 +139,7 @@ impl MemoryViews {
                             byte_size: 0,
                             read_sites: 0,
                             write_sites: 0,
+                            address_sites: 0,
                         });
                     view.byte_size = view.byte_size.max(access.width.bytes());
                     match access.kind {
@@ -218,16 +221,86 @@ impl MemoryViews {
                     .map(move |i| ((object.register.0, i.offset, i.stride), o))
             })
             .collect();
-        if stack.is_none() && objects.is_empty() {
-            return None;
-        }
-        Some(Self {
+        let mut result = Self {
             stack,
             origins,
             objects,
             by_origin,
             by_index,
-        })
+        };
+        // A reused LEA result may hide its index behind a register. Name the
+        // address construction at its definition, never expand it at later
+        // uses where the index may already have changed. Only definitions
+        // needed by the existing renderer can introduce another base object.
+        let needed = rendered_reads(program, Some(&result));
+        let roles = address_registers(program);
+        for id in program.cfg().reachable_blocks() {
+            for instruction in &program.instructions()[program.cfg().block(id).instructions.clone()]
+            {
+                for (position, assignment) in instruction.assignments.iter().enumerate() {
+                    let Place::Register(reg) = assignment.destination else {
+                        continue;
+                    };
+                    if !roles.contains(&reg.0) || !needed.contains(&reg.0) {
+                        continue;
+                    }
+                    let Some(origins) = &result.origins else {
+                        continue;
+                    };
+                    let Some(index) = recover_indexed(&assignment.value, |expr| {
+                        origins
+                            .origin_before(instruction.address, position, expr)
+                            .map(|o| (o.register, o.offset))
+                    }) else {
+                        continue;
+                    };
+                    let key = (index.register.0, index.offset, index.stride);
+                    if let Some(&o) = result.by_index.get(&key) {
+                        if let Some(view) = result.objects[o]
+                            .indexed
+                            .iter_mut()
+                            .find(|v| v.offset == index.offset && v.stride == index.stride)
+                        {
+                            view.address_sites += 1;
+                        }
+                        continue;
+                    }
+                    if result.by_origin.len() + result.by_index.len() >= 256 {
+                        continue;
+                    }
+                    let o = if let Some(o) = result
+                        .objects
+                        .iter()
+                        .position(|o| o.register == index.register)
+                    {
+                        o
+                    } else {
+                        let o = result.objects.len();
+                        result.objects.push(ObjectView {
+                            name: format!("object_{o}"),
+                            register: index.register,
+                            fields: Vec::new(),
+                            indexed: Vec::new(),
+                        });
+                        o
+                    };
+                    result.objects[o].indexed.push(IndexedView {
+                        offset: index.offset,
+                        stride: index.stride,
+                        byte_size: 0,
+                        read_sites: 0,
+                        write_sites: 0,
+                        address_sites: 1,
+                    });
+                    result.by_index.insert(key, o);
+                }
+            }
+        }
+        if result.stack.is_none() && result.objects.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 
     pub(super) fn at(&self, point: Option<(u64, usize)>, address: &Expr) -> Option<AccessView> {
@@ -357,6 +430,38 @@ fn memory_sites(program: &Program) -> Option<Vec<MemorySite<'_>>> {
     Some(result)
 }
 
+pub(super) fn address_registers(program: &Program) -> BTreeSet<usize> {
+    let mut result = BTreeSet::new();
+    for access in memory_sites(program).unwrap_or_default() {
+        if let Expr::Register(reg) = access.address {
+            result.insert(reg.0);
+        }
+    }
+    // Follow copies backwards, retaining the definition-time index expression
+    // even when reduced IR carries an address through an edge register.
+    let mut copies: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for instruction in program.instructions() {
+        for assignment in &instruction.assignments {
+            if let Place::Register(destination) = assignment.destination
+                && let Expr::Register(source) = assignment.value
+            {
+                copies.entry(destination.0).or_default().push(source.0);
+            }
+        }
+    }
+    let mut pending: Vec<_> = result.iter().copied().collect();
+    while let Some(reg) = pending.pop() {
+        if let Some(sources) = copies.get(&reg) {
+            for &source in sources {
+                if result.insert(source) {
+                    pending.push(source);
+                }
+            }
+        }
+    }
+    result
+}
+
 pub(super) struct StackViews {
     analysis: StackAnalysis,
     pub(super) views: Vec<StackView>,
@@ -462,11 +567,11 @@ static inline void nirvana_view_store(struct nirvana_memory *m, struct nirvana_v
 // Follow register definitions from rendered reads and all faulting expressions;
 // omit only pure assignments with no remaining consumer. This is conservative
 // across ordering and CFG edges and does not promote or remove memory effects.
-pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> BTreeSet<usize> {
+pub(super) fn rendered_reads(program: &Program, views: Option<&MemoryViews>) -> BTreeSet<usize> {
     fn read_address(
         expr: &Expr,
         point: Option<(u64, usize)>,
-        views: &Option<MemoryViews>,
+        views: Option<&MemoryViews>,
         result: &mut BTreeSet<usize>,
     ) {
         if let Some(view) = views.as_ref().and_then(|v| v.at(point, expr)) {
@@ -480,7 +585,7 @@ pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> 
     fn read(
         expr: &Expr,
         point: Option<(u64, usize)>,
-        views: &Option<MemoryViews>,
+        views: Option<&MemoryViews>,
         result: &mut BTreeSet<usize>,
     ) {
         match expr {
@@ -507,6 +612,7 @@ pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> 
         }
     }
     let mut result = BTreeSet::new();
+    let address_uses = address_registers(program);
     type Definition<'a> = ((u64, usize), &'a Expr);
     let mut definitions: BTreeMap<usize, Vec<Definition<'_>>> = BTreeMap::new();
     for id in program.cfg().reachable_blocks() {
@@ -544,7 +650,18 @@ pub(super) fn rendered_reads(program: &Program, views: &Option<MemoryViews>) -> 
         if let Some(defs) = definitions.get(&reg) {
             for &(point, expr) in defs {
                 let mut dependencies = BTreeSet::new();
-                read(expr, Some(point), views, &mut dependencies);
+                if let Some(view) = views.filter(|v| v.origins.is_some()).and_then(|v| {
+                    address_uses
+                        .contains(&reg)
+                        .then(|| v.at(Some(point), expr))
+                        .flatten()
+                }) {
+                    if let Some(index) = view.index() {
+                        read(index, Some(point), views, &mut dependencies);
+                    }
+                } else {
+                    read(expr, Some(point), views, &mut dependencies);
+                }
                 for dependency in dependencies {
                     if result.insert(dependency) {
                         pending.push(dependency);

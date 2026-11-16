@@ -104,6 +104,71 @@ fn indexed_views_preserve_non_power_of_two_strides_and_negative_wrapping_offsets
     check(&p, &[0x1008, 0x1010]);
 }
 
+#[test]
+fn materialized_index_addresses_capture_the_index_before_a_cfg_edge_update() {
+    let p = Program::new(
+        0,
+        5,
+        vec![
+            IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: address(8, 0),
+                    },
+                    Assignment {
+                        destination: Reg(1).into(),
+                        value: b(BinaryOp::Add, r(1), c(1)),
+                    },
+                ],
+                control: Control::Jump(1),
+            },
+            IrInstruction {
+                address: 1,
+                size: 1,
+                assignments: vec![
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: Expr::load(r(2), Width::U32),
+                    },
+                    Assignment {
+                        destination: Place::Memory {
+                            address: b(BinaryOp::Add, r(2), c(1)),
+                            width: Width::U8,
+                        },
+                        value: b(BinaryOp::Xor, r(3), c(171)),
+                    },
+                    Assignment {
+                        destination: Reg(4).into(),
+                        value: Expr::load(r(2), Width::U32),
+                    },
+                ],
+                control: Control::Return(b(BinaryOp::Add, b(BinaryOp::Xor, r(3), r(4)), r(1))),
+            },
+        ],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(
+        &p,
+        ReadableOptions {
+            stack_register: None,
+            recover_objects: true,
+            coalesce_locals: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        output
+            .object_views
+            .iter()
+            .flat_map(|o| &o.indexed)
+            .any(|i| i.address_sites > 0)
+    );
+    check(&p, &[0x1000, 0x1008]);
+}
+
 fn check(program: &Program, bases: &[u64]) {
     let output = emit_readable_c_with_options(
         program,
@@ -123,6 +188,7 @@ fn check(program: &Program, bases: &[u64]) {
         .map(|r| format!("r[{}]", r.0))
         .collect::<Vec<_>>()
         .join(", ");
+    let register_count = program.register_count();
     let harness = format!(
         r#"
 #include <stdio.h>
@@ -132,7 +198,7 @@ int main(void) {{
     while(scanf("%" SCNu64 " %" SCNu64,&base,&index)==2) {{
         uint8_t memory[64];
         for(unsigned i=0;i<64;++i) memory[i]=(uint8_t)(i*17+5);
-        uint64_t r[4]={{base,index,13,17}};
+        uint64_t r[{register_count}]={{base,index,13,17}};
         uint64_t value=nirvana_readable({args},memory,UINT64_C(4096),sizeof(memory));
         printf("%" PRIu64,value);
         for(unsigned i=0;i<8;++i) {{uint64_t word=0;for(unsigned j=0;j<8;++j) word|=(uint64_t)memory[i*8+j]<<(j*8);printf(" %" PRIu64,word);}}
@@ -148,8 +214,10 @@ int main(void) {{
         for index in [0, 1, 2, 3, 4, 63, u64::MAX] {
             writeln!(inputs, "{base} {index}").unwrap();
             let memory: Vec<u8> = (0..64).map(|i| (i * 17 + 5) as u8).collect();
+            let mut registers = vec![0; program.register_count()];
+            registers[..4].copy_from_slice(&[base, index, 13, 17]);
             let result = program
-                .execute_with_memory(&[base, index, 13, 17], 4096, &memory, 2)
+                .execute_with_memory(&registers, 4096, &memory, 2)
                 .unwrap();
             let mut row = vec![result.value];
             row.extend(
