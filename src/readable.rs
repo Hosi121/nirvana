@@ -8,6 +8,7 @@ use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
 use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
+use crate::structure_verify::StructureEvidence;
 use crate::verify::Solver;
 
 #[derive(Clone, Debug)]
@@ -19,6 +20,8 @@ pub struct ReadableC {
     pub reduction_stats: ReductionStats,
     pub fallback_reason: Option<StructureError>,
     pub structure_stats: Option<StructureStats>,
+    /// Correspondence for the Node AST, before compact/loop/C rendering.
+    pub structure_evidence: Option<StructureEvidence>,
 }
 
 struct Render {
@@ -496,21 +499,22 @@ fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
         line(&mut code, 1, &format!("uint64_t {local};"));
     }
     let printer = Printer { names, read };
-    let (fallback_reason, structure_stats) = match StructuredFunction::recover(program) {
-        Ok(function) => {
-            let nonlocal = nonlocal(function.body());
-            if nonlocal {
-                line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
-                line(&mut code, 1, "int nirvana_continue = 0;");
+    let (fallback_reason, structure_stats, structure_evidence) =
+        match StructuredFunction::recover(program) {
+            Ok(function) => {
+                let nonlocal = nonlocal(function.body());
+                if nonlocal {
+                    line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
+                    line(&mut code, 1, "int nirvana_continue = 0;");
+                }
+                printer.nodes(&mut code, &compact(function.body()), 1, 0, nonlocal);
+                (None, Some(function.stats()), Some(function.evidence()))
             }
-            printer.nodes(&mut code, &compact(function.body()), 1, 0, nonlocal);
-            (None, Some(function.stats()))
-        }
-        Err(reason) => {
-            printer.gotos(&mut code, program);
-            (Some(reason), None)
-        }
-    };
+            Err(reason) => {
+                printer.gotos(&mut code, program);
+                (Some(reason), None, None)
+            }
+        };
     code.push_str("}\n");
     ReadableC {
         code,
@@ -519,5 +523,6 @@ fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
         reduction_stats: reduced.stats(),
         fallback_reason,
         structure_stats,
+        structure_evidence,
     }
 }

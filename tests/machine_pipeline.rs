@@ -6,6 +6,7 @@ mod native;
 
 use native::{Scratch, fixture_root, link, object, run, run_fields};
 use nirvana::observe::{Comparison, Contract};
+use nirvana::structure_verify;
 use nirvana::{emit, frontend, readable, reduce, structure::StructuredFunction, x86};
 use std::fmt::Write as _;
 
@@ -167,6 +168,19 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
             let program = function.program;
             let reduced = reduce::reduce(&program).unwrap();
             let tree = StructuredFunction::recover(&program).ok();
+            if let Some(tree) = &tree {
+                let reachable_steps: usize = program
+                    .cfg()
+                    .reachable_blocks()
+                    .iter()
+                    .map(|&id| program.cfg().block(id).instructions.len())
+                    .sum();
+                assert_eq!(tree.evidence().original_steps, reachable_steps);
+                assert_eq!(
+                    structure_verify::validate(&program, tree.body()).unwrap(),
+                    tree.evidence()
+                );
+            }
             structured += usize::from(tree.is_some());
             let original_binary = directory.join(format!("{name}-original"));
             link(&[&object_path, &harness, &helpers], &original_binary);
@@ -210,6 +224,10 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 comparisons += 1;
             }
             let output = emit::emit_c(&program);
+            assert_eq!(
+                output.structure_evidence,
+                tree.as_ref().map(StructuredFunction::evidence)
+            );
             let source = directory.join(format!("{name}-lifted.c"));
             std::fs::write(
                 &source,
@@ -226,6 +244,11 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 "machine-derived C differs for {name} {optimization}"
             );
             let output = readable::emit_readable_c(&program).unwrap();
+            let reduced_tree = StructuredFunction::recover(reduced.program()).ok();
+            assert_eq!(
+                output.structure_evidence,
+                reduced_tree.as_ref().map(StructuredFunction::evidence)
+            );
             original_assignments += output.reduction_stats.original_assignments;
             reduced_assignments += output.reduction_stats.reduced_assignments;
             let source = directory.join(format!("{name}-readable.c"));
@@ -293,6 +316,26 @@ fn cli_runs_a_real_object_and_reports_unsupported_input() {
     let code = String::from_utf8(result.stdout).unwrap();
     assert!(code.contains("nirvana_readable("));
     assert!(!code.contains("r["));
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .arg(&object_path)
+        .args(["--emit", "structured-cfg"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .starts_with("digraph structured_flow")
+    );
+    assert!(
+        String::from_utf8(result.stderr)
+            .unwrap()
+            .contains("structured AST accepted under structured-flow-v1")
+    );
     let raw = scratch.0.join("unsupported.bin");
     std::fs::write(&raw, [0x0f, 0x0b]).unwrap();
     let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
@@ -302,6 +345,23 @@ fn cli_runs_a_real_object_and_reports_unsupported_input() {
         .unwrap();
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("0x1000"));
+
+    // A real loop remains cyclic in the reconstructed graph; it is not a DAG.
+    let looping = scratch.0.join("loop.bin");
+    std::fs::write(&looping, [0xeb, 0xfe]).unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .arg(looping)
+        .args(["--raw", "--emit", "structured-cfg"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let dot = String::from_utf8(result.stdout).unwrap();
+    assert!(dot.contains("step 0x0"));
+    assert!(dot.contains("route"));
 }
 
 #[test]

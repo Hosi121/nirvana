@@ -79,7 +79,8 @@ SATの反例再実行は誤った反例を採用しないための追加検査�
 通常のreadable-cはソルバを起動しない。任意の `--verify-reduction` モードでは、
 [メモリ付きブロックの検査器](block-verification.md)を還元器の採否へ接続している。
 42式対の検証を、簡約器の全規則・全適用箇所や関数全体の検証済みという意味に広げない。
-メモリ付きブロックとループ境界の状態対応は別モデルで扱う。構造化ASTの独立したCFG化は未実装。
+メモリ付きブロックとループ境界の状態対応は別モデルで扱う。
+構造化ASTには[独立したグラフ化と対応検査](structure-verification.md)がある。
 
 参考: [Z3のbit-vector仕様と例](https://microsoft.github.io/z3guide/docs/theories/Bitvectors/)、
 [Alive2の論文](https://web.ist.utl.pt/nuno.lopes/pubs/alive2-pldi21.pdf)。NirvanaはLLVM IRやAlive2を組み込まない。

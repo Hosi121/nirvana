@@ -20,6 +20,7 @@ cargo run -- target/c-fixtures/cc-0/O2/diamond.o --run 12,2,3,4
 cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit ir
 cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit c
 cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit readable-c
+cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit structured-cfg
 ```
 
 `--run`はfixtureの入力状態4要素を設定し、返り値と最終状態を出します。上の入力の結果は`32 12 32 3 4`です。
@@ -48,7 +49,8 @@ cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit readable-c \
 ```
 
 全ブロックの検査が通った候補だけを採用し、未判定・反例・ソルバ欠如の場合は元IRを使います。
-このモードが検査するのはIR還元です。機械語のリフト、構造化、C出力全体の検証とは区別します。
+このモードが検査するのはIR還元です。基本の構造化ASTは、別の独立したグラフの対応検査を常に通します。
+機械語のリフト、C用のループ整形・C出力全体の検証とは区別します。
 
 手書きIRからの構造化例も残しています。
 
@@ -119,7 +121,7 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 
 ## 検証
 
-通常の123テストと、Z3を使う追加6テストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
+通常の131テストと、Z3を使う追加6テストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
 複数入口の循環、到達不能な前任ブロック、入力の欠落や重複、IRの演算とC生成を対象にしています。
 
 加えて、4命令の小プログラム4,000通りについて次を照合します。
@@ -135,6 +137,8 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 同じ4,000通りで、複数出口と共有末尾への対応により構造化成功数が3,805から3,843へ増え、
 さらにループをまたぐ脱出への対応で3,859になりました。
 さらに、固定シードで生成した8命令のCFG 1,024個についても、構造化できたものの実行結果とコピー数の上限を確認します。
+構造化で成功するASTはすべて、元の命令・代入列・条件評価・制御先を独立したグラフと照合します。
+この検査は入力値やループの展開回数に依存しません。保証の範囲は[構造化の対応検査](docs/structure-verification.md)に記録しています。
 
 手書きの[C fixture 20例](tests/fixtures/README.md)も用意しています。分岐やループのほか、
 `switch`、短絡評価、配列、構造体、別翻訳単位の関数呼び出しを含みます。

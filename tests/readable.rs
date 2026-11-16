@@ -100,8 +100,10 @@ fn structured_loops_have_conventional_c_syntax_and_goto_fallback_survives() {
         let output = emit_readable_c(&programs::named(name).unwrap()).unwrap();
         if output.fallback_reason.is_some() {
             assert!(output.code.contains("goto bb"));
+            assert!(output.structure_evidence.is_none());
         } else {
             assert!(output.structure_stats.is_some());
+            assert!(output.structure_evidence.is_some());
         }
     }
     let sum = emit_readable_c(&programs::named("sum").unwrap()).unwrap();

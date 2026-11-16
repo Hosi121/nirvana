@@ -78,7 +78,9 @@ cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit readable-c \
 ```
 
 標準エラーにIR還元の採否とモデル名を出す。ソルバ欠如、未判定、局所反例でも元IRからCを出力する。
-このオプションはIR還元の検査であり、その後の構造化とC生成を認証するものではない。
+このオプションはIR還元の検査であり、構造化やC生成の検査を兼ねない。
+基本の構造化ASTには別の[対応検査](structure-verification.md)が常に適用される。
+C用の整形とC生成は引き続き別の検証範囲。
 通常の `--emit readable-c` はソルバを起動せず、従来の実行比較済みパイプラインを使う。
 
 ## 実際のfixtureでの結果

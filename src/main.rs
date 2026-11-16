@@ -1,12 +1,14 @@
 use nirvana::{
     block_verify::{self, BlockVerdict},
     emit, frontend, readable,
+    structure::StructuredFunction,
+    structure_verify::{self, FlowGraph},
     verify::Solver,
     x86,
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -161,6 +163,17 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         }
         "cfg" => print!("{}", program.cfg().to_dot()),
+        "structured-cfg" => {
+            let function = StructuredFunction::recover(&program)?;
+            let evidence = function.evidence();
+            eprintln!(
+                "structured AST accepted under {}: {} original steps, {} compared copies; C rendering is separately tested",
+                structure_verify::MODEL_ID,
+                evidence.original_steps,
+                evidence.compared_copies
+            );
+            print!("{}", FlowGraph::from_nodes(function.body())?.to_dot());
+        }
         "decoded" => {
             let entry = program.cfg().block(program.cfg().entry()).start;
             for instruction in x86::decode_reachable(&code, code_base, entry)? {

@@ -5,6 +5,7 @@ use std::fmt::Write;
 use crate::cfg::{BlockId, Target};
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
+use crate::structure_verify::StructureEvidence;
 
 pub(crate) const MULTIPLY_HELPER: &str = r#"
 static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {
@@ -41,6 +42,8 @@ pub struct COutput {
     /// None means that structured recovery succeeded.
     pub fallback_reason: Option<StructureError>,
     pub structure_stats: Option<StructureStats>,
+    /// Evidence for the Node AST before C rendering, not a C certificate.
+    pub structure_evidence: Option<StructureEvidence>,
 }
 
 pub fn emit_c(program: &Program) -> COutput {
@@ -54,26 +57,28 @@ pub fn emit_c(program: &Program) -> COutput {
     } else {
         code.push_str("\nuint64_t nirvana_fn(uint64_t *r) {\n    (void)r;\n");
     }
-    let (fallback_reason, structure_stats) = match StructuredFunction::recover(program) {
-        Ok(function) => {
-            let nonlocal = has_nonlocal_transfer(function.body());
-            if nonlocal {
-                line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
-                line(&mut code, 1, "int nirvana_continue = 0;");
+    let (fallback_reason, structure_stats, structure_evidence) =
+        match StructuredFunction::recover(program) {
+            Ok(function) => {
+                let nonlocal = has_nonlocal_transfer(function.body());
+                if nonlocal {
+                    line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
+                    line(&mut code, 1, "int nirvana_continue = 0;");
+                }
+                emit_nodes(function.body(), 1, 0, nonlocal, &mut code);
+                (None, Some(function.stats()), Some(function.evidence()))
             }
-            emit_nodes(function.body(), 1, 0, nonlocal, &mut code);
-            (None, Some(function.stats()))
-        }
-        Err(reason) => {
-            emit_gotos(program, &mut code);
-            (Some(reason), None)
-        }
-    };
+            Err(reason) => {
+                emit_gotos(program, &mut code);
+                (Some(reason), None, None)
+            }
+        };
     code.push_str("}\n");
     COutput {
         code,
         fallback_reason,
         structure_stats,
+        structure_evidence,
     }
 }
 
