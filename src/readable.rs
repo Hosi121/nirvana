@@ -5,11 +5,16 @@ use std::fmt::Write;
 
 use crate::block_verify::Validation;
 use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
+use crate::hir::ViewPath;
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
 use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
 use crate::verify::Solver;
+
+mod views;
+pub use views::StackView;
+use views::{StackViews, VIEW_HELPERS, rendered_reads};
 
 #[derive(Clone, Debug)]
 pub struct ReadableC {
@@ -22,6 +27,15 @@ pub struct ReadableC {
     pub structure_stats: Option<StructureStats>,
     /// Correspondence for the Node AST, before compact/loop/C rendering.
     pub structure_evidence: Option<StructureEvidence>,
+    /// Named guest-memory locations, not recovered source variables or types.
+    pub stack_views: Vec<StackView>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReadableOptions {
+    /// The input register holding the entry stack address. No architecture is
+    /// assumed by default; the x86 frontend supplies RSP explicitly.
+    pub stack_register: Option<Reg>,
 }
 
 struct Render {
@@ -49,10 +63,15 @@ impl Render {
 struct Printer {
     names: BTreeMap<usize, String>,
     read: BTreeSet<usize>,
+    views: Option<StackViews>,
 }
 
 impl Printer {
     fn expression(&self, expr: &Expr) -> Render {
+        self.expression_at(expr, None)
+    }
+
+    fn expression_at(&self, expr: &Expr, point: Option<(u64, usize)>) -> Render {
         let atom = |text, unsigned| Render {
             text,
             unsigned,
@@ -63,11 +82,15 @@ impl Printer {
             Expr::Const(value) => atom(format!("UINT64_C({value})"), true),
             Expr::Register(reg) => atom(self.names[&reg.0].clone(), true),
             Expr::Load { address, width } => atom(
-                format!(
-                    "nirvana_load(&m, {}, {})",
-                    self.expression(address).text,
-                    width.bytes()
-                ),
+                if let Some(view) = self.views.as_ref().and_then(|v| v.at(point, address)) {
+                    format!("nirvana_view_load(&m, {}, {})", view.name, width.bytes())
+                } else {
+                    format!(
+                        "nirvana_load(&m, {}, {})",
+                        self.expression_at(address, point).text,
+                        width.bytes()
+                    )
+                },
                 true,
             ),
             Expr::Select {
@@ -75,9 +98,9 @@ impl Printer {
                 taken,
                 not_taken,
             } => {
-                let condition = self.expression(condition);
-                let taken = self.expression(taken);
-                let not_taken = self.expression(not_taken);
+                let condition = self.expression_at(condition, point);
+                let taken = self.expression_at(taken, point);
+                let not_taken = self.expression_at(not_taken, point);
                 Render {
                     text: format!(
                         "{} ? {} : {}",
@@ -90,8 +113,8 @@ impl Printer {
                 }
             }
             Expr::Binary(op, left, right) => {
-                let l = self.expression(left);
-                let r = self.expression(right);
+                let l = self.expression_at(left, point);
+                let r = self.expression_at(right, point);
                 if *op == BinaryOp::UMulHigh {
                     return atom(format!("nirvana_umul_high({}, {})", l.text, r.text), true);
                 }
@@ -139,19 +162,87 @@ impl Printer {
         }
     }
 
-    fn assignments(&self, code: &mut String, indent: usize, assignments: &[Assignment]) {
-        for assignment in assignments {
-            let value = self.expression(&assignment.value).text;
+    fn assignments(
+        &self,
+        code: &mut String,
+        indent: usize,
+        address: u64,
+        assignments: &[Assignment],
+    ) {
+        for (index, assignment) in assignments.iter().enumerate() {
+            if let Place::Register(reg) = assignment.destination
+                && !self.read.contains(&reg.0)
+                && !assignment.value.uses_memory()
+            {
+                continue;
+            }
+            let point = Some((address, index));
+            let value = self.expression_at(&assignment.value, point).text;
+            if let Place::Memory { address, width } = &assignment.destination
+                && assignment.value.uses_memory()
+            {
+                // C evaluates argument expressions before entering a function.
+                // The IR checks the destination before a possibly faulting RHS.
+                // Capture a raw address once, then check it in a full statement.
+                let view = self.views.as_ref().and_then(|v| v.at(point, address));
+                line(code, indent, "{");
+                let destination = if let Some(view) = view {
+                    format!("{}.address", view.name)
+                } else {
+                    line(
+                        code,
+                        indent + 1,
+                        &format!(
+                            "const uint64_t nirvana_address = {};",
+                            self.expression_at(address, point).text
+                        ),
+                    );
+                    "nirvana_address".into()
+                };
+                line(
+                    code,
+                    indent + 1,
+                    &format!(
+                        "(void)nirvana_offset(&m, {destination}, {});",
+                        width.bytes()
+                    ),
+                );
+                let store = if let Some(view) = view {
+                    format!(
+                        "nirvana_view_store(&m, {}, {}, {value});",
+                        view.name,
+                        width.bytes()
+                    )
+                } else {
+                    format!(
+                        "nirvana_store(&m, {destination}, {}, {value});",
+                        width.bytes()
+                    )
+                };
+                line(code, indent + 1, &store);
+                line(code, indent, "}");
+                continue;
+            }
             let statement = match &assignment.destination {
                 Place::Register(reg) if self.read.contains(&reg.0) => {
                     format!("{} = {value};", self.names[&reg.0])
                 }
                 Place::Register(_) => format!("(void)({value});"),
-                Place::Memory { address, width } => format!(
-                    "nirvana_store(&m, {}, {}, {value});",
-                    self.expression(address).text,
-                    width.bytes()
-                ),
+                Place::Memory { address, width } => {
+                    if let Some(view) = self.views.as_ref().and_then(|v| v.at(point, address)) {
+                        format!(
+                            "nirvana_view_store(&m, {}, {}, {value});",
+                            view.name,
+                            width.bytes()
+                        )
+                    } else {
+                        format!(
+                            "nirvana_store(&m, {}, {}, {value});",
+                            self.expression_at(address, point).text,
+                            width.bytes()
+                        )
+                    }
+                }
             };
             line(code, indent, &statement);
         }
@@ -174,7 +265,10 @@ impl Printer {
                         &format!("(void)({});", self.expression(value).text),
                     );
                 }
-                Node::Step { assignments, .. } => self.assignments(code, indent, assignments),
+                Node::Step {
+                    address,
+                    assignments,
+                } => self.assignments(code, indent, *address, assignments),
                 Node::If {
                     condition,
                     taken,
@@ -274,7 +368,7 @@ impl Printer {
             let block = cfg.block(id);
             writeln!(code, "{id}:").unwrap();
             for instruction in &program.instructions()[block.instructions.clone()] {
-                self.assignments(code, 1, &instruction.assignments);
+                self.assignments(code, 1, instruction.address, &instruction.assignments);
             }
             let instruction = &program.instructions()[block.instructions.end - 1];
             match &instruction.control {
@@ -324,29 +418,6 @@ fn bounded_shift(expression: &Expr) -> bool {
 
 fn line(code: &mut String, indent: usize, text: &str) {
     writeln!(code, "{}{text}", "    ".repeat(indent)).unwrap();
-}
-
-fn read_registers(expression: &Expr, read: &mut BTreeSet<usize>) {
-    match expression {
-        Expr::Const(_) => {}
-        Expr::Register(reg) => {
-            read.insert(reg.0);
-        }
-        Expr::Load { address, .. } => read_registers(address, read),
-        Expr::Binary(_, left, right) => {
-            read_registers(left, read);
-            read_registers(right, read);
-        }
-        Expr::Select {
-            condition,
-            taken,
-            not_taken,
-        } => {
-            read_registers(condition, read);
-            read_registers(taken, read);
-            read_registers(not_taken, read);
-        }
-    }
 }
 
 fn nonlocal(nodes: &[Node]) -> bool {
@@ -421,7 +492,14 @@ fn compact(nodes: &[Node]) -> Vec<Node> {
 }
 
 pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReductionError> {
-    Ok(emit_reduced_c(reduce(program)?))
+    emit_readable_c_with_options(program, ReadableOptions::default())
+}
+
+pub fn emit_readable_c_with_options(
+    program: &Program,
+    options: ReadableOptions,
+) -> Result<ReadableC, ReductionError> {
+    Ok(emit_reduced_c(reduce(program)?, options))
 }
 
 /// Validate only the IR reduction. Structuring and C emission have their own
@@ -430,29 +508,28 @@ pub fn emit_readable_c_with_checked_reduction(
     program: &Program,
     solver: &Solver,
 ) -> Result<(ReadableC, Validation), ReductionError> {
-    let checked = reduce_checked(program, solver)?;
-    Ok((emit_reduced_c(checked.function), checked.validation))
+    emit_readable_c_with_checked_reduction_and_options(program, solver, ReadableOptions::default())
 }
 
-fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
+pub fn emit_readable_c_with_checked_reduction_and_options(
+    program: &Program,
+    solver: &Solver,
+    options: ReadableOptions,
+) -> Result<(ReadableC, Validation), ReductionError> {
+    let checked = reduce_checked(program, solver)?;
+    Ok((
+        emit_reduced_c(checked.function, options),
+        checked.validation,
+    ))
+}
+
+fn emit_reduced_c(reduced: ReducedFunction, options: ReadableOptions) -> ReadableC {
     let program = reduced.program();
-    let mut read = BTreeSet::new();
-    for id in program.cfg().reachable_blocks() {
-        let block = program.cfg().block(id);
-        for instruction in &program.instructions()[block.instructions.clone()] {
-            for assignment in &instruction.assignments {
-                read_registers(&assignment.value, &mut read);
-                if let Place::Memory { address, .. } = &assignment.destination {
-                    read_registers(address, &mut read);
-                }
-            }
-            match &instruction.control {
-                Control::Branch { condition, .. } => read_registers(condition, &mut read),
-                Control::Return(value) => read_registers(value, &mut read),
-                _ => {}
-            }
-        }
-    }
+    let views = options
+        .stack_register
+        .filter(|r| reduced.parameters().contains(r))
+        .and_then(|r| StackViews::recover(program, r));
+    let read = rendered_reads(program, &views);
     let mut names = BTreeMap::new();
     let mut arguments = Vec::new();
     let mut code = String::from("#include <stdint.h>\n");
@@ -467,6 +544,9 @@ fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
     }
     if program.uses_memory() {
         code.push_str(MEMORY_HELPERS);
+        if views.is_some() {
+            code.push_str(VIEW_HELPERS);
+        }
         arguments.extend(["uint8_t *memory", "uint64_t base", "uint64_t size"].map(String::from));
     }
     let mut locals = Vec::new();
@@ -495,10 +575,48 @@ fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
             "struct nirvana_memory m = {memory, base, size};",
         );
     }
+    if let Some(views) = &views {
+        let printer = Printer {
+            names: names.clone(),
+            read: read.clone(),
+            views: None,
+        };
+        for view in &views.views {
+            let base = Expr::Register(views.register);
+            let base = if view.offset < 0 {
+                Expr::binary(BinaryOp::Sub, base, Expr::Const(view.offset.unsigned_abs()))
+            } else if view.offset > 0 {
+                Expr::binary(BinaryOp::Add, base, Expr::Const(view.offset as u64))
+            } else {
+                base
+            };
+            let path = ViewPath::Object {
+                name: view.name.clone(),
+                base,
+            };
+            line(
+                &mut code,
+                1,
+                &format!(
+                    "const struct nirvana_view {} = {{{}}}; /* entry stack {:+}, up to {} bytes{} */",
+                    view.name,
+                    printer.expression(&path.address()).text,
+                    view.offset,
+                    view.byte_size,
+                    if view.overlaps.is_empty() {
+                        ""
+                    } else {
+                        ", overlapping views"
+                    }
+                ),
+            );
+        }
+    }
     for local in locals {
         line(&mut code, 1, &format!("uint64_t {local};"));
     }
-    let printer = Printer { names, read };
+    let stack_views = views.as_ref().map(|v| v.views.clone()).unwrap_or_default();
+    let printer = Printer { names, read, views };
     let (fallback_reason, structure_stats, structure_evidence) =
         match StructuredFunction::recover(program) {
             Ok(function) => {
@@ -524,5 +642,6 @@ fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
         fallback_reason,
         structure_stats,
         structure_evidence,
+        stack_views,
     }
 }

@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named stack views.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -108,9 +108,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     match format.as_str() {
         "readable-c" => {
+            let options = readable::ReadableOptions {
+                stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+            };
             let output = if let Some(solver) = solver {
                 let (output, validation) =
-                    readable::emit_readable_c_with_checked_reduction(&program, &solver)?;
+                    readable::emit_readable_c_with_checked_reduction_and_options(
+                        &program, &solver, options,
+                    )?;
                 if validation.accepted() {
                     eprintln!(
                         "IR reduction accepted under {}: {} block obligations; C emission is separately tested",
@@ -139,7 +144,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }
                 output
             } else {
-                readable::emit_readable_c(&program)?
+                readable::emit_readable_c_with_options(&program, options)?
             };
             if let Some(reason) = output.fallback_reason {
                 eprintln!("retaining goto control flow: {reason}");

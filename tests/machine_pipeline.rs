@@ -243,7 +243,39 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 native,
                 "machine-derived C differs for {name} {optimization}"
             );
-            let output = readable::emit_readable_c(&program).unwrap();
+            let baseline = readable::emit_readable_c(&program).unwrap();
+            let output = readable::emit_readable_c_with_options(
+                &program,
+                readable::ReadableOptions {
+                    stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+                },
+            )
+            .unwrap();
+            assert_eq!(baseline.parameters, output.parameters);
+            assert_eq!(baseline.structure_evidence, output.structure_evidence);
+            if optimization == "-O0" && matches!(name, "sum" | "struct-fields") {
+                assert!(
+                    output.stack_views.len() >= 4,
+                    "{name}: {:?}",
+                    output.stack_views
+                );
+                assert!(output.code.contains("nirvana_view_load(&m, stack_"));
+                assert!(output.code.contains("nirvana_view_store(&m, stack_"));
+            }
+            println!(
+                "{name} {optimization}: {} stack views, {} named reads, {} named writes",
+                output.stack_views.len(),
+                output
+                    .stack_views
+                    .iter()
+                    .map(|v| v.read_sites)
+                    .sum::<usize>(),
+                output
+                    .stack_views
+                    .iter()
+                    .map(|v| v.write_sites)
+                    .sum::<usize>()
+            );
             let reduced_tree = StructuredFunction::recover(reduced.program()).ok();
             assert_eq!(
                 output.structure_evidence,
@@ -463,8 +495,14 @@ fn check_checked_c_fixture(
     let program = frontend::lift_elf(&std::fs::read(&object_path).unwrap(), "fixture")
         .unwrap()
         .program;
-    let (output, validation) =
-        readable::emit_readable_c_with_checked_reduction(&program, solver).unwrap();
+    let (output, validation) = readable::emit_readable_c_with_checked_reduction_and_options(
+        &program,
+        solver,
+        readable::ReadableOptions {
+            stack_register: Some(nirvana::ir::Reg(x86::RSP)),
+        },
+    )
+    .unwrap();
     match expected {
         ExpectedReduction::Accepted => assert!(
             validation.accepted(),

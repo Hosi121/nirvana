@@ -17,6 +17,15 @@
         "explicit object/field/index addresses lower to existing IR",
         "no host pointer dereference or extra bounds checks",
         "modular address arithmetic and memory alias/fault regressions"
+      ],
+      "inputArtifacts": [
+        "frozen contract.json",
+        "Rust IR/CFG in eef1379"
+      ],
+      "allowedTools": [
+        "local reads",
+        "isolated snapshot edits",
+        "cargo verification"
       ]
     },
     {
@@ -34,6 +43,15 @@
         "entry-stack affine tracking on CFG fixed point",
         "unknown/unequal joins and dynamic stack updates stay unknown",
         "sequential assignment points and conservative bounded analysis"
+      ],
+      "inputArtifacts": [
+        "frozen contract.json",
+        "Rust IR/CFG in eef1379"
+      ],
+      "allowedTools": [
+        "local reads",
+        "isolated snapshot edits",
+        "cargo verification"
       ]
     },
     {
@@ -44,15 +62,28 @@
       ],
       "writeScope": [
         "src/readable.rs",
+        "src/readable/views.rs",
         "src/main.rs",
         "src/lib.rs",
         "tests/machine_pipeline.rs",
+        "tests/stack_views.rs",
+        "examples/measure_stack_views.rs",
+        "README.md",
         "docs"
       ],
       "successCriteria": [
         "native C matches original IR including full-memory digest",
         "O0 sum and struct-fields expose named stack views",
         "existing faults and unresolved addresses retained"
+      ],
+      "inputArtifacts": [
+        "frozen contract.json",
+        "Rust IR/CFG in eef1379"
+      ],
+      "allowedTools": [
+        "authoritative checkout edits",
+        "cargo/native verification",
+        "local git commits"
       ]
     }
   ],
