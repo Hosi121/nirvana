@@ -14,6 +14,7 @@ pub mod hir;
 pub mod indexed;
 pub mod ir;
 mod join;
+pub mod loop_shape;
 pub mod observe;
 pub mod postdom;
 pub mod provenance;
