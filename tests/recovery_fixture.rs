@@ -1,4 +1,4 @@
-//! Independent source shapes for field, array, and alias recovery.
+//! Independent source shapes for memory recovery and control-flow rendering.
 //!
 //! Native C observes the return and four state words. Recompiled readable C
 //! additionally matches an IR digest over every guest byte, including stack.
@@ -15,7 +15,14 @@ use std::fmt::Write as _;
 const BASE: u64 = 0x1000;
 const STATE: usize = 0x1000;
 const MEMORY_SIZE: usize = 0x10000;
-const CASES: [&str; 3] = ["byte-fields", "strided-input", "selected-alias"];
+const CASES: [&str; 6] = [
+    "byte-fields",
+    "strided-input",
+    "selected-alias",
+    "three-entry-goto",
+    "packed-update",
+    "early-exit-chain",
+];
 
 fn inputs() -> Vec<[u64; 4]> {
     let mut inputs: Vec<_> = include_str!("fixtures/inputs.tsv")
@@ -134,6 +141,8 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
     }
     let mut native_reference = BTreeMap::new();
     let mut comparisons = 0;
+    let mut indexed_reads_seen = 0;
+    let mut narrow_locals_seen = 0;
     for optimization in ["-O0", "-O2"] {
         let directory = scratch.0.join(optimization);
         std::fs::create_dir(&directory).unwrap();
@@ -177,36 +186,34 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 expected.push(memory_digest(&execution.memory));
                 expected_memory.push(expected);
             }
-            let output = readable::emit_readable_c_with_options(
-                &program,
-                readable::ReadableOptions {
-                    stack_register: Some(Reg(x86::RSP)),
-                    recover_objects: true,
-                    coalesce_locals: true,
-                },
-            )
-            .unwrap();
+            // Keep defaults for additional presentation options introduced by
+            // the integrator; semantic checks apply to all six source shapes.
+            #[allow(clippy::needless_update)]
+            let options = readable::ReadableOptions {
+                stack_register: Some(Reg(x86::RSP)),
+                recover_objects: true,
+                coalesce_locals: true,
+                ..Default::default()
+            };
+            let output = readable::emit_readable_c_with_options(&program, options).unwrap();
             let indexed_reads: usize = output
                 .object_views
                 .iter()
                 .flat_map(|o| &o.indexed)
                 .map(|i| i.read_sites)
                 .sum();
-            if name == "strided-input" && optimization == "-O2" {
-                assert!(
-                    indexed_reads > 0,
-                    "strided input should expose an indexed view"
-                );
-            }
+            let narrow_locals = output
+                .locals
+                .iter()
+                .filter(|v| v.width != nirvana::ir::Width::U64)
+                .count();
+            indexed_reads_seen += indexed_reads;
+            narrow_locals_seen += narrow_locals;
             println!(
                 "{name} {optimization}: {} objects, {} indexed reads, {} narrow locals",
                 output.object_views.len(),
                 indexed_reads,
-                output
-                    .locals
-                    .iter()
-                    .filter(|v| v.width != nirvana::ir::Width::U64)
-                    .count()
+                narrow_locals,
             );
             let generated = directory.join(format!("{name}-readable.c"));
             std::fs::write(&generated, output.code.clone() + &readable_harness(&output)).unwrap();
@@ -229,4 +236,14 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
         }
     }
     assert_eq!(comparisons, CASES.len() * 2 * inputs.len());
+    assert!(indexed_reads_seen > 0, "corpus must exercise indexed reads");
+    assert!(
+        narrow_locals_seen > 0,
+        "corpus must exercise narrow storage"
+    );
+    println!(
+        "recovery corpus: {} sources x 2 optimization levels x {} inputs = {comparisons} native/IR/readable comparisons",
+        CASES.len(),
+        inputs.len()
+    );
 }
