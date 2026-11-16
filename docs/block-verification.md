@@ -60,7 +60,38 @@ cargo run --example verify_reductions -- --z3 target/verification-venv/bin/z3
 
 最後のコマンドは既存fixtureのO0/O2オブジェクトからIRを作り、実際の還元結果を検査する。
 `target/block-verification/` に問い合わせと結果を保存する。未対応・時間切れは元IRを保持する側に数える。
+この例の終了コード0はレポート生成の成功を意味し、全構成の検証成功を意味しない。
 原デコーダやC生成の検証済みという意味ではない。
+
+## 還元器とC出力への接続
+
+`reduce_checked` は通常の還元器が作った候補を検査器に渡す。
+全ブロックがEquivalentUnderModelの場合だけ候補を返し、それ以外は**関数全体の元IR**を返す。
+部分的に通ったブロックだけを混ぜて使わない。元IR保持時の統計は元の代入数と0 passesにする。
+元IRを使う場合は初期レジスタ全要素を値引数に渡し、未初期化のローカルへ置き換えない。
+
+`emit_readable_c_with_checked_reduction` とCLIの `--verify-reduction` から利用できる。
+
+```sh
+cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit readable-c \
+  --verify-reduction target/verification-venv/bin/z3
+```
+
+標準エラーにIR還元の採否とモデル名を出す。ソルバ欠如、未判定、局所反例でも元IRからCを出力する。
+このオプションはIR還元の検査であり、その後の構造化とC生成を認証するものではない。
+通常の `--emit readable-c` はソルバを起動せず、従来の実行比較済みパイプラインを使う。
+
+## 実際のfixtureでの結果
+
+GCC 13.3.0、従来と同じ20ソース×O0/O2のうち、機械語からIRへ変換できた33構成を検査した。
+各SMT呼び出しの上限は2秒。30構成の還元を採用できた。
+未判定構成の途中分も含め、計159ブロックの問い合わせがUNSATになった（採用した30構成では154ブロック）。
+残る `sum -O0`、`arithmetic -O0`、`struct-fields -O0` は検査が時間切れとなり、元IRを保持する。
+採否は使用ソルバと予算にも依存し、未判定を誤変換とは断定しない。
+7構成のフロントエンド未対応は従来どおり別に記録する。
+
+採用経路ではdiamond・sum・外側ループへの脱出、元IR保持経路ではarithmeticの生成Cを
+各63入力で元C・IRと比較する。全メモリはIR間ではbyte列、生成Cではダイジェストも検査する。
 
 回帰検査には、全アクセス幅でのstore→load転送、遅延Load、メモリalias、失敗前の異なる書き込み、
 読み／書きFaultの違い、store宛先と値の評価順、ループ境界を含める。

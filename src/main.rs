@@ -1,7 +1,12 @@
-use nirvana::{emit, frontend, readable, x86};
+use nirvana::{
+    block_verify::{self, BlockVerdict},
+    emit, frontend, readable,
+    verify::Solver,
+    x86,
+};
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|decoded]\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c preserves the return and guest memory, with value arguments.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -32,11 +37,17 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut entry = None;
     let mut input = None;
     let mut limit = 100_000;
+    let mut solver = None;
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--symbol" => symbol = args.next().ok_or("--symbol requires a name")?,
             "--emit" => format = args.next().ok_or("--emit requires a format")?,
             "--raw" => raw = true,
+            "--verify-reduction" => {
+                solver = Some(Solver::new(
+                    args.next().ok_or("--verify-reduction requires a Z3 path")?,
+                ))
+            }
             "--base" => base = Some(number(&args.next().ok_or("--base requires an address")?)?),
             "--entry" => entry = Some(number(&args.next().ok_or("--entry requires an address")?)?),
             "--steps" => limit = args.next().ok_or("--steps requires a limit")?.parse()?,
@@ -52,6 +63,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
             _ => return Err(format!("unknown argument {argument}\n{HELP}").into()),
         }
+    }
+    if solver.is_some() && (format != "readable-c" || input.is_some()) {
+        return Err(
+            "--verify-reduction requires --emit readable-c and cannot be used with --run".into(),
+        );
     }
     let bytes = std::fs::read(path)?;
     let (program, code, code_base) = if raw {
@@ -90,7 +106,39 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     match format.as_str() {
         "readable-c" => {
-            let output = readable::emit_readable_c(&program)?;
+            let output = if let Some(solver) = solver {
+                let (output, validation) =
+                    readable::emit_readable_c_with_checked_reduction(&program, &solver)?;
+                if validation.accepted() {
+                    eprintln!(
+                        "IR reduction accepted under {}: {} block obligations; C emission is separately tested",
+                        block_verify::MODEL_ID,
+                        validation.blocks.len()
+                    );
+                } else {
+                    let reason = validation
+                        .incomplete
+                        .map(|reason| format!("{reason:?}"))
+                        .or_else(|| {
+                            validation.blocks.last().map(|block| match &block.verdict {
+                                BlockVerdict::Unknown(reason) => {
+                                    format!("unknown at {:#x}: {reason:?}", block.address)
+                                }
+                                BlockVerdict::Counterexample(_) => {
+                                    format!("local boundary counterexample at {:#x}", block.address)
+                                }
+                                BlockVerdict::EquivalentUnderModel => {
+                                    "incomplete validation".into()
+                                }
+                            })
+                        })
+                        .unwrap_or_else(|| "incomplete validation".into());
+                    eprintln!("retaining original IR: {reason}");
+                }
+                output
+            } else {
+                readable::emit_readable_c(&program)?
+            };
             if let Some(reason) = output.fallback_reason {
                 eprintln!("retaining goto control flow: {reason}");
             }

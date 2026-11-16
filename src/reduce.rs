@@ -7,11 +7,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use crate::block_verify::{Validation, validate_program};
 use crate::cfg::Target;
 use crate::ir::{
     Control, ExecutionError, Expr, IrInstruction, Place, Program, ProgramError, Reg, RunReport,
 };
 use crate::simplify::{node_count, simplify};
+use crate::verify::Solver;
 
 type Live = BTreeSet<usize>;
 
@@ -37,6 +39,46 @@ pub struct ReducedFunction {
     original_register_count: usize,
     parameters: Vec<Reg>,
     stats: ReductionStats,
+}
+
+#[derive(Clone, Debug)]
+pub struct CheckedReduction {
+    /// The candidate only if all block obligations passed; otherwise the exact
+    /// original IR, with value parameters for its complete initial register file.
+    pub function: ReducedFunction,
+    pub validation: Validation,
+}
+
+pub fn reduce_checked(
+    program: &Program,
+    solver: &Solver,
+) -> Result<CheckedReduction, ReductionError> {
+    let candidate = reduce(program)?;
+    let validation = validate_program(program, candidate.program(), solver);
+    let function = if validation.accepted() {
+        candidate
+    } else {
+        let assignments = program
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.assignments.len())
+            .sum();
+        ReducedFunction {
+            program: program.clone(),
+            original_register_count: program.register_count(),
+            parameters: (0..program.register_count()).map(Reg).collect(),
+            stats: ReductionStats {
+                original_assignments: assignments,
+                reduced_assignments: assignments,
+                fresh_values: 0,
+                passes: 0,
+            },
+        }
+    };
+    Ok(CheckedReduction {
+        function,
+        validation,
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

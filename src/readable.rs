@@ -3,10 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
+use crate::block_verify::Validation;
 use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
-use crate::reduce::{ReductionError, ReductionStats, reduce};
+use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
+use crate::verify::Solver;
 
 #[derive(Clone, Debug)]
 pub struct ReadableC {
@@ -416,7 +418,20 @@ fn compact(nodes: &[Node]) -> Vec<Node> {
 }
 
 pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReductionError> {
-    let reduced = reduce(program)?;
+    Ok(emit_reduced_c(reduce(program)?))
+}
+
+/// Validate only the IR reduction. Structuring and C emission have their own
+/// testing boundary and are not certified by this block model.
+pub fn emit_readable_c_with_checked_reduction(
+    program: &Program,
+    solver: &Solver,
+) -> Result<(ReadableC, Validation), ReductionError> {
+    let checked = reduce_checked(program, solver)?;
+    Ok((emit_reduced_c(checked.function), checked.validation))
+}
+
+fn emit_reduced_c(reduced: ReducedFunction) -> ReadableC {
     let program = reduced.program();
     let mut read = BTreeSet::new();
     for id in program.cfg().reachable_blocks() {
@@ -465,6 +480,11 @@ pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReductionError> {
         arguments.join(", ")
     };
     writeln!(code, "\nuint64_t nirvana_readable({arguments}) {{").unwrap();
+    for (index, reg) in reduced.parameters().iter().enumerate() {
+        if !read.contains(&reg.0) {
+            line(&mut code, 1, &format!("(void)arg{index};"));
+        }
+    }
     if program.uses_memory() {
         line(
             &mut code,
@@ -492,12 +512,12 @@ pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReductionError> {
         }
     };
     code.push_str("}\n");
-    Ok(ReadableC {
+    ReadableC {
         code,
         parameters: reduced.parameters().to_vec(),
         uses_memory: program.uses_memory(),
         reduction_stats: reduced.stats(),
         fallback_reason,
         structure_stats,
-    })
+    }
 }

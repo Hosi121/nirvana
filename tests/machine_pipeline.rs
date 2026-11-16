@@ -378,3 +378,117 @@ fn machine_multiply_overflow_affects_recompiled_c_like_the_native_compiler() {
         assert_eq!(run_fields(&binary, &text, 6), expected_memory);
     }
 }
+
+fn check_checked_c_fixture(
+    name: &str,
+    optimization: &str,
+    solver: &nirvana::verify::Solver,
+    accepted: bool,
+) {
+    let scratch = Scratch::new();
+    let root = fixture_root();
+    let object_path = scratch.0.join("original.o");
+    object(
+        &root.join("cases").join(format!("{name}.c")),
+        &object_path,
+        optimization,
+        "fixture",
+    );
+    let program = frontend::lift_elf(&std::fs::read(&object_path).unwrap(), "fixture")
+        .unwrap()
+        .program;
+    let (output, validation) =
+        readable::emit_readable_c_with_checked_reduction(&program, solver).unwrap();
+    assert_eq!(
+        validation.accepted(),
+        accepted,
+        "{name} {optimization}: {validation:?}"
+    );
+    let inputs: Vec<[u64; 4]> = include_str!("fixtures/inputs.tsv")
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let fields: Vec<_> = line.split('\t').collect();
+            std::array::from_fn(|i| fields[i + 1].parse().unwrap())
+        })
+        .collect();
+    let mut text = String::new();
+    let mut expected_memory = Vec::new();
+    let mut expected_visible = Vec::new();
+    for input in inputs {
+        writeln!(text, "{} {} {} {}", input[0], input[1], input[2], input[3]).unwrap();
+        let (registers, memory) = prepare(&input);
+        let execution = program
+            .execute_with_memory(&registers, BASE, &memory, 10000)
+            .unwrap();
+        let mut row = visible_result(&execution);
+        expected_visible.push(row.clone());
+        row.push(memory_digest(&execution.memory));
+        expected_memory.push(row);
+    }
+    let harness = scratch.0.join("harness.o");
+    object(&root.join("harness.c"), &harness, optimization, "fixture");
+    let original_binary = scratch.0.join("original");
+    link(&[&object_path, &harness], &original_binary);
+    assert_eq!(run(&original_binary, &text), expected_visible);
+    let source = scratch.0.join("checked.c");
+    std::fs::write(&source, output.code.clone() + &readable_harness(&output)).unwrap();
+    let compiled = scratch.0.join("checked.o");
+    object(&source, &compiled, optimization, "nirvana_readable");
+    let binary = scratch.0.join("checked");
+    link(&[&compiled], &binary);
+    assert_eq!(run_fields(&binary, &text, 6), expected_memory);
+}
+
+#[test]
+fn unavailable_verifier_keeps_original_ir_and_emits_executable_c() {
+    check_checked_c_fixture(
+        "arithmetic",
+        "-O0",
+        &nirvana::verify::Solver::new("/nirvana-no-such-solver"),
+        false,
+    );
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .args(["unused.o", "--verify-reduction", "/nirvana-no-such-solver"])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("requires --emit readable-c"));
+}
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3 and run with --include-ignored"]
+fn accepted_reductions_feed_native_c_and_the_cli_reports_only_the_ir_scope() {
+    let path = std::env::var_os("NIRVANA_Z3").unwrap_or_else(|| "z3".into());
+    let solver = nirvana::verify::Solver::new(&path);
+    for (name, optimization) in [("diamond", "-O2"), ("sum", "-O2"), ("nonlocal-exit", "-O0")] {
+        check_checked_c_fixture(name, optimization, &solver, true);
+    }
+    let scratch = Scratch::new();
+    let object_path = scratch.0.join("diamond.o");
+    object(
+        &fixture_root().join("cases/diamond.c"),
+        &object_path,
+        "-O2",
+        "fixture",
+    );
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .arg(&object_path)
+        .args(["--emit", "readable-c", "--verify-reduction"])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let message = String::from_utf8(result.stderr).unwrap();
+    assert!(message.contains("IR reduction accepted under checked-memory-block-v1"));
+    assert!(message.contains("C emission is separately tested"));
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .contains("nirvana_readable(")
+    );
+}

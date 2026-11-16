@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(out.join("report.tsv"), &report)?;
         }
     }
+    std::fs::write(out.join("report.tsv"), report)?;
     println!(
         "{accepted}/{checked} reductions accepted under {}; {blocks} block obligations UNSAT; report {}",
         block_verify::MODEL_ID,

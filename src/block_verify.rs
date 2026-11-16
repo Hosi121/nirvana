@@ -445,12 +445,14 @@ pub struct BlockEvidence {
 pub struct Validation {
     pub blocks: Vec<BlockEvidence>,
     pub incomplete: Option<UnknownReason>,
+    required_blocks: usize,
 }
 
 impl Validation {
     pub fn accepted(&self) -> bool {
         self.incomplete.is_none()
-            && !self.blocks.is_empty()
+            && self.required_blocks != 0
+            && self.blocks.len() == self.required_blocks
             && self
                 .blocks
                 .iter()
@@ -545,6 +547,7 @@ pub fn validate_program(before: &Program, after: &Program, solver: &Solver) -> V
     let reject = |reason| Validation {
         blocks: Vec::new(),
         incomplete: Some(reason),
+        required_blocks: 0,
     };
     if before.cfg().instructions() != after.cfg().instructions()
         || before.cfg().block(before.cfg().entry()).start
@@ -576,6 +579,7 @@ pub fn validate_program(before: &Program, after: &Program, solver: &Solver) -> V
     let mut validation = Validation {
         blocks: Vec::new(),
         incomplete: None,
+        required_blocks: reachable.len(),
     };
     for id in reachable {
         let block = before.cfg().block(id);
