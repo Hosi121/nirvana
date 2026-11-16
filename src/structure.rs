@@ -11,6 +11,7 @@ use crate::ir::{
     Assignment, Control, Execution, ExecutionError, Expr, Machine, Program, RunReport, Stop,
 };
 use crate::postdom::{PostDomNode, PostDominators};
+use crate::structure_verify::{self, StructureEvidence, ValidationError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Node {
@@ -44,6 +45,7 @@ pub struct StructuredFunction {
     register_count: usize,
     body: Vec<Node>,
     stats: StructureStats,
+    evidence: StructureEvidence,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +63,7 @@ pub enum StructureError {
     NonlocalLoopTransfer(BlockId),
     MissingJoin(BlockId),
     UncoveredBlocks,
+    Validation(ValidationError),
 }
 
 impl fmt::Display for StructureError {
@@ -76,6 +79,7 @@ impl fmt::Display for StructureError {
             Self::UncoveredBlocks => {
                 f.write_str("structured tree does not cover every reachable block")
             }
+            Self::Validation(error) => write!(f, "structured-flow validation failed: {error}"),
         }
     }
 }
@@ -134,10 +138,13 @@ impl StructuredFunction {
             emitted_block_copies,
             extra_block_copies: emitted_block_copies - builder.visited.len(),
         };
+        let evidence =
+            structure_verify::validate(program, &body).map_err(StructureError::Validation)?;
         Ok(Self {
             register_count: program.register_count(),
             body,
             stats,
+            evidence,
         })
     }
 
@@ -147,6 +154,12 @@ impl StructuredFunction {
 
     pub fn stats(&self) -> StructureStats {
         self.stats
+    }
+
+    /// Exact instruction/AST control correspondence checked independently of
+    /// the builder. This does not certify subsequent C rendering transforms.
+    pub fn evidence(&self) -> StructureEvidence {
+        self.evidence
     }
 
     pub fn execute(&self, input: &[u64], step_limit: usize) -> Result<Execution, ExecutionError> {
