@@ -1,0 +1,112 @@
+{
+  "objective": "Add three independent native C fixtures and materially improve final readable C: shorter checked memory syntax, remove redundant masks and goto routing; retain return/full guest memory/fault semantics",
+  "baseline": "9c56366",
+  "topology": "frozen independent modules in isolated snapshots; parent-only trunk edits",
+  "tasks": [
+    {
+      "id": "fixtures",
+      "dependencies": [],
+      "inputArtifacts": [
+        "existing recovery harness and fixture ABI"
+      ],
+      "writeScope": [
+        "tests/fixtures/recovery/three-entry-goto.c",
+        "tests/fixtures/recovery/packed-update.c",
+        "tests/fixtures/recovery/early-exit-chain.c",
+        "tests/recovery_fixture.rs"
+      ],
+      "allowedTools": [
+        "isolated local edits",
+        "cargo",
+        "cc"
+      ],
+      "budget": {
+        "toolCalls": 50,
+        "retries": 2
+      },
+      "successCriteria": [
+        "three new sources lift at unchanged O0/O2 flags",
+        "native/IR/readable return/state plus C/IR full-memory digest",
+        "no new skips"
+      ]
+    },
+    {
+      "id": "presentation",
+      "dependencies": [],
+      "inputArtifacts": [
+        "IR pure total arithmetic and ordered checked loads"
+      ],
+      "writeScope": [
+        "src/presentation.rs",
+        "tests/presentation.rs"
+      ],
+      "allowedTools": [
+        "isolated local edits",
+        "cargo",
+        "optional existing Z3"
+      ],
+      "budget": {
+        "toolCalls": 60,
+        "retries": 2
+      },
+      "successCriteria": [
+        "nonexpanding expression normalization using honest per-register unsigned width bounds",
+        "retain all ordered/lazy load effects",
+        "known zero high bits eliminate redundant masks and partial-register merge noise"
+      ]
+    },
+    {
+      "id": "goto",
+      "dependencies": [],
+      "inputArtifacts": [
+        "Program and CFG validated edges"
+      ],
+      "writeScope": [
+        "src/goto_layout.rs",
+        "tests/goto_layout.rs"
+      ],
+      "allowedTools": [
+        "isolated local edits",
+        "cargo"
+      ],
+      "budget": {
+        "toolCalls": 55,
+        "retries": 2
+      },
+      "successCriteria": [
+        "thread assignment-free unconditional routing blocks",
+        "retain representative of empty cycles",
+        "all kept effectful blocks reachable; deterministic fallthrough-oriented order"
+      ]
+    },
+    {
+      "id": "integrate",
+      "dependencies": [
+        "fixtures",
+        "presentation",
+        "goto"
+      ],
+      "inputArtifacts": [
+        "worker artifacts"
+      ],
+      "writeScope": [
+        "authoritative backend/CLI/tests/docs"
+      ],
+      "allowedTools": [
+        "local edits",
+        "native/SMT checks",
+        "local commits"
+      ],
+      "successCriteria": [
+        "3 new fixture sources compiled/tested",
+        "visible before/after function output comparison",
+        "all existing behavior checks preserved",
+        "separate local commits and clean tree"
+      ]
+    }
+  ],
+  "presentation_api": "pub fn normalize(expression:&Expr, width:impl Fn(Reg)->Width)->Expr; pure arithmetic modulo2^64, cannot erase/reorder/duplicate any Load or lose lazy Select. On bounds/resources fall back to original expression. Bound width denotes ALL observed register values, no zero assumptions.",
+  "goto_api": "GotoLayout::compute(program:&Program)->Option<Self>; blocks(&self)->&[BlockId]; entry(&self)->BlockId; resolve(&self, block:BlockId)->BlockId. Only literally assignment-free unconditional Next/Jump blocks can route. Empty cycles collapse to retained canonical representative, never disappear. Parent lowers condition evaluation and fallthrough-aware C jumps.",
+  "outputSchema": "scoped source/tests, verification commands/results, limits/issues; no shared edits or worker commits",
+  "stop": "three fixtures plus these finite output changes, tested/compared/committed; no general type inference or indirect-branch expansion this iteration"
+}

@@ -31,13 +31,13 @@ cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit structured-cfg
 例えば `diamond -O2` の関数本体は、境界検査用のヘルパーと変数宣言を除くと次の形になります。
 
 ```c
-v0 = nirvana_view_load(&m, object_0.field_0, 8);
-v0 = v0 <= 9 ? v0 * 3 : 20 + v0;
-nirvana_view_store(&m, object_0.field_8, 8, v0);
-return v0;
+value = read64(input.field_0);
+value = value <= 9 ? value * 3 : value + 20;
+write64(input.field_8, value);
+return value;
 ```
 
-`nirvana_readable` の引数は、必要な入力レジスタを値で受け取る `arg0, arg1, ...` と、メモリ領域です。
+`nirvana_readable` の引数は、必要な入力レジスタを値で受け取る `input_address`・`stack_base`・`argN` と、メモリ領域です。
 元レジスタとの対応は生成Cのコメントに出します。入力の型・引数名・構造体を復元したものではありません。
 従来の全レジスタ入出力を使う場合は `--emit c` を選べます。
 
@@ -48,8 +48,12 @@ Load/Storeは境界検査付きの同じゲストメモリを使い、別ポイ�
 
 入力ポインタの定数オフセットやstride付き添字にも名前を付け、値が確実に収まる範囲で
 `uint8_t`・`uint16_t`・`uint32_t`を使います。生存区間が重ならない同じ幅の局所値は保存場所を共有します。
-55構成の同じ機械語で、数値一時変数の宣言数は912→229でした。`--no-coalesce-locals`で共有を無効にできます。
+保存場所の共有は、前回の55構成で数値一時変数の宣言数を912→229に減らしました。`--no-coalesce-locals`で共有を無効にできます。
 複数Loadの順序とSelectの遅延評価も明示します。[範囲・検証・再現方法](docs/memory-recovery.md)を参照してください。
+
+冗長な幅マスク、空ブロック経由のgoto、脱出後のelseを減らし、checked memoryも`read16`・`write64`・`element`で表します。
+追加した3例を含む45構成で関数内トークン数は20,937→15,316、gotoは45→14でした。
+[実際の出力・比較条件](docs/output-polish.md)を参照してください。
 
 IR還元の採否をSMTで検査するモードもあります。Z3の[準備方法](docs/pure-expression-verification.md)を使い、次を実行します。
 
@@ -133,7 +137,7 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 
 ## 検証
 
-通常の249テストと、Z3を使う追加9テストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
+通常の273テストと、Z3を使う追加9テストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
 複数入口の循環、到達不能な前任ブロック、入力の欠落や重複、IRの演算とC生成を対象にしています。
 
 加えて、4命令の小プログラム4,000通りについて次を照合します。

@@ -1,0 +1,122 @@
+{
+  "baseline": "9c56366",
+  "implementation": "c3d1687",
+  "workers": [
+    {
+      "task": "fixtures",
+      "agent": "/root/variable_hir",
+      "verification": "6 sources, 12 configs, 828 native/IR/readable comparisons at unchanged C11 O0/O2 flags; no skips"
+    },
+    {
+      "task": "presentation",
+      "agent": "/root/stack_analysis",
+      "verification": "10 tests, including 480 expression/width profiles and 216000 exact IR execution comparisons; bounded unchanged fallback"
+    },
+    {
+      "task": "goto",
+      "agent": "/root/expression_sequence",
+      "verification": "13 tests, including independent block replay, faulting same-target branches, divergence representatives and resource bounds"
+    }
+  ],
+  "integration_evidence": [
+    {
+      "worker": "fixtures",
+      "file": "tests/recovery_fixture.rs",
+      "sha256": "d06848950d40e1fb180d927f901904efb8e9a2e6b18f6fd6c4dd83f6fdb8c7f5",
+      "retained_in": "908f3e4"
+    },
+    {
+      "worker": "fixtures",
+      "file": "tests/fixtures/recovery/three-entry-goto.c",
+      "sha256": "38444e0e3a0a1784ebcabb5ac0769294a4798e5e40501ad72a9b6ca3c818476d",
+      "retained_in": "908f3e4"
+    },
+    {
+      "worker": "fixtures",
+      "file": "tests/fixtures/recovery/packed-update.c",
+      "sha256": "1a561cebc8523ec8ba24d35ce15d251637ce1e39822308381cdf596a9a542ee3",
+      "retained_in": "908f3e4"
+    },
+    {
+      "worker": "fixtures",
+      "file": "tests/fixtures/recovery/early-exit-chain.c",
+      "sha256": "e89f4fe34663ed0b619d1b7b3f2d07247a15629df8d60da9910368b9251c50aa",
+      "retained_in": "908f3e4"
+    },
+    {
+      "worker": "presentation",
+      "file": "src/presentation.rs",
+      "sha256": "d78d7c6da0b65694eb5e76d38a0a31054fca73f49bdc4f694a34f65ea7513511",
+      "retained_in": "791bd76"
+    },
+    {
+      "worker": "presentation",
+      "file": "tests/presentation.rs",
+      "sha256": "78a11cc70dabe04820c13c03458db3bde9f597d6f0ea416fc54404f3771b08c0",
+      "retained_in": "791bd76"
+    },
+    {
+      "worker": "goto",
+      "file": "src/goto_layout.rs",
+      "sha256": "9e58ae5c22b2ca643d37626115290e6d9b5dcf7791b322639cd0e89310f967ac",
+      "retained_in": "791bd76"
+    },
+    {
+      "worker": "goto",
+      "file": "tests/goto_layout.rs",
+      "sha256": "46233e11f7ce0a9c9996f1d58def4f536aef5086905aa670b0277abb750d45b6",
+      "retained_in": "791bd76"
+    }
+  ],
+  "sequential_review": {
+    "agent": "/root/stack_analysis",
+    "findings": [
+      "Late C-only simplify can remove the last local use after dependency collection; separate ordinary diamond and loop reproducers.",
+      "Width normalization can expose self-comparisons rejected by GCC -Wtautological-compare."
+    ],
+    "resolution": "All algebra before dependency analysis; renderer only complements boolean comparisons without operand reordering. Pure identical operands fold before metadata. Native regressions cover Xor/Eq/Ult/Ule in loop and diamond guards with valid and faulting inputs, both memory styles and views.",
+    "recheck": "Original standalone reproducer compiles at O0/O2 with Wall/Wextra/Werror. No remaining concrete defect reported."
+  },
+  "verification": {
+    "all_tests": 282,
+    "normal_tests": 273,
+    "optional_smt_tests": 9,
+    "failures": 0,
+    "ignored": 0,
+    "clippy": "all targets, -D warnings, passed",
+    "format": "cargo fmt --check passed",
+    "diff": "git diff --check passed",
+    "native": "61/68 configs, 3979 source/IR/readable comparisons; 7 pre-existing relocation rejects",
+    "ubsan": "16 generated configs, 1008 comparisons, no diagnostics",
+    "output_comparison": {
+      "accepted": 45,
+      "total": 52,
+      "before": {
+        "unit_bytes": 165090,
+        "function_bytes": 89125,
+        "tokens": 20937,
+        "gotos": 45,
+        "labels": 33,
+        "masks": 231,
+        "casts": 46
+      },
+      "after": {
+        "unit_bytes": 217709,
+        "function_bytes": 76623,
+        "tokens": 15316,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 96,
+        "casts": 33
+      },
+      "both_sides_compile": "90 C units, C11/Wall/Wextra/Werror/pedantic/fno-lto/O0/O2"
+    }
+  },
+  "limits": [
+    "No whole-C formal proof or source-similarity score.",
+    "Compact function syntax adds a shared helper prelude; complete C files grow.",
+    "C goto routing preserves divergence/observable effects, not IR instruction trace or step cutoffs.",
+    "No new relocation, indirect-branch, call or source-type support."
+  ],
+  "cleanup": "Worker snapshots matched retained commit history; review reproducers and baseline source/executable retained under target/output-polish. Removed only the task-owned /tmp/nirvana-output-polish tree."
+}
