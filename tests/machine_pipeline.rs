@@ -439,11 +439,17 @@ fn machine_multiply_overflow_affects_recompiled_c_like_the_native_compiler() {
     }
 }
 
+enum ExpectedReduction {
+    Accepted,
+    Original,
+    ResourceDependent,
+}
+
 fn check_checked_c_fixture(
     name: &str,
     optimization: &str,
     solver: &nirvana::verify::Solver,
-    accepted: bool,
+    expected: ExpectedReduction,
 ) {
     let scratch = Scratch::new();
     let root = fixture_root();
@@ -459,11 +465,48 @@ fn check_checked_c_fixture(
         .program;
     let (output, validation) =
         readable::emit_readable_c_with_checked_reduction(&program, solver).unwrap();
-    assert_eq!(
-        validation.accepted(),
-        accepted,
-        "{name} {optimization}: {validation:?}"
+    match expected {
+        ExpectedReduction::Accepted => assert!(
+            validation.accepted(),
+            "{name} {optimization}: {validation:?}"
+        ),
+        ExpectedReduction::Original => assert!(!validation.accepted()),
+        ExpectedReduction::ResourceDependent if !validation.accepted() => {
+            use nirvana::block_verify::BlockVerdict;
+            use nirvana::verify::UnknownReason;
+            assert!(
+                matches!(validation.incomplete, Some(UnknownReason::SolverTimeout))
+                    || matches!(
+                        validation.blocks.last().map(|block| &block.verdict),
+                        Some(BlockVerdict::Unknown(
+                            UnknownReason::SolverUnknown | UnknownReason::SolverTimeout
+                        ))
+                    ),
+                "only solver resource cutoffs may retain this known candidate: {validation:?}"
+            );
+        }
+        ExpectedReduction::ResourceDependent => {}
+    }
+    assert!(
+        !validation.blocks.iter().any(|block| matches!(
+            block.verdict,
+            nirvana::block_verify::BlockVerdict::Counterexample(_)
+        )),
+        "unexpected local counterexample: {validation:?}"
     );
+    if !validation.accepted() {
+        assert_eq!(output.reduction_stats.passes, 0);
+        assert_eq!(
+            output.reduction_stats.reduced_assignments,
+            output.reduction_stats.original_assignments
+        );
+        assert_eq!(
+            output.parameters,
+            (0..program.register_count())
+                .map(nirvana::ir::Reg)
+                .collect::<Vec<_>>()
+        );
+    }
     let inputs: Vec<[u64; 4]> = include_str!("fixtures/inputs.tsv")
         .lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -506,7 +549,7 @@ fn unavailable_verifier_keeps_original_ir_and_emits_executable_c() {
         "arithmetic",
         "-O0",
         &nirvana::verify::Solver::new("/nirvana-no-such-solver"),
-        false,
+        ExpectedReduction::Original,
     );
     let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
         .args(["unused.o", "--verify-reduction", "/nirvana-no-such-solver"])
@@ -521,9 +564,15 @@ fn unavailable_verifier_keeps_original_ir_and_emits_executable_c() {
 fn accepted_reductions_feed_native_c_and_the_cli_reports_only_the_ir_scope() {
     let path = std::env::var_os("NIRVANA_Z3").unwrap_or_else(|| "z3".into());
     let solver = nirvana::verify::Solver::new(&path);
-    for (name, optimization) in [("diamond", "-O2"), ("sum", "-O2"), ("nonlocal-exit", "-O0")] {
-        check_checked_c_fixture(name, optimization, &solver, true);
+    for (name, optimization) in [("diamond", "-O2"), ("sum", "-O2")] {
+        check_checked_c_fixture(name, optimization, &solver, ExpectedReduction::Accepted);
     }
+    check_checked_c_fixture(
+        "nonlocal-exit",
+        "-O0",
+        &solver,
+        ExpectedReduction::ResourceDependent,
+    );
     let scratch = Scratch::new();
     let object_path = scratch.0.join("diamond.o");
     object(
