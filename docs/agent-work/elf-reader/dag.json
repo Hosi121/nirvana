@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    "parent-x86-decoder-and-ir",
+    "agent-elf-reader",
+    "parent-integration"
+  ],
+  "edges": [
+    [
+      "parent-x86-decoder-and-ir",
+      "parent-integration"
+    ],
+    [
+      "agent-elf-reader",
+      "parent-integration"
+    ]
+  ]
+}

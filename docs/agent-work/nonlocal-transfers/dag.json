@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {"id": "c-fixtures", "owner": "parent", "outputs": ["tests/fixtures", "tests/native_c.rs", "tools/build_fixtures.py"]},
+    {"id": "nonlocal-transfers", "owner": "subagent", "contract": "contract.json", "output": "reviewable patch"},
+    {"id": "integration", "owner": "parent", "checks": ["patch review", "cargo test --all-targets", "clippy", "rustfmt"]}
+  ],
+  "edges": [
+    ["c-fixtures", "integration"],
+    ["nonlocal-transfers", "integration"]
+  ]
+}
