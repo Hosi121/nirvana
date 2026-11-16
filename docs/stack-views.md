@@ -33,7 +33,7 @@ strideがゼロでもfaultする添字を消しません。独自のオブジェ
 
 CLIの`--emit readable-c`はx86のRSPを明示してスタック解析を有効にします。
 ライブラリの汎用`emit_readable_c`はアーキテクチャを仮定しません。有効にする場合は
-`emit_readable_c_with_options`へ`ReadableOptions { stack_register: Some(Reg(...)) }`を渡します。
+`emit_readable_c_with_options`へ`ReadableOptions { stack_register: Some(Reg(...)), ..Default::default() }`を渡します。
 検査付き還元にも同じoptionsを受け取るAPIがあります。
 
 生成例は次の形です。宣言で**入口時点**のアドレスを保存するので、途中でRSPが変わっても位置は変わりません。
@@ -96,3 +96,5 @@ cargo run --quiet -- target/c-fixtures/cc-0/O0/sum.o --emit readable-c
 一般的な型・構造体・配列の自動推定、スタック位置の生存期間による分割、メモリSSA、
 Loadを跨ぐ値の伝播、スタックをホスト変数へ移す変換は未実装です。
 生のC出力を含め、任意の式の複数LoadについてCの評価順を完全に検証したという主張もしません。
+
+入力field/index、保存幅、局所値の共有を含む後続の改修は[memory-recovery.md](memory-recovery.md)を参照してください。

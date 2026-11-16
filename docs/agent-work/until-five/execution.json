@@ -1,0 +1,194 @@
+{
+  "start": "2026-11-17 03:42 JST",
+  "deadline": "2026-11-17 05:00 JST",
+  "baseline": "c4de482",
+  "agents": [
+    "/root/stack_analysis",
+    "/root/expression_sequence",
+    "/root/variable_hir"
+  ],
+  "topology": "independent frozen APIs with isolated snapshots; parent-only trunk integration; sequential read-only integration reviews",
+  "files": [
+    {
+      "snapshot": "provenance",
+      "file": "src/provenance.rs",
+      "source_equals_integrated": true,
+      "sha256": "d91d53d28756b9f41b2a71db102be7597c6ff476f651175dd89187e0629d8cdf"
+    },
+    {
+      "snapshot": "provenance",
+      "file": "tests/provenance.rs",
+      "source_equals_integrated": true,
+      "sha256": "f8f04701dd6bedc3ebeb9ecfad01f031f841367e18a5acb2e2310ea083699321"
+    },
+    {
+      "snapshot": "provenance",
+      "file": "src/value_width.rs",
+      "source_equals_integrated": true,
+      "sha256": "5477d18f3c906a0d0121f0c840541d29887340cfe0b8b22e7db1517d0f3688b3"
+    },
+    {
+      "snapshot": "provenance",
+      "file": "tests/value_width.rs",
+      "source_equals_integrated": true,
+      "sha256": "c9271c354c76f219a0ef106ebcb8d0550a29ff1c4301310b72a0550865fd43c6"
+    },
+    {
+      "snapshot": "provenance",
+      "file": "src/allocation.rs",
+      "source_equals_integrated": true,
+      "sha256": "1b1c636050464148e73b0576ef9668d916f755ea4cf4dd1e9adcf71849fa12a8"
+    },
+    {
+      "snapshot": "provenance",
+      "file": "tests/allocation.rs",
+      "source_equals_integrated": true,
+      "sha256": "45323b42b5d3c4f494593562881740f2c951ca9a0bc83a507afcc71082899fec"
+    },
+    {
+      "snapshot": "sequence",
+      "file": "src/sequence.rs",
+      "source_equals_integrated": true,
+      "sha256": "1645cb5725463b7c277de7d7bc78ee00d7b0bfd48520dacb4235b157ec39566c"
+    },
+    {
+      "snapshot": "sequence",
+      "file": "tests/sequence.rs",
+      "source_equals_integrated": true,
+      "sha256": "59606dc285a14fb6e9aa447b22388bea3bd21237a5903d67ab30706f4dca3b47"
+    },
+    {
+      "snapshot": "sequence",
+      "file": "src/loop_shape.rs",
+      "source_equals_integrated": true,
+      "sha256": "203c50319baad964d2b9263a181b35c97411f2a1e58723cd69ba13b12c781800"
+    },
+    {
+      "snapshot": "sequence",
+      "file": "tests/loop_shape.rs",
+      "source_equals_integrated": true,
+      "sha256": "895559257a64bb9757c8a220626eeb3d5d886b9a87d04a56c0cd1bf1ef6bbd2b"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "src/indexed.rs",
+      "source_equals_integrated": true,
+      "sha256": "134c13ab158b9b9ed9ccfdfd93ebd2ca331536794ca8449b5811110f383ca5eb"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "tests/indexed.rs",
+      "source_equals_integrated": true,
+      "sha256": "1870dec1f52e24c24aa4f915c512f8d79da39589f92c4fd684e77bcd20113fa1"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "src/value_width.rs",
+      "source_equals_integrated": true,
+      "sha256": "5477d18f3c906a0d0121f0c840541d29887340cfe0b8b22e7db1517d0f3688b3"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "tests/fixtures/recovery/byte-fields.c",
+      "source_equals_integrated": true,
+      "sha256": "119648a53c0c753ac0470f7cf6bbbc37d0e8033147ca0adea44b9799efc2cd28"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "tests/fixtures/recovery/strided-input.c",
+      "source_equals_integrated": true,
+      "sha256": "37621747b762c96e445d43e142e9b3cf95201af62c69cb3eb24ed7f19d2cc364"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "tests/fixtures/recovery/selected-alias.c",
+      "source_equals_integrated": true,
+      "sha256": "2359951a047a6fe46c10e253fb62a562c32fb4c8f3aa1f3d510d0f6bfa9f2558"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "tests/recovery_fixture.rs",
+      "parent_adaptation": true,
+      "sha256": "0bf969617710996984bc45d316013cdf63736844db1b392dcd17be3347744d4c"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "tests/recovery_verification.rs",
+      "parent_adaptation": true,
+      "sha256": "5fd2bb2fdd14ecb34009c32e90357b1e83b68ab09cda8322b3e6fd1662414dc5"
+    },
+    {
+      "snapshot": "fixtures",
+      "file": "docs/memory-recovery.md",
+      "parent_adaptation": true,
+      "sha256": "c433d3a70c79944f1aea304d94a69878cf8440301e8fefefa4941b39a06bd838"
+    },
+    {
+      "snapshot": "generated",
+      "file": "tests/generated_recovery.rs",
+      "parent_adaptation": true,
+      "sha256": "db656f889e826c61aa01e291abfe067e402c581c7891ccb218c6c2095d53a931"
+    }
+  ],
+  "native": {
+    "configurations": 55,
+    "inputs": 3565,
+    "scope": "original native C return/state vs IR; regenerated C also full guest-memory 64-bit digest vs IR"
+  },
+  "smt": {
+    "strict_equivalent": 137,
+    "sat_mutants_replayed_in_IR": 3,
+    "separate_symbolic_product_probe": "Unknown at default2s; checked rewrite retains original, excluded from proof count",
+    "tautological_U64_cases_not_queried": 31
+  },
+  "summary": {
+    "configurations": 62,
+    "lifted": 55,
+    "fields": 139,
+    "indexed_shapes": 16,
+    "indexed_address_constructions": 14,
+    "numeric_local_declarations_separate": 912,
+    "numeric_local_declarations_reused": 229,
+    "normal_tests": 249,
+    "optional_tests": 9,
+    "total_tests": 258,
+    "failed": 0,
+    "ignored_in_final_run": 0,
+    "local_widths": {
+      "separate": {
+        "64": 799,
+        "8": 67,
+        "16": 25,
+        "32": 21
+      },
+      "full": {
+        "64": 172,
+        "8": 42,
+        "32": 8,
+        "16": 7
+      }
+    }
+  },
+  "ubsan": {
+    "configurations": 16,
+    "comparisons": 1008,
+    "scope": "return/state; no UBSan diagnostics"
+  },
+  "mode_compilation": 165,
+  "review_results": [
+    "No concrete new defect found in pure address replacement or origin alias invalidation",
+    "No concrete defect in narrow C promotions/index dependencies/color maps/while control",
+    "Definition-time constructors retain current index; dependencies and rendering use the same option guard"
+  ],
+  "integration_regressions_fixed": [
+    "Generated narrow-select seed10 detected unused base temporaries after RHS became a view; rendered dependency collection now follows emitted index/base reads",
+    "Stack-only mode retains original RHS dependencies when input-object recovery is disabled"
+  ],
+  "parent_adaptations": [
+    "Enable recovered objects and coalescing in integration fixtures; add indexed/native boundary assertions",
+    "Retain symbolic multiplier cutoff as separate original-expression-preserving probe",
+    "Add opt-in source/object retention for generated cases",
+    "Fill measured results and constructor behavior in documentation"
+  ],
+  "cleanup": "Verified all worker scoped source, all other tracked baseline files, and unexpected-file lists before deleting four isolated snapshots."
+}

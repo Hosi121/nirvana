@@ -31,10 +31,10 @@ cargo run -- target/c-fixtures/cc-0/O2/diamond.o --emit structured-cfg
 例えば `diamond -O2` の関数本体は、境界検査用のヘルパーと変数宣言を除くと次の形になります。
 
 ```c
-v0 = nirvana_load(&m, arg0, 8);
-v1 = v0 <= 9 ? v0 * 3 : 20 + v0;
-nirvana_store(&m, 8 + arg0, 8, v1);
-return v1;
+v0 = nirvana_view_load(&m, object_0.field_0, 8);
+v0 = v0 <= 9 ? v0 * 3 : 20 + v0;
+nirvana_view_store(&m, object_0.field_8, 8, v0);
+return v0;
 ```
 
 `nirvana_readable` の引数は、必要な入力レジスタを値で受け取る `arg0, arg1, ...` と、メモリ領域です。
@@ -45,6 +45,11 @@ O0のスタックアクセスには、入口RSPからの位置を追って`stack
 Load/Storeは境界検査付きの同じゲストメモリを使い、別ポインタとのaliasや幅の重なりを保ちます。
 `sum -O0`では5箇所、`struct-fields -O0`では6箇所を名前付きで表します。
 元の変数名や構造体型の推定とは区別しています。[設計・比較結果](docs/stack-views.md)を参照してください。
+
+入力ポインタの定数オフセットやstride付き添字にも名前を付け、値が確実に収まる範囲で
+`uint8_t`・`uint16_t`・`uint32_t`を使います。生存区間が重ならない同じ幅の局所値は保存場所を共有します。
+55構成の同じ機械語で、数値一時変数の宣言数は912→229でした。`--no-coalesce-locals`で共有を無効にできます。
+複数Loadの順序とSelectの遅延評価も明示します。[範囲・検証・再現方法](docs/memory-recovery.md)を参照してください。
 
 IR還元の採否をSMTで検査するモードもあります。Z3の[準備方法](docs/pure-expression-verification.md)を使い、次を実行します。
 
@@ -128,7 +133,7 @@ dot -Tsvg /tmp/nirvana-loop.dot -o /tmp/nirvana-loop.svg
 
 ## 検証
 
-通常の160テストと、Z3を使う追加6テストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
+通常の249テストと、Z3を使う追加9テストがあります。分岐の合流、後方分岐、自己ループ、複数ラッチ、入れ子ループ、
 複数入口の循環、到達不能な前任ブロック、入力の欠落や重複、IRの演算とC生成を対象にしています。
 
 加えて、4命令の小プログラム4,000通りについて次を照合します。
