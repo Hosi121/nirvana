@@ -262,16 +262,20 @@ impl Roles {
             },
             Node::Step {
                 address,
-                assignments: vec![
-                    Assignment {
-                        destination: self.accumulator.into(),
-                        value: Expr::binary(BinaryOp::Add, r(self.accumulator), r(self.counter)),
-                    },
-                    Assignment {
-                        destination: self.counter.into(),
-                        value: Expr::binary(BinaryOp::Add, r(self.counter), Expr::Const(1)),
-                    },
-                ],
+                assignments: vec![Assignment {
+                    destination: self.accumulator.into(),
+                    value: Expr::binary(BinaryOp::Add, r(self.accumulator), r(self.counter)),
+                }],
+            },
+            // Keep the induction update separate so the ordinary C renderer
+            // can borrow just this suffix for a for-loop clause. Both steps
+            // still pass the same independent region correspondence check.
+            Node::Step {
+                address,
+                assignments: vec![Assignment {
+                    destination: self.counter.into(),
+                    value: Expr::binary(BinaryOp::Add, r(self.counter), Expr::Const(1)),
+                }],
             },
         ])]
     }

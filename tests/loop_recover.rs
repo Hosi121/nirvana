@@ -104,13 +104,8 @@ fn input(mask: u64, accumulator: u64, operator: BinaryOp) -> Vec<Node> {
 fn ordinary(address: u64) -> Node {
     Node::Loop(vec![
         guard(),
-        step(
-            address,
-            vec![
-                set(1, b(BinaryOp::Add, r(1), r(0))),
-                set(0, b(BinaryOp::Add, r(0), c(1))),
-            ],
-        ),
+        step(address, vec![set(1, b(BinaryOp::Add, r(1), r(0)))]),
+        step(address, vec![set(0, b(BinaryOp::Add, r(0), c(1)))]),
     ])
 }
 
