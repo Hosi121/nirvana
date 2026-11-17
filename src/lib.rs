@@ -31,6 +31,7 @@ pub mod reduce;
 pub mod self_update;
 pub mod sequence;
 pub mod simplify;
+pub mod source_locals;
 pub mod stack;
 pub mod stack_role;
 pub mod stack_values;

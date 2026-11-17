@@ -120,6 +120,9 @@ pub struct LocalPlanStats {
     pub verified_storage_pools: usize,
     /// Pools whose first allocation/check was unavailable or rejected.
     pub storage_verification_fallbacks: usize,
+    /// Heuristic improvement and independent correspondence for an accepted
+    /// global source-candidate map. None means the previous map was retained.
+    pub source_allocation: Option<crate::source_locals::SourceStats>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

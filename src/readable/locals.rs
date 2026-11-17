@@ -96,6 +96,22 @@ impl LocalPlan {
                 semantic_colors(&eligible, &storage, refined, nodes, stack_roles.as_ref())
             })
             .unwrap_or_else(|| storage.clone());
+        let source_candidate = stack_roles.as_ref().and_then(|roles| {
+            let initial: Vec<_> = eligible
+                .iter()
+                .copied()
+                .zip(colors.iter().copied())
+                .collect();
+            let lineages = source_lineages(&eligible, roles);
+            crate::source_locals::recover(program, &initial, &lineages)
+        });
+        // The candidate covers every eligible register and is independently
+        // checked as a whole. Width selection below uses the maximum member
+        // width, including when a candidate spans old width pools/colors.
+        let colors = source_candidate
+            .as_ref()
+            .and_then(|candidate| eligible.iter().map(|&reg| candidate.color(reg)).collect())
+            .unwrap_or(colors);
         let mut groups: BTreeMap<usize, Vec<Reg>> = BTreeMap::new();
         let mut origins: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
         for ((&reg, &color), &origin) in eligible.iter().zip(&colors).zip(&storage) {
@@ -174,6 +190,7 @@ impl LocalPlan {
             split_storage_groups: origins.values().filter(|colors| colors.len() > 1).count(),
             verified_storage_pools,
             storage_verification_fallbacks,
+            source_allocation: source_candidate.as_ref().map(|candidate| candidate.stats()),
         };
         let mut initial_slots = Vec::new();
         for (index, reg) in parameters.iter().enumerate() {
@@ -348,9 +365,71 @@ fn local_role(
     {
         return None;
     }
+    let location = registers
+        .first()
+        .and_then(|&reg| stack.web_location(stack.register_web(reg)?));
+    if location.is_some_and(|location| {
+        registers.iter().all(|&reg| {
+            stack
+                .register_web(reg)
+                .and_then(|web| stack.web_location(web))
+                == Some(location)
+        })
+    }) {
+        let mut agreed = None;
+        for &reg in registers {
+            if let Some(role) = stack.register_role(reg) {
+                if agreed.is_some_and(|old| old != role) {
+                    return None;
+                }
+                agreed = Some(role);
+            }
+        }
+        return combine_roles(inferred, agreed);
+    }
     let first = stack.register_role(*registers.first()?);
     let unanimous = registers
         .iter()
         .all(|&reg| stack.register_role(reg) == first);
     combine_roles(inferred, if unanimous { first } else { None })
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum SourceKey {
+    Location(crate::stack_values::StackLocation),
+    Web(usize),
+}
+
+// Distinct reaching-store webs can be updates of one source variable. A shared
+// exact cell is a broader naming preference when its known roles agree. Reused
+// cells remain ambiguous source identities; the allocation checker, not this
+// heuristic, determines whether their values may share C storage.
+fn source_lineages(eligible: &[Reg], roles: &StackRoles) -> Vec<(Reg, usize)> {
+    let bindings: Vec<_> = eligible
+        .iter()
+        .filter_map(|&reg| {
+            let web = roles.register_web(reg)?;
+            Some((reg, web, roles.web_location(web)?))
+        })
+        .collect();
+    let mut by_location = BTreeMap::<_, BTreeSet<_>>::new();
+    for &(reg, _, location) in &bindings {
+        let known = by_location.entry(location).or_default();
+        if let Some(role) = roles.register_role(reg) {
+            known.insert(role.stem());
+        }
+    }
+    let mut labels = BTreeMap::new();
+    bindings
+        .into_iter()
+        .map(|(reg, web, location)| {
+            let key = if by_location[&location].len() <= 1 {
+                SourceKey::Location(location)
+            } else {
+                SourceKey::Web(web)
+            };
+            let next = labels.len();
+            (reg, *labels.entry(key).or_insert(next))
+        })
+        .collect()
 }

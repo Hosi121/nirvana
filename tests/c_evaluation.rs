@@ -1240,6 +1240,59 @@ fn native_c_stack_lineage_names_keep_alias_writes_and_first_fault() {
     compare_with_stack(&program, &inputs, Some(Reg(0)));
 }
 
+#[test]
+fn native_c_source_lineage_across_storage_widths_retains_full_values_and_faults() {
+    let program = Program::new(
+        0,
+        4,
+        vec![
+            instruction(
+                0,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: b(BinaryOp::Xor, r(1), c(u64::MAX)),
+                }],
+                Control::Jump(1),
+            ),
+            instruction(
+                1,
+                vec![
+                    store(r(0), Width::U8, r(2)),
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: Expr::load(r(0), Width::U8),
+                    },
+                ],
+                Control::Return(r(3)),
+            ),
+        ],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            stack_register: Some(Reg(0)),
+            coalesce_locals: true,
+            compact_memory: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let recovery = output.local_plan.source_allocation.unwrap();
+    assert!(recovery.after.locals < recovery.before.locals);
+    assert_eq!(output.locals.len(), 1);
+    assert_eq!(output.locals[0].width, Width::U64);
+    let inputs: Vec<_> = [0x1000, 0x100f, 0xffff]
+        .into_iter()
+        .flat_map(|stack| {
+            [0, 255, 256, u64::MAX, 1 << 63]
+                .into_iter()
+                .map(move |value| [stack, value])
+        })
+        .collect();
+    compare_with_stack(&program, &inputs, Some(Reg(0)));
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
     compare_with_stack(program, inputs, None);
 }

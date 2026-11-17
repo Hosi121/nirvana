@@ -48,12 +48,14 @@ web 候補で検査や描画に失敗した場合は元の reduced IR の経路�
 `LocalPlan` は名前・幅・保存場所を描画から分離する。
 同じ幅の局所値を CFG の生存解析とコピー関係で色分けし、共有できる保存場所を選ぶ。
 その色の内側で値の系譜とループ中の役割を調べ、異なる役割の群を分ける。
-別の色を統合せず、同じ役割や匿名値の共有は保つ。パラメータは共有対象から除く。
+パラメータは共有対象から除く。
 `counter`、`limit`、`accumulator`、`address` はこの構造から付ける表示名である。
 `stack_role` は到達書込みから spill/reload の候補を結び、解析専用の木でスタック上の役割も調べる。
 役割は名前と色の分割に使い、役割名だけを根拠に保存場所を統合しない。曖昧な値や異なる役割の根拠は採用しない。
 同じ系譜の値には割当ての優先情報を渡すが、干渉辺は減らさない。選んだ割当ては別の
 `allocation_verify` が各読出し時点の値の対応で検査し、通らなければ通常の割当て・個別変数へ戻す。
+さらに `source_locals` は同じ位置・幅で役割に矛盾のない値をまとめ、異なる候補を分ける。
+元の色をまたぐ統合も全体の対応検査を通し、不一致の候補を戻す。元の宣言・寿命の復元とは断定しない。
 
 メモリ view は、入口のスタック位置や入力レジスタ由来のオフセット・添字を名前で表す。
 view 同士や別のポインタが同じバイトを指すことを許し、アクセスは同じ guest memory に残す。
@@ -79,7 +81,7 @@ goto 配置では空の無条件経路を畳むが、空の巡回には代表を
 | 還元と検査 | [reduce.rs](../src/reduce.rs)、[block_verify.rs](../src/block_verify.rs) |
 | 定義 web と対応検査 | [web.rs](../src/web.rs)、[web_verify.rs](../src/web_verify.rs) |
 | 表示前処理 | [prepare.rs](../src/readable/prepare.rs)、[webs.rs](../src/readable/webs.rs) |
-| 保存場所と名前 | [locals.rs](../src/readable/locals.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[local_identity.rs](../src/local_identity.rs) |
+| 保存場所と名前 | [locals.rs](../src/readable/locals.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[source_locals.rs](../src/source_locals.rs) |
 | メモリ view | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs) |
 | スタック値と役割 | [stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs)、[stack_role.rs](../src/stack_role.rs) |
 | C 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs) |
