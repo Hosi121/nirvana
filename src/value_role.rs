@@ -444,9 +444,118 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         Some(())
     }
 
+    // Only direct, flat producer/copyback pairs are extra naming evidence.
+    // Every write of a promoted slot must still be an affine self update or
+    // such a pair. Branch/inner-loop writes permanently exclude that slot.
+    fn copyback_counters(
+        &mut self,
+        nodes: &[Node],
+        writes: &mut BTreeMap<usize, Writes>,
+    ) -> Option<()> {
+        let mut producers = BTreeMap::<usize, (usize, u64)>::new();
+        let mut candidates = BTreeSet::new();
+        let mut excluded = BTreeSet::new();
+        let mut reachable = true;
+        for node in nodes {
+            spend(&mut self.work, 1)?;
+            if let Node::Step { assignments, .. } = node {
+                for assignment in assignments {
+                    spend(&mut self.work, 1)?;
+                    let Place::Register(reg) = assignment.destination else {
+                        continue;
+                    };
+                    let Some(slot) = (self.slot)(reg) else {
+                        continue;
+                    };
+                    let direct = self.delta(&assignment.value, slot);
+                    let copyback = self
+                        .bare(&assignment.value)
+                        .and_then(|source| producers.get(&source))
+                        .is_some_and(|&(base, delta)| base == slot && delta != 0);
+                    if !reachable || direct.is_none() && !copyback {
+                        excluded.insert(slot);
+                    }
+                    if reachable && copyback {
+                        candidates.insert(slot);
+                    }
+                    if candidates.len() > MAX_SLOTS || excluded.len() > MAX_SLOTS {
+                        return None;
+                    }
+                    let origin = self.affine_origin(&assignment.value)?;
+                    spend(&mut self.work, producers.len())?;
+                    producers
+                        .retain(|&destination, (base, _)| destination != slot && *base != slot);
+                    if reachable
+                        && let Some((base, delta)) = origin
+                        && base != slot
+                        && delta != 0
+                    {
+                        producers.insert(slot, (base, delta));
+                        if producers.len() > MAX_SLOTS {
+                            return None;
+                        }
+                    }
+                }
+            } else {
+                if matches!(node, Node::If { .. } | Node::Loop(_)) {
+                    let mut touched = BTreeMap::new();
+                    self.writes(std::slice::from_ref(node), false, &mut touched)?;
+                    spend(&mut self.work, touched.len())?;
+                    excluded.extend(touched.into_keys());
+                    producers.clear();
+                }
+                if !self.flow_node(node)?.falls_through() {
+                    reachable = false;
+                    producers.clear();
+                }
+            }
+        }
+        for slot in candidates.difference(&excluded) {
+            spend(&mut self.work, 1)?;
+            if let Some(write) = writes.get_mut(slot)
+                && !write.nested
+            {
+                write.affine = true;
+                write.rooted = true;
+            }
+        }
+        Some(())
+    }
+
+    fn affine_origin(&mut self, value: &Expr) -> Option<Option<(usize, u64)>> {
+        spend(&mut self.work, 1)?;
+        if let Some(base) = self.bare(value) {
+            return Some(Some((base, 0)));
+        }
+        let (base, offset, subtract) = match value {
+            Expr::Binary(BinaryOp::Add, a, b) => match (&**a, &**b) {
+                (Expr::Const(offset), base) | (base, Expr::Const(offset)) => (base, *offset, false),
+                _ => return Some(None),
+            },
+            Expr::Binary(BinaryOp::Sub, base, offset) => {
+                let Expr::Const(offset) = &**offset else {
+                    return Some(None);
+                };
+                (&**base, *offset, true)
+            }
+            _ => return Some(None),
+        };
+        Some(self.affine_origin(base)?.map(|(base, delta)| {
+            (
+                base,
+                if subtract {
+                    delta.wrapping_sub(offset)
+                } else {
+                    delta.wrapping_add(offset)
+                },
+            )
+        }))
+    }
+
     fn loop_roles(&mut self, body: &[Node]) -> Option<()> {
         let mut writes = BTreeMap::new();
         self.writes(body, false, &mut writes)?;
+        self.copyback_counters(body, &mut writes)?;
         let mut counters = BTreeSet::new();
         self.guards(
             body,
@@ -461,6 +570,46 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
             } else if write.rooted && !write.nested {
                 self.mark(slot, ValueRole::Accumulator)?;
             }
+        }
+        Some(())
+    }
+
+    fn invalidate_read_definitions(
+        &mut self,
+        definitions: &mut BTreeMap<usize, &Expr>,
+        overwritten: usize,
+    ) -> Option<()> {
+        let mut stale = Vec::new();
+        for (&destination, &value) in definitions.iter() {
+            spend(&mut self.work, 1)?;
+            // RHS syntax refers to the values at its original assignment,
+            // not a snapshot we can reinterpret after a source slot changes.
+            // Whole-AST validation already bounded size/depth; visit every
+            // kind of raw register dependency, including lazy/load addresses.
+            let mut pending = vec![value];
+            while let Some(value) = pending.pop() {
+                spend(&mut self.work, 1)?;
+                match value {
+                    Expr::Register(reg) if (self.slot)(*reg) == Some(overwritten) => {
+                        stale.push(destination);
+                        break;
+                    }
+                    Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
+                    Expr::Load { address, .. } => pending.push(address),
+                    Expr::Select {
+                        condition,
+                        taken,
+                        not_taken,
+                    } => pending.extend([&**condition, &**taken, &**not_taken]),
+                    _ => {}
+                }
+            }
+        }
+        // Complete all fallible discovery/charging before changing the map.
+        // A failure propagates to infer(), which discards every role result.
+        spend(&mut self.work, stale.len())?;
+        for destination in stale {
+            definitions.remove(&destination);
         }
         Some(())
     }
@@ -489,6 +638,7 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
                         if let Place::Register(reg) = assignment.destination
                             && let Some(slot) = (self.slot)(reg)
                         {
+                            self.invalidate_read_definitions(definitions, slot)?;
                             definitions.insert(slot, &assignment.value);
                             if definitions.len() > MAX_SLOTS {
                                 return None;
@@ -566,6 +716,29 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         })
     }
 
+    fn guard_counter(
+        &mut self,
+        slot: usize,
+        writes: &BTreeMap<usize, Writes>,
+        definitions: &BTreeMap<usize, &Expr>,
+    ) -> Option<Option<usize>> {
+        let candidate = |slot| writes.get(&slot).is_some_and(|w| w.affine && !w.nested);
+        if candidate(slot) {
+            return Some(Some(slot));
+        }
+        let mut found = None;
+        for (&destination, value) in definitions {
+            spend(&mut self.work, 1)?;
+            if candidate(destination) && self.bare(value) == Some(slot) {
+                if found.is_some() {
+                    return Some(None);
+                }
+                found = Some(destination);
+            }
+        }
+        Some(found)
+    }
+
     fn predicate(
         &mut self,
         expr: &Expr,
@@ -579,10 +752,9 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
             return None;
         }
         spend(&mut self.work, 1)?;
-        let candidate = |slot| writes.get(&slot).is_some_and(|w| w.affine && !w.nested);
         if let Some(slot) = self.bare(expr) {
-            if candidate(slot) {
-                counters.insert(slot);
+            if let Some(counter) = self.guard_counter(slot, writes, definitions)? {
+                counters.insert(counter);
             } else if visited.insert(slot)
                 && let Some(value) = definitions.get(&slot)
             {
@@ -601,10 +773,21 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
             if a.is_some() && a == b {
                 return Some(());
             }
-            for (counter, partner) in [(a, b), (b, a)] {
-                if let Some(counter) = counter
-                    && candidate(counter)
-                {
+            let resolved_a = if let Some(a) = a {
+                self.guard_counter(a, writes, definitions)?
+            } else {
+                None
+            };
+            let resolved_b = if let Some(b) = b {
+                self.guard_counter(b, writes, definitions)?
+            } else {
+                None
+            };
+            if resolved_a.is_some() && resolved_a == resolved_b {
+                return Some(());
+            }
+            for (counter, partner) in [(resolved_a, b), (resolved_b, a)] {
+                if let Some(counter) = counter {
                     counters.insert(counter);
                     if let Some(limit) = partner
                         && !writes.contains_key(&limit)
