@@ -306,6 +306,210 @@ fn direct_equal_copy_can_share_but_lineage_never_asserts_value_equality() {
 }
 
 #[test]
+fn newly_identical_pure_comparisons_are_a_preference_constraint_only() {
+    let initial = [(Reg(1), 31), (Reg(2), usize::MAX)];
+    let lineages = [(Reg(1), 7), (Reg(2), 7)];
+    for op in [BinaryOp::Eq, BinaryOp::Ne, BinaryOp::Ult, BinaryOp::Ule] {
+        for arithmetic in [false, true] {
+            let operand = |id| {
+                if arithmetic {
+                    b(BinaryOp::Add, c(1), r(id))
+                } else {
+                    r(id)
+                }
+            };
+            let program = make_program(
+                3,
+                vec![set(1, r(0)), set(2, r(1))],
+                b(op, operand(1), operand(2)),
+            );
+            // The underlying equal-copy storage map remains valid: only this
+            // optional C naming preference must decline the new self-compare.
+            let shared = [(Reg(1), 0), (Reg(2), 0)];
+            validate(&program, &shared).unwrap();
+            assert!(recover(&program, &initial, &lineages).is_none());
+            for value in [0, 1, u64::MAX] {
+                replay(&program, &shared, &[value, 91, 92], &[], &[0, 1, 2]);
+            }
+        }
+    }
+}
+
+#[test]
+fn composite_comparison_rolls_back_one_class_and_keeps_an_independent_merge() {
+    let operand = |a, z| Expr::select(r(0), b(BinaryOp::Add, c(1), r(a)), r(z));
+    let program = make_program(
+        5,
+        vec![
+            set(1, r(0)),
+            set(2, r(1)),
+            set(3, b(BinaryOp::Add, r(0), c(7))),
+            set(4, r(3)),
+        ],
+        b(BinaryOp::Eq, operand(1, 3), operand(2, 4)),
+    );
+    let initial = [(Reg(1), 10), (Reg(2), 20), (Reg(3), 30), (Reg(4), 40)];
+    let result = checked(
+        &program,
+        &initial,
+        &[(Reg(1), 7), (Reg(2), 7), (Reg(3), 8), (Reg(4), 8)],
+    );
+    assert_eq!(result.stats().rollbacks, 1);
+    assert_ne!(result.color(Reg(1)), result.color(Reg(2)));
+    assert_eq!(result.color(Reg(3)), result.color(Reg(4)));
+    for value in [0, 1, u64::MAX] {
+        replay(
+            &program,
+            &mapping(&result, &initial),
+            &[value, 91, 92, 93, 94],
+            &[],
+            &[0, 1, 2],
+        );
+    }
+}
+
+#[test]
+fn comparison_scan_includes_store_addresses_lazy_values_and_load_addresses() {
+    let initial = [(Reg(1), 10), (Reg(2), 20), (Reg(3), 30), (Reg(4), 40)];
+    let lineages = [(Reg(1), 7), (Reg(2), 7), (Reg(3), 8), (Reg(4), 8)];
+    for context in 0..3 {
+        let mut assignments = vec![
+            set(1, r(0)),
+            set(2, r(1)),
+            set(3, r(0)),
+            store(c(0), Width::U8, r(3)),
+            set(4, r(0)),
+        ];
+        let comparison = b(BinaryOp::Ne, r(1), r(2));
+        let result = match context {
+            0 => {
+                assignments.push(store(comparison, Width::U8, r(4)));
+                r(4)
+            }
+            1 => {
+                assignments.push(set(5, Expr::select(r(0), comparison, c(9))));
+                r(5)
+            }
+            _ => Expr::load(comparison, Width::U8),
+        };
+        let program = make_program(6, assignments, result);
+        let allocation = checked(&program, &initial, &lineages);
+        assert_eq!(allocation.stats().rollbacks, 1);
+        assert_ne!(allocation.color(Reg(1)), allocation.color(Reg(2)));
+        assert_eq!(allocation.color(Reg(3)), allocation.color(Reg(4)));
+        for value in [0, 1, u64::MAX] {
+            for memory in [&[][..], &[0xa5, 0x5a][..]] {
+                replay(
+                    &program,
+                    &mapping(&allocation, &initial),
+                    &[value, 91, 92, 93, 94, 95],
+                    memory,
+                    &[0, 1, 2],
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn loads_in_any_comparison_arm_are_not_pure_equality_evidence() {
+    let operand = |id| Expr::select(r(0), Expr::load(r(id), Width::U8), c(0));
+    let program = make_program(
+        3,
+        vec![set(1, r(0)), set(2, r(1))],
+        b(BinaryOp::Eq, operand(1), operand(2)),
+    );
+    let initial = [(Reg(1), 10), (Reg(2), 20)];
+    let result = checked(&program, &initial, &[(Reg(1), 7), (Reg(2), 7)]);
+    assert_eq!(result.stats().rollbacks, 0);
+    assert_eq!(result.color(Reg(1)), result.color(Reg(2)));
+    for value in [0, 1, u64::MAX] {
+        for memory in [&[][..], &[0xa5, 0x5a][..]] {
+            replay(
+                &program,
+                &mapping(&result, &initial),
+                &[value, 91, 92],
+                memory,
+                &[0, 1, 2],
+            );
+        }
+    }
+}
+
+#[test]
+fn comparison_already_identical_under_initial_mapping_does_not_block_other_merges() {
+    let program = make_program(
+        5,
+        vec![
+            set(1, r(0)),
+            set(2, r(1)),
+            set(3, r(0)),
+            store(c(0), Width::U8, r(3)),
+            set(4, r(0)),
+        ],
+        b(BinaryOp::Eq, r(1), r(2)),
+    );
+    let initial = [(Reg(1), 10), (Reg(2), 10), (Reg(3), 30), (Reg(4), 40)];
+    let result = checked(
+        &program,
+        &initial,
+        &[(Reg(1), 7), (Reg(2), 7), (Reg(3), 8), (Reg(4), 8)],
+    );
+    assert_eq!(result.stats().rollbacks, 0);
+    assert_eq!(result.color(Reg(1)), result.color(Reg(2)));
+    assert_eq!(result.color(Reg(3)), result.color(Reg(4)));
+}
+
+#[test]
+fn comparison_work_exhaustion_keeps_the_initial_mapping() {
+    // This balanced tree is within the independent checker's whole-program
+    // bounds. Comparing its repeated pure subtrees consumes the naming pass's
+    // separate work budget, which must yield no partial storage proposal.
+    let mut tree = c(0);
+    for _ in 0..16 {
+        tree = b(BinaryOp::Eq, tree.clone(), tree);
+    }
+    let program = make_program(
+        3,
+        vec![set(1, r(0)), store(c(0), Width::U8, r(1)), set(2, r(0))],
+        tree,
+    );
+    let initial = [(Reg(1), 10), (Reg(2), 20)];
+    validate(&program, &initial).unwrap();
+    assert!(recover(&program, &initial, &[(Reg(1), 7), (Reg(2), 7)]).is_none());
+}
+
+#[test]
+fn unreachable_comparisons_do_not_restrict_emitted_local_names() {
+    let program = Program::new(
+        0,
+        3,
+        vec![
+            ins(
+                0,
+                vec![set(1, r(0)), set(2, r(1))],
+                Control::Return(b(BinaryOp::Add, r(1), r(2))),
+            ),
+            ins(1, vec![], Control::Return(b(BinaryOp::Eq, r(1), r(2)))),
+        ],
+    )
+    .unwrap();
+    let initial = [(Reg(1), 10), (Reg(2), 20)];
+    let result = checked(&program, &initial, &[(Reg(1), 7), (Reg(2), 7)]);
+    assert_eq!(result.stats().rollbacks, 0);
+    assert_eq!(result.color(Reg(1)), result.color(Reg(2)));
+    for value in [0, 1, u64::MAX] {
+        replay(
+            &program,
+            &mapping(&result, &initial),
+            &[value, 91, 92],
+            &[],
+            &[0, 1, 2],
+        );
+    }
+}
+
+#[test]
 fn unknown_is_not_a_source_identity_and_cannot_reward_gratuitous_splitting() {
     let program = make_program(
         4,

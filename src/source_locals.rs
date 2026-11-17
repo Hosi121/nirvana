@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::allocation_verify::{self, AllocationError, AllocationEvidence};
-use crate::ir::{Program, Reg};
+use crate::ir::{BinaryOp, Control, Expr, Place, Program, Reg};
 
 const MAX_REGISTERS: usize = 4096;
 const MAX_LINEAGES: usize = 4096;
@@ -60,10 +60,11 @@ impl SourceAllocation {
 /// old color. Invalid inputs, exhausted resources, no strict score improvement,
 /// and unexpected checker failures all return None: callers keep `initial`.
 ///
-/// A failed read blocks that entire lineage from merging across initial colors.
+/// A failed read, or a newly identical pair of pure comparison operands,
+/// blocks that entire lineage from merging across initial colors.
 /// Such a partition refines the validated initial mapping; other lineage merges
-/// can still survive. At most 16 checker calls, including the initial check,
-/// are performed. The checker independently bounds each invocation. Storage
+/// can still survive. At most 16 proposal/check rounds, including the initial
+/// check, are performed. The checker independently bounds each invocation. Storage
 /// widths and C rendering are the consumer's responsibility.
 pub fn recover(
     program: &Program,
@@ -93,6 +94,15 @@ pub fn recover(
         if after >= before {
             return None;
         }
+        if let Some(lineage) =
+            comparison_rollback(program, &initial, &candidate, &known, &mut work)?
+        {
+            work.spend(1)?;
+            if !blocked.insert(lineage) {
+                return None;
+            }
+            continue;
+        }
         work.spend(candidate.len())?;
         let mapping: Vec<_> = candidate
             .iter()
@@ -121,6 +131,179 @@ pub fn recover(
         }
     }
     None
+}
+
+// Equal-value copies may legally share abstract u64 storage, but a new C
+// spelling such as `value == value` is rejected by strict C compilers. Preserve
+// the initial partition for the responsible lineage instead of rewriting the
+// expression: folding it could discard reads or create unused C declarations.
+// The successful initial checker call bounds the whole program and expression
+// depth before this recursive traversal; every additional visit has its own
+// shared work charge, including comparisons repeated in nested expressions.
+fn comparison_rollback(
+    program: &Program,
+    initial: &BTreeMap<usize, usize>,
+    candidate: &BTreeMap<usize, usize>,
+    known: &BTreeMap<usize, usize>,
+    work: &mut Work,
+) -> Option<Option<usize>> {
+    let cfg = program.cfg();
+    // Bounds cover all input, but only reachable blocks contribute emitted C.
+    // Charge the reachability traversal and its bounded temporary collection.
+    work.spend(cfg.blocks().len().checked_mul(3)?)?;
+    for instruction in cfg
+        .reachable_blocks()
+        .into_iter()
+        .flat_map(|block| program.instructions()[cfg.block(block).instructions.clone()].iter())
+    {
+        work.spend(1)?;
+        for assignment in &instruction.assignments {
+            work.spend(1)?;
+            if let Place::Memory { address, .. } = &assignment.destination
+                && let Some(lineage) =
+                    expression_rollback(address, initial, candidate, known, work)?
+            {
+                return Some(Some(lineage));
+            }
+            if let Some(lineage) =
+                expression_rollback(&assignment.value, initial, candidate, known, work)?
+            {
+                return Some(Some(lineage));
+            }
+        }
+        if let Control::Branch { condition, .. } | Control::Return(condition) = &instruction.control
+            && let Some(lineage) = expression_rollback(condition, initial, candidate, known, work)?
+        {
+            return Some(Some(lineage));
+        }
+    }
+    Some(None)
+}
+
+fn expression_rollback(
+    expression: &Expr,
+    initial: &BTreeMap<usize, usize>,
+    candidate: &BTreeMap<usize, usize>,
+    known: &BTreeMap<usize, usize>,
+    work: &mut Work,
+) -> Option<Option<usize>> {
+    work.spend(1)?;
+    if let Expr::Binary(BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule, a, b) =
+        expression
+        && same_pure_expression(a, b, candidate, work)?
+        && !same_pure_expression(a, b, initial, work)?
+    {
+        return Some(Some(collapsed_lineage(
+            a, b, initial, candidate, known, work,
+        )?));
+    }
+    match expression {
+        Expr::Binary(_, a, b) => {
+            if let Some(lineage) = expression_rollback(a, initial, candidate, known, work)? {
+                return Some(Some(lineage));
+            }
+            expression_rollback(b, initial, candidate, known, work)
+        }
+        Expr::Load { address, .. } => expression_rollback(address, initial, candidate, known, work),
+        Expr::Select {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            for arm in [condition, taken, not_taken] {
+                if let Some(lineage) = expression_rollback(arm, initial, candidate, known, work)? {
+                    return Some(Some(lineage));
+                }
+            }
+            Some(None)
+        }
+        Expr::Const(_) | Expr::Register(_) => Some(None),
+    }
+}
+
+fn same_storage(a: Reg, b: Reg, colors: &BTreeMap<usize, usize>) -> bool {
+    a == b
+        || match (colors.get(&a.0), colors.get(&b.0)) {
+            (Some(a), Some(b)) => a == b,
+            _ => false, // Unmapped registers have their own storage namespace.
+        }
+}
+
+fn same_pure_expression(
+    a: &Expr,
+    b: &Expr,
+    colors: &BTreeMap<usize, usize>,
+    work: &mut Work,
+) -> Option<bool> {
+    work.spend(1)?;
+    Some(match (a, b) {
+        (Expr::Const(a), Expr::Const(b)) => a == b,
+        (Expr::Register(a), Expr::Register(b)) => same_storage(*a, *b, colors),
+        (Expr::Binary(op_a, a, b), Expr::Binary(op_b, x, y)) => {
+            op_a == op_b
+                && same_pure_expression(a, x, colors, work)?
+                && same_pure_expression(b, y, colors, work)?
+        }
+        (
+            Expr::Select {
+                condition: a,
+                taken: b,
+                not_taken: c,
+            },
+            Expr::Select {
+                condition: x,
+                taken: y,
+                not_taken: z,
+            },
+        ) => {
+            same_pure_expression(a, x, colors, work)?
+                && same_pure_expression(b, y, colors, work)?
+                && same_pure_expression(c, z, colors, work)?
+        }
+        // Even identical Load syntax can fault or observe a different value;
+        // this preference guard neither equates loads nor rewrites effects.
+        _ => false,
+    })
+}
+
+fn collapsed_lineage(
+    a: &Expr,
+    b: &Expr,
+    initial: &BTreeMap<usize, usize>,
+    candidate: &BTreeMap<usize, usize>,
+    known: &BTreeMap<usize, usize>,
+    work: &mut Work,
+) -> Option<usize> {
+    work.spend(1)?;
+    match (a, b) {
+        (Expr::Register(a), Expr::Register(b))
+            if same_storage(*a, *b, candidate) && !same_storage(*a, *b, initial) =>
+        {
+            known
+                .get(&a.0)
+                .filter(|lineage| known.get(&b.0) == Some(lineage))
+                .copied()
+        }
+        (Expr::Binary(_, a, b), Expr::Binary(_, x, y)) => {
+            collapsed_lineage(a, x, initial, candidate, known, work)
+                .or_else(|| collapsed_lineage(b, y, initial, candidate, known, work))
+        }
+        (
+            Expr::Select {
+                condition: a,
+                taken: b,
+                not_taken: c,
+            },
+            Expr::Select {
+                condition: x,
+                taken: y,
+                not_taken: z,
+            },
+        ) => collapsed_lineage(a, x, initial, candidate, known, work)
+            .or_else(|| collapsed_lineage(b, y, initial, candidate, known, work))
+            .or_else(|| collapsed_lineage(c, z, initial, candidate, known, work)),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
