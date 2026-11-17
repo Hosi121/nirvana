@@ -1,0 +1,45 @@
+{
+  "nodes": [
+    "contract",
+    "allocator",
+    "independent-tests",
+    "integration",
+    "native-and-output-comparison",
+    "sequential-review",
+    "commits"
+  ],
+  "edges": [
+    [
+      "contract",
+      "allocator"
+    ],
+    [
+      "contract",
+      "independent-tests"
+    ],
+    [
+      "allocator",
+      "integration"
+    ],
+    [
+      "independent-tests",
+      "integration"
+    ],
+    [
+      "integration",
+      "native-and-output-comparison"
+    ],
+    [
+      "native-and-output-comparison",
+      "commits"
+    ],
+    [
+      "allocator",
+      "sequential-review"
+    ],
+    [
+      "sequential-review",
+      "commits"
+    ]
+  ]
+}
