@@ -55,6 +55,9 @@ web 候補で検査や描画に失敗した場合は元の reduced IR の経路�
 view 同士や別のポインタが同じバイトを指すことを許し、アクセスは同じ guest memory に残す。
 変数名・構造体型・所有権の復元とは区別する。
 
+`stack_values` は正確な位置・幅ごとに、読込みへ到達し得るスタック書込みを CFG 上で追う。
+不明アドレスや重複する部分書込みは値を不明に戻し、初期メモリと合流経路も保持する。メモリ操作は変更しない。
+
 描画時は複数の Load を順序付きの評価へ分け、Select の選ばれた側だけを評価する。
 while/for、入口 guard、複合代入の整形は、元の更新順と脱出先を保てる形に限る。
 共通分岐末尾は命令位置まで一致する場合に共有候補とし、条件の評価を残す。
@@ -74,6 +77,7 @@ goto 配置では空の無条件経路を畳むが、空の巡回には代表を
 | 表示前処理 | [prepare.rs](../src/readable/prepare.rs)、[webs.rs](../src/readable/webs.rs) |
 | 保存場所と名前 | [locals.rs](../src/readable/locals.rs)、[allocation.rs](../src/allocation.rs)、[local_identity.rs](../src/local_identity.rs) |
 | メモリ view | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs) |
+| スタック値の到達定義 | [stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs) |
 | C 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs) |
 
 検査の実行方法は[検証ガイド](verification.md)、導入手順は[README](../README.md)を参照。

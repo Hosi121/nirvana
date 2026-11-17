@@ -31,6 +31,7 @@ pub mod self_update;
 pub mod sequence;
 pub mod simplify;
 pub mod stack;
+pub mod stack_values;
 pub mod structure;
 pub mod structure_verify;
 pub mod value_role;

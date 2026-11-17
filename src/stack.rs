@@ -83,7 +83,13 @@ pub struct StackAnalysis {
 
 impl StackAnalysis {
     pub fn analyze(program: &Program, stack_register: Reg) -> Self {
-        Self::analyze_bounded(program, stack_register).unwrap_or_default()
+        Self::try_analyze(program, stack_register).unwrap_or_default()
+    }
+
+    /// Like `analyze`, but distinguish an unavailable bounded analysis from a
+    /// successful analysis with no known accesses. No partial facts are exposed.
+    pub fn try_analyze(program: &Program, stack_register: Reg) -> Option<Self> {
+        Self::analyze_bounded(program, stack_register)
     }
 
     /// Query registers immediately before one ordered assignment, or before
