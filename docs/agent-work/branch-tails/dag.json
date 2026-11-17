@@ -1,0 +1,54 @@
+{
+  "nodes": [
+    "contract",
+    "tail",
+    "roles",
+    "parent-fixture",
+    "integration",
+    "checks",
+    "review",
+    "commits"
+  ],
+  "edges": [
+    [
+      "contract",
+      "tail"
+    ],
+    [
+      "contract",
+      "roles"
+    ],
+    [
+      "contract",
+      "parent-fixture"
+    ],
+    [
+      "tail",
+      "integration"
+    ],
+    [
+      "roles",
+      "integration"
+    ],
+    [
+      "parent-fixture",
+      "integration"
+    ],
+    [
+      "integration",
+      "checks"
+    ],
+    [
+      "integration",
+      "review"
+    ],
+    [
+      "checks",
+      "commits"
+    ],
+    [
+      "review",
+      "commits"
+    ]
+  ]
+}

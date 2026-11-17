@@ -1,0 +1,134 @@
+{
+  "baseline": "8f94893",
+  "commits": {
+    "fixtures": "bfe7385",
+    "analysis": "58da6db",
+    "backend": "2ede974"
+  },
+  "workers": [
+    {
+      "id": "tail",
+      "agent": "/root/expression_sequence",
+      "result": "9 bounded tests; independent IR-backed Node replay0..79, full registers/memory/fault/Step trace and local/outer transfers, exact program-point equality."
+    },
+    {
+      "id": "roles",
+      "agent": "/root/variable_hir",
+      "result": "18 tests, reachable continuation summaries; one repair for explicit-exit/mixed-suffix regression."
+    }
+  ],
+  "integration": {
+    "sole_shared_writer": "parent",
+    "decision": "Same Printer/storage/name/width/view/initialFacts for both C candidates. Strict smaller body with nonincreasing max indentation required. Candidate failure keeps baseline. Executable IR and original structure certificate unchanged."
+  },
+  "review": {
+    "agent": "/root/stack_analysis",
+    "scope": "Sequential static review and one finite adaptive-patch follow-up; no edits/extra experiments.",
+    "finding": "Counter/Limit naming regression EXIT vs CONTINUE|EXIT, fixed and covered. No concrete execution issue found in exact factoring or candidate rendering."
+  },
+  "verification": {
+    "tests": 357,
+    "normal": 348,
+    "optional_smt": 9,
+    "failed": 0,
+    "ignored": 0,
+    "clippy": "all targets -D warnings pass",
+    "format": "pass",
+    "diff": "pass",
+    "native": "69/76 configurations,4531 source/IR/readable comparisons; same seven relocation rejects; readable/IR full64KiB digest",
+    "ubsan": "16 generated configs,1008 comparisons,no diagnostics",
+    "comparison": {
+      "accepted": 53,
+      "configurations": 60,
+      "before": {
+        "unit_bytes": 260494,
+        "function_bytes": 94360,
+        "tokens": 18586,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 125,
+        "casts": 34,
+        "locals": 183,
+        "copies": 23,
+        "named_roles": 19,
+        "for_headers": 4,
+        "if_statements": 83,
+        "return_statements": 72,
+        "break_statements": 26,
+        "posttest_loops": 6,
+        "compound_updates": 55
+      },
+      "after": {
+        "unit_bytes": 260378,
+        "function_bytes": 94244,
+        "tokens": 18586,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 125,
+        "casts": 34,
+        "locals": 183,
+        "copies": 23,
+        "named_roles": 21,
+        "for_headers": 4,
+        "if_statements": 83,
+        "return_statements": 72,
+        "break_statements": 26,
+        "posttest_loops": 6,
+        "compound_updates": 55
+      },
+      "c_compiles": 106,
+      "all_max_indent_no_increase": true,
+      "real_tail_candidates_selected": 0,
+      "real_role_improved_configs": [
+        "branch-break-O2",
+        "early-exit-chain-O2"
+      ],
+      "directed_ir": "identical multi-Load returns2->1 plus lazy/faulting and pure-condition evaluation; exact native faults/fullbytes"
+    }
+  },
+  "rejected_proposal": {
+    "before": {
+      "unit_bytes": 260494,
+      "function_bytes": 94360,
+      "tokens": 18586,
+      "gotos": 14,
+      "labels": 12,
+      "masks": 125,
+      "casts": 34,
+      "locals": 183,
+      "copies": 23,
+      "named_roles": 19,
+      "for_headers": 4,
+      "if_statements": 83,
+      "return_statements": 72,
+      "break_statements": 26,
+      "posttest_loops": 6,
+      "compound_updates": 55
+    },
+    "after": {
+      "unit_bytes": 260756,
+      "function_bytes": 94622,
+      "tokens": 18592,
+      "gotos": 14,
+      "labels": 12,
+      "masks": 125,
+      "casts": 34,
+      "locals": 183,
+      "copies": 23,
+      "named_roles": 21,
+      "for_headers": 4,
+      "if_statements": 83,
+      "return_statements": 71,
+      "break_statements": 20,
+      "posttest_loops": 6,
+      "compound_updates": 55
+    },
+    "reason": "Less break/return syntax caused deeper else nesting and larger body; not adopted."
+  },
+  "limits": [
+    "No source-variable lifetime splitting, original names/types, general loop-unroll reversal or termination proof.",
+    "Current machine-code comparison benefits are role names; profitable tail-sharing benefit is demonstrated only in directed IR examples.",
+    "No decoder/relocation/indirect-call expansion. C presentation remains separately tested, not universally certified."
+  ],
+  "cleanup": "Both owned snapshots audited against baseline and byte-matched58da6db before deletion; baseline archive/binary and verification artifacts retained."
+}
