@@ -1,0 +1,100 @@
+{
+  "baseline": "e70faaa",
+  "objective": "Separate C storage coalescing from logical local identities; remove unrelated input temporaries from counter/limit names while preserving original IR/structure certificate and checked semantics. Extract preparation and local planning from monolithic C printer.",
+  "contracts": {
+    "identity": "local_identity::refine(program:&Program, storage:&[(Reg,usize)])->Option<LocalIdentities>. Clone Debug. .group(Reg)->Option<usize>, .groups()->usize. Exactly supplied distinct valid registers; result dense deterministic labels; each result group SUBSET of exactly one supplied storage color. Never merges different colors. Within each old color, connect destination and RHS source register for copies or arithmetic roots: traverse Binary Add/Mul/And/Or/Xor both operands; Sub/Shl/Shr left only; bare Register. Do NOT traverse Load, Select, comparisons, or arbitrary uses (e.g. a Load address is NOT same value lineage). This is bounded connectivity evidence, not source-variable recovery or full reaching-def webs. Iterate ALL reachable assignments, no expression evaluation/mutation. Global upfront bounded validation before recursive traversal, all-failure None, no deps. Inputs invalid/out-of-range/duplicate or budget exhaustion reject whole pass. Bound register subset4096, instruction+assignment points100k, total expressions/work, depth128 or similarly explicit. Include whole-input depth validation even memory destinations / excluded regs to avoid resource bypass.",
+    "prepare": "New private readable/prepare.rs. pub(super) struct PreparedFunction {pub program:Program,pub widths:ValueWidths,pub structure:Result<StructuredFunction,StructureError>,pub nodes:Option<Vec<Node>>,pub shared_nodes:Option<Vec<Node>>}. pub(super) fn prepare(original:&Program,parameters:&[Reg])->Result<PreparedFunction,ReductionError>. Move existing presentation_assignment/program/nodes, invert/compact/exits unchanged. Width is U64 for params, value_width analysis otherwise. Structure still original reduced Program before presentation. nodes=old compact presented AST; shared_nodes=bounded branch_tail candidate then compact. Move is_break/is_continue recognition helpers to prepare module and expose pub(super) so parent Printer imports same helpers. NO policies/names/allocation/views added here. Exact baseline output/evidence/parameters preserved. Worker returns new module and tested isolated readable.rs wiring; parent integrates sequentially.",
+    "memory_update": "Finite regression repair in for_loop::recover, API unchanged. Identity refinement lost nested-loopsO0 for because old counter anchor was actually coalesced address+=16. Add bounded syntax-only evidence for memory read+affine-update+store in exact trailing Step suffix, independent of sharing reload/result registers with condition. Prefer matching memory location shape from header setup/condition and suffix via bounded symbolic substitution/abstract tokens; canonical pure add constants if needed. This evidence is only display anchoring, NEVER memory alias/invariant equivalence. Return same borrowed setup/body/update slices and exact condition, retain every sequential operation and load order, keep all existing no-early-continue/nonlocal/nested/movable/bounds rejections. No memory/operand rewriting or motion across body. At minimum restore nested-loopsO0 under distinct local-identity slots, without accepting store from unrelated address or zero/nonaffine update. Whole-budget fail None. If precise matching disproportionate, report simpler safe anchored shape with limitations, do not weaken semantic checks."
+  },
+  "tasks": [
+    {
+      "id": "identity",
+      "snapshot": "/tmp/nirvana-values-identity.qf1lznq1",
+      "writeScope": [
+        "src/local_identity.rs",
+        "tests/local_identity.rs"
+      ],
+      "budget": {
+        "toolCalls": 45,
+        "repairs": 2
+      },
+      "criteria": [
+        "independent refinement subset invariant",
+        "poisoned-bank replay/full memory/first fault/trace at cutoffs",
+        "connected updates remain, unrelated values and Load-address/Select negatives split",
+        "bounded fallback"
+      ]
+    },
+    {
+      "id": "prepare",
+      "snapshot": "/tmp/nirvana-values-prepare.qy2bzroy",
+      "writeScope": [
+        "src/readable/prepare.rs",
+        "isolated src/readable.rs wiring"
+      ],
+      "budget": {
+        "toolCalls": 30,
+        "repairs": 1
+      },
+      "criteria": [
+        "same outputs byte-for-byte vs baseline53 configurations",
+        "no semantic/API/policy drift",
+        "clippy/fmt"
+      ]
+    },
+    {
+      "id": "parent-plan-fixture",
+      "dependencies": [
+        "contract"
+      ],
+      "writeScope": [
+        "new local planning module design, independent fixtures/native regression"
+      ]
+    },
+    {
+      "id": "integrate",
+      "dependencies": [
+        "identity",
+        "prepare",
+        "parent-plan-fixture"
+      ],
+      "criteria": [
+        "refactor separate commit before behavioral refinement",
+        "role-aware plan validated as storage refinement",
+        "real corpus before/after, semantic checks, docs/commits/cleanup"
+      ]
+    },
+    {
+      "id": "memory-update",
+      "snapshot": "/tmp/nirvana-values-memory-for.4stlsimx",
+      "dependencies": [
+        "frozen contract amendment and observed nested-loopsO0 regression"
+      ],
+      "writeScope": [
+        "src/for_loop.rs",
+        "tests/for_loop.rs"
+      ],
+      "budget": {
+        "toolCalls": 30,
+        "repairs": 1
+      },
+      "criteria": [
+        "memory recurrence independent from coalesced C names",
+        "replay original vs borrowed plan at cutoffs/faults and pre-body memory changes",
+        "minimal suffix, old negatives and bounds unchanged"
+      ]
+    }
+  ],
+  "stop": "One conservative register-group refinement (no per-definition renaming/global SSA), preparation/local-plan architecture, one or two fixtures and directed regression; full native/SMT/UBSan verification, measured actual naming improvement, commits.",
+  "adaptive_reason": "Same-object comparison showed nested-loopsO0 for->while after separating address from scalar. Repair syntax anchor rather than restore misleading names.",
+  "adaptive_decisions": [
+    {
+      "trigger": "Separating scalar values from address temporaries lost one old for anchor in nested-loopsO0.",
+      "decision": "Match bounded header-read/reload/affine-store address syntax; never substitute symbolic expressions or assume invariant memory. On optional memory-budget failure retain old scan."
+    },
+    {
+      "trigger": "One local per positively-named identity produced232 locals, many independent pointer reloads.",
+      "decision": "Share within each (original storage color, role stem or anonymous) bucket;219 locals, cached-limit/initial-input separation retained and native pointer-reload regression added."
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "baseline": "e70faaa",
+  "commits": {
+    "fixture": "0ce1a6d",
+    "preparation": "df8729a",
+    "identity_analysis": "bbfbc87",
+    "local_plan": "e296ee0",
+    "memory_for": "d830b80",
+    "role_sharing": "35ac826"
+  },
+  "workers": [
+    {
+      "id": "prepare",
+      "agent": "/root/expression_sequence",
+      "result": "Pure extraction, worker42 targeted tests; parent60-configuration byte comparison identical,53supported/7rejected. Structure remains original IR."
+    },
+    {
+      "id": "identity",
+      "agent": "/root/variable_hir",
+      "result": "5 tests,5400 poisoned-bank replay comparisons of old/refined storage vs original, subset/dense/coverage/determinism, whole resource fallback."
+    },
+    {
+      "id": "memory-update",
+      "agent": "/root/expression_sequence",
+      "result": "17 for tests, independent replay0..79 with memory body mutations/faults; same-object unique-slot recognition0->1. Optional bounds preserve old anchors."
+    }
+  ],
+  "integration": {
+    "sole_shared_writer": "parent",
+    "plan": "Typed PreparedFunction -> views/read dependencies -> width-constrained allocation -> bounded identity components -> role buckets within original colors -> final role/names/slots -> Printer. Consumer checks mapping bounds,coverage,density,origin.",
+    "observation": "Original Program/AST/certificate remain unchanged; only C slot mapping is refined. C checked/fault semantics retained.",
+    "role_policy": "Final keys retain (old color, role stem or None); same-role pointer reloads and anonymous components may remerge only within old color. Params begin at dense final locals length.",
+    "public_metadata": "ReadableC.local_plan: storage_slots,identity_groups,local_variables,split_storage_groups"
+  },
+  "sequential_review": {
+    "agent": "/root/stack_analysis",
+    "scope": "Static core/refinement/prepare review, then memory-recognizer and two-line role-sharing followups. No edits or extra experiments.",
+    "result": "No concrete defect found; verified original-color invariant, params/finalslots, certificate boundary, bounded syntax matcher with exact borrowed effects."
+  },
+  "verification": {
+    "tests": 370,
+    "normal": 361,
+    "optional_smt": 9,
+    "failed": 0,
+    "ignored": 0,
+    "clippy": "all targets -D warnings pass",
+    "format": "pass",
+    "diff": "pass",
+    "native": "71/78 configs,4669 input comparisons; same7relocationrejects; readable/IR full64KiB digest",
+    "ubsan": "16 generated configs,1008 comparisons,no diagnostics",
+    "comparison": {
+      "accepted": 55,
+      "configurations": 62,
+      "c_compiles": 110,
+      "before": {
+        "unit_bytes": 271037,
+        "function_bytes": 98641,
+        "tokens": 19437,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 130,
+        "casts": 34,
+        "locals": 191,
+        "copies": 27,
+        "named_roles": 24,
+        "for_headers": 6,
+        "if_statements": 86,
+        "return_statements": 74,
+        "break_statements": 26,
+        "posttest_loops": 7,
+        "compound_updates": 58
+      },
+      "after": {
+        "unit_bytes": 271784,
+        "function_bytes": 99388,
+        "tokens": 19521,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 130,
+        "casts": 34,
+        "locals": 219,
+        "copies": 27,
+        "named_roles": 46,
+        "for_headers": 6,
+        "if_statements": 86,
+        "return_statements": 74,
+        "break_statements": 26,
+        "posttest_loops": 7,
+        "compound_updates": 58
+      },
+      "roles": {
+        "before": {
+          "address": 1,
+          "accumulator": 11,
+          "counter": 7,
+          "limit": 5
+        },
+        "after": {
+          "address": 23,
+          "counter": 7,
+          "accumulator": 11,
+          "limit": 5
+        }
+      },
+      "max_indent": "unchanged for all55 supported configurations",
+      "nondeclaration_tokens": "18864 both versions"
+    },
+    "directed": "early byte not Limit; same-role address reloads share one local; first fault address/full pre-fault bytes; views/styles/O0/O2",
+    "for_probe": "same nested-loops-O0 object, distinct register slots: before=0 recovered for; after=1"
+  },
+  "rejected_policy": {
+    "component_per_role_after": {
+      "unit_bytes": 272124,
+      "function_bytes": 99728,
+      "tokens": 19560,
+      "gotos": 14,
+      "labels": 12,
+      "masks": 130,
+      "casts": 34,
+      "locals": 232,
+      "copies": 27,
+      "named_roles": 59,
+      "for_headers": 6,
+      "if_statements": 86,
+      "return_statements": 74,
+      "break_statements": 26,
+      "posttest_loops": 7,
+      "compound_updates": 58
+    },
+    "decision": "Retain same-role sharing to reduce232->219 locals without losing directed separation."
+  },
+  "limits": [
+    "Register-level connectivity, not per-definition SSA/reaching defs/full source-variable recovery.",
+    "Original names/types, loop unroll reversal and whole-C universal proof remain outside scope.",
+    "More C declarations are a deliberate readability tradeoff, not a speed or source-similarity improvement."
+  ],
+  "cleanup": "All three owned snapshots audited against baseline, scoped files matched corresponding commits (lib registration placement checked separately), essential probe/byte comparison retained; snapshots removed."
+}
