@@ -5,7 +5,7 @@ use std::fmt::Write;
 use std::rc::Rc;
 
 use crate::block_verify::Validation;
-use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
+use crate::emit::MEMORY_HELPERS;
 use crate::goto_layout::GotoLayout;
 use crate::hir::ViewPath;
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
@@ -207,14 +207,26 @@ impl Printer {
             unsigned,
             precedence: 13,
         };
-        if let Some(call) = idioms::recognize(expr) {
-            let arguments = call
-                .arguments
-                .into_iter()
-                .map(|argument| self.expression_at(argument, point).text)
-                .collect::<Vec<_>>()
-                .join(", ");
-            return atom(format!("{}({arguments})", call.name), true);
+        if let Some(view) = idioms::recognize(expr) {
+            return match view {
+                idioms::View::Call { name, arguments } => {
+                    let arguments = arguments
+                        .into_iter()
+                        .map(|argument| self.expression_at(argument, point).text)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    atom(format!("{name}({arguments})"), true)
+                }
+                idioms::View::Divide { value, divisor } => Render {
+                    text: format!(
+                        "{} / {}",
+                        self.expression_at(value, point).u64(),
+                        self.expression(&Expr::Const(divisor)).text
+                    ),
+                    unsigned: true,
+                    precedence: 11,
+                },
+            };
         }
         match expr {
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
@@ -1384,9 +1396,6 @@ fn emit_prepared_c(
         names.insert(reg.0, name.clone());
         arguments.push(format!("uint64_t {name}"));
         writeln!(code, "/* {name}: input machine register {} */", reg.0).unwrap();
-    }
-    if program.uses_high_multiply() {
-        code.push_str(MULTIPLY_HELPER);
     }
     if program.uses_memory() {
         code.push_str(MEMORY_HELPERS);

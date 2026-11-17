@@ -43,7 +43,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 | --- | --- |
 | コード画像 | ET_EXEC/ET_DYN、PE、関数境界の推定、リンクと再配置の解決 |
 | 関数間制御 | CALL、間接JMP、戻り先の探索 |
-| 命令と環境 | SIMD、除算、memory BT・BTS/BTR/BTC、FS/GS base |
+| 命令と環境 | SIMD、DIV/IDIV、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base |
 
 ## CLI
 

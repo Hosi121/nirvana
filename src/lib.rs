@@ -12,6 +12,7 @@ pub mod bit_expr;
 pub mod block_verify;
 pub mod branch_tail;
 pub mod cfg;
+pub mod division_expr;
 pub mod elf;
 pub mod emit;
 pub mod finite_region;

@@ -1,23 +1,37 @@
-//! Pure expression calls and definitions for the selected C layout.
+//! Pure expression views and definitions for the selected C layout.
 use crate::bit_expr::{self, BitKind};
+use crate::division_expr;
+use crate::emit::MULTIPLY_HELPER;
 use crate::ir::Expr;
 use crate::narrow_rotate::{self, Direction, NarrowRotate, NarrowWidth};
 use crate::signed_expr::{self, SignedKind};
 
-pub(super) struct Call<'a> {
-    pub name: &'static str,
-    pub arguments: Vec<&'a Expr>,
+pub(super) enum View<'a> {
+    Call {
+        name: &'static str,
+        arguments: Vec<&'a Expr>,
+    },
+    Divide {
+        value: &'a Expr,
+        divisor: u64,
+    },
 }
 
-pub(super) fn recognize(expression: &Expr) -> Option<Call<'_>> {
+pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
+    if let Some(view) = division_expr::recognize(expression) {
+        return Some(View::Divide {
+            value: view.value,
+            divisor: view.divisor,
+        });
+    }
     if let Some(view) = signed_expr::recognize(expression) {
-        return Some(Call {
+        return Some(View::Call {
             name: view.kind.helper_name(),
             arguments: vec![view.left, view.right],
         });
     }
     if let Some(view) = narrow_rotate::recognize_masked(expression) {
-        return Some(Call {
+        return Some(View::Call {
             name: view.helper_name(),
             arguments: vec![view.value, view.count],
         });
@@ -25,7 +39,7 @@ pub(super) fn recognize(expression: &Expr) -> Option<Call<'_>> {
     let view = bit_expr::recognize(expression)?;
     let mut arguments = vec![view.value];
     arguments.extend(view.count);
-    Some(Call {
+    Some(View::Call {
         name: view.kind.helper_name(),
         arguments,
     })
@@ -42,6 +56,7 @@ pub(super) fn definitions(code: &str) -> String {
             definitions.push_str(definition);
         }
     };
+    include("nirvana_umul_high", MULTIPLY_HELPER);
     for kind in [
         BitKind::Rol64,
         BitKind::Ror64,
