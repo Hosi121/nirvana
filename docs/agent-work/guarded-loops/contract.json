@@ -1,0 +1,65 @@
+{
+  "baseline": "57c589a",
+  "objective": "Fold provably redundant pure entry guards around post-test loops, and render left-associated self updates as compound assignments, preserving exact return/full guest-memory/fault observation",
+  "contracts": {
+    "guard": "guarded_loop::Facts::new(initialized:&[usize])->Self, observe(&mut self,node:&Node,slot:impl Fn(Reg)->Option<usize>), enter_loop(&self,body:&[Node],slot:impl Fn(Reg)->Option<usize>)->Self. Clone/Debug. recover(condition:&Expr,taken:&[Node],not_taken:&[Node],facts:&Facts,slot:impl Fn(Reg)->Option<usize>)->Option<GuardedLoop>. GuardedLoop borrowed body:&[Node] excludes terminal latch If; condition:Expr is original continue-test expression, never proof-simplified. Only taken=[Loop], empty else, terminal If Continue/Break or reverse. No prior continue/nonlocal/nested loops. Guards pure. Initial truth equivalence via bounded constant substitution+pure simplify; no solver/deps. Every raw latch read slot must already initialized, every raw entry read slot must also appear in raw latch (avoid unused locals after removing entry guard). All relevant regs must map. Facts observe sequential Reg assignments, use constants only when exact and pure/known; unknown writes kill const. If/Loop kills possibly-written constants, preserves previously-initialized only. enter_loop kills all loop-written constants before visiting body (valid all iterations). Bounds invalidates whole fact analysis/candidate. Refined for actual compiled cyclic form: final register-only Step<=16 may contain unrelated scalar writes assigned fresh tagged value tokens; copies retain ordered token equality. An uninitialized latch slot can use initialized entry-read alias only when end-of-step equality is proven and its original copy RHS remains. Parent rejects removed address-rewrite slots and emitted self-comparisons.",
+    "compound": "self_update::extract(value:&Expr,destination:Reg,same:impl Fn(Reg,Reg)->bool)->Option<(BinaryOp,Expr)>. Only left-spine identical associative Add/Mul/And/Or/Xor chains whose leftmost leaf matches destination. Remove exactly one pure Register read, preserve all other operands and Load order/count/lazy structure. No IR mutation; candidate RHS owns nonexpanding tree, bounded fallback None. Consumer performs uint64 promotion before narrow compound operation. Other operators and right-only occurrences reject. Narrow refinement for actual IR: innermost same_op(Const,Register(self)) accepted, keeping Const first in RHS; only effect-free Const crosses pure Register, all later operands retain order."
+  },
+  "tasks": [
+    {
+      "id": "guard",
+      "dependencies": [
+        "contract"
+      ],
+      "writeScope": [
+        "isolated src/guarded_loop.rs",
+        "isolated tests/guarded_loop.rs"
+      ],
+      "budget": {
+        "toolCalls": 55,
+        "repairs": 2
+      },
+      "criteria": [
+        "borrowed conservative shape and literal/initialized facts, whole failure fallback",
+        "unknown/alias/Load/continue/cross-loop and entry-only-use rejection",
+        "independent replay and negative cases"
+      ]
+    },
+    {
+      "id": "compound",
+      "dependencies": [
+        "contract"
+      ],
+      "writeScope": [
+        "isolated src/self_update.rs",
+        "isolated tests/self_update.rs"
+      ],
+      "budget": {
+        "toolCalls": 40,
+        "repairs": 2
+      },
+      "criteria": [
+        "left spine only and same-slot aliases",
+        "unsigned64 exact and Load ordering/lazy effects",
+        "bounded tests with poison/memory faults"
+      ]
+    },
+    {
+      "id": "integration",
+      "dependencies": [
+        "guard",
+        "compound"
+      ],
+      "writeScope": [
+        "authoritative backend, fixture, tests, tools, docs"
+      ],
+      "criteria": [
+        "full native and C faults, original AST evidence maintained",
+        "no new decoder/flags/skips",
+        "before/after machine-identical comparison",
+        "review, commits and snapshot cleanup"
+      ]
+    }
+  ],
+  "stop": "two bounded C presentation features plus one C fixture if useful, verified comparison and commits; no generic loop proof, no global SSA or decoder expansion"
+}

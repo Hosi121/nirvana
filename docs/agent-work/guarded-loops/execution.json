@@ -1,0 +1,98 @@
+{
+  "baseline": "57c589a",
+  "commits": {
+    "fixture": "6fcb5c3",
+    "foundations": "98c28bd",
+    "backend": "939ea54",
+    "protocol_test_paths": "cecf4bd"
+  },
+  "workers": [
+    {
+      "id": "guard",
+      "agent": "/root/expression_sequence",
+      "results": "15 tests, independent IR-backed replay at cutoffs0..69, full registers/memory/fault/partial state, bounded initialization and const facts. End copy/scalar-write tagged tokens cover real cyclic compiled shape. Clippy/fmt pass, no shared edits."
+    },
+    {
+      "id": "compound",
+      "agent": "/root/variable_hir",
+      "results": "8 tests, unsigned-u64 associative boundaries, aliases, memory/fault/lazy Load ordering, prior partial writes, Const-prefix rule. Clippy/fmt pass, no shared edits."
+    }
+  ],
+  "integration": {
+    "sole_shared_writer": "parent",
+    "facts": "maps only original read C storage including read inputs; inputs initialized; loops pre-kill ALL body writes; conditional facts conservative; proof expression never printed",
+    "dependency_regressions": [
+      "Address views can hide a body copy RHS. Reproduced GCC unused-but-set after removing latch temporary; fallback protects any removed address-use C slot, native regression passes.",
+      "Alias substitution can introduce emitted self-comparisons. Candidate falls back instead of late algebra/DCE; native strict compilation regression passes.",
+      "Zero-register-argument memory program exposed a harness comma issue; harness joins the complete argument vector and preserves unused register-array syntax."
+    ],
+    "format": "do+entry-if folded to pretest while; no nonlocal functions. Existing for plan reused when body stays useful; multiple update computations are not packed into an empty for. Redundant terminal continue omitted. Constant-prefix compound retained in rhs order."
+  },
+  "sequential_review": {
+    "agent": "/root/stack_analysis",
+    "scope": "finite static review of guarded_loop, self_update, readable integration",
+    "result": "No concrete counterexample found. Inspected ordered tokens, per-loop constant invalidation, alias fallbacks, u64 reassociation and narrow compound conversion. No edits or extra experiments."
+  },
+  "verification": {
+    "all_tests": 340,
+    "normal_tests": 331,
+    "optional_smt_tests": 9,
+    "failures": 0,
+    "ignored": 0,
+    "clippy": "all targets, -D warnings pass",
+    "format": "cargo fmt --check pass",
+    "diff": "git diff --check pass",
+    "native": "65/72 configs,4255 source/IR/readable input comparisons; seven unchanged relocation rejects; readable/IR full64KiB digest",
+    "directed_C": "unsigned wrapping, narrow compound stores, first fault address/full pre-fault bytes, copyback/view dependency and tautology cases, both views/styles and O0/O2",
+    "ubsan": "16 generated configs,1008 comparisons,no diagnostics",
+    "comparison": {
+      "accepted": 49,
+      "total": 56,
+      "before": {
+        "unit_bytes": 238161,
+        "function_bytes": 84551,
+        "tokens": 16752,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 110,
+        "casts": 34,
+        "locals": 167,
+        "copies": 21,
+        "named_roles": 16,
+        "for_headers": 4,
+        "if_statements": 73,
+        "posttest_loops": 8,
+        "compound_updates": 40
+      },
+      "after": {
+        "unit_bytes": 237969,
+        "function_bytes": 84359,
+        "tokens": 16722,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 110,
+        "casts": 34,
+        "locals": 167,
+        "copies": 21,
+        "named_roles": 16,
+        "for_headers": 4,
+        "if_statements": 71,
+        "posttest_loops": 6,
+        "compound_updates": 46
+      },
+      "both_compile": "98 C units with unchanged C11/O0/O2 strict flags"
+    }
+  },
+  "test_infrastructure_event": {
+    "first_run": "One mock solver startup returned ETXTBSY; single-test repeat passed. Protocol assertions and production Unknown/fallback behavior unchanged.",
+    "hardening": "Test paths now include atomic process-local sequence and create_new; overwrite collisions impossible within process even if timestamps repeat. No root-cause claim for the observed event.",
+    "final_run": "Complete340-test repeat passed; initial log retained."
+  },
+  "limits": [
+    "Only pure first-test truth established by bounded constants and canonical structure. No general termination, invariant, C whole-program or universal equivalence proof.",
+    "Raw continuing condition retained except proven tail-copy aliases; no early continue/nonlocal/nested-body cases.",
+    "Ambiguous slots, uninitialized refs, entry-only reads, address-rewrite dependency risk or C tautology retain old shape.",
+    "No global SSA or general duplicate-loop/source-shape recovery; no decoder/indirect-call/relocation expansion."
+  ],
+  "cleanup": "Worker snapshots differed only in scoped module/tests plus local exports; bytes matched98c28bd before removal. Baseline code/binary and concrete comparison/log artifacts retained under target/guarded-loops."
+}
