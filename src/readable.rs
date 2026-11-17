@@ -318,7 +318,18 @@ impl Printer {
                 // arithmetic and before a shift, not after a possible overflow.
                 let promote = !comparison && (!l.unsigned && (!r.unsigned || shift));
                 let bitwise = matches!(op, BinaryOp::And | BinaryOp::Or | BinaryOp::Xor);
-                let operand_precedence = if bitwise || shift {
+                // Equal bitwise operators associate without changing any bits.
+                // Keep mixed/arithmetic operands parenthesized for C warnings.
+                let bitwise_precedence = |operand: &Expr| {
+                    if matches!(operand, Expr::Binary(inner, ..) if inner == op) {
+                        precedence
+                    } else {
+                        12
+                    }
+                };
+                let operand_precedence = if bitwise {
+                    bitwise_precedence(left)
+                } else if shift {
                     12
                 } else if comparison {
                     9
@@ -334,7 +345,7 @@ impl Printer {
                     format!("({} & 63)", r.child(12))
                 } else {
                     r.child(if bitwise {
-                        12
+                        bitwise_precedence(right)
                     } else if comparison {
                         9
                     } else {
