@@ -99,6 +99,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
     for (fixture, divisor, source_optimization) in [
         ("unsigned-div-constant", 10_u64),
         ("unsigned-div-seven", 7_u64),
+        ("unsigned-div-fifteen", 15_u64),
     ]
     .into_iter()
     .flat_map(|(fixture, divisor)| {
@@ -240,6 +241,12 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                     "narrow reciprocal remains: {body}"
                 );
             }
+            if source_optimization == "-O2" {
+                assert!(
+                    body.contains(&format!(" %= {divisor};")),
+                    "materialized remainder not adopted: {fixture}\n{body}"
+                );
+            }
             if divisor == 7 && source_optimization == "-O2" {
                 assert!(
                     !body.contains("0x2492492492492493"),
@@ -276,6 +283,6 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
     // a destination is reached. Require destination-fault coverage for the whole
     // cohort, while comparing each actual first access and width independently.
     assert!(total_write_faults > 0);
-    assert_eq!(comparisons, 16320);
+    assert_eq!(comparisons, 24480);
     println!("division backend: {comparisons} full256-byte/return/exact-first-fault comparisons");
 }

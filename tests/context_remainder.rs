@@ -348,15 +348,19 @@ fn whole_pass_bounds_discard_even_prior_valid_candidates() {
 }
 
 fn actual_o2() -> Program {
+    actual_named_o2("unsigned-div-constant.c")
+}
+fn actual_named_o2(fixture: &str) -> Program {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/context-remainder");
     std::fs::create_dir_all(&out).unwrap();
-    let object = out.join("fixture-O2.o");
-    native::object(
-        &native::fixture_root().join("recovery/unsigned-div-constant.c"),
+    let object = out.join(format!("{fixture}-O2.o"));
+    actual_file_o2(
+        &native::fixture_root().join("recovery").join(fixture),
         &object,
-        "-O2",
-        "fixture",
-    );
+    )
+}
+fn actual_file_o2(source: &std::path::Path, object: &std::path::Path) -> Program {
+    native::object(source, object, "-O2", "fixture");
     let f = nirvana::frontend::lift_elf(&std::fs::read(object).unwrap(), "fixture").unwrap();
     let reduced = nirvana::reduce::reduce(&f.program).unwrap();
     let web = nirvana::web::split(reduced.program()).unwrap();
@@ -419,6 +423,11 @@ fn c_expr(e: &Expr) -> String {
     match e {
         Expr::Register(r) => format!("r[{}]", r.0),
         Expr::Const(x) => format!("UINT64_C({x})"),
+        Expr::Binary(B::Shl, a, b) => format!(
+            "((uint64_t)({} << ({} & UINT64_C(63))))",
+            c_expr(a),
+            c_expr(b)
+        ),
         Expr::Binary(op, a, b) => format!(
             "((uint64_t)({} {} {}))",
             c_expr(a),
@@ -550,4 +559,434 @@ fn narrow_dividend_is_source_bound_and_width_erasure_cannot_reuse_a_stale_view()
     let plan = ContextRemainders::analyze(&p).unwrap();
     assert_eq!(plan.evidence().len(), 1);
     assert!(validate(&p, &plan.evidence()[0]));
+}
+
+fn add_quotient(x: Expr, multiplier: u64, shift: u64, order: usize) -> Expr {
+    let high = |swap| {
+        if swap {
+            b(B::UMulHigh, c(multiplier), x.clone())
+        } else {
+            b(B::UMulHigh, x.clone(), c(multiplier))
+        }
+    };
+    let half = b(B::Shr, b(B::Sub, x.clone(), high(order & 1 != 0)), c(1));
+    let t = high(order & 2 != 0);
+    b(
+        B::Shr,
+        if order & 4 != 0 {
+            b(B::Add, t, half)
+        } else {
+            b(B::Add, half, t)
+        },
+        c(shift),
+    )
+}
+fn scaled_remainder(x: Expr, scale: u64, commute: bool) -> Expr {
+    let product = if commute {
+        b(B::Mul, c(scale), r(1))
+    } else {
+        b(B::Mul, r(1), c(scale))
+    };
+    b(B::Sub, x, b(B::Sub, product, r(1)))
+}
+#[test]
+fn add_quotient_and_scaled_product_views_execute_with_wrapping_intermediate_products() {
+    let values = [
+        0,
+        1,
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        255,
+        65535,
+        1 << 63,
+        u64::MAX - 1,
+        u64::MAX,
+    ];
+    let mut count = 0;
+    for (m, shift, d) in [(0x2492492492492493, 2, 7), (0, 0, 2), (0, 62, 1u64 << 63)] {
+        for order in 0..8 {
+            for commute in [false, true] {
+                for scaled in [false, true] {
+                    let value = if scaled {
+                        scaled_remainder(r(0), d + 1, commute)
+                    } else {
+                        b(B::Sub, r(0), b(B::Mul, r(1), c(d)))
+                    };
+                    let p = single(vec![
+                        set(1, add_quotient(r(0), m, shift, order)),
+                        store(r(3), r(1)),
+                        set(2, value),
+                    ]);
+                    let before = p.instructions().to_vec();
+                    let plan = ContextRemainders::analyze(&p).unwrap();
+                    assert_eq!(plan.evidence().len(), 1);
+                    let evidence = plan.evidence()[0];
+                    assert!(matches!(
+                        evidence.certificate,
+                        context_remainder::ContextQuotientEvidence::Add(_)
+                    ));
+                    assert_eq!(evidence.divisor, d);
+                    assert!(validate(&p, &evidence));
+                    let source = &p.instructions()[0].assignments[2].value;
+                    let view = plan.view(&p, 0, 2, &source.clone()).unwrap();
+                    let Expr::Binary(B::Sub, x, _) = source else {
+                        panic!()
+                    };
+                    assert!(std::ptr::eq(view.value, &**x));
+                    for x in values {
+                        let report = p
+                            .run_with_memory(&[x, 91, 92, 0, 94, 95, 96, 97], 0, &[0xa5; 16], 1)
+                            .unwrap();
+                        assert_eq!(report.status, RunStatus::Returned(x % d));
+                        assert_eq!(
+                            u64::from_le_bytes(report.state.memory[..8].try_into().unwrap()),
+                            x / d
+                        );
+                        count += 1;
+                    }
+                    assert_eq!(p.instructions(), before);
+                }
+            }
+        }
+    }
+    assert!(
+        (u64::MAX / 2).checked_mul(3).is_none(),
+        "intermediate wrapping is intentional"
+    );
+    eprintln!("{count} Add/direct/scaled concrete remainder checks");
+}
+#[test]
+fn scaled_products_use_existing_high_and_narrow_certificates_without_enum_extension() {
+    for (x, q, d, mask) in [
+        (r(0), quotient(r(0)), 10, u64::MAX),
+        (
+            b(B::And, r(0), c(0xffff)),
+            b(
+                B::Shr,
+                b(B::Mul, b(B::And, r(0), c(0xffff)), c(43691)),
+                c(17),
+            ),
+            3,
+            0xffff,
+        ),
+    ] {
+        let p = single(vec![
+            set(1, q),
+            store(r(3), r(1)),
+            set(2, scaled_remainder(x, d + 1, true)),
+        ]);
+        let plan = ContextRemainders::analyze(&p).unwrap();
+        assert_eq!(plan.evidence().len(), 1);
+        assert!(!matches!(
+            plan.evidence()[0].certificate,
+            context_remainder::ContextQuotientEvidence::Add(_)
+        ));
+        for x in [0, 1, 2, 3, 9, 10, u64::MAX] {
+            assert_eq!(
+                p.run_with_memory(&[x, 91, 92, 0, 94, 95, 96, 97], 0, &[0xa5; 16], 1)
+                    .unwrap()
+                    .status,
+                RunStatus::Returned((x & mask) % d)
+            );
+        }
+    }
+}
+#[test]
+fn scaled_products_reject_wrong_factor_register_order_and_small_scales() {
+    let q = add_quotient(r(0), 0x2492492492492493, 2, 0);
+    let mut bad = (0..=2)
+        .chain([9, u64::MAX])
+        .map(|scale| scaled_remainder(r(0), scale, false))
+        .collect::<Vec<_>>();
+    bad.extend([
+        b(B::Sub, r(0), b(B::Sub, b(B::Mul, r(1), c(8)), r(2))),
+        b(B::Sub, r(0), b(B::Sub, r(1), b(B::Mul, r(1), c(8)))),
+        b(B::Sub, b(B::Sub, b(B::Mul, r(1), c(8)), r(1)), r(0)),
+    ]);
+    for value in bad {
+        let p = single(vec![set(1, q.clone()), store(r(3), r(1)), set(2, value)]);
+        assert!(
+            ContextRemainders::analyze(&p)
+                .unwrap()
+                .evidence()
+                .is_empty()
+        );
+    }
+}
+#[test]
+fn add_context_kills_and_source_point_binding_remain_exact() {
+    let q = add_quotient(r(0), 0x2492492492492493, 2, 0);
+    let good = single(vec![
+        set(1, q.clone()),
+        store(r(3), r(1)),
+        set(4, c(0)),
+        set(2, scaled_remainder(r(0), 8, false)),
+    ]);
+    let plan = ContextRemainders::analyze(&good).unwrap();
+    assert_eq!(plan.evidence().len(), 1);
+    let proof = plan.evidence()[0];
+    for destination in [0, 1] {
+        let changed = single(vec![
+            set(1, q.clone()),
+            store(r(3), r(1)),
+            set(destination, c(7)),
+            set(2, scaled_remainder(r(0), 8, false)),
+        ]);
+        assert!(
+            ContextRemainders::analyze(&changed)
+                .unwrap()
+                .evidence()
+                .is_empty()
+        );
+        assert!(!validate(&changed, &proof));
+        assert!(
+            plan.view(
+                &changed,
+                0,
+                3,
+                &changed.instructions()[0].assignments[3].value
+            )
+            .is_none()
+        );
+    }
+    assert!(plan.view(&good, 0, 3, &remainder(r(0))).is_none());
+    let p = Program::new(
+        0,
+        5,
+        vec![
+            ins(0, vec![set(1, q), store(r(3), r(1))], Control::Jump(1)),
+            ins(
+                1,
+                vec![set(2, scaled_remainder(r(0), 8, false))],
+                Control::Return(r(2)),
+            ),
+        ],
+    )
+    .unwrap();
+    assert!(
+        ContextRemainders::analyze(&p)
+            .unwrap()
+            .evidence()
+            .is_empty()
+    );
+}
+#[test]
+fn forged_add_certificate_fields_and_proof_kinds_are_rejected() {
+    let p = single(vec![
+        set(1, add_quotient(r(0), 0x2492492492492493, 2, 0)),
+        store(r(3), r(1)),
+        set(2, scaled_remainder(r(0), 8, false)),
+    ]);
+    let plan = ContextRemainders::analyze(&p).unwrap();
+    let proof = plan.evidence()[0];
+    let context_remainder::ContextQuotientEvidence::Add(cert) = proof.certificate else {
+        panic!()
+    };
+    for field in 0..4 {
+        let mut changed = cert;
+        match field {
+            0 => changed.multiplier ^= 1,
+            1 => changed.shift ^= 1,
+            2 => changed.excess ^= 1,
+            _ => changed.upper_bound ^= 1,
+        }
+        let mut forged = proof;
+        forged.certificate = context_remainder::ContextQuotientEvidence::Add(changed);
+        assert!(!validate(&p, &forged));
+    }
+    let mut forged = proof;
+    forged.certificate = context_remainder::ContextQuotientEvidence::High(
+        nirvana::division_expr::DivisionEvidence {
+            multiplier: cert.multiplier,
+            shift: cert.shift,
+            excess: cert.excess,
+            upper_bound: cert.upper_bound,
+        },
+    );
+    assert!(!validate(&p, &forged));
+    let old = sample();
+    let mut forged = ContextRemainders::analyze(&old).unwrap().evidence()[0];
+    forged.certificate = proof.certificate;
+    assert!(!validate(&old, &forged));
+}
+#[test]
+fn add_work_exhaustion_discards_all_prior_candidates() {
+    let mut a = vec![];
+    for _ in 0..2000 {
+        a.extend([
+            set(1, add_quotient(r(0), 0x2492492492492493, 2, 0)),
+            store(r(3), r(1)),
+            set(2, scaled_remainder(r(0), 8, false)),
+        ]);
+    }
+    assert!(ContextRemainders::analyze(&single(a)).is_none());
+}
+#[test]
+fn actual_seven_o2_and_native_scaled_wrap_preserve_all_guest_bytes_and_faults() {
+    let p = actual_named_o2("unsigned-div-seven.c");
+    let before = p.instructions().to_vec();
+    let plan = ContextRemainders::analyze(&p).unwrap();
+    assert_eq!(plan.evidence().len(), 1);
+    let proof = plan.evidence()[0];
+    assert_eq!(proof.divisor, 7);
+    assert_eq!(proof.maximum_remainder, 6);
+    assert!(matches!(
+        proof.certificate,
+        context_remainder::ContextQuotientEvidence::Add(_)
+    ));
+    assert!(validate(&p, &proof));
+    assert_eq!(p.instructions(), before);
+    native_full_state(&p, false, "actual-seven-O2");
+    let captured = single(vec![
+        set(0, Expr::load(r(4), Width::U64)),
+        set(1, add_quotient(r(0), 0, 0, 0)),
+        store(r(3), r(1)),
+        set(2, scaled_remainder(r(0), 3, false)),
+    ]);
+    native_full_state(&captured, true, "scaled-wrap-div2");
+}
+
+#[test]
+fn unrelated_shifted_sums_preserve_the_existing_high_plan_work_budget() {
+    let mut assignments = vec![
+        set(1, quotient(r(0))),
+        store(r(3), r(1)),
+        set(2, remainder(r(0))),
+    ];
+    for i in 0..4000 {
+        assignments.push(set(5, b(B::Shr, b(B::Add, r(6), c(i)), c(1))));
+    }
+    let p = single(assignments);
+    let plan = ContextRemainders::analyze(&p).unwrap();
+    assert_eq!(plan.evidence().len(), 1);
+    assert!(validate(&p, &plan.evidence()[0]));
+}
+
+fn shifted_remainder(x: Expr, count: Expr, other: usize) -> Expr {
+    b(B::Sub, x, b(B::Sub, b(B::Shl, r(1), count), r(other)))
+}
+#[test]
+fn literal_shift_scales_preserve_remainders_even_when_the_shift_wraps() {
+    for (q, d, k) in [
+        (
+            b(B::Shr, b(B::UMulHigh, r(0), c(0xaaaaaaaaaaaaaaab)), c(1)),
+            3,
+            2,
+        ),
+        (add_quotient(r(0), 0x2492492492492493, 2, 0), 7, 3),
+        (
+            b(B::Shr, b(B::UMulHigh, r(0), c(0x8888888888888889)), c(3)),
+            15,
+            4,
+        ),
+    ] {
+        let p = single(vec![
+            set(1, q),
+            store(r(3), r(1)),
+            set(2, shifted_remainder(r(0), c(k), 1)),
+        ]);
+        let plan = ContextRemainders::analyze(&p).unwrap();
+        assert_eq!(plan.evidence().len(), 1);
+        assert_eq!(plan.evidence()[0].divisor, d);
+        assert!(validate(&p, &plan.evidence()[0]));
+        for x in [0, 1, 2, 3, 6, 7, 8, 14, 15, 16, u64::MAX - 1, u64::MAX] {
+            assert_eq!(
+                p.run_with_memory(&[x, 91, 92, 0, 94, 95, 96, 97], 0, &[0xa5; 16], 1)
+                    .unwrap()
+                    .status,
+                RunStatus::Returned(x % d)
+            );
+        }
+    }
+    assert!(
+        (u64::MAX / 15).checked_mul(16).is_none(),
+        "actual /15 shift intermediate wraps"
+    );
+}
+#[test]
+fn shifted_scales_reject_bad_counts_registers_direction_and_forged_large_divisor() {
+    let q = b(B::Shr, b(B::UMulHigh, r(0), c(0x8888888888888889)), c(3));
+    let mut bad = [0, 1, 64, 65, u64::MAX]
+        .map(|k| shifted_remainder(r(0), c(k), 1))
+        .to_vec();
+    bad.extend([
+        shifted_remainder(r(0), r(4), 1),
+        shifted_remainder(r(0), c(4), 2),
+        b(B::Sub, r(0), b(B::Sub, b(B::Shr, r(1), c(4)), r(1))),
+        b(B::Sub, r(0), b(B::Sub, r(1), b(B::Shl, r(1), c(4)))),
+    ]);
+    for rhs in bad {
+        let p = single(vec![
+            set(4, c(4)),
+            set(1, q.clone()),
+            store(r(3), r(1)),
+            set(2, rhs),
+        ]);
+        assert!(
+            ContextRemainders::analyze(&p)
+                .unwrap()
+                .evidence()
+                .is_empty()
+        );
+    }
+    let good = single(vec![
+        set(1, q.clone()),
+        store(r(3), r(1)),
+        set(2, shifted_remainder(r(0), c(4), 1)),
+    ]);
+    let proof = ContextRemainders::analyze(&good).unwrap().evidence()[0];
+    let large = single(vec![
+        set(1, q),
+        store(r(3), r(1)),
+        set(2, shifted_remainder(r(0), c(63), 1)),
+    ]);
+    assert!(
+        ContextRemainders::analyze(&large)
+            .unwrap()
+            .evidence()
+            .is_empty()
+    );
+    assert!(!validate(&large, &proof));
+    let mut forged = proof;
+    forged.divisor = (1u64 << 63) - 1;
+    forged.maximum_remainder = forged.divisor - 1;
+    assert!(!validate(&large, &forged));
+}
+#[test]
+fn actual_fifteen_o2_shift_view_matches_native_all_state_and_first_faults() {
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/context-remainder/fifteen");
+    std::fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("fixture.c");
+    std::fs::write(&source,"#include <stdint.h>\nuint64_t fixture(uint64_t state[4]){uint64_t x=state[0],q=x/UINT64_C(15),r=x%UINT64_C(15);state[1]=q;state[2]=r;return q^r;}\n").unwrap();
+    let p = actual_file_o2(&source, &directory.join("fixture-O2.o"));
+    let original = p.instructions().to_vec();
+    let plan = ContextRemainders::analyze(&p).unwrap();
+    assert_eq!(plan.evidence().len(), 1);
+    let proof = plan.evidence()[0];
+    assert_eq!(proof.divisor, 15);
+    assert_eq!(proof.maximum_remainder, 14);
+    assert!(matches!(
+        proof.certificate,
+        context_remainder::ContextQuotientEvidence::High(_)
+    ));
+    let rhs = &p
+        .instructions()
+        .iter()
+        .find(|i| i.address == proof.instruction)
+        .unwrap()
+        .assignments[proof.assignment]
+        .value;
+    assert!(
+        format!("{rhs:?}").contains("Shl"),
+        "actual compiler shape changed: {rhs:?}"
+    );
+    assert!(validate(&p, &proof));
+    native_full_state(&p, false, "actual-fifteen-O2");
+    assert_eq!(p.instructions(), original);
 }

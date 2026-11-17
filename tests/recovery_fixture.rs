@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 const BASE: u64 = 0x1000;
 const STATE: usize = 0x1000;
 const MEMORY_SIZE: usize = 0x10000;
-const CASES: [&str; 25] = [
+const CASES: [&str; 26] = [
     "byte-fields",
     "strided-input",
     "selected-alias",
@@ -40,6 +40,7 @@ const CASES: [&str; 25] = [
     "nested-transfer-effects",
     "unsigned-div-constant",
     "unsigned-div-seven",
+    "unsigned-div-fifteen",
     "modulo-sum",
 ];
 

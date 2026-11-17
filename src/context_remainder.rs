@@ -4,8 +4,7 @@
 //! load, or equates C storage names. All queries are assignment-RHS-only and
 //! must pass the exact selected display Program and a structurally equal RHS.
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
-use crate::remainder_expr::QuotientEvidence;
-use crate::{division_expr, narrow_division_expr};
+use crate::{add_division_expr, division_expr, narrow_division_expr};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_REGISTERS: usize = 4096;
@@ -17,6 +16,15 @@ const MAX_FACTS: usize = 4096;
 const MAX_DEPENDENCIES: usize = 65536;
 const MAX_CANDIDATES: usize = 4096;
 const MAX_WORK: usize = 2_000_000;
+
+/// Quotient proof kinds understood by this point-aware context pass.
+/// This does not extend the raw, inlined remainder expression matcher.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextQuotientEvidence {
+    High(division_expr::DivisionEvidence),
+    Narrow(narrow_division_expr::NarrowDivisionEvidence),
+    Add(add_division_expr::AddDivisionEvidence),
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Keeper {
@@ -34,7 +42,7 @@ pub struct ContextEvidence {
     pub divisor: u64,
     /// Numeric interval bound, not a possible-one bitmask.
     pub maximum_remainder: u64,
-    pub certificate: QuotientEvidence,
+    pub certificate: ContextQuotientEvidence,
     /// Exact preceding Store RHS Register(q), in the same definition generation.
     pub keeper: Keeper,
 }
@@ -62,7 +70,7 @@ struct Fact<'a> {
     value: &'a Expr,
     divisor: u64,
     maximum: u64,
-    certificate: QuotientEvidence,
+    certificate: ContextQuotientEvidence,
     dependencies: BTreeSet<usize>,
     keeper: Option<Keeper>,
 }
@@ -124,6 +132,12 @@ impl ContextRemainders {
                         });
                         let count = expression_nodes(&assignment.value, &mut work)?;
                         work.spend(count.checked_mul(4)?.checked_add(256)?)?;
+                        if add_division_expr::has_kernel_shape(&assignment.value) {
+                            // Account for the extra bounded reciprocal-add
+                            // matcher/validator passes, without changing the
+                            // existing High/Narrow-only resource fallback.
+                            work.spend(count.checked_mul(4)?.checked_add(256)?)?;
+                        }
                         if let Some((value, divisor, maximum, certificate)) =
                             definition(&assignment.value)
                         {
@@ -272,13 +286,22 @@ fn validate_inner<'a>(
     }
     Some(value)
 }
-fn definition(e: &Expr) -> Option<(&Expr, u64, u64, QuotientEvidence)> {
+fn definition(e: &Expr) -> Option<(&Expr, u64, u64, ContextQuotientEvidence)> {
+    if add_division_expr::has_kernel_shape(e) {
+        let v = add_division_expr::recognize(e)?;
+        return Some((
+            v.value,
+            v.divisor,
+            u64::MAX,
+            ContextQuotientEvidence::Add(v.evidence),
+        ));
+    }
     if let Some(v) = division_expr::recognize(e) {
         Some((
             v.value,
             v.divisor,
             u64::MAX,
-            QuotientEvidence::High(v.evidence),
+            ContextQuotientEvidence::High(v.evidence),
         ))
     } else {
         let v = narrow_division_expr::recognize(e)?;
@@ -286,27 +309,60 @@ fn definition(e: &Expr) -> Option<(&Expr, u64, u64, QuotientEvidence)> {
             v.value,
             v.divisor,
             v.evidence.maximum,
-            QuotientEvidence::Narrow(v.evidence),
+            ContextQuotientEvidence::Narrow(v.evidence),
         ))
     }
 }
 fn verify_definition<'a>(
     e: &'a Expr,
     d: u64,
-    certificate: QuotientEvidence,
+    certificate: ContextQuotientEvidence,
     work: &mut Work,
 ) -> Option<(&'a Expr, u64)> {
+    if let ContextQuotientEvidence::Add(evidence) = certificate {
+        let count = expression_nodes(e, work)?;
+        work.spend(count.checked_mul(4)?.checked_add(256)?)?;
+        let Expr::Binary(BinaryOp::Shr, average, _) = e else {
+            return None;
+        };
+        let Expr::Binary(BinaryOp::Add, a, b) = &**average else {
+            return None;
+        };
+        // Recover an actual source operand independently of the proposer.
+        // The upstream validator binds its pointer, both high products,
+        // literal shifts/multiplier, divisor and every certificate field.
+        for half in [&**a, &**b] {
+            work.spend(1)?;
+            let Expr::Binary(BinaryOp::Shr, difference, _) = half else {
+                continue;
+            };
+            let Expr::Binary(BinaryOp::Sub, value, _) = &**difference else {
+                continue;
+            };
+            if add_division_expr::validate(
+                e,
+                &add_division_expr::AddDivisionView {
+                    value,
+                    divisor: d,
+                    evidence,
+                },
+            ) {
+                return Some((value, u64::MAX));
+            }
+        }
+        return None;
+    }
     let product = match (certificate, e) {
-        (QuotientEvidence::High(_), Expr::Binary(BinaryOp::Shr, p, _))
-        | (QuotientEvidence::Narrow(_), Expr::Binary(BinaryOp::Shr, p, _)) => &**p,
-        (QuotientEvidence::High(_), p) => p,
+        (ContextQuotientEvidence::High(_), Expr::Binary(BinaryOp::Shr, p, _))
+        | (ContextQuotientEvidence::Narrow(_), Expr::Binary(BinaryOp::Shr, p, _)) => &**p,
+        (ContextQuotientEvidence::High(_), p) => p,
         _ => return None,
     };
     let (a, b, m, maximum) = match (certificate, product) {
-        (QuotientEvidence::High(c), Expr::Binary(BinaryOp::UMulHigh, a, b)) => {
+        (ContextQuotientEvidence::High(c), Expr::Binary(BinaryOp::UMulHigh, a, b)) => {
             (&**a, &**b, c.multiplier, u64::MAX)
         }
-        (QuotientEvidence::Narrow(c), Expr::Binary(BinaryOp::Mul, a, b)) => {
+        (ContextQuotientEvidence::Narrow(c), Expr::Binary(BinaryOp::Mul, a, b)) => {
             (&**a, &**b, c.multiplier, c.maximum)
         }
         _ => return None,
@@ -317,7 +373,7 @@ fn verify_definition<'a>(
             continue;
         }
         let valid = match certificate {
-            QuotientEvidence::High(evidence) => division_expr::validate(
+            ContextQuotientEvidence::High(evidence) => division_expr::validate(
                 e,
                 &division_expr::DivisionView {
                     value,
@@ -325,7 +381,7 @@ fn verify_definition<'a>(
                     evidence,
                 },
             ),
-            QuotientEvidence::Narrow(evidence) => narrow_division_expr::validate(
+            ContextQuotientEvidence::Narrow(evidence) => narrow_division_expr::validate(
                 e,
                 &narrow_division_expr::NarrowDivisionView {
                     value,
@@ -333,6 +389,7 @@ fn verify_definition<'a>(
                     evidence,
                 },
             ),
+            ContextQuotientEvidence::Add(_) => return None,
         };
         if valid {
             return Some((value, maximum));
@@ -341,17 +398,48 @@ fn verify_definition<'a>(
     None
 }
 fn use_shape(e: &Expr) -> Option<(&Expr, Reg, u64)> {
-    let Expr::Binary(BinaryOp::Sub, x, p) = e else {
+    let Expr::Binary(BinaryOp::Sub, x, product) = e else {
         return None;
     };
-    let Expr::Binary(BinaryOp::Mul, a, b) = &**p else {
+    let (q, d) = if let Some(pair) = direct_product(product) {
+        pair
+    } else {
+        // In modulo-2^64 arithmetic q*c-q == q*(c-1), even if
+        // q*c or q<<k wraps. A literal shift scale is 2^k.
+        // The quotient certificate then proves q*(c-1)
+        // <=X, so the final product/subtraction are ordinary integers.
+        let Expr::Binary(BinaryOp::Sub, multiple, subtrahend) = &**product else {
+            return None;
+        };
+        let Expr::Register(other) = &**subtrahend else {
+            return None;
+        };
+        let (q, scale) = direct_product(multiple).or_else(|| shifted_product(multiple))?;
+        if q != *other {
+            return None;
+        }
+        (q, scale.checked_sub(1)?)
+    };
+    (d >= 2).then_some((x, q, d))
+}
+fn direct_product(e: &Expr) -> Option<(Reg, u64)> {
+    let Expr::Binary(BinaryOp::Mul, a, b) = e else {
         return None;
     };
-    let (q, d) = match (&**a, &**b) {
-        (Expr::Register(q), Expr::Const(d)) | (Expr::Const(d), Expr::Register(q)) => (*q, *d),
-        _ => return None,
+    match (&**a, &**b) {
+        (Expr::Register(q), Expr::Const(d)) | (Expr::Const(d), Expr::Register(q)) => Some((*q, *d)),
+        _ => None,
+    }
+}
+
+fn shifted_product(e: &Expr) -> Option<(Reg, u64)> {
+    let Expr::Binary(BinaryOp::Shl, value, count) = e else {
+        return None;
     };
-    Some((x, q, d))
+    let (Expr::Register(q), Expr::Const(shift @ 2..=63)) = (&**value, &**count) else {
+        return None;
+    };
+    Some((*q, 1_u64.checked_shl(*shift as u32)?))
 }
 fn instruction_at(program: &Program, pc: u64) -> Option<(usize, &crate::ir::IrInstruction)> {
     let i = program
