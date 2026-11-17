@@ -72,7 +72,7 @@ def metrics(code):
             "return_statements": len(re.findall(r"\breturn\b", plain)),
             "break_statements": len(re.findall(r"\bbreak\b", plain)),
             "posttest_loops": len(re.findall(r"}\s*while\s*\(", plain)),
-            "compound_updates": sum(name in locals_ for name in re.findall(r"\b(\w+)\s*[+\-*&|^]=", plain)),
+            "compound_updates": sum(name in locals_ for name in re.findall(r"\b(\w+)\s*[+\-*%&|^]=", plain)),
             "max_indent": max(len(line) - len(line.lstrip()) for line in plain.splitlines())}
 
 

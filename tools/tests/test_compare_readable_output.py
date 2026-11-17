@@ -69,6 +69,22 @@ uint64_t nirvana_readable(uint64_t arg0) {
         self.assertEqual(result["named_roles"], 2)
         self.assertEqual(result["initialized_locals"], 3)
 
+    def test_remainder_assignments_preserve_compound_update_counts(self):
+        before = """uint64_t nirvana_readable(uint64_t arg0) {
+    uint64_t value = arg0;
+    uint64_t quotient = value / 10;
+    value -= quotient * 10;
+    arg0 %= 7;
+    return value ^ arg0;
+}
+"""
+        after = before.replace("value -= quotient * 10;", "value %= 10;")
+        old, new = MODULE.metrics(before), MODULE.metrics(after)
+        self.assertEqual(old["compound_updates"], 1)
+        self.assertEqual(new["compound_updates"], 1)
+        self.assertEqual(old["locals"], new["locals"])
+        self.assertLess(new["tokens"], old["tokens"])
+
 
 if __name__ == "__main__":
     unittest.main()
