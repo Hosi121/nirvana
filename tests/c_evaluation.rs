@@ -530,6 +530,185 @@ fn native_c_for_updates_keep_setup_break_continue_and_fault_order() {
     }
 }
 
+#[test]
+fn native_c_compound_spines_keep_unsigned_wraparound_narrowing_and_faults() {
+    for op in [
+        BinaryOp::Add,
+        BinaryOp::Mul,
+        BinaryOp::And,
+        BinaryOp::Or,
+        BinaryOp::Xor,
+    ] {
+        let narrow = matches!(op, BinaryOp::And | BinaryOp::Or | BinaryOp::Xor);
+        let width = if narrow { Width::U16 } else { Width::U64 };
+        let constant = if narrow { 0x0fff } else { u64::MAX };
+        let p = Program::new(
+            0,
+            3,
+            vec![instruction(
+                0,
+                vec![
+                    store(c(0x1000), width, r(1)),
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(c(0x1000), width),
+                    },
+                    store(c(0x100e), Width::U8, c(0xaa)),
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: b(op, b(op, r(2), c(constant)), Expr::load(r(0), Width::U16)),
+                    },
+                ],
+                Control::Return(r(2)),
+            )],
+        )
+        .unwrap();
+        let output = emit_readable_c_with_options(
+            &p,
+            ReadableOptions {
+                coalesce_locals: true,
+                compact_memory: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let symbol = match op {
+            BinaryOp::Add => "+=",
+            BinaryOp::Mul => "*=",
+            BinaryOp::And => "&=",
+            BinaryOp::Or => "|=",
+            BinaryOp::Xor => "^=",
+            _ => unreachable!(),
+        };
+        assert!(output.code.contains(symbol), "op={op:?}: {}", output.code);
+        compare(
+            &p,
+            &[
+                [0x1000, 0],
+                [0x1000, u64::MAX],
+                [0x1008, 1 << 63],
+                [0xffff, u64::MAX],
+            ],
+        );
+    }
+}
+
+#[test]
+fn native_c_guard_copyback_keeps_load_temporaries_when_address_views_hide_uses() {
+    let p = Program::new(
+        0,
+        4,
+        vec![
+            instruction(
+                0,
+                vec![store(c(0x1008), Width::U64, b(BinaryOp::Add, r(0), c(8)))],
+                Control::Branch {
+                    condition: b(BinaryOp::Ne, r(0), r(1)),
+                    target: 2,
+                },
+            ),
+            instruction(1, vec![], Control::Jump(6)),
+            instruction(
+                2,
+                vec![Assignment {
+                    destination: Reg(3).into(),
+                    value: load(r(0)),
+                }],
+                Control::Next,
+            ),
+            instruction(
+                3,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: load(c(0x1008)),
+                }],
+                Control::Next,
+            ),
+            instruction(
+                4,
+                vec![Assignment {
+                    destination: Reg(3).into(),
+                    value: load(r(2)),
+                }],
+                Control::Next,
+            ),
+            instruction(
+                5,
+                vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: r(2),
+                }],
+                Control::Branch {
+                    condition: b(BinaryOp::Ne, r(2), r(1)),
+                    target: 2,
+                },
+            ),
+            instruction(6, vec![], Control::Return(c(7))),
+        ],
+    )
+    .unwrap();
+    // Copyback can be printed as a view address rather than a read of r2.
+    // Removing r2 from the guard must not leave its checked load assigned to
+    // an unread C local, or lose that load's modeled fault.
+    compare(&p, &[[0x1000, 0x1008], [0x1000, 0x1000], [0xffff, 0x1008]]);
+}
+
+#[test]
+fn native_c_guard_copyback_does_not_introduce_tautological_comparisons() {
+    let p = Program::new(
+        0,
+        3,
+        vec![
+            instruction(
+                0,
+                vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: c(0),
+                }],
+                Control::Jump(1),
+            ),
+            instruction(
+                1,
+                vec![],
+                Control::Branch {
+                    condition: b(BinaryOp::Eq, r(0), c(0)),
+                    target: 5,
+                },
+            ),
+            instruction(
+                2,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: Expr::load(c(0x1000), Width::U8),
+                }],
+                Control::Jump(3),
+            ),
+            instruction(
+                3,
+                vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: r(2),
+                }],
+                Control::Jump(4),
+            ),
+            instruction(
+                4,
+                vec![],
+                Control::Branch {
+                    condition: b(BinaryOp::Ne, r(2), r(0)),
+                    target: 2,
+                },
+            ),
+            instruction(5, vec![], Control::Return(c(7))),
+        ],
+    )
+    .unwrap();
+    // Initial constants make the entry false. Copy equivalence alone would
+    // allow a while(x!=x), rejected by the same strict compiler flags. Keep
+    // the original shape instead of introducing late dependency removal.
+    compare(&p, &[[0x1000, 0x1008], [0xffff, u64::MAX]]);
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
     let scratch = Scratch::new();
     let mut text = String::new();
@@ -565,12 +744,13 @@ fn compare(program: &Program, inputs: &[[u64; 2]]) {
             },
         )
         .unwrap();
-        let args = output
+        let mut args = output
             .parameters
             .iter()
             .map(|r| format!("r[{}]", r.0))
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect::<Vec<_>>();
+        args.extend(["memory", "UINT64_C(4096)", "sizeof(memory)"].map(String::from));
+        let args = args.join(", ");
         let code=output.code.replace(
             "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) {",
             "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) { nirvana_test_address=address;"
@@ -593,7 +773,8 @@ int main(void) {{
         for(unsigned i=0;i<16;++i) memory[i]=(uint8_t)(i+1);
         result=0;fault=0;
         uint64_t r[{register_count}]={{a,b}};
-        if(setjmp(jump)==0) result=nirvana_readable({args},memory,UINT64_C(4096),sizeof(memory));
+        (void)r;
+        if(setjmp(jump)==0) result=nirvana_readable({args});
         else fault=1;
         uint64_t words[2]={{0,0}};
         for(unsigned i=0;i<16;++i) words[i/8]|=(uint64_t)memory[i]<<((i%8)*8);

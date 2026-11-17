@@ -64,6 +64,9 @@ def metrics(code):
             "casts": len(re.findall(r"\(uint(?:8|16|32|64)_t\)", plain)),
             "locals": len(locals_), "copies": copies, "named_roles": named_roles,
             "for_headers": len(re.findall(r"\bfor \(;(?: |\n)", plain)),
+            "if_statements": len(re.findall(r"\bif\s*\(", plain)),
+            "posttest_loops": len(re.findall(r"}\s*while\s*\(", plain)),
+            "compound_updates": sum(name in locals_ for name in re.findall(r"\b(\w+)\s*[+\-*&|^]=", plain)),
             "max_indent": max(len(line) - len(line.lstrip()) for line in plain.splitlines())}
 
 
@@ -104,7 +107,7 @@ def main():
             rows.append(row)
     accepted = [r for r in rows if "error" not in r["after"]]
     totals = {v: {k: sum(r[v][k] for r in accepted)
-                  for k in ["unit_bytes", "function_bytes", "tokens", "gotos", "labels", "masks", "casts", "locals", "copies", "named_roles", "for_headers"]}
+                  for k in ["unit_bytes", "function_bytes", "tokens", "gotos", "labels", "masks", "casts", "locals", "copies", "named_roles", "for_headers", "if_statements", "posttest_loops", "compound_updates"]}
               for v in binaries}
     report = {"compiler": checked(["cc", "--version"]).strip(),
               "binaries": {v: {"path": str(p), "sha256": digest(p)} for v, p in binaries.items()},

@@ -123,6 +123,7 @@ struct Printer {
     address_uses: BTreeSet<usize>,
     compact_memory: bool,
     slots: BTreeMap<usize, usize>,
+    initial_slots: Vec<usize>,
 }
 
 impl Printer {
@@ -562,15 +563,27 @@ impl Printer {
         value: &Expr,
         point: Option<(u64, usize)>,
     ) -> Option<String> {
-        let Expr::Binary(op, left, right) = value else {
-            return None;
-        };
-        let Expr::Register(source) = **left else {
-            return None;
-        };
-        if self.register(destination) != self.register(source) || needs_sequence(value) {
+        if needs_sequence(value) {
             return None;
         }
+        let same = |a: Reg, b: Reg| {
+            self.names
+                .get(&a.0)
+                .zip(self.names.get(&b.0))
+                .is_some_and(|(a, b)| a == b)
+        };
+        let (op, right) = crate::self_update::extract(value, destination, same).or_else(|| {
+            // Subtraction has no associative-chain rule; preserve the existing
+            // direct x=x-y spelling without reassociating any operands.
+            if let Expr::Binary(BinaryOp::Sub, left, right) = value
+                && let Expr::Register(source) = **left
+                && same(destination, source)
+            {
+                Some((BinaryOp::Sub, (**right).clone()))
+            } else {
+                None
+            }
+        })?;
         let symbol = match op {
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
@@ -580,7 +593,7 @@ impl Printer {
             BinaryOp::Xor => "^",
             _ => return None,
         };
-        let right = self.expression_at(right, point);
+        let right = self.expression_at(&right, point);
         // Narrow C integers promote to signed int. Force 64-bit arithmetic
         // before the operation, then let the unsigned destination truncate.
         let right = if self
@@ -686,7 +699,7 @@ impl Printer {
         {
             let condition = self.loop_condition(header.setup, &header.condition)?;
             let updates = self.loop_clauses(header.update, true)?;
-            if !updates.is_empty() {
+            if !updates.is_empty() && (!header.body.is_empty() || updates.len() == 1) {
                 let header_text = format!("for (; {condition}; {}) {{", updates.join(", "));
                 let header_text = if header_text.len() > 100 {
                     format!(
@@ -712,6 +725,20 @@ impl Printer {
         depth: usize,
         nonlocal: bool,
     ) -> Result<(), SequenceError> {
+        let facts = crate::guarded_loop::Facts::new(&self.initial_slots);
+        self.nodes_with_facts(code, nodes, indent, depth, nonlocal, &facts)
+    }
+
+    fn nodes_with_facts(
+        &self,
+        code: &mut String,
+        nodes: &[Node],
+        indent: usize,
+        depth: usize,
+        nonlocal: bool,
+        incoming: &crate::guarded_loop::Facts,
+    ) -> Result<(), SequenceError> {
+        let mut facts = incoming.clone();
         for node in nodes {
             match node {
                 Node::Evaluate(value) => {
@@ -726,6 +753,48 @@ impl Printer {
                     taken,
                     not_taken,
                 } => {
+                    if !nonlocal
+                        && let Some(loop_view) = crate::guarded_loop::recover(
+                            condition,
+                            taken,
+                            not_taken,
+                            &facts,
+                            |reg| self.slots.get(&reg.0).copied(),
+                        )
+                        && self.guard_alias_reads_safe(taken, &loop_view.condition)
+                    {
+                        // Reuse the existing pre-test/for renderer. The proof
+                        // expression is never emitted: this condition is the
+                        // original latch, with only proven copy aliases changed.
+                        let mut pretest = vec![Node::If {
+                            condition: loop_view.condition.clone(),
+                            taken: vec![],
+                            not_taken: vec![Node::Break],
+                        }];
+                        pretest.extend_from_slice(loop_view.body);
+                        pretest.push(Node::Continue);
+                        let loop_facts =
+                            facts.enter_loop(loop_view.body, |reg| self.slots.get(&reg.0).copied());
+                        if let Some((header, middle)) = self.loop_header(&pretest) {
+                            line(code, indent, &header);
+                            let middle = if matches!(middle.last(), Some(Node::Continue)) {
+                                &middle[..middle.len() - 1]
+                            } else {
+                                middle
+                            };
+                            self.nodes_with_facts(
+                                code,
+                                middle,
+                                indent + 1,
+                                depth + 1,
+                                nonlocal,
+                                &loop_facts,
+                            )?;
+                            line(code, indent, "}");
+                            facts.observe(node, |reg| self.slots.get(&reg.0).copied());
+                            continue;
+                        }
+                    }
                     let scoped = needs_sequence(condition);
                     if scoped {
                         line(code, indent, "{");
@@ -734,10 +803,10 @@ impl Printer {
                     let mut next = self.first_temporary;
                     let value = self.ordered_expression(code, inner, condition, None, &mut next)?;
                     line(code, inner, &format!("if ({}) {{", value.text));
-                    self.nodes(code, taken, inner + 1, depth, nonlocal)?;
+                    self.nodes_with_facts(code, taken, inner + 1, depth, nonlocal, &facts)?;
                     if !not_taken.is_empty() {
                         line(code, inner, "} else {");
-                        self.nodes(code, not_taken, inner + 1, depth, nonlocal)?;
+                        self.nodes_with_facts(code, not_taken, inner + 1, depth, nonlocal, &facts)?;
                     }
                     line(code, inner, "}");
                     if scoped {
@@ -777,7 +846,15 @@ impl Printer {
                     } else {
                         middle
                     };
-                    self.nodes(code, middle, indent + 1, depth + 1, nonlocal)?;
+                    let loop_facts = facts.enter_loop(body, |reg| self.slots.get(&reg.0).copied());
+                    self.nodes_with_facts(
+                        code,
+                        middle,
+                        indent + 1,
+                        depth + 1,
+                        nonlocal,
+                        &loop_facts,
+                    )?;
                     line(code, indent, &footer);
                     if nonlocal && depth > 0 {
                         line(code, indent, "if (nirvana_transfer != 0) {");
@@ -809,8 +886,80 @@ impl Printer {
                     self.value_statement(code, indent, value, None, "return ", ";")?
                 }
             }
+            facts.observe(node, |reg| self.slots.get(&reg.0).copied());
         }
         Ok(())
+    }
+
+    fn guard_alias_reads_safe(&self, taken: &[Node], condition: &Expr) -> bool {
+        let mut pending = vec![condition];
+        while let Some(expr) = pending.pop() {
+            match expr {
+                Expr::Binary(op, a, b) => {
+                    if matches!(
+                        op,
+                        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule
+                    ) && self.expression(a).text == self.expression(b).text
+                    {
+                        // A proof under initial constants can accept this, but
+                        // emitting x==x would introduce a C diagnostic. Keep the
+                        // original guard instead of doing late algebra/DCE.
+                        return false;
+                    }
+                    pending.extend([&**a, &**b]);
+                }
+                Expr::Select {
+                    condition,
+                    taken,
+                    not_taken,
+                } => pending.extend([&**condition, &**taken, &**not_taken]),
+                Expr::Load { address, .. } => pending.push(address),
+                _ => {}
+            }
+        }
+        if self.views.is_none() {
+            return true;
+        }
+        let [Node::Loop(body)] = taken else {
+            return false;
+        };
+        let Some(Node::If { condition: old, .. }) = body.last() else {
+            return false;
+        };
+        let reads = |expression: &Expr| {
+            let mut found = BTreeSet::new();
+            let mut pending = vec![expression];
+            while let Some(expr) = pending.pop() {
+                match expr {
+                    Expr::Register(reg) => {
+                        if let Some(&slot) = self.slots.get(&reg.0) {
+                            found.insert(slot);
+                        }
+                    }
+                    Expr::Const(_) => {}
+                    Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
+                    Expr::Load { address, .. } => pending.push(address),
+                    Expr::Select {
+                        condition,
+                        taken,
+                        not_taken,
+                    } => pending.extend([&**condition, &**taken, &**not_taken]),
+                }
+            }
+            found
+        };
+        let protected: BTreeSet<_> = self
+            .address_uses
+            .iter()
+            .filter_map(|r| self.slots.get(r))
+            .copied()
+            .collect();
+        // Address-view printing may replace a copy's RHS with a captured view.
+        // Retain the original guard if it could be the last printed read of
+        // such a slot; raw AST copy use alone is insufficient here.
+        reads(old)
+            .difference(&reads(condition))
+            .all(|slot| !protected.contains(slot))
     }
 
     fn gotos(&self, code: &mut String, program: &Program) -> Result<(), SequenceError> {
@@ -1201,6 +1350,10 @@ fn presentation_nodes(nodes: &[Node], width: &impl Fn(Reg) -> Width) -> Vec<Node
         .collect()
 }
 
+fn groups_count(slots: &BTreeMap<usize, usize>) -> usize {
+    slots.values().max().map_or(0, |slot| slot + 1)
+}
+
 fn emit_reduced_c(
     reduced: ReducedFunction,
     options: ReadableOptions,
@@ -1353,6 +1506,16 @@ fn emit_reduced_c(
             role,
         });
     }
+    let mut printer_slots = slots.clone();
+    let first_parameter = groups_count(&slots);
+    let mut initial_slots = Vec::new();
+    for (index, reg) in reduced.parameters().iter().enumerate() {
+        if read.contains(&reg.0) {
+            let slot = first_parameter + index;
+            printer_slots.insert(reg.0, slot);
+            initial_slots.push(slot);
+        }
+    }
     let arguments = if arguments.is_empty() {
         "void".into()
     } else {
@@ -1380,7 +1543,8 @@ fn emit_reduced_c(
             widths: widths.clone(),
             address_uses: address_uses.clone(),
             compact_memory: options.compact_memory,
-            slots: slots.clone(),
+            slots: printer_slots.clone(),
+            initial_slots: initial_slots.clone(),
         };
         for view in views.stack_views() {
             let base = Expr::Register(options.stack_register.expect("stack view base"));
@@ -1422,7 +1586,8 @@ fn emit_reduced_c(
             widths: widths.clone(),
             address_uses: address_uses.clone(),
             compact_memory: options.compact_memory,
-            slots: slots.clone(),
+            slots: printer_slots.clone(),
+            initial_slots: initial_slots.clone(),
         };
         for object in &views.objects {
             line(
@@ -1507,7 +1672,8 @@ fn emit_reduced_c(
         widths,
         address_uses,
         compact_memory: options.compact_memory,
-        slots,
+        slots: printer_slots,
+        initial_slots,
     };
     let (fallback_reason, structure_stats, structure_evidence) = match structured {
         Ok(function) => {
