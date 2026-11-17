@@ -5,12 +5,14 @@
 //! This cohort compares every guest byte and the first failing guest address;
 //! it does not distinguish access kinds/widths or reproduce original IR traces.
 
+#[path = "support/checked_c.rs"]
+mod checked_c;
 #[allow(dead_code)]
 #[path = "support/native.rs"]
 mod native;
 
 use nirvana::ir::{AccessKind, Reg, RunStatus, Width};
-use nirvana::readable::{ReadableC, ReadableOptions, emit_readable_c_with_options};
+use nirvana::readable::{ReadableOptions, emit_readable_c_with_options};
 use nirvana::{frontend, x86};
 use std::fmt::Write as _;
 
@@ -31,51 +33,6 @@ fn prepare(address: u64, value: u64) -> Vec<u8> {
     memory
 }
 
-fn harness(output: &ReadableC, register_count: usize) -> String {
-    let mut arguments: Vec<_> = output
-        .parameters
-        .iter()
-        .map(|reg| format!("registers[{}]", reg.0))
-        .collect();
-    arguments.extend(["memory", "UINT64_C(4096)", "sizeof(memory)"].map(String::from));
-    let arguments = arguments.join(", ");
-    format!(
-        r#"
-#undef abort
-#include <inttypes.h>
-#include <stdio.h>
-static jmp_buf jump;
-static uint8_t memory[64];
-static uint64_t result;
-static unsigned fault;
-_Noreturn void nirvana_test_abort(void) {{ longjmp(jump,1); }}
-int main(void) {{
-    uint64_t address,value;
-    while (scanf("%" SCNu64 " %" SCNu64,&address,&value)==2) {{
-        for (unsigned i=0;i<64;++i) memory[i]=(uint8_t)(i*29+7);
-        if(address>=UINT64_C(4096) && address-UINT64_C(4096)<=UINT64_C(56)) {{
-            for(unsigned i=0;i<8;++i) memory[address-UINT64_C(4096)+i]=(uint8_t)(value>>(i*8));
-        }}
-        uint64_t registers[{register_count}]={{0}};
-        registers[{rdi}]=address;
-        registers[{rsp}]=UINT64_C(4160);
-        (void)registers;
-        result=0;fault=0;nirvana_test_address=0;
-        if(setjmp(jump)==0) result=nirvana_readable({arguments});
-        else fault=1;
-        uint64_t words[8]={{0}};
-        for(unsigned i=0;i<64;++i) words[i/8]|=(uint64_t)memory[i]<<((i%8)*8);
-        printf("%u %" PRIu64 " %" PRIu64,fault,fault?nirvana_test_address:UINT64_C(0),result);
-        for(unsigned i=0;i<8;++i) printf(" %" PRIu64,words[i]);
-        putchar('\n');
-    }}
-}}
-"#,
-        rdi = x86::RDI,
-        rsp = x86::RSP,
-    )
-}
-
 #[test]
 fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
     let scratch = native::Scratch::new();
@@ -93,7 +50,7 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
     let mut expected = Vec::new();
     for address in ADDRESSES {
         for value in 0..8u64 {
-            writeln!(input, "{address} {value}").unwrap();
+            writeln!(input, "{address} {value} 0 0 0").unwrap();
             let memory = prepare(address, value);
             let mut registers = vec![0; program.register_count()];
             registers[x86::RDI] = address;
@@ -182,12 +139,7 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
         assert!(output.fallback_reason.is_none());
         assert_eq!(program.instructions(), original);
 
-        let check = "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) {";
-        assert_eq!(output.code.matches(check).count(), 1);
-        let code = output.code.replace(check,
-            "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) { nirvana_test_address=address;");
-        let prefix = "#include <stdint.h>\n#include <setjmp.h>\nstatic uint64_t nirvana_test_address;\n_Noreturn void nirvana_test_abort(void);\n#define abort nirvana_test_abort\n";
-        let source_text = prefix.to_owned() + &code + &harness(&output, program.register_count());
+        let source_text = checked_c::source(&output, program.register_count(), 1);
         for optimization in ["-O0", "-O2"] {
             let source = scratch
                 .0
