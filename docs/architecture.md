@@ -20,7 +20,7 @@ ELF / raw bytes → x86-64 decoder・lifter → Program（IR + CFG）
 CFGの到達可能部分について、支配関係・後支配関係・自然ループを解析し、
 `If`・`Loop`・脱出などの`Node`を組み立てます。
 Nodeを独立にフローグラフへ戻して元IRと照合し、構造に応じたCまたはgotoを出力します。
-複数ループを跨ぐ転送は、対象ループの深さを保ちます。
+複数ループを跨ぐ転送は、深さから対象を定め、参照されるcontinue・breakのラベルを生成します。
 
 ## 還元と表示IR
 
@@ -93,5 +93,5 @@ goto配置では空の無条件経路を畳み、空の巡回には代表を残�
 | 表示変数 | [locals.rs](../src/readable/locals.rs)、[declarations.rs](../src/readable/declarations.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[source_locals.rs](../src/source_locals.rs) |
 | メモリとスタック | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs)、[stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs) |
 | 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs)、[bit_expr.rs](../src/bit_expr.rs)、[narrow_rotate.rs](../src/narrow_rotate.rs)、[signed_expr.rs](../src/signed_expr.rs) |
-| ループ表示 | [for_loop.rs](../src/for_loop.rs)、[loop_shape.rs](../src/loop_shape.rs)、[loop_exit.rs](../src/loop_exit.rs) |
+| ループ表示 | [for_loop.rs](../src/for_loop.rs)、[loop_shape.rs](../src/loop_shape.rs)、[loop_exit.rs](../src/loop_exit.rs)、[loop_labels.rs](../src/loop_labels.rs) |
 | 純粋領域の復元 | [loop_recover.rs](../src/loop_recover.rs)、[finite_region.rs](../src/finite_region.rs)、[affine_region.rs](../src/affine_region.rs) |

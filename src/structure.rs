@@ -64,6 +64,7 @@ pub enum StructureError {
     NonlocalLoopTransfer(BlockId),
     MissingJoin(BlockId),
     UncoveredBlocks,
+    LoopLabelsUnavailable,
     Validation(ValidationError),
 }
 
@@ -77,6 +78,7 @@ impl fmt::Display for StructureError {
             Self::MissingLoopFollow(id) => write!(f, "no supported common follow for loop at {id}"),
             Self::NonlocalLoopTransfer(id) => write!(f, "nonlocal loop transfer to {id}"),
             Self::MissingJoin(id) => write!(f, "no supported post-dominance join for {id}"),
+            Self::LoopLabelsUnavailable => f.write_str("loop transfer label planning unavailable"),
             Self::UncoveredBlocks => {
                 f.write_str("structured tree does not cover every reachable block")
             }

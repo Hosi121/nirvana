@@ -9,6 +9,7 @@ use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::goto_layout::GotoLayout;
 use crate::hir::ViewPath;
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
+use crate::loop_labels::LoopLabels;
 use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
 use crate::sequence::{Evaluation, SequenceError, sequence};
 use crate::structure::{Node, StructureError, StructureStats};
@@ -33,12 +34,16 @@ use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 pub enum ReadableError {
     Reduction(ReductionError),
     Sequencing(SequenceError),
+    LoopLabelsUnavailable,
 }
 impl std::fmt::Display for ReadableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Reduction(error) => error.fmt(f),
             Self::Sequencing(error) => error.fmt(f),
+            Self::LoopLabelsUnavailable => {
+                f.write_str("loop transfer labels exceed display limits")
+            }
         }
     }
 }
@@ -825,11 +830,11 @@ impl Printer {
         code: &mut String,
         nodes: &[Node],
         indent: usize,
-        depth: usize,
         nonlocal: bool,
-    ) -> Result<(), SequenceError> {
+    ) -> Result<(), ReadableError> {
+        let labels = LoopLabels::analyze(nodes).ok_or(ReadableError::LoopLabelsUnavailable)?;
         let facts = crate::guarded_loop::Facts::new(&self.initial_slots);
-        self.nodes_with_facts(code, nodes, indent, depth, nonlocal, &facts)
+        self.nodes_with_facts(code, nodes, indent, nonlocal, &facts, &labels)
     }
 
     fn nodes_with_facts(
@@ -837,10 +842,10 @@ impl Printer {
         code: &mut String,
         nodes: &[Node],
         indent: usize,
-        depth: usize,
         nonlocal: bool,
         incoming: &crate::guarded_loop::Facts,
-    ) -> Result<(), SequenceError> {
+        labels: &LoopLabels<'_>,
+    ) -> Result<(), ReadableError> {
         let mut facts = incoming.clone();
         for node in nodes {
             match node {
@@ -889,9 +894,9 @@ impl Printer {
                                 code,
                                 middle,
                                 indent + 1,
-                                depth + 1,
                                 nonlocal,
                                 &loop_facts,
+                                labels,
                             )?;
                             line(code, indent, "}");
                             facts.observe(node, |reg| self.slots.get(&reg.0).copied());
@@ -906,10 +911,17 @@ impl Printer {
                     let mut next = self.first_temporary;
                     let value = self.ordered_expression(code, inner, condition, None, &mut next)?;
                     line(code, inner, &format!("if ({}) {{", value.text));
-                    self.nodes_with_facts(code, taken, inner + 1, depth, nonlocal, &facts)?;
+                    self.nodes_with_facts(code, taken, inner + 1, nonlocal, &facts, labels)?;
                     if !not_taken.is_empty() {
                         line(code, inner, "} else {");
-                        self.nodes_with_facts(code, not_taken, inner + 1, depth, nonlocal, &facts)?;
+                        self.nodes_with_facts(
+                            code,
+                            not_taken,
+                            inner + 1,
+                            nonlocal,
+                            &facts,
+                            labels,
+                        )?;
                     }
                     line(code, inner, "}");
                     if scoped {
@@ -925,9 +937,9 @@ impl Printer {
                             code,
                             view.body,
                             indent + 1,
-                            depth + 1,
                             nonlocal,
                             &loop_facts,
+                            labels,
                         )?;
                         let condition = self.expression(view.condition).text;
                         let condition = if view.continue_when {
@@ -939,43 +951,48 @@ impl Printer {
                         // The exit follows successful loop completion. Entry
                         // constants must not survive writes from any iteration.
                         facts.observe(node, |reg| self.slots.get(&reg.0).copied());
-                        self.nodes_with_facts(code, view.exit, indent, depth, nonlocal, &facts)?;
+                        self.nodes_with_facts(code, view.exit, indent, nonlocal, &facts, labels)?;
                         continue;
                     }
-                    let (header, middle, footer) =
-                        if let Some((header, middle)) = self.loop_header(body) {
-                            (header, middle, String::from("}"))
-                        } else if !nonlocal && let Some(view) = crate::loop_shape::post_test(body) {
-                            let condition = self.expression(view.condition).text;
-                            let condition = if view.continue_when {
-                                condition
-                            } else {
-                                format!("!({condition})")
-                            };
-                            ("do {".into(), view.body, format!("}} while ({condition});"))
+                    let continue_label = labels.continue_label(node);
+                    let (header, middle, footer) = if continue_label.is_some() {
+                        ("for (;;) {".into(), body.as_slice(), "}".into())
+                    } else if let Some((header, middle)) = self.loop_header(body) {
+                        (header, middle, String::from("}"))
+                    } else if !nonlocal && let Some(view) = crate::loop_shape::post_test(body) {
+                        let condition = self.expression(view.condition).text;
+                        let condition = if view.continue_when {
+                            condition
                         } else {
-                            match body.as_slice() {
-                                [
-                                    prefix @ ..,
-                                    Node::If {
-                                        condition,
-                                        taken,
-                                        not_taken,
-                                    },
-                                ] if is_continue(taken)
-                                    && is_break(not_taken)
-                                    && !contains_continue(prefix)
-                                    && !needs_sequence(condition) =>
-                                {
-                                    (
-                                        "do {".into(),
-                                        prefix,
-                                        format!("}} while ({});", self.expression(condition).text),
-                                    )
-                                }
-                                _ => ("for (;;) {".into(), body.as_slice(), "}".into()),
-                            }
+                            format!("!({condition})")
                         };
+                        ("do {".into(), view.body, format!("}} while ({condition});"))
+                    } else {
+                        match body.as_slice() {
+                            [
+                                prefix @ ..,
+                                Node::If {
+                                    condition,
+                                    taken,
+                                    not_taken,
+                                },
+                            ] if is_continue(taken)
+                                && is_break(not_taken)
+                                && !contains_continue(prefix)
+                                && !needs_sequence(condition) =>
+                            {
+                                (
+                                    "do {".into(),
+                                    prefix,
+                                    format!("}} while ({});", self.expression(condition).text),
+                                )
+                            }
+                            _ => ("for (;;) {".into(), body.as_slice(), "}".into()),
+                        }
+                    };
+                    if let Some(label) = continue_label {
+                        line(code, indent, &format!("{label}: ;"));
+                    }
                     line(code, indent, &header);
                     let middle = if matches!(middle.last(), Some(Node::Continue)) {
                         &middle[..middle.len() - 1]
@@ -983,40 +1000,19 @@ impl Printer {
                         middle
                     };
                     let loop_facts = facts.enter_loop(body, |reg| self.slots.get(&reg.0).copied());
-                    self.nodes_with_facts(
-                        code,
-                        middle,
-                        indent + 1,
-                        depth + 1,
-                        nonlocal,
-                        &loop_facts,
-                    )?;
+                    self.nodes_with_facts(code, middle, indent + 1, nonlocal, &loop_facts, labels)?;
                     line(code, indent, &footer);
-                    if nonlocal && depth > 0 {
-                        line(code, indent, "if (nirvana_transfer != 0) {");
-                        line(code, indent + 1, "--nirvana_transfer;");
-                        line(
-                            code,
-                            indent + 1,
-                            "if (nirvana_transfer == 0 && nirvana_continue) continue;",
-                        );
-                        line(code, indent + 1, "break;");
-                        line(code, indent, "}");
+                    if let Some(label) = labels.break_label(node) {
+                        line(code, indent, &format!("{label}: ;"));
                     }
                 }
                 Node::Break => line(code, indent, "break;"),
                 Node::Continue => line(code, indent, "continue;"),
-                Node::BreakOuter { levels } | Node::ContinueOuter { levels } => {
-                    line(code, indent, &format!("nirvana_transfer = {levels};"));
-                    line(
-                        code,
-                        indent,
-                        &format!(
-                            "nirvana_continue = {};",
-                            usize::from(matches!(node, Node::ContinueOuter { .. }))
-                        ),
-                    );
-                    line(code, indent, "break;");
+                Node::BreakOuter { .. } | Node::ContinueOuter { .. } => {
+                    let target = labels
+                        .target(node)
+                        .ok_or(ReadableError::LoopLabelsUnavailable)?;
+                    line(code, indent, &format!("goto {target};"));
                 }
                 Node::Return(value) => {
                     self.value_statement(code, indent, value, None, "return ", ";")?
@@ -1278,17 +1274,6 @@ fn max_indent(code: &str) -> usize {
         .map(|line| line.len() - line.trim_start().len())
         .max()
         .unwrap_or(0)
-}
-
-fn nonlocal(nodes: &[Node]) -> bool {
-    nodes.iter().any(|node| match node {
-        Node::BreakOuter { .. } | Node::ContinueOuter { .. } => true,
-        Node::Loop(body) => nonlocal(body),
-        Node::If {
-            taken, not_taken, ..
-        } => nonlocal(taken) || nonlocal(not_taken),
-        _ => false,
-    })
 }
 
 fn contains_continue(nodes: &[Node]) -> bool {
@@ -1610,15 +1595,13 @@ fn emit_prepared_c(
     let mut affine_regions = Vec::new();
     let (fallback_reason, display_structure_evidence) = match structured {
         Ok(function) => {
-            let nonlocal = nonlocal(function.body());
-            if nonlocal {
-                line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
-                line(&mut code, 1, "int nirvana_continue = 0;");
-            }
+            let nonlocal = LoopLabels::analyze(function.body())
+                .ok_or(ReadableError::LoopLabelsUnavailable)?
+                .has_transfers();
             let nodes = display_nodes.expect("recovered nodes");
             let mut selected = nodes;
             let mut body = String::new();
-            printer.nodes(&mut body, nodes, 1, 0, nonlocal)?;
+            printer.nodes(&mut body, nodes, 1, nonlocal)?;
             if let Some(shared) = &shared_nodes
                 && shared != nodes
             {
@@ -1626,9 +1609,7 @@ fn emit_prepared_c(
                 // Compare the same C body using the same names, storage,
                 // widths, views and checks. Sharing a lone break/return can
                 // otherwise replace flat exits by deep else chains.
-                if printer
-                    .nodes(&mut candidate, shared, 1, 0, nonlocal)
-                    .is_ok()
+                if printer.nodes(&mut candidate, shared, 1, nonlocal).is_ok()
                     && candidate.len() < body.len()
                     && max_indent(&candidate) <= max_indent(&body)
                 {
@@ -1639,7 +1620,7 @@ fn emit_prepared_c(
             if !nonlocal && let Some(recovered) = loops::recover(&printer, selected, &locals) {
                 let mut candidate = String::new();
                 if printer
-                    .nodes(&mut candidate, &recovered.nodes, 1, 0, false)
+                    .nodes(&mut candidate, &recovered.nodes, 1, false)
                     .is_ok()
                     && candidate.len() < body.len()
                     && max_indent(&candidate) <= max_indent(&body)

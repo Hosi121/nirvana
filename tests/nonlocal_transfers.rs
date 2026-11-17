@@ -181,7 +181,10 @@ fn transfers_across_three_loops_preserve_every_instruction_and_register() {
         function.body(),
         &Node::BreakOuter { levels: 2 }
     ));
-    assert!(!emit_c(&program).code.contains("goto"));
+    let output = emit_c(&program);
+    assert!(output.code.contains("goto nirvana_loop_"));
+    assert!(!output.code.contains("nirvana_transfer"));
+    assert!(!output.code.contains("nirvana_continue"));
     assert!(function.stats().emitted_block_copies <= function.stats().unique_blocks * 2);
     for mode in 0..4 {
         let input = [mode, 999, 998, 997, u64::MAX];
@@ -209,7 +212,10 @@ fn moving_a_tail_preserves_transfers_inside_its_own_nested_loop() {
         function.body(),
         &Node::BreakOuter { levels: 2 }
     ));
-    assert!(!emit_c(&program).code.contains("goto"));
+    let output = emit_c(&program);
+    assert!(output.code.contains("goto nirvana_loop_"));
+    assert!(!output.code.contains("nirvana_transfer"));
+    assert!(!output.code.contains("nirvana_continue"));
     for mode in 0..8 {
         let input = [mode, 999, 998, 997, u64::MAX];
         for limit in 0..160 {
@@ -228,7 +234,7 @@ fn moving_a_tail_preserves_transfers_inside_its_own_nested_loop() {
 }
 
 #[test]
-fn emitted_c_unwinds_and_clears_transfers_at_the_correct_loop() {
+fn emitted_c_targets_the_correct_outer_loop_without_transfer_state() {
     check_native(&three_loops(), 4);
     check_native(&loop_in_exit_tail(), 8);
 }

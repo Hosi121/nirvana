@@ -4,6 +4,7 @@ use std::fmt::Write;
 
 use crate::cfg::{BlockId, Target};
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program};
+use crate::loop_labels::LoopLabels;
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
 
@@ -60,13 +61,19 @@ pub fn emit_c(program: &Program) -> COutput {
     let (fallback_reason, structure_stats, structure_evidence) =
         match StructuredFunction::recover(program) {
             Ok(function) => {
-                let nonlocal = has_nonlocal_transfer(function.body());
-                if nonlocal {
-                    line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
-                    line(&mut code, 1, "int nirvana_continue = 0;");
-                }
-                emit_nodes(function.body(), 1, 0, nonlocal, &mut code);
-                (None, Some(function.stats()), Some(function.evidence()))
+                let body = LoopLabels::analyze(function.body()).and_then(|labels| {
+                    let mut body = String::new();
+                    emit_nodes(function.body(), 1, &labels, &mut body)?;
+                    Some(body)
+                });
+                let reason = if let Some(body) = body {
+                    code.push_str(&body);
+                    None
+                } else {
+                    emit_gotos(program, &mut code);
+                    Some(StructureError::LoopLabelsUnavailable)
+                };
+                (reason, Some(function.stats()), Some(function.evidence()))
             }
             Err(reason) => {
                 emit_gotos(program, &mut code);
@@ -151,18 +158,12 @@ fn assignments(code: &mut String, indent: usize, statements: &[Assignment]) {
     }
 }
 
-fn has_nonlocal_transfer(nodes: &[Node]) -> bool {
-    nodes.iter().any(|node| match node {
-        Node::BreakOuter { .. } | Node::ContinueOuter { .. } => true,
-        Node::Loop(body) => has_nonlocal_transfer(body),
-        Node::If {
-            taken, not_taken, ..
-        } => has_nonlocal_transfer(taken) || has_nonlocal_transfer(not_taken),
-        _ => false,
-    })
-}
-
-fn emit_nodes(nodes: &[Node], indent: usize, loop_depth: usize, nonlocal: bool, code: &mut String) {
+fn emit_nodes(
+    nodes: &[Node],
+    indent: usize,
+    labels: &LoopLabels<'_>,
+    code: &mut String,
+) -> Option<()> {
     for node in nodes {
         match node {
             Node::Evaluate(value) => line(code, indent, &format!("(void)({});", expression(value))),
@@ -189,54 +190,35 @@ fn emit_nodes(nodes: &[Node], indent: usize, loop_depth: usize, nonlocal: bool, 
                     (condition, taken, not_taken)
                 };
                 line(code, indent, &format!("if ({condition}) {{"));
-                emit_nodes(first, indent + 1, loop_depth, nonlocal, code);
+                emit_nodes(first, indent + 1, labels, code)?;
                 if !second.is_empty() {
                     line(code, indent, "} else {");
-                    emit_nodes(second, indent + 1, loop_depth, nonlocal, code);
+                    emit_nodes(second, indent + 1, labels, code)?;
                 }
                 line(code, indent, "}");
             }
             Node::Loop(body) => {
+                labels.loop_id(node)?;
+                if let Some(label) = labels.continue_label(node) {
+                    line(code, indent, &format!("{label}: ;"));
+                }
                 line(code, indent, "while (1) {");
-                emit_nodes(body, indent + 1, loop_depth + 1, nonlocal, code);
+                emit_nodes(body, indent + 1, labels, code)?;
                 line(code, indent, "}");
-                if nonlocal && loop_depth > 0 {
-                    // This handler runs before any following original step.
-                    // Unwind an enclosing loop, or resume its next iteration
-                    // once the requested continue target has been reached.
-                    line(code, indent, "if (nirvana_transfer != 0) {");
-                    line(code, indent + 1, "--nirvana_transfer;");
-                    line(
-                        code,
-                        indent + 1,
-                        "if (nirvana_transfer == 0 && nirvana_continue) continue;",
-                    );
-                    line(code, indent + 1, "break;");
-                    line(code, indent, "}");
+                if let Some(label) = labels.break_label(node) {
+                    line(code, indent, &format!("{label}: ;"));
                 }
             }
             Node::Break => line(code, indent, "break;"),
             Node::Continue => line(code, indent, "continue;"),
-            Node::BreakOuter { levels } | Node::ContinueOuter { levels } => {
-                line(
-                    code,
-                    indent,
-                    &format!("nirvana_transfer = UINT64_C({levels});"),
-                );
-                line(
-                    code,
-                    indent,
-                    if matches!(node, Node::ContinueOuter { .. }) {
-                        "nirvana_continue = 1;"
-                    } else {
-                        "nirvana_continue = 0;"
-                    },
-                );
-                line(code, indent, "break;");
+            Node::BreakOuter { .. } | Node::ContinueOuter { .. } => {
+                let target = labels.target(node)?;
+                line(code, indent, &format!("goto {target};"));
             }
             Node::Return(value) => line(code, indent, &format!("return {};", expression(value))),
         }
     }
+    Some(())
 }
 
 fn emit_gotos(program: &Program, code: &mut String) {

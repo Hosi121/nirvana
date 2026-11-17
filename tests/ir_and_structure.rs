@@ -50,7 +50,7 @@ fn examples_preserve_registers_returns_and_instruction_traces() {
         if expected_fallback {
             assert!(output.code.contains("goto bb"));
         } else {
-            assert!(!output.code.contains("goto"));
+            assert!(!output.code.contains("goto bb"));
         }
     }
 }
@@ -361,7 +361,9 @@ fn nested_exit_tails_preserve_the_outer_continue_target() {
             );
         }
     }
-    assert!(!emit_c(&program).code.contains("goto"));
+    let output = emit_c(&program);
+    assert!(output.fallback_reason.is_none());
+    assert!(!output.code.contains("goto bb"));
 }
 
 #[test]
