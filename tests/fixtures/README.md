@@ -16,7 +16,7 @@
 | `fixture.h` | unsigned 64-bitの入力状態4要素と返り値の共通契約 |
 | `harness.c` | 標準入力から状態を読み、返り値と最終状態4要素を出す |
 | `helpers.c` | 関数呼び出しfixtureで使う別翻訳単位の関数 |
-| `recovery/*.c` | 別corpusの10ソース。幅・alias・添字・複数入口goto・早期脱出 |
+| `recovery/*.c` | 別corpusの11ソース。幅・alias・添字・複数入口goto・早期脱出 |
 
 入力値、計算結果、状態はすべてunsigned 64-bitです。演算の折り返しを許可し、シフト量はマスクします。
 配列の添字とループ回数は入力から小さな範囲へ制限しています。全fixtureが自動検査の入力で停止するようにしています。
@@ -63,11 +63,12 @@ cargo test --test recovery_fixture -- --nocapture
 そのうち32構成は構造化前後の命令trace・全レジスタ・全メモリも比較します。
 未対応の7構成は再配置が必要なケースです。詳細は[機械語フロントエンド](../../docs/machine-frontend.md)を参照してください。
 
-`recovery_fixture`は独立した10ソース×O0/O2×69入力、計1,380比較を行います。
+`recovery_fixture`は独立した11ソース×O0/O2×69入力、計1,518比較を行います。
 `byte-fields`・`packed-update`は幅と重なる更新、`strided-input`は添字、`selected-alias`は選択されたポインタ、
 `three-entry-goto`は3か所から入る有限循環、`early-exit-chain`は複数の脱出、
 `volatile-bound`は上限の再読と途中break、`cyclic-guard`は入口判定と折り返すcounterを確かめます。
 `branch-break`・`branch-return`は異なる状態書込みを持つ脱出経路と、共通のbreak・返り値計算を含みます。
+`two-phase-loops`は二つの独立したループの更新値・上限・終了後の状態を確かめます。
 全構成のliftを必須とし、失敗をskipしません。元C・IRの返り値と4状態ワードに加え、
 readable CとIRはstackを含む64KiB全体のdigestも照合します。
 
