@@ -54,25 +54,38 @@ fn missing_solver_and_unmodeled_operations_never_accept_a_candidate() {
 #[cfg(unix)]
 mod protocol {
     use super::*;
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     struct Script(PathBuf);
+    static NEXT_SCRIPT: AtomicU64 = AtomicU64::new(0);
     impl Script {
         fn new(body: &str) -> Self {
             let nonce = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let path =
-                std::env::temp_dir().join(format!("nirvana-solver-{}-{nonce}", std::process::id()));
-            std::fs::write(
-                &path,
-                format!("#!/usr/bin/env python3\nimport sys\nscript = sys.stdin.read()\n{body}\n"),
+            let serial = NEXT_SCRIPT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "nirvana-solver-{}-{nonce}-{serial}",
+                std::process::id()
+            ));
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .unwrap();
+            writeln!(
+                file,
+                "#!/usr/bin/env python3\nimport sys\nscript = sys.stdin.read()\n{body}"
             )
             .unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            file.set_permissions(std::fs::Permissions::from_mode(0o700))
+                .unwrap();
+            drop(file);
             Self(path)
         }
     }
