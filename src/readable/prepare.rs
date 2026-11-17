@@ -3,8 +3,11 @@
 
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
 use crate::reduce::ReductionError;
-use crate::structure::{Node, StructureError, StructuredFunction};
+use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
+use crate::structure_verify::StructureEvidence;
 use crate::value_width::ValueWidths;
+
+use super::{WebRecovery, webs};
 
 pub(super) struct PreparedFunction {
     pub program: Program,
@@ -12,13 +15,46 @@ pub(super) struct PreparedFunction {
     pub structure: Result<StructuredFunction, StructureError>,
     pub nodes: Option<Vec<Node>>,
     pub shared_nodes: Option<Vec<Node>>,
+    pub source_evidence: Option<StructureEvidence>,
+    pub source_stats: Option<StructureStats>,
+    pub web_recovery: WebRecovery,
 }
 
 pub(super) fn prepare(
     original: &Program,
     parameters: &[Reg],
 ) -> Result<PreparedFunction, ReductionError> {
-    let widths = ValueWidths::analyze(original);
+    let selected = webs::select(original);
+    let renamed = matches!(selected.recovery, WebRecovery::Applied { .. });
+    match prepare_selected(original, parameters, selected) {
+        Err(error) if renamed => prepare_original(
+            original,
+            parameters,
+            WebRecovery::RenderingFallback(super::ReadableError::Reduction(error)),
+        ),
+        result => result,
+    }
+}
+
+pub(super) fn prepare_original(
+    original: &Program,
+    parameters: &[Reg],
+    recovery: WebRecovery,
+) -> Result<PreparedFunction, ReductionError> {
+    prepare_selected(
+        original,
+        parameters,
+        webs::keep_original(original, recovery),
+    )
+}
+
+fn prepare_selected(
+    original: &Program,
+    parameters: &[Reg],
+    selected: webs::SelectedWebs,
+) -> Result<PreparedFunction, ReductionError> {
+    let input = selected.program.as_ref().unwrap_or(original);
+    let widths = ValueWidths::analyze(input);
     let width = |reg| {
         if parameters.contains(&reg) {
             Width::U64
@@ -29,8 +65,8 @@ pub(super) fn prepare(
     // A presentation copy keeps the executable IR and its checked structure
     // certificate intact. All dependency/view/allocation analyses see the same
     // expressions that will actually be printed.
-    let program = presentation_program(original, &width)?;
-    let structure = StructuredFunction::recover(original);
+    let program = presentation_program(input, &width)?;
+    let structure = selected.structure;
     let candidates = structure.as_ref().ok().map(|function| {
         let nodes = presentation_nodes(function.body(), &width);
         // Exact program points are part of suffix equality: memory views
@@ -49,6 +85,9 @@ pub(super) fn prepare(
         structure,
         nodes,
         shared_nodes,
+        source_evidence: selected.source_evidence,
+        source_stats: selected.source_stats,
+        web_recovery: selected.recovery,
     })
 }
 

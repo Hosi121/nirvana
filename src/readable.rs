@@ -19,6 +19,7 @@ mod locals;
 mod prepare;
 mod syntax;
 mod views;
+mod webs;
 use locals::LocalPlan;
 use prepare::{PreparedFunction, is_break, is_continue};
 use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
@@ -58,22 +59,42 @@ pub struct ReadableC {
     pub reduction_stats: ReductionStats,
     pub fallback_reason: Option<StructureError>,
     pub structure_stats: Option<StructureStats>,
-    /// Correspondence for the Node AST, before tail sharing/compact/loop/C rendering.
+    /// Correspondence for the original reduced IR and its Node AST, before
+    /// definition-web renaming or any C presentation transforms.
     pub structure_evidence: Option<StructureEvidence>,
+    /// Structural check for the selected display IR, after validated web renaming.
+    /// It does not replace the original reduced-IR evidence above.
+    pub display_structure_evidence: Option<StructureEvidence>,
+    pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
     pub object_views: Vec<ObjectView>,
     /// Storage widths of named local values; parameters remain uint64_t.
     pub locals: Vec<LocalValue>,
-    /// Number of individual IR local registers before assigning C storage.
+    /// Number of local registers in the selected display IR before C allocation.
     pub local_value_count: usize,
     /// Storage reuse and the finer local identities selected for C naming.
     pub local_plan: LocalPlanStats,
 }
 
+/// Outcome of the optional definition-web pass. Invalid or unavailable
+/// candidates retain the original reduced IR and its rendering path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WebRecovery {
+    Unchanged,
+    Unavailable,
+    Rejected(crate::web_verify::WebError),
+    StructureFallback(StructureError),
+    RenderingFallback(ReadableError),
+    Applied {
+        stats: crate::web::WebStats,
+        evidence: crate::web_verify::WebEvidence,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LocalValue {
-    /// First member, retained for callers that inspect a representative value.
+    /// First member in the selected display IR, which may use renamed web IDs.
     pub register: Reg,
     pub registers: Vec<Reg>,
     pub name: String,
@@ -1212,14 +1233,37 @@ fn emit_reduced_c(
     reduced: ReducedFunction,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
-    let original = reduced.program();
+    let prepared = prepare::prepare(reduced.program(), reduced.parameters())?;
+    let renamed = matches!(prepared.web_recovery, WebRecovery::Applied { .. });
+    match emit_prepared_c(&reduced, options, prepared) {
+        Ok(output) => Ok(output),
+        Err(error) if renamed => {
+            let fallback = prepare::prepare_original(
+                reduced.program(),
+                reduced.parameters(),
+                WebRecovery::RenderingFallback(error),
+            )?;
+            emit_prepared_c(&reduced, options, fallback)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn emit_prepared_c(
+    reduced: &ReducedFunction,
+    options: ReadableOptions,
+    prepared: PreparedFunction,
+) -> Result<ReadableC, ReadableError> {
     let PreparedFunction {
         program: presented,
         widths: value_widths,
         structure: structured,
         nodes,
         shared_nodes,
-    } = prepare::prepare(original, reduced.parameters())?;
+        source_evidence: structure_evidence,
+        source_stats: structure_stats,
+        web_recovery,
+    } = prepared;
     let program = &presented;
     let display_nodes = nodes.as_deref();
     let views = MemoryViews::recover(program, reduced.parameters(), options);
@@ -1437,7 +1481,7 @@ fn emit_reduced_c(
         slots: printer_slots,
         initial_slots,
     };
-    let (fallback_reason, structure_stats, structure_evidence) = match structured {
+    let (fallback_reason, display_structure_evidence) = match structured {
         Ok(function) => {
             let nonlocal = nonlocal(function.body());
             if nonlocal {
@@ -1464,11 +1508,11 @@ fn emit_reduced_c(
                 }
             }
             code.push_str(&body);
-            (None, Some(function.stats()), Some(function.evidence()))
+            (None, Some(function.evidence()))
         }
         Err(reason) => {
             printer.gotos(&mut code, program)?;
-            (Some(reason), None, None)
+            (Some(reason), None)
         }
     };
     code.push_str("}\n");
@@ -1483,6 +1527,8 @@ fn emit_reduced_c(
         fallback_reason,
         structure_stats,
         structure_evidence,
+        display_structure_evidence,
+        web_recovery,
         stack_views,
         object_views,
         locals,

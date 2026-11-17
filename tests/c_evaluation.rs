@@ -371,6 +371,196 @@ fn native_c_limit_identity_excludes_an_earlier_unrelated_byte_lifetime() {
 }
 
 #[test]
+fn native_c_input_register_reused_as_counter_gets_a_separate_definition_web() {
+    let program = Program::new(
+        0,
+        5,
+        vec![
+            instruction(
+                0,
+                vec![
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(r(0), Width::U8),
+                    },
+                    store(c(0x100f), Width::U8, r(2)),
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: b(BinaryOp::And, Expr::load(r(1), Width::U8), c(3)),
+                    },
+                    Assignment {
+                        destination: Reg(0).into(),
+                        value: c(0),
+                    },
+                    Assignment {
+                        destination: Reg(4).into(),
+                        value: c(0),
+                    },
+                ],
+                Control::Next,
+            ),
+            instruction(
+                1,
+                vec![],
+                Control::Branch {
+                    condition: b(BinaryOp::Ult, r(0), r(3)),
+                    target: 3,
+                },
+            ),
+            instruction(
+                2,
+                vec![],
+                Control::Return(b(BinaryOp::Add, r(4), load(c(0x1000)))),
+            ),
+            instruction(
+                3,
+                vec![
+                    Assignment {
+                        destination: Reg(4).into(),
+                        value: b(BinaryOp::Add, r(4), r(0)),
+                    },
+                    Assignment {
+                        destination: Reg(0).into(),
+                        value: b(BinaryOp::Add, r(0), c(1)),
+                    },
+                    store(c(0x100e), Width::U8, r(0)),
+                    store(b(BinaryOp::Add, r(1), c(8)), Width::U8, r(0)),
+                ],
+                Control::Jump(1),
+            ),
+        ],
+    )
+    .unwrap();
+    let reduced = nirvana::reduce::reduce(&program).unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            coalesce_locals: true,
+            compact_memory: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(output.parameters, reduced.parameters());
+    assert!(
+        matches!(
+            output.web_recovery,
+            nirvana::readable::WebRecovery::Applied { .. }
+        ),
+        "{output:?}"
+    );
+    assert!(
+        output
+            .locals
+            .iter()
+            .any(|local| local.role == Some(nirvana::value_role::ValueRole::Counter)),
+        "the counter must no longer be trapped in the input parameter's name: {output:?}"
+    );
+    assert_eq!(
+        output.structure_evidence,
+        Some(
+            nirvana::structure::StructuredFunction::recover(reduced.program())
+                .unwrap()
+                .evidence()
+        ),
+    );
+    assert!(output.display_structure_evidence.is_some());
+    compare(
+        &program,
+        &[
+            [0x1000, 0x1000],
+            [0x1000, 0x1008],
+            [0x100f, 0x1000],
+            [0xffff, 0x1000],
+            [0x1000, 0xffff],
+            [0xffff, 0xffff],
+        ],
+    );
+}
+
+#[test]
+fn native_c_web_rendering_retries_original_ir_when_temporary_ids_overflow() {
+    // This sparse input is valid without allocating a register-count-sized
+    // interpreter bank. Reduction uses two IDs; the optional web uses one more.
+    // Two final Load temporaries fit only when the original IR is rendered.
+    let program = Program::new(
+        0,
+        usize::MAX - 4,
+        vec![
+            instruction(
+                0,
+                vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: c(1),
+                }],
+                Control::Jump(1),
+            ),
+            instruction(
+                1,
+                vec![
+                    store(c(0x1000), Width::U8, r(0)),
+                    Assignment {
+                        destination: Reg(0).into(),
+                        value: c(2),
+                    },
+                ],
+                Control::Jump(2),
+            ),
+            instruction(
+                2,
+                vec![store(c(0x1008), Width::U8, r(0))],
+                Control::Return(b(BinaryOp::Add, load(c(0x1000)), load(c(0x1008)))),
+            ),
+        ],
+    )
+    .unwrap();
+    let scratch = Scratch::new();
+    for compact in [false, true] {
+        let output = emit_readable_c_with_options(
+            &program,
+            ReadableOptions {
+                coalesce_locals: compact,
+                compact_memory: compact,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                output.web_recovery,
+                nirvana::readable::WebRecovery::RenderingFallback(
+                    nirvana::readable::ReadableError::Sequencing(_)
+                )
+            ),
+            "{output:?}"
+        );
+        assert_eq!(output.structure_evidence, output.display_structure_evidence);
+        assert!(output.parameters.is_empty());
+        for opt in ["-O0", "-O2"] {
+            let source = scratch.0.join(format!("web-fallback-{compact}{opt}.c"));
+            std::fs::write(
+                &source,
+                output.code.clone()
+                    + r#"
+#include <stdio.h>
+int main(void) {
+    uint8_t memory[16] = {0};
+    printf("%llu\n", (unsigned long long)nirvana_readable(memory, UINT64_C(4096), sizeof(memory)));
+    return 0;
+}
+"#,
+            )
+            .unwrap();
+            let compiled = source.with_extension("o");
+            let binary = source.with_extension("bin");
+            object(&source, &compiled, opt, "nirvana_readable");
+            link(&[&compiled], &binary);
+            assert_eq!(native::run_fields(&binary, "", 1), vec![vec![3]]);
+        }
+    }
+}
+
+#[test]
 fn native_c_independent_pointer_reloads_can_share_an_address_local() {
     let program = Program::new(
         0,
