@@ -28,6 +28,7 @@ pub mod simplify;
 pub mod stack;
 pub mod structure;
 pub mod structure_verify;
+pub mod value_role;
 pub mod value_width;
 pub mod verify;
 pub mod x86;
