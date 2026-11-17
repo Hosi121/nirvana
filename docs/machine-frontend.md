@@ -25,7 +25,7 @@ ELF入力はELF64・little-endian・`EM_X86_64`・`ET_REL`のオブジェクト�
 | 命令群 | 対応形式 |
 | --- | --- |
 | 移動とアドレス | 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、LEA、XCHG |
-| 整数演算 | 算術・bit演算・シフト・ROL/ROR、明示オペランドのIMUL |
+| 整数演算 | 算術・bit演算・シフト・ROL/ROR、暗黙オペランドのunsigned MUL、明示オペランドのIMUL |
 | 条件と分岐 | 直接JMP/Jcc、SETcc、CMOVcc |
 | スタックと境界 | 64-bit PUSH/POP/LEAVE、RET |
 | byte/bit操作 | 32/64-bit BSWAP、16/32/64-bitレジスタのBT |

@@ -121,6 +121,10 @@ pub enum Operation {
         left: Operand,
         right: Operand,
     },
+    /// Unsigned implicit-accumulator multiply, F6/F7 /4.
+    Mul {
+        source: Operand,
+    },
     Exchange {
         left: Operand,
         right: Register,
@@ -613,6 +617,9 @@ impl Decoder<'_> {
                     3 => Operation::Unary {
                         kind: Unary::Neg,
                         destination,
+                    },
+                    4 => Operation::Mul {
+                        source: destination,
                     },
                     _ => return Err(self.error("implicit multiply/divide is unsupported")),
                 }

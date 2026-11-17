@@ -4,7 +4,7 @@ use super::decode::{
     Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
     Unary, decode_reachable,
 };
-use super::{CF, OF, PF, RAX, RBP, REGISTER_COUNT, RSP, SF, ZF};
+use super::{CF, OF, PF, RAX, RBP, RDX, REGISTER_COUNT, RSP, SF, ZF};
 use crate::cfg::{BuildError, Cfg};
 use crate::ir::{
     Assignment, BinaryOp as B, Control, Expr, IrInstruction, Place, Program, ProgramError, Reg,
@@ -154,7 +154,7 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
         Operation::Unary {
             kind: Unary::Neg, ..
         } => (0, ALL, 0),
-        Operation::Imul { .. } => (0, F_CF | F_OF, F_ZF | F_SF | F_PF),
+        Operation::Imul { .. } | Operation::Mul { .. } => (0, F_CF | F_OF, F_ZF | F_SF | F_PF),
         // BT defines CF, preserves ZF, and leaves OF/SF/PF undefined.
         Operation::BitTest { .. } => (0, F_CF, F_OF | F_SF | F_PF),
         Operation::Rotate {
@@ -690,6 +690,45 @@ impl Lifter {
                 source,
             } => self.movbe(destination, source),
             Operation::BitTest { base, index } => self.bit_test(base, index),
+            Operation::Mul { source } => {
+                let width = source.width().unwrap();
+                // Read both original operands before changing AX or DX. A
+                // memory source occurs exactly once, even when its address
+                // uses RAX/RDX or its register aliases either destination.
+                self.set(A, mask(r(RAX), width));
+                self.set(V, self.read(source));
+                self.set(LOW, b(B::Mul, r(A), r(V)));
+                self.set(
+                    HIGH,
+                    if width == Width::U64 {
+                        b(B::UMulHigh, r(A), r(V))
+                    } else {
+                        b(B::Shr, r(LOW), k(u64::from(width.bits())))
+                    },
+                );
+                self.set(CF, ne(r(HIGH), k(0)));
+                self.set(OF, r(CF));
+                let accumulator = Register {
+                    index: RAX as u8,
+                    width: if width == Width::U8 {
+                        Width::U16
+                    } else {
+                        width
+                    },
+                    shift: 0,
+                };
+                self.write_register(accumulator, r(LOW));
+                if width != Width::U8 {
+                    self.write_register(
+                        Register {
+                            index: RDX as u8,
+                            width,
+                            shift: 0,
+                        },
+                        r(HIGH),
+                    );
+                }
+            }
             Operation::Imul {
                 destination,
                 left,
