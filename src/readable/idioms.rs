@@ -1,4 +1,5 @@
 //! Pure expression views and definitions for the selected C layout.
+use crate::add_division_expr;
 use crate::bit_expr::{self, BitKind};
 use crate::division_expr;
 use crate::emit::MULTIPLY_HELPER;
@@ -37,6 +38,12 @@ pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
         });
     }
     if let Some(view) = narrow_division_expr::recognize(expression) {
+        return Some(View::Divide {
+            value: view.value,
+            divisor: view.divisor,
+        });
+    }
+    if let Some(view) = add_division_expr::recognize(expression) {
         return Some(View::Divide {
             value: view.value,
             divisor: view.divisor,

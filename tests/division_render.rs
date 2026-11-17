@@ -43,21 +43,35 @@ fn division_and_remainder_keep_unsigned_constants_wrap_and_grouping() {
         ),
     ];
     let mut configurations = 0;
-    for (magic, shift, divisor) in [
-        (0xcccc_cccc_cccc_cccd, 3, 10),
-        (u64::MAX, 63, (1 << 63) + 1),
+    for (magic, shift, divisor, extended) in [
+        (0xcccc_cccc_cccc_cccd, 3, 10, false),
+        (u64::MAX, 63, (1 << 63) + 1, false),
+        (0x2492_4924_9249_2493, 2, 7, true),
     ] {
         for numerator in &numerators {
             for reverse in [false, true] {
                 for (outer, remainder) in
                     [(false, false), (true, false), (false, true), (true, true)]
                 {
+                    if extended && remainder {
+                        continue;
+                    }
                     let product = if reverse {
                         b(B::UMulHigh, c(magic), numerator.clone())
                     } else {
                         b(B::UMulHigh, numerator.clone(), c(magic))
                     };
-                    let quotient = b(B::Shr, product, c(shift));
+                    let quotient = if extended {
+                        let half = b(B::Shr, b(B::Sub, numerator.clone(), product.clone()), c(1));
+                        let average = if reverse {
+                            b(B::Add, product, half)
+                        } else {
+                            b(B::Add, half, product)
+                        };
+                        b(B::Shr, average, c(shift))
+                    } else {
+                        b(B::Shr, product, c(shift))
+                    };
                     let quotient = if remainder {
                         b(B::Sub, numerator.clone(), b(B::Mul, quotient, c(divisor)))
                     } else {
@@ -135,5 +149,5 @@ int main(void) {{
             }
         }
     }
-    assert_eq!(configurations, 128);
+    assert_eq!(configurations, 160);
 }

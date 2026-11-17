@@ -73,18 +73,22 @@ fn prepare(address: u64, input: [u64; 4]) -> Vec<u8> {
     memory
 }
 
-fn has_division_by_ten(body: &str) -> bool {
+fn has_division(body: &str, divisor: u64) -> bool {
     let compact: String = body.chars().filter(|c| !c.is_ascii_whitespace()).collect();
-    ["/10", "/UINT64_C(10)", "/UINT64_C(0xa)"]
-        .iter()
-        .any(|needle| {
-            compact.match_indices(needle).any(|(index, _)| {
-                compact[index + needle.len()..]
-                    .chars()
-                    .next()
-                    .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'))
-            })
+    [
+        format!("/{divisor}"),
+        format!("/UINT64_C({divisor})"),
+        format!("/UINT64_C(0x{divisor:x})"),
+    ]
+    .iter()
+    .any(|needle| {
+        compact.match_indices(needle).any(|(index, _)| {
+            compact[index + needle.len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'))
         })
+    })
 }
 
 #[test]
@@ -92,10 +96,19 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
     let scratch = native::Scratch::new();
     let mut comparisons = 0;
     let mut total_write_faults = 0;
-    for source_optimization in ["-O0", "-O2"] {
-        let object = scratch.0.join(format!("division{source_optimization}.o"));
+    for (fixture, divisor, source_optimization) in [
+        ("unsigned-div-constant", 10_u64),
+        ("unsigned-div-seven", 7_u64),
+    ]
+    .into_iter()
+    .flat_map(|(fixture, divisor)| {
+        ["-O0", "-O2"].map(move |optimization| (fixture, divisor, optimization))
+    }) {
+        let object = scratch
+            .0
+            .join(format!("division-{fixture}{source_optimization}.o"));
         native::object(
-            &native::fixture_root().join("recovery/unsigned-div-constant.c"),
+            &native::fixture_root().join(format!("recovery/{fixture}.c")),
             &object,
             source_optimization,
             "fixture",
@@ -123,19 +136,31 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                         .run_with_memory(&registers, BASE, &prepare(address, input), 100_000)
                         .unwrap();
                     if address == BASE {
-                        let q = value / 10;
-                        let remainder = value % 10;
+                        let q = value / divisor;
+                        let remainder = value % divisor;
                         let lane = u64::from(word as u32);
                         let small = lane / 10 + lane % 10;
                         assert_eq!(
                             report.status,
-                            RunStatus::Returned(q ^ (remainder << 8) ^ small)
+                            RunStatus::Returned(if divisor == 10 {
+                                q ^ (remainder << 8) ^ small
+                            } else {
+                                q ^ remainder
+                            })
                         );
                         let state = report.state.memory[..32]
                             .chunks_exact(8)
                             .map(|w| u64::from_le_bytes(w.try_into().unwrap()))
                             .collect::<Vec<_>>();
-                        assert_eq!(state, [value, q, remainder, small]);
+                        assert_eq!(
+                            state,
+                            [
+                                value,
+                                q,
+                                remainder,
+                                if divisor == 10 { small } else { word }
+                            ]
+                        );
                         base_oracles += 1;
                     }
                     let mut row = match report.status {
@@ -190,7 +215,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 },
             )
             .unwrap();
-            if source_optimization == "-O2" {
+            if divisor == 10 && source_optimization == "-O2" {
                 assert!(output.locals.iter().any(|local| {
                     local.role == Some(nirvana::value_role::ValueRole::Quotient)
                         && local.name == "quotient"
@@ -201,11 +226,13 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 .split("uint64_t nirvana_readable(")
                 .nth(1)
                 .unwrap();
-            assert!(
-                has_division_by_ten(body),
-                "constant division was not adopted: {source_optimization}, views={recover_objects}\n{body}"
-            );
-            if source_optimization == "-O2" {
+            if divisor == 10 || source_optimization == "-O2" {
+                assert!(
+                    has_division(body, divisor),
+                    "constant division was not adopted: {fixture}, {source_optimization}, views={recover_objects}\n{body}"
+                );
+            }
+            if divisor == 10 && source_optimization == "-O2" {
                 assert!(
                     !body.contains("0xcccccccd")
                         && body.contains(" % 10")
@@ -213,12 +240,18 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                     "narrow reciprocal remains: {body}"
                 );
             }
+            if divisor == 7 && source_optimization == "-O2" {
+                assert!(
+                    !body.contains("0x2492492492492493"),
+                    "extended reciprocal remains: {body}"
+                );
+            }
             assert_eq!(program.instructions(), original);
             let source =
                 checked_c::source_with_size(&output, program.register_count(), 4, MEMORY_SIZE);
             for generated_optimization in ["-O0", "-O2"] {
                 let stem = format!(
-                    "division-{source_optimization}-{recover_objects}-{generated_optimization}"
+                    "division-{fixture}-{source_optimization}-{recover_objects}-{generated_optimization}"
                 );
                 let path = scratch.0.join(format!("{stem}.c"));
                 std::fs::write(&path, &source).unwrap();
@@ -236,13 +269,13 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
         }
         assert_eq!(program.instructions(), original);
         println!(
-            "division {source_optimization}: 1020 inputs, returns={returns}, read faults={read_faults}, write faults={write_faults}; BASE oracles={base_oracles}; views2/Copts2 agree"
+            "{fixture} {source_optimization}: 1020 inputs, returns={returns}, read faults={read_faults}, write faults={write_faults}; BASE oracles={base_oracles}; views2/Copts2 agree"
         );
     }
     // A source optimization can turn all near-end cases into read faults before
     // a destination is reached. Require destination-fault coverage for the whole
     // cohort, while comparing each actual first access and width independently.
     assert!(total_write_faults > 0);
-    assert_eq!(comparisons, 8160);
+    assert_eq!(comparisons, 16320);
     println!("division backend: {comparisons} full256-byte/return/exact-first-fault comparisons");
 }
