@@ -70,6 +70,7 @@ while/for/do-while、入口 guard、複合代入の整形は、元の更新順�
 後置判定の途中を飛ばすcontinueは移さず、内側ループの局所転送と区別する。returnに至る脱出末尾は、途中のbreakがない場合にループの後へ表示する。
 共通分岐末尾は命令位置まで一致する場合に共有候補とし、条件の評価を残す。
 C 本体が短くなり、最大の字下げが増えない候補を採用する。
+Loadのない厳密なrotate64・byte swap32/64の式はC helperへ表示する。IRと依存関係は保持し、使ったhelperだけを出力する。
 展開された純粋な加算ループは、実際の前段から有限入力集合を導き、全状態の対応と幅を検査できる場合に通常ループへ戻す。
 初期累積値が任意のu64なら、有限な制御値ごとに `a*A+b` の厳密な対応を検査する。
 元の CFG の構造証拠は保持し、表示領域の証拠を `finite_regions`・`affine_regions` に分ける。前後のメモリ操作と命令位置は変えない。
@@ -90,6 +91,7 @@ goto 配置では空の無条件経路を畳むが、空の巡回には代表を
 | メモリ view | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs) |
 | スタック値と役割 | [stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs)、[stack_role.rs](../src/stack_role.rs) |
 | C 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs) |
+| 純粋bit式の表示 | [bit_expr.rs](../src/bit_expr.rs) |
 | 純粋領域のループ復元 | [loop_recover.rs](../src/loop_recover.rs)、[finite_region.rs](../src/finite_region.rs)、[affine_region.rs](../src/affine_region.rs) |
 
 検査の実行方法は[検証ガイド](verification.md)、導入手順は[README](../README.md)を参照。

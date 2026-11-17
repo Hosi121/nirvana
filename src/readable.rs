@@ -194,6 +194,15 @@ impl Printer {
             unsigned,
             precedence: 13,
         };
+        if let Some(view) = crate::bit_expr::recognize(expr) {
+            let value = self.expression_at(view.value, point).text;
+            let arguments = if let Some(count) = view.count {
+                format!("{value}, {}", self.expression_at(count, point).text)
+            } else {
+                value
+            };
+            return atom(format!("{}({arguments})", view.kind.helper_name()), true);
+        }
         match expr {
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
             Expr::Const(value) => atom(format!("UINT64_C(0x{value:x})"), true),
@@ -1628,6 +1637,26 @@ fn emit_prepared_c(
     code.push_str("}\n");
     if program.uses_memory() && options.compact_memory {
         code.push_str(syntax::COMPACT_END);
+    }
+    // Emit only helpers referenced by the final selected layout. Discarded
+    // candidates and metadata rendering must not add unused definitions.
+    let mut bit_helpers = String::new();
+    use crate::bit_expr::BitKind;
+    for kind in [
+        BitKind::Rol64,
+        BitKind::Ror64,
+        BitKind::Bswap32,
+        BitKind::Bswap64,
+    ] {
+        if code.contains(&format!("{}(", kind.helper_name())) {
+            bit_helpers.push_str(kind.c_helper());
+        }
+    }
+    if !bit_helpers.is_empty() {
+        let start = code
+            .find("uint64_t nirvana_readable(")
+            .expect("function declaration");
+        code.insert_str(start, &bit_helpers);
     }
     Ok(ReadableC {
         code,

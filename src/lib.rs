@@ -8,6 +8,7 @@ pub mod affine_region;
 pub mod allocation;
 pub mod allocation_verify;
 pub mod analysis;
+pub mod bit_expr;
 pub mod block_verify;
 pub mod branch_tail;
 pub mod cfg;
