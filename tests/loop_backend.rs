@@ -2,8 +2,8 @@
 //!
 //! The original sum fixture is compiled only at O2. Invalid guest addresses are
 //! exercised against lifted IR and generated checked C, never native pointer C.
-//! This cohort compares every guest byte and the first failing guest address;
-//! it does not distinguish access kinds/widths or reproduce original IR traces.
+//! This cohort compares every guest byte and the first failing guest address, kind and width;
+//! it does not reproduce original IR traces.
 
 #[path = "support/checked_c.rs"]
 mod checked_c;
@@ -58,11 +58,11 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
             let report = program
                 .run_with_memory(&registers, BASE, &memory, 100_000)
                 .unwrap();
-            let (fault, fault_address, result) = match report.status {
+            let (fault, fault_address, access, width, result) = match report.status {
                 RunStatus::Returned(result) => {
                     assert!(matches!(address, 0x1000 | 0x1010));
                     assert_eq!(result, value * value.saturating_sub(1) / 2);
-                    (0, 0, result)
+                    (0, 0, 0, 0, result)
                 }
                 RunStatus::Fault(fault) => {
                     assert!(!matches!(address, 0x1000 | 0x1010));
@@ -77,7 +77,17 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
                         assert_eq!(fault.access, AccessKind::Read);
                         assert_eq!(fault.address, address);
                     }
-                    (1, fault.address, 0)
+                    (
+                        1,
+                        fault.address,
+                        if fault.access == AccessKind::Read {
+                            1
+                        } else {
+                            2
+                        },
+                        fault.width.bytes() as u64,
+                        0,
+                    )
                 }
                 RunStatus::Suspended => panic!("sum fixture unexpectedly suspended"),
             };
@@ -99,7 +109,7 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
                     "first fault must precede stores"
                 );
             }
-            let mut observation = vec![fault, fault_address, result];
+            let mut observation = vec![fault, fault_address, access, width, result];
             observation.extend(
                 report
                     .state
@@ -107,7 +117,7 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
                     .chunks_exact(8)
                     .map(|word| u64::from_le_bytes(word.try_into().unwrap())),
             );
-            assert_eq!(observation.len(), 11);
+            assert_eq!(observation.len(), 13);
             expected.push(observation);
         }
     }
@@ -150,7 +160,7 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
             native::object(&source, &object, optimization, "nirvana_readable");
             native::link(&[&object], &binary);
             assert_eq!(
-                native::run_fields(&binary, &input, 11),
+                native::run_fields(&binary, &input, 13),
                 expected,
                 "object views={recover_objects}, generated {optimization}"
             );

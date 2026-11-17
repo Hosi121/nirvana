@@ -1,10 +1,14 @@
+#[path = "support/checked_c.rs"]
+#[allow(dead_code)]
+mod checked_c;
 #[path = "support/native.rs"]
 #[allow(dead_code)]
 mod native;
 
-use native::{Scratch, link, object, run};
+use native::{Scratch, link, object, run_fields};
 use nirvana::ir::{
-    Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, RunStatus, Width,
+    AccessKind, Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, RunStatus,
+    Width,
 };
 use nirvana::readable::{ReadableOptions, emit_readable_c_with_options};
 use std::fmt::Write as _;
@@ -1381,9 +1385,15 @@ fn compare_with_stack(program: &Program, inputs: &[[u64; 2]], stack_register: Op
         let report = program
             .run_with_memory(&registers, 0x1000, &(1..=16).collect::<Vec<u8>>(), 1000)
             .unwrap();
-        let (fault, address, value) = match report.status {
-            RunStatus::Fault(f) => (1, f.address, 0),
-            RunStatus::Returned(value) => (0, 0, value),
+        let (fault, address, access, width, value) = match report.status {
+            RunStatus::Fault(f) => (
+                1,
+                f.address,
+                if f.access == AccessKind::Read { 1 } else { 2 },
+                f.width.bytes() as u64,
+                0,
+            ),
+            RunStatus::Returned(value) => (0, 0, 0, 0, value),
             RunStatus::Suspended => panic!("test unexpectedly suspended"),
         };
         let words: Vec<_> = report
@@ -1392,7 +1402,9 @@ fn compare_with_stack(program: &Program, inputs: &[[u64; 2]], stack_register: Op
             .chunks_exact(8)
             .map(|x| u64::from_le_bytes(x.try_into().unwrap()))
             .collect();
-        expected.push(vec![fault, address, words[0], words[1], value]);
+        expected.push(vec![
+            fault, address, access, width, words[0], words[1], value,
+        ]);
     }
     for (views, compact_memory) in [(false, false), (true, false), (false, true), (true, true)] {
         let output = emit_readable_c_with_options(
@@ -1412,11 +1424,7 @@ fn compare_with_stack(program: &Program, inputs: &[[u64; 2]], stack_register: Op
             .collect::<Vec<_>>();
         args.extend(["memory", "UINT64_C(4096)", "sizeof(memory)"].map(String::from));
         let args = args.join(", ");
-        let code=output.code.replace(
-            "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) {",
-            "static inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) { nirvana_test_address=address;"
-        );
-        let prefix = "#include <stdint.h>\n#include <setjmp.h>\nstatic uint64_t nirvana_test_address;\n_Noreturn void nirvana_test_abort(void);\n#define abort nirvana_test_abort\n";
+        let code = checked_c::instrument(&output.code);
         let register_count = program.register_count();
         let harness = format!(
             r#"
@@ -1432,26 +1440,32 @@ int main(void) {{
     uint64_t a,b;
     while (scanf("%" SCNu64 " %" SCNu64,&a,&b)==2) {{
         for(unsigned i=0;i<16;++i) memory[i]=(uint8_t)(i+1);
-        result=0;fault=0;
+        result=0;fault=0;nirvana_test_address=0;nirvana_test_access=0;nirvana_test_width=0;
         uint64_t r[{register_count}]={{a,b}};
         (void)r;
         if(setjmp(jump)==0) result=nirvana_readable({args});
         else fault=1;
         uint64_t words[2]={{0,0}};
         for(unsigned i=0;i<16;++i) words[i/8]|=(uint64_t)memory[i]<<((i%8)*8);
-        printf("%u %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",fault,fault?nirvana_test_address:UINT64_C(0),words[0],words[1],result);
+        printf("%u %" PRIu64 " %u %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
+               fault,fault?nirvana_test_address:UINT64_C(0),fault?nirvana_test_access:0,
+               fault?nirvana_test_width:UINT64_C(0),words[0],words[1],result);
     }}
 }}
 "#
         );
         for opt in ["-O0", "-O2"] {
             let source = scratch.0.join(format!("evaluation{views}{opt}.c"));
-            std::fs::write(&source, prefix.to_owned() + &code + &harness).unwrap();
+            std::fs::write(&source, code.clone() + &harness).unwrap();
             let compiled = source.with_extension("o");
             let binary = source.with_extension("bin");
             object(&source, &compiled, opt, "nirvana_readable");
             link(&[&compiled], &binary);
-            assert_eq!(run(&binary, &text), expected, "views={views}, {opt}");
+            assert_eq!(
+                run_fields(&binary, &text, 7),
+                expected,
+                "views={views}, {opt}"
+            );
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Native regression for affine display recovery from an actual O2 C fixture.
 //!
 //! Invalid guest pointers run only in lifted IR and generated checked C. We
-//! compare every guest byte, return value, and first fault address; access kind,
-//! access width, original instruction traces, and final registers are excluded.
+//! compare every guest byte, return value, and exact first fault (address/kind/width);
+//! original instruction traces and final registers are excluded.
 
 #[path = "support/checked_c.rs"]
 mod checked_c;
@@ -10,7 +10,7 @@ mod checked_c;
 #[path = "support/native.rs"]
 mod native;
 
-use nirvana::ir::{Reg, RunStatus};
+use nirvana::ir::{AccessKind, Reg, RunStatus};
 use nirvana::readable::{ReadableOptions, emit_readable_c_with_options};
 use nirvana::{frontend, x86};
 use std::fmt::Write as _;
@@ -77,7 +77,7 @@ fn compiled_seeded_sum_o2_affine_loop_matches_ir_full_memory_return_and_first_fa
                 let report = program
                     .run_with_memory(&registers, BASE, &memory, 100_000)
                     .unwrap();
-                let (fault, fault_address, result) = match report.status {
+                let (fault, fault_address, access, width, result) = match report.status {
                     RunStatus::Returned(result) => {
                         returned += 1;
                         assert!(matches!(address, 0x1000 | 0x1010));
@@ -85,18 +85,28 @@ fn compiled_seeded_sum_o2_affine_loop_matches_ir_full_memory_return_and_first_fa
                             result,
                             seed.wrapping_add(limit * limit.saturating_sub(1) / 2),
                         );
-                        (0, 0, result)
+                        (0, 0, 0, 0, result)
                     }
                     RunStatus::Fault(fault) => {
                         faults += 1;
                         // Do not infer access order from the C source. In
                         // particular, O2 can read the seed at address+8 before
                         // other source operations. The lifted IR is the oracle.
-                        (1, fault.address, 0)
+                        (
+                            1,
+                            fault.address,
+                            if fault.access == AccessKind::Read {
+                                1
+                            } else {
+                                2
+                            },
+                            fault.width.bytes() as u64,
+                            0,
+                        )
                     }
                     RunStatus::Suspended => panic!("seeded sum unexpectedly suspended"),
                 };
-                let mut observation = vec![fault, fault_address, result];
+                let mut observation = vec![fault, fault_address, access, width, result];
                 observation.extend(
                     report
                         .state
@@ -104,7 +114,7 @@ fn compiled_seeded_sum_o2_affine_loop_matches_ir_full_memory_return_and_first_fa
                         .chunks_exact(8)
                         .map(|word| u64::from_le_bytes(word.try_into().unwrap())),
                 );
-                assert_eq!(observation.len(), 11);
+                assert_eq!(observation.len(), 13);
                 expected.push(observation);
             }
         }
@@ -158,7 +168,7 @@ fn compiled_seeded_sum_o2_affine_loop_matches_ir_full_memory_return_and_first_fa
             native::object(&source, &object, optimization, "nirvana_readable");
             native::link(&[&object], &binary);
             assert_eq!(
-                native::run_fields(&binary, &input, 11),
+                native::run_fields(&binary, &input, 13),
                 expected,
                 "object views={recover_objects}, generated {optimization}"
             );
