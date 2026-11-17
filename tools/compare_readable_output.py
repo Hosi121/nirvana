@@ -56,6 +56,8 @@ def metrics(code):
             "labels": len(re.findall(r"^bb[0-9]+:", plain, re.M)),
             "masks": plain.count(" & "),
             "casts": len(re.findall(r"\(uint(?:8|16|32|64)_t\)", plain)),
+            "locals": len(re.findall(r"\buint(?:8|16|32|64)_t (?:value\d*|v\d+);", plain)),
+            "copies": len(re.findall(r"^\s*(?:value\d*|v\d+)\s*=\s*(?:value\d*|v\d+)\s*;", plain, re.M)),
             "max_indent": max(len(line) - len(line.lstrip()) for line in plain.splitlines())}
 
 
@@ -96,7 +98,7 @@ def main():
             rows.append(row)
     accepted = [r for r in rows if "error" not in r["after"]]
     totals = {v: {k: sum(r[v][k] for r in accepted)
-                  for k in ["unit_bytes", "function_bytes", "tokens", "gotos", "labels", "masks", "casts"]}
+                  for k in ["unit_bytes", "function_bytes", "tokens", "gotos", "labels", "masks", "casts", "locals", "copies"]}
               for v in binaries}
     report = {"compiler": checked(["cc", "--version"]).strip(),
               "binaries": {v: {"path": str(p), "sha256": digest(p)} for v, p in binaries.items()},

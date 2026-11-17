@@ -169,6 +169,34 @@ fn chains_reuse_one_color_and_order_is_independent_of_argument_order() {
 }
 
 #[test]
+fn equal_copies_share_storage_while_both_are_live_in_separate_uses() {
+    let p = program(
+        3,
+        vec![i(
+            0,
+            vec![
+                set(1, b(BinaryOp::Add, r(0), c(1))),
+                set(2, r(1)),
+                store(c(0), Width::U64, r(1)),
+            ],
+            Control::Return(r(2)),
+        )],
+    );
+    let a = allocate_locals(&p, &locals(1, 3)).unwrap();
+    assert_eq!(
+        a.colors(),
+        1,
+        "copy values need not remain in distinct slots"
+    );
+    assert_eq!(a.color(Reg(1)), a.color(Reg(2)));
+    for input in [0, 1, 255, 1 << 63, u64::MAX] {
+        for memory in [&[][..], &[0x55; 8][..]] {
+            replay(&p, &a, &[input, 91, 92], memory, &[0, 1, 2]);
+        }
+    }
+}
+
+#[test]
 fn simultaneous_operands_form_interference_cycles_and_dead_writes_can_clobber() {
     let p = program(
         3,

@@ -1,4 +1,4 @@
-//! Reuse storage for eligible local registers using ordinary CFG liveness.
+//! Reuse storage with CFG liveness and preferences between equal copy values.
 //!
 //! This is only a storage assignment; no instruction or expression is removed.
 //! Return values, checked memory effects, faults, and traces may be preserved
@@ -50,7 +50,9 @@ struct BlockFacts {
     definitions: Live,
 }
 
-/// Deterministic greedy storage coloring for exactly the supplied registers.
+/// Deterministic storage coloring for exactly the supplied registers. A strict
+/// greedy baseline competes with a copy-aware candidate; fewer storage slots
+/// wins, then fewer remaining copies. A failed candidate keeps the baseline.
 ///
 /// Inputs/parameters should be excluded. Any eligible register live at entry
 /// causes rejection, as do duplicates, invalid register indices, and exhausted
@@ -152,11 +154,72 @@ pub fn allocate_locals(program: &Program, eligible: &[Reg]) -> Option<LocalAlloc
         return None;
     }
 
+    // Always retain the old strict coloring as a valid candidate. The optional
+    // copy-aware pass has its own budget and cannot turn a successful baseline
+    // allocation into a resource failure or increase its storage count.
+    let (strict, _) = interference(program, &indices, &reachable, &outgoing, false, &mut budget)?;
+    let baseline = color_graph(&strict, None, &mut budget)?;
+    let mut chosen = baseline.clone();
+    let candidate = (|| {
+        let mut copy_budget = Budget(MAX_WORK);
+        let (graph, affinity) = interference(
+            program,
+            &indices,
+            &reachable,
+            &outgoing,
+            true,
+            &mut copy_budget,
+        )?;
+        let candidate = color_graph(&graph, Some(&affinity), &mut copy_budget)?;
+        copy_budget.spend(affinity.iter().map(BTreeMap::len).sum::<usize>() * 2)?;
+        let score = |coloring: &Coloring| {
+            affinity
+                .iter()
+                .enumerate()
+                .map(|(a, neighbors)| {
+                    neighbors
+                        .iter()
+                        .filter(|(b, _)| a < **b && coloring.colors[a] != coloring.colors[**b])
+                        .map(|(_, weight)| *weight)
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
+        };
+        if (candidate.count, score(&candidate)) < (baseline.count, score(&baseline)) {
+            Some(candidate)
+        } else {
+            None
+        }
+    })();
+    if let Some(candidate) = candidate {
+        chosen = candidate;
+    }
+    Some(LocalAllocation {
+        by_register: indices
+            .into_iter()
+            .map(|(register, index)| (register, chosen.colors[index]))
+            .collect(),
+        color_count: chosen.count,
+    })
+}
+
+type Affinities = Vec<BTreeMap<usize, usize>>;
+
+fn interference(
+    program: &Program,
+    indices: &BTreeMap<usize, usize>,
+    reachable: &BTreeSet<crate::cfg::BlockId>,
+    outgoing: &[Live],
+    copies: bool,
+    budget: &mut Budget,
+) -> Option<(Graph, Affinities)> {
+    let cfg = program.cfg();
     let mut graph = Graph {
         adjacent: vec![Live::new(); indices.len()],
         edges: 0,
     };
-    for &id in &reachable {
+    let mut affinity = vec![BTreeMap::new(); indices.len()];
+    for &id in reachable {
         budget.spend(outgoing[id.index()].len())?;
         let mut live = outgoing[id.index()].clone();
         for instruction in program.instructions()[cfg.block(id).instructions.clone()]
@@ -164,53 +227,95 @@ pub fn allocate_locals(program: &Program, eligible: &[Reg]) -> Option<LocalAlloc
             .rev()
         {
             let mut uses = Live::new();
-            control_reads(&instruction.control, &indices, &mut uses, &mut budget)?;
-            graph.clique(&uses, &mut budget)?;
+            control_reads(&instruction.control, indices, &mut uses, budget)?;
+            // Simultaneous operands stay distinct. This also avoids exposing
+            // x==x in C merely because two virtual operands share storage.
+            graph.clique(&uses, budget)?;
             live.extend(uses);
             for assignment in instruction.assignments.iter().rev() {
                 if let Place::Register(reg) = assignment.destination
                     && let Some(&definition) = indices.get(&reg.0)
                 {
-                    // Even an unused write must not clobber another live value.
+                    let source = if copies && let Expr::Register(source) = assignment.value {
+                        indices.get(&source.0).copied()
+                    } else {
+                        None
+                    };
+                    if let Some(source) = source
+                        && source != definition
+                    {
+                        budget.spend(2)?;
+                        *affinity[definition].entry(source).or_default() += 1;
+                        *affinity[source].entry(definition).or_default() += 1;
+                    }
                     for &other in &live {
-                        graph.edge(definition, other, &mut budget)?;
+                        // At d=s both slots hold s after this assignment. This
+                        // exception applies only at this exact copy; every
+                        // other definition still adds its ordinary conflicts.
+                        if Some(other) != source {
+                            graph.edge(definition, other, budget)?;
+                        }
                     }
                     live.remove(&definition);
                 }
                 let mut uses = Live::new();
-                reads(&assignment.value, &indices, &mut uses, &mut budget, 0)?;
+                reads(&assignment.value, indices, &mut uses, budget, 0)?;
                 if let Place::Memory { address, .. } = &assignment.destination {
-                    reads(address, &indices, &mut uses, &mut budget, 0)?;
+                    reads(address, indices, &mut uses, budget, 0)?;
                 }
-                graph.clique(&uses, &mut budget)?;
+                graph.clique(&uses, budget)?;
                 budget.spend(uses.len())?;
                 live.extend(uses);
             }
         }
     }
+    Some((graph, affinity))
+}
 
-    let mut order: Vec<_> = (0..indices.len()).collect();
+#[derive(Clone)]
+struct Coloring {
+    colors: Vec<usize>,
+    count: usize,
+}
+
+fn color_graph(
+    graph: &Graph,
+    affinity: Option<&Affinities>,
+    budget: &mut Budget,
+) -> Option<Coloring> {
+    let mut order: Vec<_> = (0..graph.adjacent.len()).collect();
     order.sort_by_key(|&index| (std::cmp::Reverse(graph.adjacent[index].len()), index));
-    let mut colors = vec![None; indices.len()];
-    let mut color_count = 0;
+    let mut colors: Vec<Option<usize>> = vec![None; graph.adjacent.len()];
+    let mut count = 0;
     for vertex in order {
-        budget.spend(color_count + graph.adjacent[vertex].len() + 1)?;
-        let mut used = vec![false; color_count];
+        let moves = affinity.map(|a| &a[vertex]);
+        budget.spend(count + graph.adjacent[vertex].len() + moves.map_or(0, |a| a.len()) + 1)?;
+        let mut used = vec![false; count];
         for &neighbor in &graph.adjacent[vertex] {
             if let Some(color) = colors[neighbor] {
                 used[color] = true;
             }
         }
-        let color = used.iter().position(|&used| !used).unwrap_or(color_count);
-        color_count = color_count.max(color + 1);
+        let mut preference = vec![0usize; count];
+        if let Some(moves) = moves {
+            for (&neighbor, &weight) in moves {
+                if let Some(color) = colors[neighbor]
+                    && !used[color]
+                {
+                    preference[color] += weight;
+                }
+            }
+        }
+        let preferred = (0..count)
+            .filter(|&c| !used[c])
+            .max_by_key(|&c| (preference[c], std::cmp::Reverse(c)));
+        let color = preferred.unwrap_or(count);
+        count = count.max(color + 1);
         colors[vertex] = Some(color);
     }
-    Some(LocalAllocation {
-        by_register: indices
-            .into_iter()
-            .map(|(register, index)| Some((register, colors[index]?)))
-            .collect::<Option<_>>()?,
-        color_count,
+    Some(Coloring {
+        colors: colors.into_iter().collect::<Option<_>>()?,
+        count,
     })
 }
 
