@@ -36,4 +36,6 @@ pub mod structure_verify;
 pub mod value_role;
 pub mod value_width;
 pub mod verify;
+pub mod web;
+pub mod web_verify;
 pub mod x86;
