@@ -902,9 +902,42 @@ impl Printer {
                     }
                 }
                 Node::Loop(body) => {
+                    if !nonlocal && let Some(view) = crate::loop_exit::recover(body) {
+                        let loop_facts =
+                            facts.enter_loop(body, |reg| self.slots.get(&reg.0).copied());
+                        line(code, indent, "do {");
+                        self.nodes_with_facts(
+                            code,
+                            view.body,
+                            indent + 1,
+                            depth + 1,
+                            nonlocal,
+                            &loop_facts,
+                        )?;
+                        let condition = self.expression(view.condition).text;
+                        let condition = if view.continue_when {
+                            condition
+                        } else {
+                            format!("!({condition})")
+                        };
+                        line(code, indent, &format!("}} while ({condition});"));
+                        // The exit follows successful loop completion. Entry
+                        // constants must not survive writes from any iteration.
+                        facts.observe(node, |reg| self.slots.get(&reg.0).copied());
+                        self.nodes_with_facts(code, view.exit, indent, depth, nonlocal, &facts)?;
+                        continue;
+                    }
                     let (header, middle, footer) =
                         if let Some((header, middle)) = self.loop_header(body) {
                             (header, middle, String::from("}"))
+                        } else if !nonlocal && let Some(view) = crate::loop_shape::post_test(body) {
+                            let condition = self.expression(view.condition).text;
+                            let condition = if view.continue_when {
+                                condition
+                            } else {
+                                format!("!({condition})")
+                            };
+                            ("do {".into(), view.body, format!("}} while ({condition});"))
                         } else {
                             match body.as_slice() {
                                 [
