@@ -104,6 +104,13 @@ python3 tools/validate_recovery_artifacts.py
 NIRVANA_RECOVERY_CASES=16 cargo test --test generated_recovery seeded_pipeline_differential_campaign -- --ignored --exact
 ```
 
+CFG向けの生成比較は、入れ子のループ、共有する末尾、複数の入口を持つループ、早期returnを含みます。
+ソース数は1〜64、既定16です。
+
+```sh
+NIRVANA_RECOVERY_CASES=16 cargo test --test generated_recovery seeded_control_flow_differential_campaign -- --ignored --exact
+```
+
 `NIRVANA_RECOVERY_PROFILES=O0,O1,O2,Os,O3`でprofileを選べます。既定はO0/O2です。
 O0の基準実行を補完し、要求列と実効列をmanifestに記録します。各構成のlift成功を比較の前提にします。
 

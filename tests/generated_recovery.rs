@@ -785,3 +785,192 @@ fn profile_parser_checks_byte_budget_before_splitting() {
     assert!(parse_profiles(Some(&(" ".to_owned() + &boundary))).is_err());
     assert!(parse_profiles(Some(&"O3,".repeat(1000))).is_err());
 }
+
+/// A separate deterministic CFG corpus. Every dynamic cycle consumes a bound:
+/// at most 4x4 inner iterations, or at most 16 explicit fuel units. Character
+/// accesses stay within state[0..4]'s 32-byte representation. No generated
+/// expression relies on signed overflow, input range, or uninitialized locals.
+fn control_flow_sources(count: usize) -> Vec<Source> {
+    assert!((1..=64).contains(&count));
+    (0..count)
+        .map(|seed| {
+            let mut random = Random(
+                0xd13f_5a77_369e_c02bu64
+                    ^ ((seed as u64 + 1) * 0x0101_0101_0101_0101),
+            );
+            let constant = random.next();
+            let lane = random.next() & 3;
+            let shift = random.next() & 63;
+            let tag = random.next() & 7;
+            let (family, statements) = match seed % 5 {
+                0 => (
+                    "nested",
+                    r#"
+    uint64_t outer = (state[3] & UINT64_C(3)) + UINT64_C(1);
+    uint64_t inner = (state[2] & UINT64_C(3)) + UINT64_C(1);
+    for (uint64_t i = 0; i < outer; ++i) {
+        for (uint64_t j = 0; j < inner; ++j) {
+            uint64_t index = (i + j + LANE) & UINT64_C(3);
+            uint64_t before = state[index];
+            sum += before ^ (i + j + SEED);
+            if (((before ^ sum) & UINT64_C(7)) == TAG) {
+                uint64_t byte = (sum + i + j) & UINT64_C(31);
+                bytes[byte] = (unsigned char)((uint64_t)bytes[byte] ^ sum);
+                continue;
+            }
+            if (((before + sum + j) & UINT64_C(7)) == (TAG ^ UINT64_C(3))) {
+                state[index] = sum;
+                break;
+            }
+            state[index] = before + sum;
+            sum ^= state[(index + UINT64_C(1)) & UINT64_C(3)] >> ((i + j + SHIFT) & UINT64_C(63));
+        }
+        state[(i + LANE) & UINT64_C(3)] ^= sum + i;
+    }
+    state[3] ^= sum;
+    return sum ^ state[LANE];
+"#,
+                ),
+                1 => (
+                    "post-test",
+                    r#"
+    uint64_t trips = (state[3] & UINT64_C(15)) + UINT64_C(1);
+    uint64_t stop = state[2] & UINT64_C(7);
+    uint64_t i = 0;
+    do {
+        uint64_t index = (i + LANE) & UINT64_C(3);
+        uint64_t before = state[index];
+        sum += before ^ SEED;
+        state[index] = sum ^ before;
+        ++i;
+        if (((sum + i) & UINT64_C(3)) == 0) {
+            uint64_t byte = (sum ^ i) & UINT64_C(31);
+            bytes[byte] = (unsigned char)((uint64_t)bytes[byte] + (sum >> ((i + SHIFT) & UINT64_C(63))));
+            continue;
+        }
+        if ((sum & UINT64_C(7)) == stop) break;
+        sum ^= state[(index + UINT64_C(1)) & UINT64_C(3)];
+    } while (i < trips);
+    state[LANE] += sum;
+    return sum ^ state[3];
+"#,
+                ),
+                2 => (
+                    "shared-tail",
+                    r#"
+    uint64_t trips = (state[3] & UINT64_C(7)) + UINT64_C(1);
+    for (uint64_t i = 0; i < trips; ++i) {
+        uint64_t index = (i + LANE) & UINT64_C(3);
+        uint64_t next = (index + UINT64_C(1)) & UINT64_C(3);
+        uint64_t before = state[index];
+        if ((before & UINT64_C(1)) != 0) goto odd;
+        sum += state[next] ^ SEED;
+        bytes[(sum + i) & UINT64_C(31)] = (unsigned char)(sum >> ((i + SHIFT) & UINT64_C(63)));
+        goto shared;
+odd:
+        sum ^= state[next] + SEED;
+        state[next] += before;
+shared:
+        state[index] = sum + state[next];
+        sum ^= state[index] + before;
+    }
+    state[3] += sum;
+    return state[LANE] ^ sum;
+"#,
+                ),
+                3 => (
+                    "two-entry",
+                    r#"
+    uint64_t fuel = (state[3] & UINT64_C(15)) + UINT64_C(1);
+    uint64_t index = 0;
+    uint64_t before = 0;
+    uint64_t byte = 0;
+    if ((state[0] & UINT64_C(1)) != 0) goto left;
+    goto right;
+left:
+    if (fuel == 0) goto done;
+    --fuel;
+    index = (sum + fuel + LANE) & UINT64_C(3);
+    before = state[index];
+    sum += before ^ SEED;
+    state[index] = sum + before;
+    if ((sum & UINT64_C(1)) != 0) goto right;
+    goto left;
+right:
+    if (fuel == 0) goto done;
+    --fuel;
+    index = (sum ^ fuel ^ LANE) & UINT64_C(3);
+    before = state[index];
+    sum ^= before + SEED;
+    byte = (sum + fuel) & UINT64_C(31);
+    bytes[byte] = (unsigned char)((uint64_t)bytes[byte] + (sum >> ((before + SHIFT) & UINT64_C(63))));
+    if ((sum & UINT64_C(2)) != 0) goto left;
+    goto right;
+done:
+    state[3] ^= sum;
+    return sum + state[LANE];
+"#,
+                ),
+                _ => (
+                    "early-return",
+                    r#"
+    uint64_t trips = (state[3] & UINT64_C(15)) + UINT64_C(1);
+    uint64_t stop = state[2] & UINT64_C(7);
+    for (uint64_t i = 0; i < trips; ++i) {
+        uint64_t index = (i + LANE) & UINT64_C(3);
+        uint64_t next = (index + UINT64_C(1)) & UINT64_C(3);
+        uint64_t before = state[index];
+        if (((sum ^ before) & UINT64_C(7)) == stop) {
+            state[index] = sum + before;
+            return state[index] ^ state[next];
+        }
+        bytes[(sum + i) & UINT64_C(31)] = (unsigned char)(before >> ((i + SHIFT) & UINT64_C(63)));
+        sum += state[index] ^ SEED;
+        if ((before & UINT64_C(3)) == 0) continue;
+        if ((sum & UINT64_C(15)) == (stop + UINT64_C(1))) {
+            state[next] ^= sum;
+            break;
+        }
+        state[index] = sum + state[next];
+    }
+    state[3] += sum;
+    return sum ^ state[LANE];
+"#,
+                ),
+            };
+            Source {
+                name: format!("cfg-{family}-seed-{seed:02}"),
+                code: format!(
+                    "#include <stdint.h>\n#define SEED UINT64_C({constant})\n#define LANE UINT64_C({lane})\n#define SHIFT UINT64_C({shift})\n#define TAG UINT64_C({tag})\nuint64_t FIXTURE_ENTRY(uint64_t state[4]) {{\n    unsigned char *bytes = (unsigned char *)state;\n    uint64_t sum = state[0] ^ SEED;\n{statements}}}\n"
+                ),
+            }
+        })
+        .collect()
+}
+
+/// Opt-in CFG/loop holdout. Shares the existing ABI, 119 inputs, profile
+/// selector and first-failure artifacts; source count1..64 defaults to16.
+#[test]
+#[ignore = "bounded CFG differential campaign; optional NIRVANA_RECOVERY_CASES=1..64"]
+fn seeded_control_flow_differential_campaign() {
+    let count = std::env::var("NIRVANA_RECOVERY_CASES").map_or(16, |value| {
+        value
+            .parse::<usize>()
+            .expect("NIRVANA_RECOVERY_CASES must be an integer in1..64")
+    });
+    assert!(
+        (1..=64).contains(&count),
+        "NIRVANA_RECOVERY_CASES must be in1..64"
+    );
+    let requested = match std::env::var("NIRVANA_RECOVERY_PROFILES") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("NIRVANA_RECOVERY_PROFILES must be Unicode")
+        }
+    };
+    let profiles = parse_profiles(requested.as_deref()).unwrap_or_else(|error| panic!("{error}"));
+    let inputs = campaign_inputs();
+    assert_eq!(inputs.len(), 119);
+    run_preserving("cfg-v1", control_flow_sources(count), inputs, profiles);
+}
