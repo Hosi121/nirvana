@@ -226,6 +226,15 @@ impl Printer {
                     unsigned: true,
                     precedence: 11,
                 },
+                idioms::View::Remainder { value, divisor } => Render {
+                    text: format!(
+                        "{} % {}",
+                        self.expression_at(value, point).u64(),
+                        self.expression(&Expr::Const(divisor)).text
+                    ),
+                    unsigned: true,
+                    precedence: 11,
+                },
             };
         }
         match expr {

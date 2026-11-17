@@ -217,8 +217,18 @@ fn binary(op: B, left: Value, right: Value) -> Value {
         }
         _ => {}
     }
+    let expression = Expr::binary(op, left.expression, right.expression);
+    // The certificate covers this raw pure tree, independently of storage
+    // widths. A numeric remainder bound needs its complete low-bit hull:
+    // values <= 9 can contain bits 0..3, rather than only the bits in 9.
+    let possible = if pure && op == B::Sub {
+        crate::remainder_expr::recognize(&expression)
+            .map_or(possible, |view| possible & low_mask(view.maximum_remainder))
+    } else {
+        possible
+    };
     Value {
-        expression: Expr::binary(op, left.expression, right.expression),
+        expression,
         possible,
         pure,
     }

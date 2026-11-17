@@ -178,6 +178,35 @@ fn narrow_register_masks_are_removed_or_tightened_without_zero_assumptions() {
 }
 
 #[test]
+fn certified_remainder_ranges_use_bit_hulls_and_keep_real_clips() {
+    let quotient = b(B::Shr, b(B::UMulHigh, r(0), c(0xcccc_cccc_cccc_cccd)), c(3));
+    let remainder = b(B::Sub, r(0), b(B::Mul, quotient, c(10)));
+    assert_eq!(
+        normalize(&b(B::And, remainder.clone(), c(15)), |_| Width::U64),
+        remainder
+    );
+    // The numeric upper bound 9 has hull 15. Using 9 as a bitmask would
+    // incorrectly turn (2 % 10) & 9 == 0 into 2 % 10 == 2.
+    let clipped = b(B::And, remainder.clone(), c(9));
+    assert_eq!(normalize(&clipped, |_| Width::U64), clipped);
+    assert_ne!(normalize(&clipped, |_| Width::U64), remainder);
+    for mask in [0, 1, 2, 3, 7, 9, 15, 255, u32::MAX as u64, u64::MAX] {
+        check(&b(B::And, remainder.clone(), c(mask)), [Width::U64; 3]);
+    }
+    let lane = b(B::And, r(0), c(u32::MAX as u64));
+    let narrow_quotient = b(B::Shr, b(B::Mul, lane.clone(), c(0xcccc_cccd)), c(35));
+    let narrow_remainder = b(B::Sub, lane, b(B::Mul, narrow_quotient.clone(), c(10)));
+    let sum = b(B::Add, narrow_quotient, narrow_remainder);
+    let masked = b(B::And, sum.clone(), c(u32::MAX as u64));
+    assert_eq!(normalize(&masked, |_| Width::U64), sum);
+    check(&masked, [Width::U64; 3]);
+    // A separate quotient register carries no arithmetic certificate.
+    let unknown = b(B::And, b(B::Sub, r(0), b(B::Mul, r(1), c(10))), c(15));
+    assert_eq!(normalize(&unknown, |_| Width::U64), unknown);
+    check(&unknown, [Width::U64; 3]);
+}
+
+#[test]
 fn adjacent_power_of_two_scales_fold_after_masks_without_moving_loads() {
     let operands = [
         r(0),

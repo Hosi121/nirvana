@@ -5,6 +5,7 @@ use crate::emit::MULTIPLY_HELPER;
 use crate::ir::Expr;
 use crate::narrow_division_expr;
 use crate::narrow_rotate::{self, Direction, NarrowRotate, NarrowWidth};
+use crate::remainder_expr;
 use crate::signed_expr::{self, SignedKind};
 
 pub(super) enum View<'a> {
@@ -16,9 +17,19 @@ pub(super) enum View<'a> {
         value: &'a Expr,
         divisor: u64,
     },
+    Remainder {
+        value: &'a Expr,
+        divisor: u64,
+    },
 }
 
 pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
+    if let Some(view) = remainder_expr::recognize(expression) {
+        return Some(View::Remainder {
+            value: view.value,
+            divisor: view.divisor,
+        });
+    }
     if let Some(view) = division_expr::recognize(expression) {
         return Some(View::Divide {
             value: view.value,

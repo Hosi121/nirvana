@@ -38,6 +38,7 @@ pub mod presentation;
 pub mod provenance;
 pub mod readable;
 pub mod reduce;
+pub mod remainder_expr;
 pub mod self_update;
 pub mod sequence;
 pub mod signed_expr;

@@ -207,7 +207,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
             );
             if source_optimization == "-O2" {
                 assert!(
-                    !body.contains("0xcccccccd"),
+                    !body.contains("0xcccccccd") && body.contains(" % 10"),
                     "narrow reciprocal remains: {body}"
                 );
             }

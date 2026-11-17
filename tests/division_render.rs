@@ -1,4 +1,4 @@
-//! C typing and grouping for certified division views, including large divisors.
+//! C typing and grouping for certified division/remainder views and large divisors.
 #[allow(dead_code)]
 #[path = "support/native.rs"]
 mod native;
@@ -18,7 +18,7 @@ fn b(op: B, left: Expr, right: Expr) -> Expr {
 }
 
 #[test]
-fn divisions_keep_unsigned_constants_numerator_wrap_and_outer_grouping() {
+fn division_and_remainder_keep_unsigned_constants_wrap_and_grouping() {
     let scratch = native::Scratch::new();
     let values = [
         0,
@@ -49,13 +49,20 @@ fn divisions_keep_unsigned_constants_numerator_wrap_and_outer_grouping() {
     ] {
         for numerator in &numerators {
             for reverse in [false, true] {
-                for outer in [false, true] {
+                for (outer, remainder) in
+                    [(false, false), (true, false), (false, true), (true, true)]
+                {
                     let product = if reverse {
                         b(B::UMulHigh, c(magic), numerator.clone())
                     } else {
                         b(B::UMulHigh, numerator.clone(), c(magic))
                     };
                     let quotient = b(B::Shr, product, c(shift));
+                    let quotient = if remainder {
+                        b(B::Sub, numerator.clone(), b(B::Mul, quotient, c(divisor)))
+                    } else {
+                        quotient
+                    };
                     let expression = if outer {
                         b(B::Mul, r(1), quotient)
                     } else {
@@ -74,7 +81,8 @@ fn divisions_keep_unsigned_constants_numerator_wrap_and_outer_grouping() {
                     .unwrap();
                     let original = program.instructions().to_vec();
                     let output = emit_readable_c(&program).unwrap();
-                    assert!(output.code.contains(" / "), "{}", output.code);
+                    let operator = if remainder { " % " } else { " / " };
+                    assert!(output.code.contains(operator), "{}", output.code);
                     assert!(
                         !output.code.contains("nirvana_umul_high("),
                         "unused helper: {}",
@@ -127,5 +135,5 @@ int main(void) {{
             }
         }
     }
-    assert_eq!(configurations, 64);
+    assert_eq!(configurations, 128);
 }
