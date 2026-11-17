@@ -7,8 +7,8 @@ mod decode;
 mod lift;
 
 pub use decode::{
-    Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Shift, Unary,
-    decode_at, decode_reachable,
+    Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
+    Unary, decode_at, decode_reachable,
 };
 pub use lift::{LiftError, lift};
 

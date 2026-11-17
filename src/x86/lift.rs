@@ -1,8 +1,8 @@
 use std::fmt;
 
 use super::decode::{
-    Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Shift, Unary,
-    decode_reachable,
+    Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
+    Unary, decode_reachable,
 };
 use super::{CF, OF, PF, RAX, RBP, REGISTER_COUNT, RSP, SF, ZF};
 use crate::cfg::{BuildError, Cfg};
@@ -155,6 +155,26 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
             kind: Unary::Neg, ..
         } => (0, ALL, 0),
         Operation::Imul { .. } => (0, F_CF | F_OF, F_ZF | F_SF | F_PF),
+        Operation::Rotate {
+            destination, count, ..
+        } => {
+            let width = destination.width().unwrap();
+            match count {
+                Operand::Immediate(value) => {
+                    // Flags use the masked count BEFORE modulo operand width.
+                    let count = value & if width == Width::U64 { 63 } else { 31 };
+                    match count {
+                        0 => (0, 0, 0),
+                        1 => (0, F_CF | F_OF, 0),
+                        _ => (0, F_CF, F_OF),
+                    }
+                }
+                // A variable zero count can preserve an unavailable CF. Keep
+                // prior CF availability; all nonzero counts define it. OF may
+                // be undefined, so reject its later use conservatively.
+                _ => (0, 0, F_OF),
+            }
+        }
         Operation::Shift {
             destination, count, ..
         } => {
@@ -457,6 +477,52 @@ impl Lifter {
         self.set(PF, Expr::select(eq(r(C), k(0)), r(PF), parity));
         self.write(destination, r(RESULT));
     }
+    // Intel SDM vol. 2B, RCL/RCR/ROL/ROR operation and flags (4-529/4-530).
+    // https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf
+    fn rotate(&mut self, kind: Rotate, destination: Operand, count: Operand) {
+        let width = destination.width().unwrap();
+        let (destination, left) = self.snapshot_destination(destination);
+        // Freeze both data and CL before any architectural destination write,
+        // including AL/AH/CL/CH and ECX/RCX aliases of the count register.
+        self.set(A, left);
+        self.set(
+            C,
+            and(
+                self.read(count),
+                k(if width == Width::U64 { 63 } else { 31 }),
+            ),
+        );
+        self.set(V, and(r(C), k(u64::from(width.bits() - 1))));
+        let complement = and(sub(k(0), r(V)), k(u64::from(width.bits() - 1)));
+        let (first, second) = match kind {
+            Rotate::Left => (b(B::Shl, r(A), r(V)), b(B::Shr, r(A), complement)),
+            Rotate::Right => (b(B::Shr, r(A), r(V)), b(B::Shl, r(A), complement)),
+        };
+        self.set(RESULT, mask(or(first, second), width));
+        let carry = match kind {
+            Rotate::Left => bit(r(RESULT), 0),
+            Rotate::Right => bit(r(RESULT), width.bits() - 1),
+        };
+        self.set(CF, Expr::select(eq(r(C), k(0)), r(CF), carry));
+        let overflow = match kind {
+            Rotate::Left => xor(bit(r(RESULT), width.bits() - 1), r(CF)),
+            Rotate::Right => xor(
+                bit(r(RESULT), width.bits() - 1),
+                bit(r(RESULT), width.bits() - 2),
+            ),
+        };
+        self.set(
+            OF,
+            Expr::select(
+                eq(r(C), k(0)),
+                r(OF),
+                Expr::select(eq(r(C), k(1)), overflow, k(0)),
+            ),
+        );
+        // ZF/SF/PF are untouched. Retain the read and write even at zero count:
+        // memory still faults, and a 32-bit destination still clears upper32.
+        self.write(destination, r(RESULT));
+    }
     fn pop(&mut self, destination: Register) {
         self.set(A, Expr::load(r(RSP), Width::U64));
         self.set(RSP, add(r(RSP), k(8)));
@@ -537,6 +603,11 @@ impl Lifter {
                 destination,
                 count,
             } => self.shift(kind, destination, count),
+            Operation::Rotate {
+                kind,
+                destination,
+                count,
+            } => self.rotate(kind, destination, count),
             Operation::Imul {
                 destination,
                 left,

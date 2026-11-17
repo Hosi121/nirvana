@@ -63,6 +63,13 @@ pub enum Shift {
     ArithmeticRight,
 }
 
+/// Rotate within the operand width, without carrying CF through the value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Rotate {
+    Left,
+    Right,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
     Nop,
@@ -90,6 +97,11 @@ pub enum Operation {
     },
     Shift {
         kind: Shift,
+        destination: Operand,
+        count: Operand,
+    },
+    Rotate {
+        kind: Rotate,
         destination: Operand,
         count: Operand,
     },
@@ -517,21 +529,31 @@ impl Decoder<'_> {
             0xc0 | 0xc1 | 0xd0..=0xd3 => {
                 let (_, destination, group) =
                     self.modrm(if opcode & 1 == 0 { Width::U8 } else { width })?;
-                let kind = match group {
-                    4 => Shift::Left,
-                    5 => Shift::Right,
-                    7 => Shift::ArithmeticRight,
-                    _ => return Err(self.error("rotate or unsupported shift group")),
-                };
                 let count = match opcode {
                     0xc0 | 0xc1 => Operand::Immediate(self.unsigned(1)?),
                     0xd0 | 0xd1 => Operand::Immediate(1),
                     _ => Operand::Register(self.register(1, Width::U8)),
                 };
-                Operation::Shift {
-                    kind,
-                    destination,
-                    count,
+                match group {
+                    0 | 1 => Operation::Rotate {
+                        kind: if group == 0 {
+                            Rotate::Left
+                        } else {
+                            Rotate::Right
+                        },
+                        destination,
+                        count,
+                    },
+                    4 | 5 | 7 => Operation::Shift {
+                        kind: match group {
+                            4 => Shift::Left,
+                            5 => Shift::Right,
+                            _ => Shift::ArithmeticRight,
+                        },
+                        destination,
+                        count,
+                    },
+                    _ => return Err(self.error("RCL/RCR or unsupported shift group")),
                 }
             }
             0xc2 | 0xc3 => {

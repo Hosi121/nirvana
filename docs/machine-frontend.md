@@ -20,7 +20,7 @@ return 後の padding を一律に命令として扱わない。
 
 主な対応範囲は整数命令の次の形式である。個々の形式の実装は [decode.rs](../src/x86/decode.rs) を参照。
 
-- 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、LEA、XCHG、算術・bit 演算・シフト。
+- 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、LEA、XCHG、算術・bit 演算・シフト・ROL/ROR。
 - 明示オペランドの IMUL、直接 JMP/Jcc、SETcc、CMOVcc。
 - 64-bit PUSH/POP/LEAVE、RET、NOP、ENDBR64。
 
