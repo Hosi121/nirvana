@@ -2,6 +2,7 @@
 use crate::bit_expr::{self, BitKind};
 use crate::ir::Expr;
 use crate::narrow_rotate::{self, Direction, NarrowRotate, NarrowWidth};
+use crate::signed_expr::{self, SignedKind};
 
 pub(super) struct Call<'a> {
     pub name: &'static str,
@@ -9,6 +10,12 @@ pub(super) struct Call<'a> {
 }
 
 pub(super) fn recognize(expression: &Expr) -> Option<Call<'_>> {
+    if let Some(view) = signed_expr::recognize(expression) {
+        return Some(Call {
+            name: view.kind.helper_name(),
+            arguments: vec![view.left, view.right],
+        });
+    }
     if let Some(view) = narrow_rotate::recognize_masked(expression) {
         return Some(Call {
             name: view.helper_name(),
@@ -41,6 +48,9 @@ pub(super) fn definitions(code: &str) -> String {
         BitKind::Bswap32,
         BitKind::Bswap64,
     ] {
+        include(kind.helper_name(), kind.c_helper());
+    }
+    for kind in [SignedKind::Slt64, SignedKind::Sle64] {
         include(kind.helper_name(), kind.c_helper());
     }
     let placeholder = Expr::Const(0);

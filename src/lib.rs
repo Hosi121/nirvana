@@ -36,6 +36,7 @@ pub mod readable;
 pub mod reduce;
 pub mod self_update;
 pub mod sequence;
+pub mod signed_expr;
 pub mod simplify;
 pub mod source_locals;
 pub mod stack;
