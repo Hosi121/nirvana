@@ -181,7 +181,7 @@ fn transfers_across_three_loops_preserve_every_instruction_and_register() {
         function.body(),
         &Node::BreakOuter { levels: 2 }
     ));
-    let output = emit_c(&program);
+    let output = emit_c(&program).unwrap();
     assert!(output.code.contains("goto nirvana_loop_"));
     assert!(!output.code.contains("nirvana_transfer"));
     assert!(!output.code.contains("nirvana_continue"));
@@ -212,7 +212,7 @@ fn moving_a_tail_preserves_transfers_inside_its_own_nested_loop() {
         function.body(),
         &Node::BreakOuter { levels: 2 }
     ));
-    let output = emit_c(&program);
+    let output = emit_c(&program).unwrap();
     assert!(output.code.contains("goto nirvana_loop_"));
     assert!(!output.code.contains("nirvana_transfer"));
     assert!(!output.code.contains("nirvana_continue"));
@@ -257,7 +257,7 @@ fn check_native(program: &Program, mode_count: u64) {
         std::env::temp_dir().join(format!("nirvana-transfers-{}-{nonce}", std::process::id())),
     );
     std::fs::create_dir(&scratch.0).unwrap();
-    let mut source = emit_c(program).code;
+    let mut source = emit_c(program).unwrap().code;
     source.push_str(&format!("\n#define MODE_COUNT {mode_count}\n"));
     source.push_str(
         r#"

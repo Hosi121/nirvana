@@ -204,7 +204,7 @@ fn original_c_ir_and_generated_c_agree_at_o0_and_o2() {
                     );
                 }
                 let generated_source = directory.join(format!("{}-generated.c", fixture.id));
-                std::fs::write(&generated_source, emit_c(&program).code).unwrap();
+                std::fs::write(&generated_source, emit_c(&program).unwrap().code).unwrap();
                 let generated_object = directory.join(format!("{}-generated.o", fixture.id));
                 object(
                     &generated_source,

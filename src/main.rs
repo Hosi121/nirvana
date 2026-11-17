@@ -162,7 +162,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             print!("{}", output.code);
         }
         "c" => {
-            let output = emit::emit_c(&program);
+            let output = emit::emit_c(&program)?;
             if let Some(reason) = output.fallback_reason {
                 eprintln!("retaining goto control flow: {reason}");
             }

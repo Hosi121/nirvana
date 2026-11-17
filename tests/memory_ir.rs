@@ -109,6 +109,7 @@ fn identical_branch_targets_do_not_erase_a_faulting_condition() {
     );
     assert!(
         nirvana::emit::emit_c(&program)
+            .unwrap()
             .code
             .contains("(void)(nirvana_load")
     );

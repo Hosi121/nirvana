@@ -208,7 +208,7 @@ fn label_budget_falls_back_atomically_to_cfg_and_preserves_structure_evidence() 
     )
     .unwrap();
     let function = nirvana::structure::StructuredFunction::recover(&program).unwrap();
-    let output = nirvana::emit::emit_c(&program);
+    let output = nirvana::emit::emit_c(&program).unwrap();
     assert_eq!(
         output.fallback_reason,
         Some(nirvana::structure::StructureError::LoopLabelsUnavailable)
@@ -244,7 +244,7 @@ fn full_register_c_matches_nested_effects_return_every_register_memory_and_first
             nirvana::frontend::lift_elf(&std::fs::read(object).unwrap(), "fixture").unwrap();
         let program = &lifted.program;
         let instructions = program.instructions().to_vec();
-        let output = nirvana::emit::emit_c(program);
+        let output = nirvana::emit::emit_c(program).unwrap();
         assert!(
             output.fallback_reason.is_none(),
             "{:?}",

@@ -41,7 +41,7 @@ fn examples_preserve_registers_returns_and_instruction_traces() {
                 );
             }
         }
-        let output = emit_c(&program);
+        let output = emit_c(&program).unwrap();
         assert_eq!(
             output.fallback_reason.is_some(),
             expected_fallback,
@@ -61,7 +61,7 @@ fn recovers_a_simple_infinite_loop_without_inventing_a_return() {
     let function = StructuredFunction::recover(&program).unwrap();
     assert_eq!(program.execute(&[], 50), Err(ExecutionError::StepLimit));
     assert_eq!(function.execute(&[], 50), Err(ExecutionError::StepLimit));
-    let output = emit_c(&program);
+    let output = emit_c(&program).unwrap();
     assert!(output.code.contains("while (1)"));
     assert!(!output.code.contains("return"));
 }
@@ -89,7 +89,7 @@ fn falls_back_when_one_arm_has_no_exit_path() {
         StructuredFunction::recover(&program),
         Err(StructureError::MissingJoin(_))
     ));
-    assert!(emit_c(&program).fallback_reason.is_some());
+    assert!(emit_c(&program).unwrap().fallback_reason.is_some());
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn shared_tail_duplication_is_bounded_and_reported() {
     assert_eq!(stats.unique_blocks, 5);
     assert_eq!(stats.emitted_block_copies, 5);
     assert_eq!(stats.extra_block_copies, 0);
-    assert_eq!(emit_c(&program).structure_stats, Some(stats));
+    assert_eq!(emit_c(&program).unwrap().structure_stats, Some(stats));
     assert_eq!(
         StructuredFunction::recover_with_copy_limit(&program, 1)
             .unwrap()
@@ -331,7 +331,7 @@ fn shared_returns_are_hoisted_without_relaxing_the_copy_limit() {
         function.evidence().compared_copies,
         function.evidence().original_steps
     );
-    let output = emit_c(&program);
+    let output = emit_c(&program).unwrap();
     assert!(output.fallback_reason.is_none());
     assert_eq!(output.structure_stats, Some(function.stats()));
     let expanded = StructuredFunction::recover_with_copy_limit(&program, 3).unwrap();
@@ -361,7 +361,7 @@ fn nested_exit_tails_preserve_the_outer_continue_target() {
             );
         }
     }
-    let output = emit_c(&program);
+    let output = emit_c(&program).unwrap();
     assert!(output.fallback_reason.is_none());
     assert!(!output.code.contains("goto bb"));
 }

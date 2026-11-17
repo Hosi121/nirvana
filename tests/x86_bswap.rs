@@ -403,7 +403,7 @@ fn real_o0_and_o2_c_bswap_fixture_matches_native_ir_and_recompiled_c_full_memory
             visible.push(digest(&actual.memory));
             memory_expected.push(visible);
         }
-        let raw = emit::emit_c(&function.program);
+        let raw = emit::emit_c(&function.program).unwrap();
         let mut rendered = vec![(
             "raw",
             raw.code,

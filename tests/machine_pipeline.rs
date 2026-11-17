@@ -223,7 +223,7 @@ fn compiled_c_fixtures_round_trip_through_real_machine_code_and_ir() {
                 }
                 comparisons += 1;
             }
-            let output = emit::emit_c(&program);
+            let output = emit::emit_c(&program).unwrap();
             assert_eq!(
                 output.structure_evidence,
                 tree.as_ref().map(StructuredFunction::evidence)
@@ -486,7 +486,7 @@ fn machine_multiply_overflow_affects_recompiled_c_like_the_native_compiler() {
         let source = scratch.0.join(format!("lifted{optimization}.c"));
         std::fs::write(
             &source,
-            emit::emit_c(&program).code + &generated_harness(true),
+            emit::emit_c(&program).unwrap().code + &generated_harness(true),
         )
         .unwrap();
         let object_path = scratch.0.join(format!("lifted{optimization}.o"));

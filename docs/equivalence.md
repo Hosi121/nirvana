@@ -54,6 +54,10 @@ CPUのページ権限・その他の例外・MMIO・並行実行は今後の拡�
 入力レジスタ数などの呼出し条件は実行前に検査します。
 `execute_with_memory`は正常終了向けの便宜APIです。fault前の部分状態の比較には`run_with_memory`を使います。
 
+`emit::emit_c(&program)`は`Result<COutput, SequenceError>`を返します。
+成功時の`code`に全レジスタ形式のCが入り、式の資源上限はエラーで確認できます。
+生成Cの呼出し側では、レジスタ配列とゲストbyte配列にそれぞれ独立したホスト領域を用意します。
+
 ## 比較プロファイル
 
 [observe::Contract](../src/observe.rs)は、終了結果と正確なfault、全メモリのbase・size・byte列を共通で比較します。

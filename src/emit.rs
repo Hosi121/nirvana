@@ -3,10 +3,14 @@
 use std::fmt::Write;
 
 use crate::cfg::{BlockId, Target};
-use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program};
+use crate::ir::{Control, Program};
+use crate::sequence::SequenceError;
+
+mod sequence;
 use crate::loop_labels::LoopLabels;
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
+use sequence::{Expressions, validate_program};
 
 pub(crate) const MULTIPLY_HELPER: &str = r#"
 static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {
@@ -47,7 +51,11 @@ pub struct COutput {
     pub structure_evidence: Option<StructureEvidence>,
 }
 
-pub fn emit_c(program: &Program) -> COutput {
+/// Render full guest-register state, preserving ordered reads and lazy arms.
+/// Resource exhaustion returns an error without exposing partial C output.
+pub fn emit_c(program: &Program) -> Result<COutput, SequenceError> {
+    validate_program(program)?;
+    let expressions = Expressions::new(program);
     let mut code = String::from("#include <stdint.h>\n");
     if program.uses_high_multiply() {
         code.push_str(MULTIPLY_HELPER);
@@ -61,100 +69,50 @@ pub fn emit_c(program: &Program) -> COutput {
     let (fallback_reason, structure_stats, structure_evidence) =
         match StructuredFunction::recover(program) {
             Ok(function) => {
-                let body = LoopLabels::analyze(function.body()).and_then(|labels| {
+                let reason = if let Some(labels) = LoopLabels::analyze(function.body()) {
                     let mut body = String::new();
-                    emit_nodes(function.body(), 1, &labels, &mut body)?;
-                    Some(body)
-                });
-                let reason = if let Some(body) = body {
-                    code.push_str(&body);
-                    None
+                    match emit_nodes(function.body(), 1, &labels, &expressions, &mut body) {
+                        Ok(()) => {
+                            code.push_str(&body);
+                            None
+                        }
+                        Err(RenderError::Sequence(error)) => return Err(error),
+                        Err(RenderError::Labels) => {
+                            emit_gotos(program, &expressions, &mut code)?;
+                            Some(StructureError::LoopLabelsUnavailable)
+                        }
+                    }
                 } else {
-                    emit_gotos(program, &mut code);
+                    emit_gotos(program, &expressions, &mut code)?;
                     Some(StructureError::LoopLabelsUnavailable)
                 };
                 (reason, Some(function.stats()), Some(function.evidence()))
             }
             Err(reason) => {
-                emit_gotos(program, &mut code);
+                emit_gotos(program, &expressions, &mut code)?;
                 (Some(reason), None, None)
             }
         };
     code.push_str("}\n");
-    COutput {
+    Ok(COutput {
         code,
         fallback_reason,
         structure_stats,
         structure_evidence,
-    }
-}
-
-fn expression(expr: &Expr) -> String {
-    match expr {
-        Expr::Const(value) => format!("UINT64_C({value})"),
-        Expr::Register(reg) => format!("r[{}]", reg.0),
-        Expr::Load { address, width } => format!(
-            "nirvana_load(&m, {}, {})",
-            expression(address),
-            width.bytes()
-        ),
-        Expr::Select {
-            condition,
-            taken,
-            not_taken,
-        } => format!(
-            "({} ? {} : {})",
-            expression(condition),
-            expression(taken),
-            expression(not_taken)
-        ),
-        Expr::Binary(op, left, right) => {
-            let left = expression(left);
-            let mut right = expression(right);
-            if *op == BinaryOp::UMulHigh {
-                return format!("nirvana_umul_high({left}, {right})");
-            }
-            let operator = match op {
-                BinaryOp::Add => "+",
-                BinaryOp::Sub => "-",
-                BinaryOp::Mul => "*",
-                BinaryOp::And => "&",
-                BinaryOp::Or => "|",
-                BinaryOp::Xor => "^",
-                BinaryOp::Shl => "<<",
-                BinaryOp::Shr => ">>",
-                BinaryOp::Eq => "==",
-                BinaryOp::Ne => "!=",
-                BinaryOp::Ult => "<",
-                BinaryOp::Ule => "<=",
-                BinaryOp::UMulHigh => unreachable!(),
-            };
-            if matches!(op, BinaryOp::Shl | BinaryOp::Shr) {
-                right = format!("({right} & UINT64_C(63))");
-            }
-            // Comparisons must also have uint64_t type when nested inside
-            // arithmetic, to avoid accidental signed-int operations in C.
-            format!("((uint64_t)({left} {operator} {right}))")
-        }
-    }
+    })
 }
 
 fn line(code: &mut String, indent: usize, text: &str) {
     writeln!(code, "{}{text}", "    ".repeat(indent)).unwrap();
 }
 
-fn assignments(code: &mut String, indent: usize, statements: &[Assignment]) {
-    for assignment in statements {
-        let value = expression(&assignment.value);
-        let statement = match &assignment.destination {
-            Place::Register(reg) => format!("r[{}] = {value};", reg.0),
-            Place::Memory { address, width } => format!(
-                "nirvana_store(&m, {}, {}, {value});",
-                expression(address),
-                width.bytes()
-            ),
-        };
-        line(code, indent, &statement);
+enum RenderError {
+    Sequence(SequenceError),
+    Labels,
+}
+impl From<SequenceError> for RenderError {
+    fn from(error: SequenceError) -> Self {
+        Self::Sequence(error)
     }
 }
 
@@ -162,17 +120,18 @@ fn emit_nodes(
     nodes: &[Node],
     indent: usize,
     labels: &LoopLabels<'_>,
+    expressions: &Expressions,
     code: &mut String,
-) -> Option<()> {
+) -> Result<(), RenderError> {
     for node in nodes {
         match node {
-            Node::Evaluate(value) => line(code, indent, &format!("(void)({});", expression(value))),
+            Node::Evaluate(value) => expressions.statement(code, indent, value, "(void)(", ");")?,
             Node::Step {
                 address,
                 assignments: statements,
             } => {
                 line(code, indent, &format!("/* {address:#x} */"));
-                assignments(code, indent, statements);
+                expressions.assignments(code, indent, statements)?;
             }
             Node::If {
                 condition,
@@ -180,30 +139,31 @@ fn emit_nodes(
                 not_taken,
             } => {
                 if taken.is_empty() && not_taken.is_empty() {
-                    line(code, indent, &format!("(void)({});", expression(condition)));
+                    expressions.statement(code, indent, condition, "(void)(", ");")?;
                     continue;
                 }
-                let condition = expression(condition);
+                let (inner, condition) = expressions.begin(code, indent, condition)?;
                 let (condition, first, second) = if taken.is_empty() {
                     (format!("!({condition})"), not_taken, taken)
                 } else {
                     (condition, taken, not_taken)
                 };
-                line(code, indent, &format!("if ({condition}) {{"));
-                emit_nodes(first, indent + 1, labels, code)?;
+                line(code, inner, &format!("if ({condition}) {{"));
+                emit_nodes(first, inner + 1, labels, expressions, code)?;
                 if !second.is_empty() {
-                    line(code, indent, "} else {");
-                    emit_nodes(second, indent + 1, labels, code)?;
+                    line(code, inner, "} else {");
+                    emit_nodes(second, inner + 1, labels, expressions, code)?;
                 }
-                line(code, indent, "}");
+                line(code, inner, "}");
+                expressions.end(code, indent, inner);
             }
             Node::Loop(body) => {
-                labels.loop_id(node)?;
+                labels.loop_id(node).ok_or(RenderError::Labels)?;
                 if let Some(label) = labels.continue_label(node) {
                     line(code, indent, &format!("{label}: ;"));
                 }
                 line(code, indent, "while (1) {");
-                emit_nodes(body, indent + 1, labels, code)?;
+                emit_nodes(body, indent + 1, labels, expressions, code)?;
                 line(code, indent, "}");
                 if let Some(label) = labels.break_label(node) {
                     line(code, indent, &format!("{label}: ;"));
@@ -212,16 +172,20 @@ fn emit_nodes(
             Node::Break => line(code, indent, "break;"),
             Node::Continue => line(code, indent, "continue;"),
             Node::BreakOuter { .. } | Node::ContinueOuter { .. } => {
-                let target = labels.target(node)?;
+                let target = labels.target(node).ok_or(RenderError::Labels)?;
                 line(code, indent, &format!("goto {target};"));
             }
-            Node::Return(value) => line(code, indent, &format!("return {};", expression(value))),
+            Node::Return(value) => expressions.statement(code, indent, value, "return ", ";")?,
         }
     }
-    Some(())
+    Ok(())
 }
 
-fn emit_gotos(program: &Program, code: &mut String) {
+fn emit_gotos(
+    program: &Program,
+    expressions: &Expressions,
+    code: &mut String,
+) -> Result<(), SequenceError> {
     let cfg = program.cfg();
     let block_at = |address| cfg.block_at(address).expect("validated destination");
     line(code, 1, &format!("goto {};", cfg.entry()));
@@ -230,7 +194,7 @@ fn emit_gotos(program: &Program, code: &mut String) {
         writeln!(code, "{id}:").unwrap();
         for instruction in &program.instructions()[block.instructions.clone()] {
             line(code, 1, &format!("/* {:#x} */", instruction.address));
-            assignments(code, 1, &instruction.assignments);
+            expressions.assignments(code, 1, &instruction.assignments)?;
         }
         let instruction = &program.instructions()[block.instructions.end - 1];
         match &instruction.control {
@@ -240,17 +204,19 @@ fn emit_gotos(program: &Program, code: &mut String) {
             ),
             Control::Jump(target) => emit_jump(code, block_at(*target)),
             Control::Branch { condition, target } => {
-                line(
+                expressions.statement(
                     code,
                     1,
-                    &format!("if ({}) goto {};", expression(condition), block_at(*target)),
-                );
+                    condition,
+                    "if (",
+                    &format!(") goto {};", block_at(*target)),
+                )?;
                 emit_jump(
                     code,
                     block_at(instruction.address + u64::from(instruction.size)),
                 );
             }
-            Control::Return(value) => line(code, 1, &format!("return {};", expression(value))),
+            Control::Return(value) => expressions.statement(code, 1, value, "return ", ";")?,
         }
         debug_assert!(
             block
@@ -259,6 +225,7 @@ fn emit_gotos(program: &Program, code: &mut String) {
                 .all(|edge| matches!(edge.target, Target::Block(_)))
         );
     }
+    Ok(())
 }
 
 fn emit_jump(code: &mut String, target: BlockId) {
