@@ -85,6 +85,9 @@ webの解析・対応検査・候補の構造化や描画に失敗した場合�
 fault専用検査ではabortを捕捉し、最初に失敗したアドレスと停止前の全メモリをIRと比較します。
 Cの整数昇格、Loadの順序、lazy Select、Storeの宛先検査順も独立した回帰例を持ちます。
 
+元変数との対応は任意の[評価ツール](../tools/measure_source_recovery.py)で測れます。非debug版と機械語が一致するGNU C O0/DWARF5コピーだけを使い、既知対応の分割・混在と新しい対応範囲を分けます。範囲外・曖昧な位置を成功に数えません。
+`cargo build --example inspect_stack_frame --example measure_variables` の後、ツールの `--help` に従ってcase一覧・比較用metadata・frame helperを指定します。parserの検査は `python3 -m unittest discover -s tools/tests` です。
+
 ```sh
 NIRVANA_RECOVERY_ARTIFACTS=target/memory-recovery/generated cargo test --test generated_recovery
 python3 tools/validate_recovery_artifacts.py
