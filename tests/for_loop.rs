@@ -71,6 +71,8 @@ enum Flow {
     Normal,
     Break,
     Continue,
+    BreakOuter(usize),
+    ContinueOuter(usize),
     Return(u64),
     Stop(RunStatus),
 }
@@ -130,7 +132,25 @@ impl Machine {
                 },
                 Node::Break => Flow::Break,
                 Node::Continue => Flow::Continue,
-                _ => panic!("unsupported transfer in independent test interpreter"),
+                Node::BreakOuter { levels } => Flow::BreakOuter(*levels),
+                Node::ContinueOuter { levels } => Flow::ContinueOuter(*levels),
+                Node::Loop(body) => loop {
+                    // Charge a control visit too, so even an empty/diverging
+                    // nested loop has a bounded independent replay.
+                    if self.fuel == 0 {
+                        break Flow::Stop(RunStatus::Suspended);
+                    }
+                    self.fuel -= 1;
+                    match self.nodes(body) {
+                        Flow::Normal | Flow::Continue => {}
+                        Flow::Break => break Flow::Normal,
+                        Flow::BreakOuter(1) => break Flow::Break,
+                        Flow::ContinueOuter(1) => break Flow::Continue,
+                        Flow::BreakOuter(levels) => break Flow::BreakOuter(levels - 1),
+                        Flow::ContinueOuter(levels) => break Flow::ContinueOuter(levels - 1),
+                        exit => break exit,
+                    }
+                },
             };
             if !matches!(flow, Flow::Normal) {
                 return flow;
@@ -331,12 +351,11 @@ fn trailing_single_load_fault_retains_prior_counter_update_and_body_writes() {
 }
 
 #[test]
-fn early_continue_nonlocal_transfer_and_nested_loops_are_rejected() {
+fn early_continue_and_nonlocal_transfers_are_rejected() {
     for transfer in [
         Node::Continue,
         Node::ContinueOuter { levels: 1 },
         Node::BreakOuter { levels: 1 },
-        Node::Loop(vec![Node::Break]),
         Node::If {
             condition: r(2),
             taken: vec![Node::Continue],
@@ -356,6 +375,185 @@ fn early_continue_nonlocal_transfer_and_nested_loops_are_rejected() {
         nodes.insert(3, transfer);
         assert!(recover(&nodes, slot).is_none());
     }
+}
+
+#[test]
+fn nested_local_continue_and_break_leave_the_outer_update_in_order() {
+    let mut nodes = normal();
+    nodes.splice(
+        2..2,
+        [
+            step(20, vec![set(2, c(0))]),
+            Node::Loop(vec![
+                Node::If {
+                    condition: Expr::binary(BinaryOp::Ult, r(2), c(3)),
+                    taken: vec![],
+                    not_taken: vec![Node::Break],
+                },
+                step(21, vec![set(2, add(r(2), c(1))), store(c(8), r(2))]),
+                Node::If {
+                    condition: Expr::binary(BinaryOp::Eq, r(2), c(2)),
+                    taken: vec![Node::Continue],
+                    not_taken: vec![],
+                },
+                Node::Loop(vec![
+                    step(23, vec![set(4, add(r(4), c(1)))]),
+                    Node::If {
+                        condition: Expr::binary(BinaryOp::Ult, r(4), c(2)),
+                        taken: vec![Node::Continue],
+                        not_taken: vec![Node::Break],
+                    },
+                ]),
+                step(22, vec![set(3, add(r(3), r(2)))]),
+            ]),
+        ],
+    );
+    let plan = recover(&nodes, slot).unwrap();
+    assert!(std::ptr::eq(plan.body, &nodes[2..5]));
+    assert!(std::ptr::eq(plan.update, &nodes[5..6]));
+    for limit in 0..4 {
+        let result = compare(&nodes, &[limit, 0, 0, 0, 0, 0], &[0; 32]);
+        assert_eq!(
+            result.status,
+            RunStatus::Returned(4 * limit + limit * limit.saturating_sub(1) / 2)
+        );
+        assert_eq!(result.registers[5], limit + 1);
+    }
+}
+
+#[test]
+fn nested_return_fault_and_divergence_still_precede_the_outer_update() {
+    for exit in [
+        Node::Return(c(77)),
+        Node::Return(Expr::load(c(40), Width::U8)),
+        Node::Continue,
+    ] {
+        let mut nodes = normal();
+        nodes.insert(
+            2,
+            Node::Loop(vec![step(20, vec![store(c(8), c(0x55))]), exit]),
+        );
+        let result = compare(&nodes, &[3, 0, 0, 0, 0, 0], &[0; 32]);
+        assert_eq!(result.registers[1], 0);
+        assert_eq!(result.registers[5], 1);
+        assert_eq!(result.memory[8], 0x55);
+        assert!(matches!(
+            result.status,
+            RunStatus::Returned(77) | RunStatus::Fault(_) | RunStatus::Suspended
+        ));
+    }
+    let mut nodes = normal();
+    nodes.insert(
+        2,
+        Node::Loop(vec![step(20, vec![store(c(8), c(0x55))]), Node::Break]),
+    );
+    nodes.insert(5, step(30, vec![set(4, Expr::load(c(31), Width::U64))]));
+    let result = compare(&nodes, &[3, 0, 0, 0, 0, 0], &[0; 32]);
+    assert_eq!(result.registers[1], 1);
+    assert_eq!(result.memory[8], 0x55);
+    assert_eq!(
+        result.status,
+        RunStatus::Fault(MemoryFault {
+            access: AccessKind::Read,
+            address: 31,
+            width: Width::U64,
+        })
+    );
+}
+
+#[test]
+fn outer_continues_and_all_nonlocal_transfers_still_fall_back_at_every_depth() {
+    for depth in 0..4 {
+        for transfer in [
+            Node::ContinueOuter { levels: 1 },
+            Node::ContinueOuter { levels: 2 },
+            Node::BreakOuter { levels: 1 },
+            Node::BreakOuter { levels: 2 },
+        ] {
+            let mut transfer = transfer;
+            for _ in 0..depth {
+                transfer = Node::Loop(vec![transfer, Node::Break]);
+            }
+            let mut nodes = normal();
+            nodes.insert(3, transfer);
+            assert!(recover(&nodes, slot).is_none());
+        }
+    }
+    // These are different spellings of a continue targeting the outer loop.
+    // A deliberately invalid for lowering would run the update, making a
+    // diverging source terminate. The recognizer must reject both spellings.
+    for transfer in [
+        Node::If {
+            condition: c(1),
+            taken: vec![Node::Continue],
+            not_taken: vec![],
+        },
+        Node::Loop(vec![Node::ContinueOuter { levels: 1 }]),
+    ] {
+        let mut nodes = normal();
+        nodes.insert(3, transfer);
+        assert!(recover(&nodes, slot).is_none());
+        let invalid = ForLoop {
+            setup: &nodes[..1],
+            condition: Expr::binary(BinaryOp::Ult, r(1), r(0)),
+            body: &nodes[2..4],
+            update: &nodes[4..5],
+        };
+        let input = [2, 0, 0, 0, 0, 0];
+        assert_eq!(
+            original(&nodes, &input, &[0; 32], 80).status,
+            RunStatus::Suspended
+        );
+        assert_eq!(
+            lowered(&invalid, &input, &[0; 32], 80).status,
+            RunStatus::Returned(1)
+        );
+    }
+}
+
+#[test]
+fn nested_body_memory_writes_do_not_turn_header_facts_into_invariants() {
+    let mut nodes = distinct_memory_counter();
+    nodes[3] = Node::Loop(vec![
+        step(
+            3,
+            vec![set(3, c(1)), store(c(0), c(16)), store(c(32), c(1))],
+        ),
+        Node::Break,
+    ]);
+    let mut memory = [0; 64];
+    memory[..8].copy_from_slice(&8u64.to_le_bytes());
+    let result = compare(&nodes, &[2, 0, 0, 0, 0, 0], &memory);
+    assert_eq!(result.status, RunStatus::Returned(1));
+    assert_eq!(
+        u64::from_le_bytes(result.memory[24..32].try_into().unwrap()),
+        0
+    );
+    assert_eq!(
+        u64::from_le_bytes(result.memory[32..40].try_into().unwrap()),
+        2
+    );
+}
+
+#[test]
+fn all_nested_nodes_and_expressions_remain_subject_to_upfront_bounds() {
+    let mut nodes = normal();
+    nodes.insert(2, Node::Loop(vec![Node::Evaluate(c(0)); MAX_BODY_NODES]));
+    assert!(recover(&nodes, slot).is_none());
+    let mut deep = Node::Break;
+    for _ in 0..65 {
+        deep = Node::Loop(vec![deep]);
+    }
+    nodes = normal();
+    nodes.insert(2, deep);
+    assert!(recover(&nodes, slot).is_none());
+    let mut expression = c(0);
+    for _ in 0..129 {
+        expression = add(expression, c(1));
+    }
+    nodes = normal();
+    nodes.insert(2, Node::Loop(vec![Node::Evaluate(expression), Node::Break]));
+    assert!(recover(&nodes, slot).is_none());
 }
 
 #[test]

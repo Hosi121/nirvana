@@ -2,7 +2,8 @@
 //!
 //! Setup remains in the condition and runs on the final header visit. The
 //! update is an unchanged trailing step slice. Local break/return can bypass it;
-//! earlier continues and nonlocal transfers are rejected rather than retargeted.
+//! earlier continues targeting this loop and nonlocal transfers are rejected
+//! rather than retargeted. Nested local loop control remains in the body.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -436,16 +437,24 @@ fn dependencies(
 }
 
 fn no_early_transfer(nodes: &[Node]) -> Option<()> {
-    let mut pending: Vec<_> = nodes.iter().collect();
-    while let Some(node) = pending.pop() {
+    // `bounded_body` already checked the entire nested tree. A local continue
+    // inside another loop does not bypass this loop's unchanged trailing
+    // update; an earlier continue at depth zero would. No inner-loop invariant
+    // or termination assumption is needed: faults, returns and divergence still
+    // occur before the outer update in either presentation.
+    let mut pending: Vec<_> = nodes.iter().map(|node| (node, 0usize)).collect();
+    while let Some((node, loop_depth)) = pending.pop() {
         match node {
-            Node::Continue
-            | Node::ContinueOuter { .. }
-            | Node::BreakOuter { .. }
-            | Node::Loop(_) => return None,
+            Node::Continue if loop_depth == 0 => return None,
+            // Keep all nonlocal transfers on the existing general-loop path,
+            // even when a more precise lexical-target proof could allow one.
+            Node::ContinueOuter { .. } | Node::BreakOuter { .. } => return None,
+            Node::Loop(body) => {
+                pending.extend(body.iter().map(|node| (node, loop_depth + 1)));
+            }
             Node::If {
                 taken, not_taken, ..
-            } => pending.extend(taken.iter().chain(not_taken)),
+            } => pending.extend(taken.iter().chain(not_taken).map(|node| (node, loop_depth))),
             _ => {}
         }
     }
