@@ -107,7 +107,13 @@ fn structured_loops_have_conventional_c_syntax_and_goto_fallback_survives() {
         }
     }
     let sum = emit_readable_c(&programs::named("sum").unwrap()).unwrap();
-    assert!(sum.code.contains("while ("), "{}", sum.code);
+    assert!(
+        sum.code.contains("while (")
+            || sum.code.contains("for (; ")
+            || sum.code.contains("for (;\n"),
+        "{}",
+        sum.code
+    );
     let irreducible = emit_readable_c(&programs::named("irreducible").unwrap()).unwrap();
     assert!(irreducible.fallback_reason.is_some());
     assert!(irreducible.code.contains("goto bb"));

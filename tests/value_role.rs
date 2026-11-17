@@ -257,3 +257,86 @@ fn long_guard_definition_chains_also_have_a_whole_result_depth_limit() {
     ];
     assert!(infer(&nodes, |reg| Some(reg.0)).is_empty());
 }
+
+#[test]
+fn pointer_slot_reused_for_loop_data_conditions_or_return_gets_no_address_name() {
+    let mapping = |reg: Reg| match reg.0 {
+        0 | 10 => Some(0),
+        2 => Some(2),
+        3 => Some(3),
+        _ => None,
+    };
+    let nodes = vec![
+        Node::Evaluate(Expr::load(r(10), Width::U64)),
+        Node::Loop(vec![
+            step(vec![set(0, Expr::load(r(5), Width::U64))]),
+            guard(b(BinaryOp::Ult, r(0), r(2))),
+            step(vec![
+                set(3, b(BinaryOp::Add, r(0), c(1))),
+                Assignment {
+                    destination: Place::Memory {
+                        address: r(5),
+                        width: Width::U64,
+                    },
+                    value: r(3),
+                },
+            ]),
+        ]),
+        Node::Evaluate(Expr::load(r(10), Width::U64)),
+        Node::Return(r(0)),
+    ];
+    assert!(!infer(&nodes, mapping).contains_key(&0));
+    for use_as_data in [
+        Node::Return(r(0)),
+        Node::If {
+            condition: r(0),
+            taken: vec![],
+            not_taken: vec![],
+        },
+        Node::Evaluate(b(BinaryOp::Xor, r(0), c(7))),
+        Node::Evaluate(Expr::select(r(0), Expr::load(r(10), Width::U8), c(0))),
+        step(vec![Assignment {
+            destination: Place::Memory {
+                address: r(5),
+                width: Width::U64,
+            },
+            value: r(0),
+        }]),
+    ] {
+        assert!(
+            !infer(
+                &[Node::Evaluate(Expr::load(r(10), Width::U8)), use_as_data],
+                mapping
+            )
+            .contains_key(&0)
+        );
+    }
+}
+
+#[test]
+fn address_only_alias_copies_and_constant_updates_retain_address_evidence() {
+    let nodes = vec![
+        step(vec![set(0, r(4))]),
+        Node::Evaluate(Expr::load(r(0), Width::U64)),
+        step(vec![set(10, r(0)), set(10, b(BinaryOp::Add, r(0), c(8)))]),
+        Node::Evaluate(Expr::load(b(BinaryOp::Add, r(10), c(1)), Width::U8)),
+        step(vec![
+            set(0, b(BinaryOp::Sub, r(10), c(4))),
+            Assignment {
+                destination: Place::Memory {
+                    address: r(0),
+                    width: Width::U16,
+                },
+                value: Expr::load(r(5), Width::U16),
+            },
+        ]),
+        Node::Return(Expr::load(r(10), Width::U32)),
+    ];
+    let mapping = |reg: Reg| matches!(reg.0, 0 | 10).then_some(0);
+    let before = nodes.clone();
+    assert_eq!(
+        infer(&nodes, mapping),
+        BTreeMap::from([(0, ValueRole::Address)])
+    );
+    assert_eq!(nodes, before);
+}

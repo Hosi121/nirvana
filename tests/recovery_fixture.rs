@@ -187,8 +187,6 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 expected.push(memory_digest(&execution.memory));
                 expected_memory.push(expected);
             }
-            // Keep defaults for additional presentation options introduced by
-            // the integrator; semantic checks apply to all six source shapes.
             let options = readable::ReadableOptions {
                 stack_register: Some(Reg(x86::RSP)),
                 recover_objects: true,

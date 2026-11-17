@@ -49,6 +49,21 @@ pub fn infer(nodes: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> BTreeMap<us
     if analysis.visit(nodes).is_none() {
         return BTreeMap::new();
     }
+    // A storage group can be reused for an unrelated scalar lifetime. Bare
+    // dereference evidence alone must not name that entire group "address".
+    if analysis
+        .roles
+        .values()
+        .any(|role| *role == Some(ValueRole::Address))
+    {
+        let mut data = BTreeSet::new();
+        if analysis.data_uses(nodes, &mut data).is_none() {
+            return BTreeMap::new();
+        }
+        analysis
+            .roles
+            .retain(|slot, role| *role != Some(ValueRole::Address) || !data.contains(slot));
+    }
     analysis
         .roles
         .into_iter()
@@ -151,6 +166,71 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
             })
             .or_insert(Some(role));
         (self.roles.len() <= MAX_SLOTS).then_some(())
+    }
+
+    // Registers beneath a load address are address uses, even for nested or
+    // lazy loads. The load's resulting value is not the address register.
+    fn data_expression(&mut self, expr: &Expr, data: &mut BTreeSet<usize>) -> Option<()> {
+        spend(&mut self.work, 1)?;
+        match expr {
+            Expr::Register(reg) => {
+                if let Some(slot) = (self.slot)(*reg)
+                    && self.roles.get(&slot) == Some(&Some(ValueRole::Address))
+                {
+                    data.insert(slot);
+                }
+            }
+            Expr::Binary(_, a, b) => {
+                self.data_expression(a, data)?;
+                self.data_expression(b, data)?;
+            }
+            Expr::Select {
+                condition,
+                taken,
+                not_taken,
+            } => {
+                self.data_expression(condition, data)?;
+                self.data_expression(taken, data)?;
+                self.data_expression(not_taken, data)?;
+            }
+            Expr::Const(_) | Expr::Load { .. } => {}
+        }
+        Some(())
+    }
+
+    fn data_uses(&mut self, nodes: &[Node], data: &mut BTreeSet<usize>) -> Option<()> {
+        for node in nodes {
+            spend(&mut self.work, 1)?;
+            match node {
+                Node::Step { assignments, .. } => {
+                    for assignment in assignments {
+                        // Only same-slot copies and constant affine pointer
+                        // updates are exempt from the conservative data-use test.
+                        if let Place::Register(reg) = assignment.destination
+                            && let Some(slot) = (self.slot)(reg)
+                            && self.delta(&assignment.value, slot).is_some()
+                        {
+                            continue;
+                        }
+                        self.data_expression(&assignment.value, data)?;
+                        // A store destination is entirely an address context.
+                    }
+                }
+                Node::If {
+                    condition,
+                    taken,
+                    not_taken,
+                } => {
+                    self.data_expression(condition, data)?;
+                    self.data_uses(taken, data)?;
+                    self.data_uses(not_taken, data)?;
+                }
+                Node::Loop(body) => self.data_uses(body, data)?,
+                Node::Evaluate(expr) | Node::Return(expr) => self.data_expression(expr, data)?,
+                _ => {}
+            }
+        }
+        Some(())
     }
 
     fn expression(&mut self, expr: &Expr) -> Option<()> {

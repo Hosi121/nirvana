@@ -50,14 +50,20 @@ def metrics(code):
     # Exclude comments and whitespace from the token measure. Full translation
     # unit bytes are retained too: shorter calls add a shared helper prelude.
     plain = re.sub(r"/\*.*?\*/|//[^\n]*", "", body, flags=re.S)
+    locals_ = {name for name in re.findall(r"^\s*uint(?:8|16|32|64)_t (\w+);", plain, re.M)
+               if not name.startswith("nirvana_")}
+    copies = sum(a in locals_ and b in locals_ for a, b in
+                 re.findall(r"\b(\w+)\s*=\s*(\w+)\s*(?=[,;)])", plain))
+    named_roles = sum(re.fullmatch(r"(?:counter|accumulator|limit|address)\d*", name) is not None
+                      for name in locals_)
     return {"unit_bytes": len(code.encode()), "function_bytes": len(body.encode()),
             "tokens": len(re.findall(r"[A-Za-z_][A-Za-z_0-9]*|0x[0-9a-f]+|[0-9]+|[^\s]", plain)),
             "gotos": len(re.findall(r"\bgoto\b", plain)),
             "labels": len(re.findall(r"^bb[0-9]+:", plain, re.M)),
             "masks": plain.count(" & "),
             "casts": len(re.findall(r"\(uint(?:8|16|32|64)_t\)", plain)),
-            "locals": len(re.findall(r"\buint(?:8|16|32|64)_t (?:value\d*|v\d+);", plain)),
-            "copies": len(re.findall(r"^\s*(?:value\d*|v\d+)\s*=\s*(?:value\d*|v\d+)\s*;", plain, re.M)),
+            "locals": len(locals_), "copies": copies, "named_roles": named_roles,
+            "for_headers": len(re.findall(r"\bfor \(;(?: |\n)", plain)),
             "max_indent": max(len(line) - len(line.lstrip()) for line in plain.splitlines())}
 
 
@@ -98,7 +104,7 @@ def main():
             rows.append(row)
     accepted = [r for r in rows if "error" not in r["after"]]
     totals = {v: {k: sum(r[v][k] for r in accepted)
-                  for k in ["unit_bytes", "function_bytes", "tokens", "gotos", "labels", "masks", "casts", "locals", "copies"]}
+                  for k in ["unit_bytes", "function_bytes", "tokens", "gotos", "labels", "masks", "casts", "locals", "copies", "named_roles", "for_headers"]}
               for v in binaries}
     report = {"compiler": checked(["cc", "--version"]).strip(),
               "binaries": {v: {"path": str(p), "sha256": digest(p)} for v, p in binaries.items()},

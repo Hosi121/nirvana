@@ -13,6 +13,7 @@ use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, red
 use crate::sequence::{Evaluation, SequenceError, sequence};
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
+use crate::value_role::ValueRole;
 use crate::value_width::ValueWidths;
 use crate::verify::Solver;
 
@@ -73,6 +74,8 @@ pub struct LocalValue {
     pub registers: Vec<Reg>,
     pub name: String,
     pub width: Width,
+    /// A conservative generated storage role, not an original source name.
+    pub role: Option<ValueRole>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -119,6 +122,7 @@ struct Printer {
     widths: BTreeMap<usize, Width>,
     address_uses: BTreeSet<usize>,
     compact_memory: bool,
+    slots: BTreeMap<usize, usize>,
 }
 
 impl Printer {
@@ -593,10 +597,9 @@ impl Printer {
         Some(format!("{} {symbol}= {right};", self.register(destination)))
     }
 
-    fn loop_header<'a>(&self, body: &'a [Node]) -> Option<(String, &'a [Node])> {
-        let header = crate::loop_shape::while_header(body)?;
+    fn loop_clauses(&self, steps: &[Node], update: bool) -> Option<Vec<String>> {
         let mut clauses = Vec::new();
-        for step in header.setup {
+        for step in steps {
             let Node::Step {
                 address,
                 assignments,
@@ -605,38 +608,99 @@ impl Printer {
                 return None;
             };
             for (index, assignment) in assignments.iter().enumerate() {
-                let Place::Register(reg) = assignment.destination else {
-                    return None;
-                };
-                if self.read.contains(&reg.0)
-                    && let Expr::Register(source) = assignment.value
-                    && self.names.contains_key(&source.0)
-                    && self.register(reg) == self.register(source)
-                {
-                    continue;
-                }
-                if self.read.contains(&reg.0) {
-                    let value = self
-                        .address_value(reg, Some((*address, index)), &assignment.value)
-                        .unwrap_or_else(|| {
-                            self.expression_at(&assignment.value, Some((*address, index)))
-                                .text
-                        });
-                    clauses.push(format!("{} = {value}", self.register(reg)));
-                } else if assignment.value.uses_memory() {
-                    clauses.push(
-                        self.expression_at(&assignment.value, Some((*address, index)))
-                            .text,
-                    );
+                let point = Some((*address, index));
+                match &assignment.destination {
+                    Place::Register(reg) => {
+                        if self.read.contains(&reg.0)
+                            && let Expr::Register(source) = assignment.value
+                            && self.names.contains_key(&source.0)
+                            && self.register(*reg) == self.register(source)
+                        {
+                            continue;
+                        }
+                        if self.read.contains(&reg.0) {
+                            let width = self.widths.get(&reg.0).copied().unwrap_or(Width::U64);
+                            let value = stored_value(&assignment.value, width);
+                            if let Some(value) = self.address_value(*reg, point, value) {
+                                clauses.push(format!("{} = {value}", self.register(*reg)));
+                            } else if update
+                                && self.compact_memory
+                                && let Some(statement) = self.compound(*reg, value, point)
+                            {
+                                clauses.push(statement.strip_suffix(';')?.into());
+                            } else {
+                                clauses.push(format!(
+                                    "{} = {}",
+                                    self.register(*reg),
+                                    self.expression_at(value, point).text
+                                ));
+                            }
+                        } else if assignment.value.uses_memory() {
+                            clauses.push(self.expression_at(&assignment.value, point).text);
+                        }
+                    }
+                    Place::Memory { address, width } => {
+                        // For-header recovery admits only pure destinations and
+                        // pure RHS values. The checked store is the only faulting
+                        // operation in this clause, just as in a standalone store.
+                        if !update || address.uses_memory() || assignment.value.uses_memory() {
+                            return None;
+                        }
+                        let value = self
+                            .expression_at(stored_value(&assignment.value, *width), point)
+                            .text;
+                        let view = self.address_view(point, address);
+                        let text = if self.compact_memory {
+                            let destination =
+                                view.unwrap_or_else(|| self.expression_at(address, point).text);
+                            format!("write{}({destination}, {value})", width.bits())
+                        } else if let Some(view) = view {
+                            format!("nirvana_view_store(&m, {view}, {}, {value})", width.bytes())
+                        } else {
+                            format!(
+                                "nirvana_store(&m, {}, {}, {value})",
+                                self.expression_at(address, point).text,
+                                width.bytes()
+                            )
+                        };
+                        clauses.push(text);
+                    }
                 }
             }
         }
-        clauses.push(self.expression(&header.condition).text);
-        let condition = if clauses.len() == 1 {
-            clauses.pop().unwrap()
+        Some(clauses)
+    }
+
+    fn loop_condition(&self, setup: &[Node], condition: &Expr) -> Option<String> {
+        let mut clauses = self.loop_clauses(setup, false)?;
+        clauses.push(self.expression(condition).text);
+        Some(if clauses.len() == 1 {
+            clauses.pop()?
         } else {
             format!("({})", clauses.join(", "))
-        };
+        })
+    }
+
+    fn loop_header<'a>(&self, body: &'a [Node]) -> Option<(String, &'a [Node])> {
+        if let Some(header) = crate::for_loop::recover(body, |reg| self.slots.get(&reg.0).copied())
+        {
+            let condition = self.loop_condition(header.setup, &header.condition)?;
+            let updates = self.loop_clauses(header.update, true)?;
+            if !updates.is_empty() {
+                let header_text = format!("for (; {condition}; {}) {{", updates.join(", "));
+                let header_text = if header_text.len() > 100 {
+                    format!(
+                        "for (;\n     {condition};\n     {}) {{",
+                        updates.join(",\n     ")
+                    )
+                } else {
+                    header_text
+                };
+                return Some((header_text, header.body));
+            }
+        }
+        let header = crate::loop_shape::while_header(body)?;
+        let condition = self.loop_condition(header.setup, &header.condition)?;
         Some((format!("while ({condition}) {{"), header.body))
     }
 
@@ -914,7 +978,9 @@ fn stored_value(mut value: &Expr, width: Width) -> &Expr {
 }
 
 fn line(code: &mut String, indent: usize, text: &str) {
-    writeln!(code, "{}{text}", "    ".repeat(indent)).unwrap();
+    for part in text.split('\n') {
+        writeln!(code, "{}{part}", "    ".repeat(indent)).unwrap();
+    }
 }
 
 fn nonlocal(nodes: &[Node]) -> bool {
@@ -1153,6 +1219,11 @@ fn emit_reduced_c(
     // expressions that will actually be printed.
     let presented = presentation_program(original, &width)?;
     let program = &presented;
+    let structured = StructuredFunction::recover(original);
+    let display_nodes = structured
+        .as_ref()
+        .ok()
+        .map(|function| compact(&presentation_nodes(function.body(), &width)));
     let views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
     let address_uses = if options.recover_objects {
@@ -1229,6 +1300,18 @@ fn emit_reduced_c(
     for (&reg, color) in eligible.iter().zip(colors) {
         groups.entry(color).or_default().push(reg);
     }
+    let slots: BTreeMap<usize, usize> = groups
+        .iter()
+        .flat_map(|(&color, registers)| registers.iter().map(move |reg| (reg.0, color)))
+        .collect();
+    let roles = crate::value_role::infer(display_nodes.as_deref().unwrap_or(&[]), |reg| {
+        slots.get(&reg.0).copied()
+    });
+    let mut role_counts = BTreeMap::new();
+    for role in roles.values() {
+        *role_counts.entry(role.stem()).or_insert(0usize) += 1;
+    }
+    let mut role_serials = BTreeMap::new();
     let mut widths = BTreeMap::new();
     let mut locals = Vec::new();
     let single_local = groups.len() == 1;
@@ -1238,8 +1321,19 @@ fn emit_reduced_c(
             .map(|&r| value_widths.width(r))
             .max_by_key(|w| w.bits())
             .unwrap_or(Width::U64);
+        let role = roles.get(&color).copied();
         let name = if options.compact_memory {
-            if single_local {
+            if let Some(role) = role {
+                let stem = role.stem();
+                if role_counts[stem] == 1 {
+                    stem.into()
+                } else {
+                    let serial = role_serials.entry(stem).or_insert(0usize);
+                    let name = format!("{stem}{serial}");
+                    *serial += 1;
+                    name
+                }
+            } else if single_local {
                 "value".into()
             } else {
                 format!("value{color}")
@@ -1256,6 +1350,7 @@ fn emit_reduced_c(
             registers,
             name,
             width,
+            role,
         });
     }
     let arguments = if arguments.is_empty() {
@@ -1285,6 +1380,7 @@ fn emit_reduced_c(
             widths: widths.clone(),
             address_uses: address_uses.clone(),
             compact_memory: options.compact_memory,
+            slots: slots.clone(),
         };
         for view in views.stack_views() {
             let base = Expr::Register(options.stack_register.expect("stack view base"));
@@ -1326,6 +1422,7 @@ fn emit_reduced_c(
             widths: widths.clone(),
             address_uses: address_uses.clone(),
             compact_memory: options.compact_memory,
+            slots: slots.clone(),
         };
         for object in &views.objects {
             line(
@@ -1410,24 +1507,29 @@ fn emit_reduced_c(
         widths,
         address_uses,
         compact_memory: options.compact_memory,
+        slots,
     };
-    let (fallback_reason, structure_stats, structure_evidence) =
-        match StructuredFunction::recover(original) {
-            Ok(function) => {
-                let nonlocal = nonlocal(function.body());
-                if nonlocal {
-                    line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
-                    line(&mut code, 1, "int nirvana_continue = 0;");
-                }
-                let nodes = presentation_nodes(function.body(), &width);
-                printer.nodes(&mut code, &compact(&nodes), 1, 0, nonlocal)?;
-                (None, Some(function.stats()), Some(function.evidence()))
+    let (fallback_reason, structure_stats, structure_evidence) = match structured {
+        Ok(function) => {
+            let nonlocal = nonlocal(function.body());
+            if nonlocal {
+                line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
+                line(&mut code, 1, "int nirvana_continue = 0;");
             }
-            Err(reason) => {
-                printer.gotos(&mut code, program)?;
-                (Some(reason), None, None)
-            }
-        };
+            printer.nodes(
+                &mut code,
+                display_nodes.as_deref().expect("recovered nodes"),
+                1,
+                0,
+                nonlocal,
+            )?;
+            (None, Some(function.stats()), Some(function.evidence()))
+        }
+        Err(reason) => {
+            printer.gotos(&mut code, program)?;
+            (Some(reason), None, None)
+        }
+    };
     code.push_str("}\n");
     if program.uses_memory() && options.compact_memory {
         code.push_str(syntax::COMPACT_END);

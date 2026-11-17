@@ -436,6 +436,100 @@ fn native_c_width_normalization_keeps_dependencies_in_loop_and_diamond_guards() 
     }
 }
 
+#[test]
+fn native_c_for_updates_keep_setup_break_continue_and_fault_order() {
+    for mode in 0..3 {
+        let body_control = match mode {
+            1 => Control::Branch {
+                condition: b(BinaryOp::Eq, r(2), c(3)),
+                target: 2,
+            },
+            2 => Control::Branch {
+                condition: b(BinaryOp::Eq, r(2), c(2)),
+                target: 1,
+            },
+            _ => Control::Next,
+        };
+        let mut body = vec![store(c(0x100f), Width::U8, r(2))];
+        if mode == 2 {
+            body.push(store(c(0x1000), Width::U8, b(BinaryOp::Add, r(2), c(1))));
+        }
+        let p = Program::new(
+            0,
+            4,
+            vec![
+                instruction(
+                    0,
+                    vec![
+                        store(c(0x1000), Width::U8, c(2)),
+                        store(c(0x1008), Width::U8, c(5)),
+                    ],
+                    Control::Next,
+                ),
+                instruction(
+                    1,
+                    vec![
+                        Assignment {
+                            destination: Reg(2).into(),
+                            value: Expr::load(c(0x1000), Width::U8),
+                        },
+                        Assignment {
+                            destination: Reg(3).into(),
+                            value: Expr::load(r(1), Width::U8),
+                        },
+                    ],
+                    Control::Branch {
+                        condition: b(BinaryOp::Ult, r(2), r(3)),
+                        target: 3,
+                    },
+                ),
+                instruction(2, vec![], Control::Return(Expr::load(c(0x1000), Width::U8))),
+                instruction(3, body, body_control),
+                instruction(
+                    4,
+                    vec![Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(c(0x1000), Width::U8),
+                    }],
+                    Control::Next,
+                ),
+                // r0 may fault here, after body writes. It need not alias the load
+                // for moving this exact suffix to a for update to be equivalent.
+                instruction(
+                    5,
+                    vec![store(r(0), Width::U8, b(BinaryOp::Add, r(2), c(1)))],
+                    Control::Jump(1),
+                ),
+            ],
+        )
+        .unwrap();
+        let output = emit_readable_c_with_options(
+            &p,
+            ReadableOptions {
+                coalesce_locals: true,
+                compact_memory: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            output.code.contains("for (; ") || output.code.contains("for (;\n"),
+            mode != 2,
+            "mode={mode}: {}",
+            output.code
+        );
+        compare(
+            &p,
+            &[
+                [0x1000, 0x1008],
+                [0xffff, 0x1008],
+                [0x1000, 0xffff],
+                [0xffff, 0xffff],
+            ],
+        );
+    }
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
     let scratch = Scratch::new();
     let mut text = String::new();
