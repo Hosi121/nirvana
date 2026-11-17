@@ -19,7 +19,7 @@ pub(super) enum RegionEvidence {
 }
 
 pub(super) fn recover(
-    printer: &Printer,
+    printer: &Printer<'_>,
     nodes: &[Node],
     locals: &[LocalValue],
 ) -> Option<BodyRecovery> {
@@ -76,13 +76,13 @@ fn restore<E: Clone>(
     (result, recovered.evidence().clone())
 }
 
-struct Project<'a> {
+struct Project<'a, 'program> {
     aliases: BTreeMap<usize, Reg>,
-    printer: &'a Printer,
+    printer: &'a Printer<'program>,
     budget: usize,
 }
 
-impl Project<'_> {
+impl Project<'_, '_> {
     fn spend(&mut self, depth: usize) -> Option<()> {
         if depth > 64 {
             return None;

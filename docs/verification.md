@@ -56,6 +56,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [load_mask](../src/load_mask.rs) | 表示用のLoadとmaskの対。変更形・全read・単一定義・同一ブロックの順序と、元のLoadの位置を検査 |
 | [division_expr](../src/division_expr.rs) | 上位乗算とシフトによる定数割算。丸め誤差の上限をu128で再計算し、全u64入力に対する十分条件を照合 |
 | [remainder_expr](../src/remainder_expr.rs) | 同じ入力の証明済み商から `X - (X / d) * d` を `% d` と表示。積・差の非overflowと、各マスクが数値上限の全ビットを覆うことを再照合 |
+| [context_remainder](../src/context_remainder.rs) | 商を別レジスタに保存した剰余。定義・商のStore・使用の順序と、同一ブロック内の入力・商への上書きを再照合 |
 | [finite_region](../src/finite_region.rs) | 前段から導出した有限入力の全組合せについて、純粋領域を抜ける時点の全write先を照合 |
 | [affine_region](../src/affine_region.rs) | 有限制御値の全組合せと任意のu64入力Aについて、`a*A+b mod 2^64`の対応を検査 |
 

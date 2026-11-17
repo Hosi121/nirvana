@@ -186,7 +186,9 @@ impl Render {
     }
 }
 
-struct Printer {
+struct Printer<'a> {
+    source_program: &'a Program,
+    context_remainders: Option<&'a crate::context_remainder::ContextRemainders>,
     names: BTreeMap<usize, String>,
     read: BTreeSet<usize>,
     views: Option<MemoryViews>,
@@ -199,7 +201,20 @@ struct Printer {
     declarations: Rc<DeclarationPlan>,
 }
 
-impl Printer {
+impl Printer<'_> {
+    fn context_remainder(
+        &self,
+        expression: &Expr,
+        point: Option<(u64, usize)>,
+    ) -> Option<crate::context_remainder::ContextView<'_>> {
+        if !matches!(expression, Expr::Binary(BinaryOp::Sub, _, _)) {
+            return None;
+        }
+        let (instruction, assignment) = point?;
+        self.context_remainders?
+            .view(self.source_program, instruction, assignment, expression)
+    }
+
     fn expression(&self, expr: &Expr) -> Render {
         self.expression_at(expr, None)
     }
@@ -210,6 +225,17 @@ impl Printer {
             unsigned,
             precedence: 13,
         };
+        if let Some(view) = self.context_remainder(expr, point) {
+            return Render {
+                text: format!(
+                    "{} % {}",
+                    self.expression_at(view.value, point).u64(),
+                    self.expression(&Expr::Const(view.divisor)).text
+                ),
+                unsigned: true,
+                precedence: 11,
+            };
+        }
         if let Some(view) = idioms::recognize(expr) {
             return match view {
                 idioms::View::Call { name, arguments } => {
@@ -687,6 +713,26 @@ impl Printer {
                 .zip(self.names.get(&b.0))
                 .is_some_and(|(a, b)| a == b)
         };
+        // Arithmetic proof precedes compound extraction, which would otherwise
+        // hide the whole subtraction behind `x -= quotient * divisor`.
+        let remainder = self
+            .context_remainder(value, point)
+            .map(|view| (view.value, view.divisor))
+            .or_else(|| {
+                crate::remainder_expr::recognize(value).map(|view| (view.value, view.divisor))
+            });
+        if let Some((Expr::Register(source), divisor)) = remainder
+            && same(destination, *source)
+        {
+            return Some(format!(
+                "{} %= {};",
+                self.register(destination),
+                self.expression(&Expr::Const(divisor)).text
+            ));
+        }
+        if remainder.is_some() {
+            return None;
+        }
         let (mut op, mut right) =
             crate::self_update::extract(value, destination, same).or_else(|| {
                 // Subtraction has no associative-chain rule; preserve the existing
@@ -1382,6 +1428,7 @@ fn emit_prepared_c(
         load_mask_evidence,
     } = prepared;
     let program = &presented;
+    let context_remainders = crate::context_remainder::ContextRemainders::analyze(program);
     let display_nodes = nodes.as_deref();
     let mut views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
@@ -1463,6 +1510,8 @@ fn emit_prepared_c(
     }
     if let Some(views) = &views {
         let printer = Printer {
+            source_program: program,
+            context_remainders: None,
             names: names.clone(),
             read: read.clone(),
             views: None,
@@ -1507,6 +1556,8 @@ fn emit_prepared_c(
     }
     if let Some(views) = &views {
         let printer = Printer {
+            source_program: program,
+            context_remainders: None,
             names: names.clone(),
             read: read.clone(),
             views: None,
@@ -1605,6 +1656,8 @@ fn emit_prepared_c(
         .map(|v| v.objects.clone())
         .unwrap_or_default();
     let printer = Printer {
+        source_program: program,
+        context_remainders: context_remainders.as_ref(),
         names,
         read,
         views,
