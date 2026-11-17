@@ -431,3 +431,204 @@ fn resource_limits_return_none_instead_of_partial_recovery() {
     nodes[2] = Node::Evaluate(deep);
     assert!(recover(&nodes, slot).is_none());
 }
+
+fn distinct_memory_counter() -> Vec<Node> {
+    vec![
+        step(1, vec![set(1, Expr::load(r(5), Width::U64))]),
+        step(2, vec![set(1, Expr::load(add(c(16), r(1)), Width::U64))]),
+        guard(),
+        step(3, vec![set(3, add(r(3), c(1)))]),
+        step(4, vec![set(4, Expr::load(r(5), Width::U64))]),
+        step(5, vec![set(4, add(r(4), c(16)))]),
+        step(6, vec![set(2, Expr::load(r(4), Width::U64))]),
+        step(7, vec![store(r(4), add(r(2), c(1)))]),
+        Node::Continue,
+    ]
+}
+
+#[test]
+fn split_value_and_address_slots_keep_a_memory_counter_for_update() {
+    let nodes = distinct_memory_counter();
+    let plan = recover(&nodes, slot).unwrap();
+    assert!(std::ptr::eq(plan.setup, &nodes[..2]));
+    assert!(std::ptr::eq(plan.body, &nodes[3..4]));
+    assert!(std::ptr::eq(plan.update, &nodes[4..8]));
+    // Physical slots are all distinct: neither address r4 nor reload r2 shares
+    // the guard's r1, unlike the accidental address/value coalescing regression.
+    for limit in 0..7 {
+        let mut memory = [0; 64];
+        memory[..8].copy_from_slice(&8u64.to_le_bytes());
+        let result = compare(&nodes, &[limit, 0, 0, 0, 0, 0], &memory);
+        assert_eq!(result.status, RunStatus::Returned(limit));
+        assert_eq!(
+            u64::from_le_bytes(result.memory[24..32].try_into().unwrap()),
+            limit
+        );
+    }
+}
+
+#[test]
+fn symbolic_shapes_never_forward_header_values_across_body_stores() {
+    let mut nodes = distinct_memory_counter();
+    nodes[3] = step(3, vec![set(3, c(1)), store(c(24), c(6))]);
+    let mut memory = [0; 64];
+    memory[..8].copy_from_slice(&8u64.to_le_bytes());
+    let result = compare(&nodes, &[5, 0, 0, 0, 0, 0], &memory);
+    assert_eq!(result.status, RunStatus::Returned(1));
+    assert_eq!(
+        u64::from_le_bytes(result.memory[24..32].try_into().unwrap()),
+        7
+    );
+
+    // The pointed-to location itself changes between header and update. The
+    // borrowed reloads must read the new pointer and then the new counter.
+    nodes[3] = step(
+        3,
+        vec![set(3, c(1)), store(c(0), c(16)), store(c(32), c(1))],
+    );
+    let result = compare(&nodes, &[2, 0, 0, 0, 0, 0], &memory);
+    assert_eq!(result.status, RunStatus::Returned(1));
+    assert_eq!(
+        u64::from_le_bytes(result.memory[24..32].try_into().unwrap()),
+        0
+    );
+    assert_eq!(
+        u64::from_le_bytes(result.memory[32..40].try_into().unwrap()),
+        2
+    );
+
+    nodes[3] = step(3, vec![set(3, c(1)), store(c(0), c(56))]);
+    let result = compare(&nodes, &[2, 0, 0, 0, 0, 0], &memory);
+    assert_eq!(
+        result.status,
+        RunStatus::Fault(MemoryFault {
+            access: AccessKind::Read,
+            address: 72,
+            width: Width::U64
+        })
+    );
+    assert_eq!(result.registers[4], 72);
+    assert_eq!(result.memory[0], 56);
+}
+
+#[test]
+fn memory_recurrence_requires_matching_read_store_header_width_and_nonzero_delta() {
+    for replacement in [
+        step(7, vec![store(add(r(4), c(8)), add(r(2), c(1)))]),
+        step(7, vec![store(r(4), add(r(2), c(0)))]),
+        step(
+            7,
+            vec![store(r(4), Expr::binary(BinaryOp::Mul, r(2), c(2)))],
+        ),
+    ] {
+        let mut nodes = distinct_memory_counter();
+        nodes[7] = replacement;
+        assert!(recover(&nodes, slot).is_none());
+    }
+    let mut nodes = distinct_memory_counter();
+    nodes[5] = step(5, vec![set(4, add(r(4), c(24)))]);
+    assert!(
+        recover(&nodes, slot).is_none(),
+        "an unrelated read/store location is not the header counter"
+    );
+    let mut nodes = distinct_memory_counter();
+    nodes[6] = step(6, vec![set(2, Expr::load(r(4), Width::U8))]);
+    assert!(recover(&nodes, slot).is_none());
+}
+
+#[test]
+fn memory_symbol_budget_returns_none_for_the_whole_candidate() {
+    fn balanced(first: u64, count: u64) -> Expr {
+        if count == 1 {
+            return c(first);
+        }
+        add(
+            balanced(first, count / 2),
+            balanced(first + count / 2, count / 2),
+        )
+    }
+    let mut nodes = distinct_memory_counter();
+    nodes[2] = Node::If {
+        condition: Expr::binary(BinaryOp::Ult, r(1), balanced(1, 4096)),
+        taken: vec![],
+        not_taken: vec![Node::Break],
+    };
+    assert!(recover(&nodes, slot).is_none());
+}
+
+#[test]
+fn optional_memory_budget_failure_keeps_an_earlier_existing_slot_anchor() {
+    fn balanced(first: u64, count: u64) -> Expr {
+        if count == 1 {
+            return c(first);
+        }
+        add(
+            balanced(first, count / 2),
+            balanced(first + count / 2, count / 2),
+        )
+    }
+    let mut nodes = normal();
+    nodes[1] = Node::If {
+        condition: Expr::binary(BinaryOp::Ult, r(1), balanced(1, 4096)),
+        taken: vec![],
+        not_taken: vec![Node::Break],
+    };
+    nodes.insert(4, step(4, vec![store(c(8), c(7))]));
+    let plan = recover(&nodes, slot)
+        .expect("optional symbolic failure must not hide the earlier r1 += 1 anchor");
+    assert!(std::ptr::eq(plan.body, &nodes[2..3]));
+    assert!(std::ptr::eq(plan.update, &nodes[3..5]));
+}
+
+#[path = "support/native.rs"]
+#[allow(dead_code)]
+mod native;
+
+#[test]
+fn actual_nested_loops_o0_recovers_inner_update_with_all_register_slots_distinct() {
+    use nirvana::{frontend, reduce, structure::StructuredFunction};
+    fn remove_empty(nodes: &[Node]) -> Vec<Node> {
+        nodes
+            .iter()
+            .filter_map(|node| match node {
+                Node::Step { assignments, .. } if assignments.is_empty() => None,
+                Node::If {
+                    condition,
+                    taken,
+                    not_taken,
+                } => Some(Node::If {
+                    condition: condition.clone(),
+                    taken: remove_empty(taken),
+                    not_taken: remove_empty(not_taken),
+                }),
+                Node::Loop(body) => Some(Node::Loop(remove_empty(body))),
+                other => Some(other.clone()),
+            })
+            .collect()
+    }
+    fn found(nodes: &[Node]) -> bool {
+        nodes.iter().any(|node| match node {
+            Node::Loop(body) => recover(body, slot).is_some() || found(body),
+            Node::If {
+                taken, not_taken, ..
+            } => found(taken) || found(not_taken),
+            _ => false,
+        })
+    }
+    let scratch = native::Scratch::new();
+    let object = scratch.0.join("nested-loops-O0.o");
+    native::object(
+        &native::fixture_root().join("cases/nested-loops.c"),
+        &object,
+        "-O0",
+        "fixture",
+    );
+    let lifted = frontend::lift_elf(&std::fs::read(object).unwrap(), "fixture").unwrap();
+    let reduced = reduce::reduce(&lifted.program).unwrap();
+    let structured = StructuredFunction::recover(reduced.program()).unwrap();
+    let nodes = remove_empty(structured.body());
+    assert!(
+        found(&nodes),
+        "real inner memory counter must recover without coalesced aliases"
+    );
+}

@@ -16,6 +16,8 @@ pub const MAX_BODY_NODES: usize = 4_096;
 pub const MAX_BODY_DEPTH: usize = 64;
 pub const MAX_EXPRESSION_NODES: usize = 65_536;
 pub const MAX_EXPRESSION_DEPTH: usize = 128;
+pub const MAX_MEMORY_SYMBOLS: usize = 4_096;
+pub const MAX_MEMORY_WORK: usize = 65_536;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForLoop<'a> {
@@ -30,6 +32,9 @@ pub struct ForLoop<'a> {
 /// virtual registers may be the same counter. Copyback steps remain in order.
 /// A memory store of `condition_slot +/- nonzero_constant` may also anchor the
 /// suffix; this is a presentation hint, not a proof of counter-address aliasing.
+/// A matching header-read/reload/affine-store syntax shape can also anchor a
+/// memory counter with distinct slots. Optional symbolic-budget failure keeps
+/// the original slot-based search available; no expression is substituted.
 pub fn recover(body: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> Option<ForLoop<'_>> {
     bounded_body(body)?;
     let header = while_header(body)?;
@@ -53,6 +58,8 @@ pub fn recover(body: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> Option<For
     let mut assignments = 0;
     let mut start = end;
     let mut found = false;
+    let mut memory = None;
+    let mut memory_disabled = false;
     while start > 0 && end - start < MAX_UPDATE_STEPS {
         let Node::Step {
             assignments: step, ..
@@ -84,6 +91,21 @@ pub fn recover(body: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> Option<For
                         {
                             feeds.entry(source).or_default().extend(targets);
                         }
+                    }
+                }
+            }
+        }
+        if !found && !memory_disabled {
+            if memory.is_none() {
+                memory = MemoryRecurrence::new(header.setup, &header.condition);
+                memory_disabled = memory.is_none();
+            }
+            if let Some(matcher) = &mut memory {
+                match matcher.matches(&nodes[start..]) {
+                    Some(matched) => found = matched,
+                    None => {
+                        memory = None;
+                        memory_disabled = true;
                     }
                 }
             }
@@ -134,6 +156,191 @@ pub fn recover(body: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> Option<For
         body: &nodes[..start],
         update: &nodes[start..],
     })
+}
+
+// Symbols describe expression syntax through local sequential definitions, not
+// equal memory contents or invariant pointer values. In particular Load remains
+// an explicit symbolic shape; these symbols are never emitted or replayed.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Symbol {
+    Constant(u64),
+    Register(usize),
+    Binary(u8, usize, usize),
+    Load(usize, usize),
+    Select(usize, usize, usize),
+}
+
+struct MemoryRecurrence {
+    symbols: Vec<Symbol>,
+    interned: BTreeMap<Symbol, usize>,
+    locations: BTreeSet<(usize, usize)>,
+    remaining: usize,
+}
+
+impl MemoryRecurrence {
+    fn new(setup: &[Node], condition: &Expr) -> Option<Self> {
+        let mut result = Self {
+            symbols: Vec::new(),
+            interned: BTreeMap::new(),
+            locations: BTreeSet::new(),
+            remaining: MAX_MEMORY_WORK,
+        };
+        let mut registers = BTreeMap::new();
+        for node in setup {
+            let Node::Step { assignments, .. } = node else {
+                return None;
+            };
+            for assignment in assignments {
+                let Place::Register(reg) = assignment.destination else {
+                    return None;
+                };
+                let value = result.expression(&assignment.value, &registers)?;
+                registers.insert(reg.0, value);
+            }
+        }
+        let root = result.expression(condition, &registers)?;
+        let mut pending = vec![root];
+        let mut visited = BTreeSet::new();
+        while let Some(symbol) = pending.pop() {
+            result.spend()?;
+            if !visited.insert(symbol) {
+                continue;
+            }
+            match result.symbols[symbol] {
+                Symbol::Load(address, width) => {
+                    result.locations.insert((address, width));
+                    pending.push(address);
+                }
+                Symbol::Binary(_, left, right) => pending.extend([left, right]),
+                Symbol::Select(condition, taken, not_taken) => {
+                    pending.extend([condition, taken, not_taken])
+                }
+                _ => {}
+            }
+        }
+        Some(result)
+    }
+
+    fn spend(&mut self) -> Option<()> {
+        self.remaining = self.remaining.checked_sub(1)?;
+        Some(())
+    }
+    fn intern(&mut self, symbol: Symbol) -> Option<usize> {
+        self.spend()?;
+        if let Some(&id) = self.interned.get(&symbol) {
+            return Some(id);
+        }
+        if self.symbols.len() >= MAX_MEMORY_SYMBOLS {
+            return None;
+        }
+        let id = self.symbols.len();
+        self.symbols.push(symbol.clone());
+        self.interned.insert(symbol, id);
+        Some(id)
+    }
+    fn add_constant(&mut self, mut base: usize, mut offset: u64) -> Option<usize> {
+        loop {
+            self.spend()?;
+            match self.symbols[base] {
+                Symbol::Constant(value) => {
+                    return self.intern(Symbol::Constant(value.wrapping_add(offset)));
+                }
+                Symbol::Binary(op, left, right) if op == BinaryOp::Add as u8 => {
+                    if let Symbol::Constant(value) = self.symbols[right] {
+                        base = left;
+                        offset = offset.wrapping_add(value);
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+            return if offset == 0 {
+                Some(base)
+            } else {
+                let offset = self.intern(Symbol::Constant(offset))?;
+                self.intern(Symbol::Binary(BinaryOp::Add as u8, base, offset))
+            };
+        }
+    }
+    fn expression(
+        &mut self,
+        expression: &Expr,
+        registers: &BTreeMap<usize, usize>,
+    ) -> Option<usize> {
+        self.spend()?;
+        match expression {
+            Expr::Const(value) => self.intern(Symbol::Constant(*value)),
+            Expr::Register(reg) => match registers.get(&reg.0) {
+                Some(&value) => Some(value),
+                None => self.intern(Symbol::Register(reg.0)),
+            },
+            Expr::Load { address, width } => {
+                let address = self.expression(address, registers)?;
+                self.intern(Symbol::Load(address, width.bytes()))
+            }
+            Expr::Binary(op, left, right) => {
+                let left = self.expression(left, registers)?;
+                let right = self.expression(right, registers)?;
+                if let Symbol::Constant(offset) = self.symbols[right] {
+                    if *op == BinaryOp::Add {
+                        return self.add_constant(left, offset);
+                    }
+                    if *op == BinaryOp::Sub {
+                        return self.add_constant(left, offset.wrapping_neg());
+                    }
+                }
+                if *op == BinaryOp::Add
+                    && let Symbol::Constant(offset) = self.symbols[left]
+                {
+                    return self.add_constant(right, offset);
+                }
+                self.intern(Symbol::Binary(*op as u8, left, right))
+            }
+            Expr::Select {
+                condition,
+                taken,
+                not_taken,
+            } => {
+                let condition = self.expression(condition, registers)?;
+                let taken = self.expression(taken, registers)?;
+                let not_taken = self.expression(not_taken, registers)?;
+                self.intern(Symbol::Select(condition, taken, not_taken))
+            }
+        }
+    }
+    fn matches(&mut self, suffix: &[Node]) -> Option<bool> {
+        if self.locations.is_empty() {
+            return Some(false);
+        }
+        // Restart at the suffix boundary. Header registers and body stores are
+        // never propagated as values across a loop body or a memory operation.
+        let mut registers = BTreeMap::new();
+        for node in suffix {
+            let Node::Step { assignments, .. } = node else {
+                return None;
+            };
+            for assignment in assignments {
+                let value = self.expression(&assignment.value, &registers)?;
+                match &assignment.destination {
+                    Place::Register(reg) => {
+                        registers.insert(reg.0, value);
+                    }
+                    Place::Memory { address, width } => {
+                        let address = self.expression(address, &registers)?;
+                        if let Symbol::Binary(op, source, offset) = self.symbols[value]
+                            && op == BinaryOp::Add as u8
+                            && matches!(self.symbols[offset], Symbol::Constant(value) if value != 0)
+                            && self.symbols[source] == Symbol::Load(address, width.bytes())
+                            && self.locations.contains(&(address, width.bytes()))
+                        {
+                            return Some(true);
+                        }
+                    }
+                }
+            }
+        }
+        Some(false)
+    }
 }
 
 fn affine_source(expression: &Expr) -> Option<Reg> {
