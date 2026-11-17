@@ -371,6 +371,38 @@ impl MemoryViews {
             .unwrap_or_default()
     }
 
+    /// Role names describe a location's observed use, never its source name or
+    /// ownership. They change neither its address nor any checked access.
+    pub(super) fn name_stack_roles(&mut self, roles: &crate::stack_role::StackRoles) {
+        let Some(stack) = &mut self.stack else {
+            return;
+        };
+        let mut counts = BTreeMap::new();
+        for view in &stack.views {
+            if view.overlaps.is_empty()
+                && let Some(role) = roles.offset_role(view.offset)
+            {
+                *counts.entry(role.stem()).or_insert(0usize) += 1;
+            }
+        }
+        let mut serials = BTreeMap::new();
+        for view in &mut stack.views {
+            if view.overlaps.is_empty()
+                && let Some(role) = roles.offset_role(view.offset)
+            {
+                let stem = role.stem();
+                view.name = if counts[stem] == 1 {
+                    format!("{stem}_slot")
+                } else {
+                    let serial = serials.entry(stem).or_insert(0usize);
+                    let name = format!("{stem}{serial}_slot");
+                    *serial += 1;
+                    name
+                };
+            }
+        }
+    }
+
     pub(super) fn registers(&self) -> impl Iterator<Item = Reg> + '_ {
         self.stack
             .iter()

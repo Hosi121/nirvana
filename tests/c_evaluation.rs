@@ -1163,7 +1163,88 @@ fn native_c_guard_copyback_does_not_introduce_tautological_comparisons() {
     compare(&p, &[[0x1000, 0x1008], [0xffff, u64::MAX]]);
 }
 
+#[test]
+fn native_c_stack_lineage_names_keep_alias_writes_and_first_fault() {
+    let second = b(BinaryOp::Add, r(0), c(8));
+    let program = Program::new(
+        0,
+        4,
+        vec![
+            instruction(
+                0,
+                vec![
+                    store(r(0), Width::U64, c(0)),
+                    store(second.clone(), Width::U64, c(1)),
+                ],
+                Control::Next,
+            ),
+            instruction(
+                1,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: load(r(0)),
+                }],
+                Control::Branch {
+                    condition: b(BinaryOp::Ult, r(2), c(3)),
+                    target: 3,
+                },
+            ),
+            instruction(
+                2,
+                vec![store(r(1), Width::U8, c(0xaa))],
+                Control::Return(load(second.clone())),
+            ),
+            instruction(
+                3,
+                vec![
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: load(second.clone()),
+                    },
+                    store(second, Width::U64, b(BinaryOp::Add, r(3), r(2))),
+                    store(r(0), Width::U64, b(BinaryOp::Add, r(2), c(1))),
+                ],
+                Control::Jump(1),
+            ),
+        ],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            stack_register: Some(Reg(0)),
+            coalesce_locals: true,
+            compact_memory: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    for role in [
+        nirvana::value_role::ValueRole::Counter,
+        nirvana::value_role::ValueRole::Accumulator,
+    ] {
+        assert!(
+            output.locals.iter().any(|local| local.role == Some(role)),
+            "missing {role:?} across stack reloads: {}",
+            output.code
+        );
+    }
+    let inputs: Vec<_> = [0x1000, 0x1008, 0x100f, 0xffff]
+        .into_iter()
+        .flat_map(|stack| {
+            [0x1000, 0x1008, 0x100f, 0xffff]
+                .into_iter()
+                .map(move |alias| [stack, alias])
+        })
+        .collect();
+    compare_with_stack(&program, &inputs, Some(Reg(0)));
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
+    compare_with_stack(program, inputs, None);
+}
+
+fn compare_with_stack(program: &Program, inputs: &[[u64; 2]], stack_register: Option<Reg>) {
     let scratch = Scratch::new();
     let mut text = String::new();
     let mut expected = Vec::new();
@@ -1191,7 +1272,7 @@ fn compare(program: &Program, inputs: &[[u64; 2]]) {
         let output = emit_readable_c_with_options(
             program,
             ReadableOptions {
-                stack_register: None,
+                stack_register,
                 recover_objects: views,
                 coalesce_locals: true,
                 compact_memory,

@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::allocation::allocate_locals;
 use crate::ir::{Program, Reg, Width};
+use crate::stack_role::StackRoles;
 use crate::structure::Node;
-use crate::value_role::infer;
+use crate::value_role::{ValueRole, infer};
 use crate::value_width::ValueWidths;
 
 use super::{LocalPlanStats, LocalValue, ReadableOptions};
@@ -21,6 +22,7 @@ pub(super) struct LocalPlan {
     pub locals: Vec<LocalValue>,
     pub value_count: usize,
     pub stats: LocalPlanStats,
+    pub stack_roles: Option<StackRoles>,
 }
 
 impl LocalPlan {
@@ -39,6 +41,10 @@ impl LocalPlan {
             .map(|&reg| Reg(reg))
             .collect();
         let storage = storage_colors(program, &eligible, widths, options.coalesce_locals);
+        let stack_roles = options
+            .stack_register
+            .filter(|_| options.coalesce_locals)
+            .and_then(|stack| StackRoles::analyze(program, stack, nodes));
         let storage_slots = storage.iter().copied().collect::<BTreeSet<_>>().len();
         let pairs: Vec<_> = eligible
             .iter()
@@ -76,7 +82,9 @@ impl LocalPlan {
             .map(|_| identities.as_ref().unwrap().groups());
         let colors = refined
             .as_ref()
-            .map(|refined| semantic_colors(&eligible, &storage, refined, nodes))
+            .map(|refined| {
+                semantic_colors(&eligible, &storage, refined, nodes, stack_roles.as_ref())
+            })
             .unwrap_or_else(|| storage.clone());
         let mut groups: BTreeMap<usize, Vec<Reg>> = BTreeMap::new();
         let mut origins: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
@@ -89,7 +97,20 @@ impl LocalPlan {
             .zip(colors)
             .map(|(reg, color)| (reg.0, color))
             .collect();
-        let roles = infer(nodes, |reg| slots.get(&reg.0).copied());
+        let inferred = infer(nodes, |reg| slots.get(&reg.0).copied());
+        let roles: BTreeMap<_, _> = groups
+            .iter()
+            .filter_map(|(&color, registers)| {
+                Some((
+                    color,
+                    local_role(
+                        inferred.get(&color).copied(),
+                        registers,
+                        stack_roles.as_ref(),
+                    )?,
+                ))
+            })
+            .collect();
         let mut role_counts = BTreeMap::new();
         for role in roles.values() {
             *role_counts.entry(role.stem()).or_insert(0usize) += 1;
@@ -158,6 +179,7 @@ impl LocalPlan {
             locals,
             value_count: eligible.len(),
             stats,
+            stack_roles,
         }
     }
 }
@@ -205,6 +227,7 @@ fn semantic_colors(
     storage: &[usize],
     identities: &[usize],
     nodes: &[Node],
+    stack_roles: Option<&StackRoles>,
 ) -> Vec<usize> {
     let slots: BTreeMap<_, _> = eligible
         .iter()
@@ -212,10 +235,18 @@ fn semantic_colors(
         .map(|(r, &id)| (r.0, id))
         .collect();
     let roles = infer(nodes, |reg| slots.get(&reg.0).copied());
+    let role = |reg, id| {
+        combine_roles(
+            roles.get(&id).copied(),
+            stack_roles.and_then(|stack| stack.register_role(reg)),
+        )
+        .map(ValueRole::stem)
+    };
     let keys: BTreeSet<_> = storage
         .iter()
         .zip(identities)
-        .map(|(&origin, &id)| (origin, roles.get(&id).map(|role| role.stem())))
+        .zip(eligible)
+        .map(|((&origin, &id), &reg)| (origin, role(reg, id)))
         .collect();
     let palette: BTreeMap<_, _> = keys
         .into_iter()
@@ -225,6 +256,36 @@ fn semantic_colors(
     storage
         .iter()
         .zip(identities)
-        .map(|(&origin, &id)| palette[&(origin, roles.get(&id).map(|role| role.stem()))])
+        .zip(eligible)
+        .map(|((&origin, &id), &reg)| palette[&(origin, role(reg, id))])
         .collect()
+}
+
+fn combine_roles(a: Option<ValueRole>, b: Option<ValueRole>) -> Option<ValueRole> {
+    match (a, b) {
+        (Some(a), Some(b)) if a != b => None,
+        (Some(role), _) | (_, Some(role)) => Some(role),
+        _ => None,
+    }
+}
+
+fn local_role(
+    inferred: Option<ValueRole>,
+    registers: &[Reg],
+    stack: Option<&StackRoles>,
+) -> Option<ValueRole> {
+    let Some(stack) = stack else {
+        return inferred;
+    };
+    if registers
+        .iter()
+        .any(|&reg| matches!((inferred, stack.register_role(reg)), (Some(a), Some(b)) if a != b))
+    {
+        return None;
+    }
+    let first = stack.register_role(*registers.first()?);
+    let unanimous = registers
+        .iter()
+        .all(|&reg| stack.register_role(reg) == first);
+    combine_roles(inferred, if unanimous { first } else { None })
 }

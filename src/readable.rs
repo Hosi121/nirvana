@@ -1266,7 +1266,7 @@ fn emit_prepared_c(
     } = prepared;
     let program = &presented;
     let display_nodes = nodes.as_deref();
-    let views = MemoryViews::recover(program, reduced.parameters(), options);
+    let mut views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
     let address_uses = if options.recover_objects {
         address_registers(program)
@@ -1313,6 +1313,7 @@ fn emit_prepared_c(
         locals,
         value_count: local_value_count,
         stats: local_plan,
+        stack_roles,
     } = LocalPlan::build(
         program,
         reduced.parameters(),
@@ -1322,6 +1323,11 @@ fn emit_prepared_c(
         display_nodes.unwrap_or(&[]),
         options,
     );
+    if options.compact_memory
+        && let (Some(views), Some(roles)) = (&mut views, &stack_roles)
+    {
+        views.name_stack_roles(roles);
+    }
     let arguments = if arguments.is_empty() {
         "void".into()
     } else {
