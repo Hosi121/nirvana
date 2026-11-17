@@ -11,14 +11,15 @@ use crate::hir::ViewPath;
 use crate::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
 use crate::reduce::{ReducedFunction, ReductionError, ReductionStats, reduce, reduce_checked};
 use crate::sequence::{Evaluation, SequenceError, sequence};
-use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
+use crate::structure::{Node, StructureError, StructureStats};
 use crate::structure_verify::StructureEvidence;
 use crate::value_role::ValueRole;
-use crate::value_width::ValueWidths;
 use crate::verify::Solver;
 
+mod prepare;
 mod syntax;
 mod views;
+use prepare::{PreparedFunction, is_break, is_continue};
 use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1150,12 +1151,6 @@ fn nonlocal(nodes: &[Node]) -> bool {
     })
 }
 
-fn is_break(nodes: &[Node]) -> bool {
-    matches!(nodes, [Node::Break])
-}
-fn is_continue(nodes: &[Node]) -> bool {
-    matches!(nodes, [Node::Continue])
-}
 fn contains_continue(nodes: &[Node]) -> bool {
     nodes.iter().any(|node| match node {
         Node::Continue | Node::ContinueOuter { .. } => true,
@@ -1166,92 +1161,6 @@ fn contains_continue(nodes: &[Node]) -> bool {
         _ => false,
     })
 }
-fn invert(condition: &Expr) -> Expr {
-    // Preserve operand dependencies and all load evaluation. Algebraic folds
-    // belong to presentation_program, before rendered_reads is computed.
-    match condition {
-        Expr::Binary(BinaryOp::Eq, a, b) => {
-            Expr::binary(BinaryOp::Ne, (**a).clone(), (**b).clone())
-        }
-        Expr::Binary(BinaryOp::Ne, a, b) => {
-            Expr::binary(BinaryOp::Eq, (**a).clone(), (**b).clone())
-        }
-        _ => Expr::binary(BinaryOp::Eq, condition.clone(), Expr::Const(0)),
-    }
-}
-
-// Empty machine steps still exist in the executable reduced IR. They need no C
-// statement; removing them here also exposes conventional loop guards.
-fn compact(nodes: &[Node]) -> Vec<Node> {
-    let mut result = Vec::new();
-    for node in nodes {
-        match node {
-            Node::Step { assignments, .. } if assignments.is_empty() => {}
-            Node::Loop(body) => result.push(Node::Loop(compact(body))),
-            Node::If {
-                condition,
-                taken,
-                not_taken,
-            } => {
-                let taken = compact(taken);
-                let not_taken = compact(not_taken);
-                if taken.is_empty() && not_taken.is_empty() {
-                    result.push(Node::Evaluate(condition.clone()));
-                } else if taken.is_empty() {
-                    result.push(Node::If {
-                        condition: invert(condition),
-                        taken: not_taken,
-                        not_taken: taken,
-                    });
-                } else if !not_taken.is_empty()
-                    && !(is_continue(&taken) && is_break(&not_taken))
-                    && !(is_break(&taken) && is_continue(&not_taken))
-                    && exits(&not_taken)
-                    && (not_taken.len() <= taken.len() || !exits(&taken))
-                {
-                    result.push(Node::If {
-                        condition: invert(condition),
-                        taken: not_taken,
-                        not_taken: vec![],
-                    });
-                    result.extend(taken);
-                } else if !not_taken.is_empty()
-                    && exits(&taken)
-                    && !(is_continue(&taken) && is_break(&not_taken))
-                {
-                    result.push(Node::If {
-                        condition: condition.clone(),
-                        taken,
-                        not_taken: vec![],
-                    });
-                    result.extend(not_taken);
-                } else {
-                    result.push(Node::If {
-                        condition: condition.clone(),
-                        taken,
-                        not_taken,
-                    });
-                }
-            }
-            _ => result.push(node.clone()),
-        }
-    }
-    result
-}
-
-fn exits(nodes: &[Node]) -> bool {
-    matches!(
-        nodes.last(),
-        Some(
-            Node::Break
-                | Node::Continue
-                | Node::BreakOuter { .. }
-                | Node::ContinueOuter { .. }
-                | Node::Return(_)
-        )
-    )
-}
-
 pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReadableError> {
     emit_readable_c_with_options(program, ReadableOptions::default())
 }
@@ -1284,79 +1193,6 @@ pub fn emit_readable_c_with_checked_reduction_and_options(
     ))
 }
 
-fn presentation_assignment(a: &Assignment, width: &impl Fn(Reg) -> Width) -> Assignment {
-    Assignment {
-        destination: match &a.destination {
-            Place::Register(reg) => Place::Register(*reg),
-            Place::Memory {
-                address,
-                width: size,
-            } => Place::Memory {
-                address: crate::presentation::normalize(address, width),
-                width: *size,
-            },
-        },
-        value: crate::presentation::normalize(&a.value, width),
-    }
-}
-
-fn presentation_program(
-    program: &Program,
-    width: &impl Fn(Reg) -> Width,
-) -> Result<Program, ReductionError> {
-    let mut instructions = program.instructions().to_vec();
-    for instruction in &mut instructions {
-        instruction.assignments = instruction
-            .assignments
-            .iter()
-            .map(|a| presentation_assignment(a, width))
-            .collect();
-        match &mut instruction.control {
-            Control::Branch { condition, .. } | Control::Return(condition) => {
-                *condition = crate::presentation::normalize(condition, width);
-            }
-            _ => {}
-        }
-    }
-    Program::new(
-        program.cfg().block(program.cfg().entry()).start,
-        program.register_count(),
-        instructions,
-    )
-    .map_err(ReductionError::Program)
-}
-
-fn presentation_nodes(nodes: &[Node], width: &impl Fn(Reg) -> Width) -> Vec<Node> {
-    nodes
-        .iter()
-        .map(|node| match node {
-            Node::Evaluate(value) => Node::Evaluate(crate::presentation::normalize(value, width)),
-            Node::Return(value) => Node::Return(crate::presentation::normalize(value, width)),
-            Node::Step {
-                address,
-                assignments,
-            } => Node::Step {
-                address: *address,
-                assignments: assignments
-                    .iter()
-                    .map(|a| presentation_assignment(a, width))
-                    .collect(),
-            },
-            Node::If {
-                condition,
-                taken,
-                not_taken,
-            } => Node::If {
-                condition: crate::presentation::normalize(condition, width),
-                taken: presentation_nodes(taken, width),
-                not_taken: presentation_nodes(not_taken, width),
-            },
-            Node::Loop(body) => Node::Loop(presentation_nodes(body, width)),
-            _ => node.clone(),
-        })
-        .collect()
-}
-
 fn groups_count(slots: &BTreeMap<usize, usize>) -> usize {
     slots.values().max().map_or(0, |slot| slot + 1)
 }
@@ -1366,29 +1202,15 @@ fn emit_reduced_c(
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
     let original = reduced.program();
-    let value_widths = ValueWidths::analyze(original);
-    let width = |reg| {
-        if reduced.parameters().contains(&reg) {
-            Width::U64
-        } else {
-            value_widths.width(reg)
-        }
-    };
-    // A presentation copy keeps the executable IR and its checked structure
-    // certificate intact. All dependency/view/allocation analyses see the same
-    // expressions that will actually be printed.
-    let presented = presentation_program(original, &width)?;
+    let PreparedFunction {
+        program: presented,
+        widths: value_widths,
+        structure: structured,
+        nodes,
+        shared_nodes,
+    } = prepare::prepare(original, reduced.parameters())?;
     let program = &presented;
-    let structured = StructuredFunction::recover(original);
-    let candidates = structured.as_ref().ok().map(|function| {
-        let nodes = presentation_nodes(function.body(), &width);
-        // Exact program points are part of suffix equality: memory views
-        // are proved at those points. Keep the original presentation tree
-        // when the whole bounded pass cannot complete.
-        let shared = crate::branch_tail::factor(&nodes);
-        (compact(&nodes), shared.map(|nodes| compact(&nodes)))
-    });
-    let display_nodes = candidates.as_ref().map(|(nodes, _)| nodes.as_slice());
+    let display_nodes = nodes.as_deref();
     let views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
     let address_uses = if options.recover_objects {
@@ -1697,7 +1519,7 @@ fn emit_reduced_c(
             let nodes = display_nodes.expect("recovered nodes");
             let mut body = String::new();
             printer.nodes(&mut body, nodes, 1, 0, nonlocal)?;
-            if let Some((_, Some(shared))) = &candidates
+            if let Some(shared) = &shared_nodes
                 && shared != nodes
             {
                 let mut candidate = String::new();
