@@ -70,7 +70,7 @@ while・for・do-whileや複合代入は、元の更新順と脱出先を保つ�
 共通分岐末尾は命令位置まで一致する場合に共有候補とします。
 候補の選択条件は、C本体が短くなり、最大の字下げが同じか小さくなることです。
 
-純粋なrotate64・byte swap32/64の厳密な式にはC helperを使い、使用する定義を出力します。
+純粋なrotate・byte swapの厳密な式にはC helperを使い、使用する定義を出力します。
 展開された加算ループは、前段から導出した有限入力全体の対応とC保存幅を検査して通常ループへ戻します。
 初期累積値が任意のu64なら、有限な制御値ごとに`a*A+b mod 2^64`の対応を検査します。
 表示領域の証拠は`finite_regions`・`affine_regions`に記録し、元CFGの証拠も保持します。
@@ -88,6 +88,6 @@ goto配置では空の無条件経路を畳み、空の巡回には代表を残�
 | 還元と改名 | [reduce.rs](../src/reduce.rs)、[block_verify.rs](../src/block_verify.rs)、[web.rs](../src/web.rs)、[web_verify.rs](../src/web_verify.rs) |
 | 表示変数 | [locals.rs](../src/readable/locals.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[source_locals.rs](../src/source_locals.rs) |
 | メモリとスタック | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs)、[stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs) |
-| 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs)、[bit_expr.rs](../src/bit_expr.rs) |
+| 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs)、[bit_expr.rs](../src/bit_expr.rs)、[narrow_rotate.rs](../src/narrow_rotate.rs) |
 | ループ表示 | [for_loop.rs](../src/for_loop.rs)、[loop_shape.rs](../src/loop_shape.rs)、[loop_exit.rs](../src/loop_exit.rs) |
 | 純粋領域の復元 | [loop_recover.rs](../src/loop_recover.rs)、[finite_region.rs](../src/finite_region.rs)、[affine_region.rs](../src/affine_region.rs) |

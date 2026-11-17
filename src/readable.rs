@@ -15,6 +15,7 @@ use crate::structure_verify::StructureEvidence;
 use crate::value_role::ValueRole;
 use crate::verify::Solver;
 
+mod idioms;
 mod locals;
 mod loops;
 mod prepare;
@@ -194,14 +195,14 @@ impl Printer {
             unsigned,
             precedence: 13,
         };
-        if let Some(view) = crate::bit_expr::recognize(expr) {
-            let value = self.expression_at(view.value, point).text;
-            let arguments = if let Some(count) = view.count {
-                format!("{value}, {}", self.expression_at(count, point).text)
-            } else {
-                value
-            };
-            return atom(format!("{}({arguments})", view.kind.helper_name()), true);
+        if let Some(call) = idioms::recognize(expr) {
+            let arguments = call
+                .arguments
+                .into_iter()
+                .map(|argument| self.expression_at(argument, point).text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            return atom(format!("{}({arguments})", call.name), true);
         }
         match expr {
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
@@ -1240,6 +1241,11 @@ fn bounded_shift(expression: &Expr) -> bool {
 // Stores and unsigned C assignments already truncate. Removing an outer
 // constant mask here retains every load and never changes executable IR.
 fn stored_value(mut value: &Expr, width: Width) -> &Expr {
+    // Preserve the idiom's explicit result mask before recognizing its
+    // whole-u64 value, independently of the destination's C storage width.
+    if idioms::preserve_mask(value) {
+        return value;
+    }
     while let Expr::Binary(BinaryOp::And, left, right) = value {
         if let Expr::Const(mask) = **right
             && mask & width.mask() == width.mask()
@@ -1640,18 +1646,7 @@ fn emit_prepared_c(
     }
     // Emit only helpers referenced by the final selected layout. Discarded
     // candidates and metadata rendering must not add unused definitions.
-    let mut bit_helpers = String::new();
-    use crate::bit_expr::BitKind;
-    for kind in [
-        BitKind::Rol64,
-        BitKind::Ror64,
-        BitKind::Bswap32,
-        BitKind::Bswap64,
-    ] {
-        if code.contains(&format!("{}(", kind.helper_name())) {
-            bit_helpers.push_str(kind.c_helper());
-        }
-    }
+    let bit_helpers = idioms::definitions(&code);
     if !bit_helpers.is_empty() {
         let start = code
             .find("uint64_t nirvana_readable(")

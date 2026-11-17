@@ -171,6 +171,15 @@ fn actual_rotate_and_bswap_helpers_keep_full_memory_return_and_first_fault() {
                         "helper declined in actual {name}{original_optimization}, views={recover_objects}: {helper}\n{body}"
                     );
                 }
+                if name == "rotates" {
+                    for helper in ["nirvana_rol16(", "nirvana_rol32(", "nirvana_ror8("] {
+                        assert_eq!(
+                            body.contains(helper),
+                            original_optimization == "-O2",
+                            "masked narrow idiom scope: {name}{original_optimization}, views={recover_objects}: {helper}\n{body}",
+                        );
+                    }
+                }
                 assert_eq!(program.instructions(), instructions);
                 let source = checked_c::source(&output, program.register_count(), 4);
                 for generated_optimization in ["-O0", "-O2"] {

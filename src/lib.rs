@@ -27,6 +27,7 @@ pub mod local_identity;
 pub mod loop_exit;
 pub mod loop_recover;
 pub mod loop_shape;
+pub mod narrow_rotate;
 pub mod observe;
 pub mod postdom;
 pub mod presentation;
