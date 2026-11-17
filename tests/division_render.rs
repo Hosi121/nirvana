@@ -27,8 +27,10 @@ fn division_and_remainder_keep_unsigned_constants_wrap_and_grouping() {
         9,
         10,
         11,
+        (1 << 63) - 2,
         (1 << 63) - 1,
         1 << 63,
+        u64::MAX - 2,
         u64::MAX - 1,
         u64::MAX,
     ];
@@ -47,6 +49,7 @@ fn division_and_remainder_keep_unsigned_constants_wrap_and_grouping() {
         (0xcccc_cccc_cccc_cccd, 3, 10, false),
         (u64::MAX, 63, (1 << 63) + 1, false),
         (0x2492_4924_9249_2493, 2, 7, true),
+        (3, 62, (1_u64 << 63) - 1, true),
     ] {
         for numerator in &numerators {
             for reverse in [false, true] {
@@ -149,5 +152,5 @@ int main(void) {{
             }
         }
     }
-    assert_eq!(configurations, 160);
+    assert_eq!(configurations, 192);
 }

@@ -21,7 +21,7 @@ const BASE: u64 = 4096;
 const MEMORY_SIZE: usize = 256;
 const FIELDS: usize = 5 + MEMORY_SIZE / 8;
 const SIGN: u64 = 1 << 63;
-const VALUES: [u64; 17] = [
+const VALUES: [u64; 19] = [
     0,
     1,
     9,
@@ -33,10 +33,12 @@ const VALUES: [u64; 17] = [
     99,
     100,
     101,
+    SIGN - 2,
     SIGN - 1,
     SIGN,
     SIGN + 1,
     u64::MAX - 9,
+    u64::MAX - 2,
     u64::MAX - 1,
     u64::MAX,
 ];
@@ -73,12 +75,12 @@ fn prepare(address: u64, input: [u64; 4]) -> Vec<u8> {
     memory
 }
 
-fn has_division(body: &str, divisor: u64) -> bool {
+fn has_constant_operator(body: &str, operator: &str, divisor: u64) -> bool {
     let compact: String = body.chars().filter(|c| !c.is_ascii_whitespace()).collect();
     [
-        format!("/{divisor}"),
-        format!("/UINT64_C({divisor})"),
-        format!("/UINT64_C(0x{divisor:x})"),
+        format!("{operator}{divisor}"),
+        format!("{operator}UINT64_C({divisor})"),
+        format!("{operator}UINT64_C(0x{divisor:x})"),
     ]
     .iter()
     .any(|needle| {
@@ -100,6 +102,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
         ("unsigned-div-constant", 10_u64),
         ("unsigned-div-seven", 7_u64),
         ("unsigned-div-fifteen", 15_u64),
+        ("unsigned-div-large", (1_u64 << 63) - 1),
     ]
     .into_iter()
     .flat_map(|(fixture, divisor)| {
@@ -199,7 +202,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
             }
         }
         assert_eq!(base_oracles, VALUES.len() * WORDS.len());
-        assert_eq!(expected.len(), 1020);
+        assert_eq!(expected.len(), ADDRESSES.len() * VALUES.len() * WORDS.len());
         assert!(
             returns > 0 && read_faults > 0,
             "lost return/read-fault coverage"
@@ -229,7 +232,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 .unwrap();
             if divisor == 10 || source_optimization == "-O2" {
                 assert!(
-                    has_division(body, divisor),
+                    has_constant_operator(body, "/", divisor),
                     "constant division was not adopted: {fixture}, {source_optimization}, views={recover_objects}\n{body}"
                 );
             }
@@ -243,7 +246,7 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
             }
             if source_optimization == "-O2" {
                 assert!(
-                    body.contains(&format!(" %= {divisor};")),
+                    has_constant_operator(body, "%=", divisor),
                     "materialized remainder not adopted: {fixture}\n{body}"
                 );
             }
@@ -276,13 +279,13 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
         }
         assert_eq!(program.instructions(), original);
         println!(
-            "{fixture} {source_optimization}: 1020 inputs, returns={returns}, read faults={read_faults}, write faults={write_faults}; BASE oracles={base_oracles}; views2/Copts2 agree"
+            "{fixture} {source_optimization}: 1140 inputs, returns={returns}, read faults={read_faults}, write faults={write_faults}; BASE oracles={base_oracles}; views2/Copts2 agree"
         );
     }
     // A source optimization can turn all near-end cases into read faults before
     // a destination is reached. Require destination-fault coverage for the whole
     // cohort, while comparing each actual first access and width independently.
     assert!(total_write_faults > 0);
-    assert_eq!(comparisons, 24480);
+    assert_eq!(comparisons, 36480);
     println!("division backend: {comparisons} full256-byte/return/exact-first-fault comparisons");
 }

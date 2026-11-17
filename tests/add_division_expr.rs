@@ -123,7 +123,7 @@ fn inputs(d: u64) -> Vec<u64> {
     }
     values.into_iter().collect()
 }
-const CASES: [(u64, u32); 9] = [
+const CASES: [(u64, u32); 10] = [
     (2, 0),
     (3, 1),
     (4, 1),
@@ -133,6 +133,7 @@ const CASES: [(u64, u32); 9] = [
     (10, 3),
     (14, 3),
     (1 << 63, 62),
+    ((1 << 63) - 1, 62),
 ];
 #[test]
 fn all_orderings_and_certificates_match_u64_division_and_129_bit_oracle() {
@@ -456,7 +457,16 @@ int main(void){uint64_t x;while(scanf("%" SCNu64,&x)==1){
     source.push_str("putchar('\\n');}return 0;}\n");
     let path = dir.join("add-division.c");
     std::fs::write(&path, source).unwrap();
-    let xs: Vec<_> = inputs(7).into_iter().step_by(3).collect();
+    let mut xs: Vec<_> = inputs(7).into_iter().step_by(3).collect();
+    xs.extend([
+        (1 << 63) - 2,
+        (1 << 63) - 1,
+        1 << 63,
+        u64::MAX - 1,
+        u64::MAX,
+    ]);
+    xs.sort_unstable();
+    xs.dedup();
     let input = xs.iter().map(u64::to_string).collect::<Vec<_>>().join("\n") + "\n";
     let expected: Vec<Vec<u64>> = xs
         .iter()
@@ -500,7 +510,7 @@ int main(void){uint64_t x;while(scanf("%" SCNu64,&x)==1){
             );
         }
     }
-    println!("native {}inputs x9pairs x4builds", xs.len());
+    println!("native {}inputs x{}pairs x4builds", xs.len(), CASES.len());
 }
 
 #[test]
@@ -673,4 +683,139 @@ fn actual_divide_seven_fixture_is_exposed_after_reduction_without_changing_ir() 
     }
     std::fs::write(out.join("adoption.txt"), &report).unwrap();
     print!("{report}");
+}
+
+#[test]
+fn exact_residual_maximum_matches_every_reachable_small_word_input() {
+    let mut cases = 0;
+    for width in 2..=10 {
+        let base = 1u128 << width;
+        let maximum = base - 1;
+        for multiplier in 0..base {
+            for shift in 0..width - 1 {
+                let h = base + multiplier;
+                let power = 1u128 << (width + 1 + shift);
+                let d = power.div_ceil(h);
+                let e = h * d - power;
+                let q = maximum / d;
+                let r = maximum % d;
+                assert!(q >= 1);
+                let exact = ((q - 1) * e + h * (d - 1)).max(q * e + h * r);
+                let brute = (0..=maximum)
+                    .map(|x| (x / d) * e + h * (x % d))
+                    .max()
+                    .unwrap();
+                assert_eq!(exact, brute, "w{width} m{multiplier} s{shift}");
+                assert!(exact <= q * e + h * (d - 1));
+                if e < d && exact < power {
+                    for x in 0..=maximum {
+                        let t = (x * multiplier) >> width;
+                        assert_eq!((t + (x - t) / 2) >> shift, x / d);
+                    }
+                }
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("{cases} exhaustive small-word exact residual maxima");
+}
+#[test]
+fn prior_sufficient_certificates_are_retained_with_a_tighter_exact_bound() {
+    let mut retained = 0;
+    for d in 2..=256u64 {
+        let s = 63 - d.leading_zeros() - u32::from(d.is_power_of_two());
+        let m = multiplier(d, s);
+        let h = (1u128 << 64) + u128::from(m);
+        let power = 1u128 << (65 + s);
+        let e = h * u128::from(d) - power;
+        let old = (u128::from(u64::MAX) / u128::from(d)) * e + h * u128::from(d - 1);
+        if e < u128::from(d) && old < power {
+            let source = pattern(r(0), m, s, 0);
+            let view = recognize(&source).unwrap();
+            assert_eq!(view.divisor, d);
+            assert!(view.evidence.upper_bound <= old);
+            assert!(validate(&source, &view));
+            retained += 1;
+            if view.evidence.upper_bound != old {
+                let mut forged = view;
+                forged.evidence.upper_bound = old;
+                assert!(
+                    !validate(&source, &forged),
+                    "oldboxfield is not the exact bound"
+                );
+            }
+        }
+    }
+    assert_eq!(retained, 255);
+}
+#[test]
+fn large_reciprocal_has_exact_power_minus_nine_and_rejects_forged_bounds() {
+    let d = (1u64 << 63) - 1;
+    let power = 1u128 << 127;
+    assert_eq!(multiplier(d, 62), 3);
+    for order in 0..8 {
+        let source = pattern(r(0), 3, 62, order);
+        let view = recognize(&source).unwrap();
+        assert_eq!(view.divisor, d);
+        assert_eq!(view.evidence.excess, d - 2);
+        assert_eq!(view.evidence.upper_bound, power - 9);
+        assert!(validate(&source, &view));
+        let h = (1u128 << 64) + 3;
+        let old = u128::from(u64::MAX / d) * u128::from(d - 2) + h * u128::from(d - 1);
+        assert!(old >= power);
+        for x in [0, 1, d - 1, d, d + 1, 2 * d - 1, 2 * d, u64::MAX] {
+            assert_eq!(kernel(x, 3, 62), x / d);
+            assert_eq!(extended_oracle(x, 3, 62), x / d);
+            assert_eq!(eval(&source, &[x]), x / d);
+        }
+        for upper in [power - 10, power - 8, power, old, u128::MAX] {
+            let mut forged = view;
+            forged.evidence.upper_bound = upper;
+            assert!(!validate(&source, &forged));
+        }
+    }
+    assert!(
+        ((u128::from(u64::MAX)) << 64)
+            .overflowing_add(u128::from(u64::MAX) * 3)
+            .1,
+        "129-bit carry is exercised"
+    );
+}
+#[test]
+fn actual_large_o2_compiler_kernel_is_recognized_without_changing_ir() {
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/add-residual/actual-large");
+    std::fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("large.c");
+    std::fs::write(&source,"#include <stdint.h>\nuint64_t fixture(uint64_t state[4]){uint64_t x=state[0],q=x/UINT64_C(9223372036854775807),r=x%UINT64_C(9223372036854775807);state[1]=q;state[2]=r;return q^r;}\n").unwrap();
+    let object = directory.join("large-O2.o");
+    native::object(&source, &object, "-O2", "fixture");
+    let lifted = nirvana::frontend::lift_elf(&std::fs::read(&object).unwrap(), "fixture").unwrap();
+    let original = lifted.program.instructions().to_vec();
+    let reduced = nirvana::reduce::reduce(&lifted.program).unwrap();
+    let web = nirvana::web::split(reduced.program()).unwrap();
+    nirvana::web_verify::validate(reduced.program(), web.program()).unwrap();
+    let widths = nirvana::value_width::ValueWidths::analyze(web.program());
+    let mut found = 0;
+    for instruction in web.program().instructions() {
+        for assignment in &instruction.assignments {
+            let e = nirvana::presentation::normalize(&assignment.value, |r| {
+                if reduced.parameters().contains(&r) {
+                    Width::U64
+                } else {
+                    widths.width(r)
+                }
+            });
+            if let Some(view) = recognize(&e) {
+                assert_eq!(view.divisor, (1u64 << 63) - 1);
+                assert_eq!(view.evidence.multiplier, 3);
+                assert_eq!(view.evidence.shift, 62);
+                assert_eq!(view.evidence.upper_bound, (1u128 << 127) - 9);
+                assert!(validate(&e, &view));
+                found += 1;
+            }
+        }
+    }
+    assert_eq!(found, 1);
+    assert_eq!(lifted.program.instructions(), original);
 }

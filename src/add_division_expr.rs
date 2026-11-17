@@ -16,7 +16,8 @@ pub struct AddDivisionEvidence {
     pub shift: u32,
     /// H*divisor - 2^(65+shift), in [0,divisor).
     pub excess: u64,
-    /// floor(MAX/divisor)*excess + H*(divisor-1), below 2^(65+shift).
+    /// Exact maximum of q*excess+H*r over reachable X=q*divisor+r.
+    /// It is below 2^(65+shift); the terminal q interval may be partial.
     pub upper_bound: u128,
 }
 #[derive(Clone, Copy, Debug)]
@@ -93,9 +94,17 @@ pub fn recognize(expression: &Expr) -> Option<AddDivisionView<'_>> {
         if excess >= u128::from(divisor) {
             continue;
         }
-        let upper_bound = u128::from(u64::MAX / divisor)
+        let d = u128::from(divisor);
+        let largest_quotient = u128::from(u64::MAX).checked_div(d)?;
+        let terminal_remainder = u128::from(u64::MAX).checked_rem(d)?;
+        let full_interval = largest_quotient
+            .checked_sub(1)?
             .checked_mul(excess)?
-            .checked_add(reciprocal.checked_mul(u128::from(divisor - 1))?)?;
+            .checked_add(reciprocal.checked_mul(d.checked_sub(1)?)?)?;
+        let terminal_interval = largest_quotient
+            .checked_mul(excess)?
+            .checked_add(reciprocal.checked_mul(terminal_remainder)?)?;
+        let upper_bound = full_interval.max(terminal_interval);
         let view = AddDivisionView {
             value,
             divisor,
@@ -120,7 +129,9 @@ pub fn recognize(expression: &Expr) -> Option<AddDivisionView<'_>> {
 /// Let B=2^64, H=B+M, P=2^(65+S). The safe kernel equals floor(X*H/P),
 /// by nested-floor identities; X*H is a mathematical 129-bit quantity, never
 /// evaluated here in u128. For X=q*d+r and H*d=P+e, its numerator is
-/// q*P+q*e+H*r. Nonnegative e and the strict upper bound prove quotient q.
+/// q*P+q*e+H*r. Write Q=MAX/d>=1 and R=MAX%d. For q<Q the largest
+/// residual is (Q-1)*e+H*(d-1); for q=Q it is Q*e+H*R. Their maximum
+/// is exact because e>=0 and H>0. Its strict bound below P proves quotient q.
 pub fn validate(expression: &Expr, view: &AddDivisionView<'_>) -> bool {
     validate_inner(expression, view).is_some()
 }
@@ -192,9 +203,20 @@ fn validate_inner(expression: &Expr, view: &AddDivisionView<'_>) -> Option<()> {
     if e >= d || e != u128::from(evidence.excess) {
         return None;
     }
-    let q_error = (u128::from(u64::MAX) / d).checked_mul(e)?;
-    let r_error = h.checked_mul(d - 1)?;
-    let upper = q_error.checked_add(r_error)?;
+    // Independently partition the reachable domain into all full quotient
+    // intervals and its final, possibly partial, interval.
+    let q = u128::from(u64::MAX).checked_div(d)?;
+    let r = u128::from(u64::MAX).checked_rem(d)?;
+    let before_terminal = q
+        .checked_sub(1)?
+        .checked_mul(e)?
+        .checked_add(h.checked_mul(d.checked_sub(1)?)?)?;
+    let at_terminal = q.checked_mul(e)?.checked_add(h.checked_mul(r)?)?;
+    let upper = if before_terminal > at_terminal {
+        before_terminal
+    } else {
+        at_terminal
+    };
     (upper == evidence.upper_bound && upper < p).then_some(())
 }
 fn half_difference(e: &Expr) -> Option<(&Expr, &Expr)> {
