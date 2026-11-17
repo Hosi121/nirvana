@@ -49,7 +49,7 @@ pub fn infer(nodes: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> BTreeMap<us
     if analysis.visit(nodes).is_none() {
         return BTreeMap::new();
     }
-    // A storage group can be reused for an unrelated scalar lifetime. Bare
+    // A storage group can be reused for an unrelated scalar lifetime. Address
     // dereference evidence alone must not name that entire group "address".
     if analysis
         .roles
@@ -185,6 +185,33 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         (self.slot)(*reg)
     }
 
+    // A single base wrapped in byte constants remains address evidence. Do
+    // not extract either operand from base+index, scales, Select, or c-base:
+    // address syntax alone cannot distinguish a base from an integer index.
+    fn address_use(&mut self, mut address: &Expr) -> Option<()> {
+        loop {
+            spend(&mut self.work, 1)?;
+            match address {
+                Expr::Register(reg) => {
+                    if let Some(slot) = (self.slot)(*reg) {
+                        self.mark(slot, ValueRole::Address)?;
+                    }
+                    return Some(());
+                }
+                Expr::Binary(BinaryOp::Add, a, b) => match (&**a, &**b) {
+                    (Expr::Const(_), base) | (base, Expr::Const(_)) => address = base,
+                    _ => return Some(()),
+                },
+                Expr::Binary(BinaryOp::Sub, base, offset)
+                    if matches!(&**offset, Expr::Const(_)) =>
+                {
+                    address = base;
+                }
+                _ => return Some(()),
+            }
+        }
+    }
+
     fn mark(&mut self, slot: usize, role: ValueRole) -> Option<()> {
         spend(&mut self.work, 1)?;
         self.roles
@@ -267,9 +294,7 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         spend(&mut self.work, 1)?;
         match expr {
             Expr::Load { address, .. } => {
-                if let Some(slot) = self.bare(address) {
-                    self.mark(slot, ValueRole::Address)?;
-                }
+                self.address_use(address)?;
                 self.expression(address)?;
             }
             Expr::Binary(_, a, b) => {
@@ -297,9 +322,7 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
                 Node::Step { assignments, .. } => {
                     for assignment in assignments {
                         if let Place::Memory { address, .. } = &assignment.destination {
-                            if let Some(slot) = self.bare(address) {
-                                self.mark(slot, ValueRole::Address)?;
-                            }
+                            self.address_use(address)?;
                             self.expression(address)?;
                         }
                         self.expression(&assignment.value)?;

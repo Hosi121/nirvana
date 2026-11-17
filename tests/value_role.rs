@@ -206,7 +206,8 @@ fn faulty_and_lazy_memory_only_provides_syntax_evidence_without_changing_the_tre
         BTreeMap::from([
             (0, ValueRole::Address),
             (1, ValueRole::Address),
-            (2, ValueRole::Address)
+            (2, ValueRole::Address),
+            (3, ValueRole::Address)
         ])
     );
     assert_eq!(nodes, before);
@@ -544,4 +545,142 @@ fn explicit_exit_guard_still_controls_multi_exit_loop_header_and_its_inverse() {
         assert_eq!(roles.get(&0), Some(&ValueRole::Counter));
         assert_eq!(roles.get(&2), Some(&ValueRole::Limit));
     }
+}
+
+#[test]
+fn constant_byte_offsets_and_wrapping_chains_name_only_the_single_address_base() {
+    for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        for offset in [0, 1, 8, 1 << 63, u64::MAX] {
+            let nodes = vec![
+                Node::Evaluate(Expr::load(b(BinaryOp::Add, r(0), c(offset)), width)),
+                Node::Return(Expr::load(
+                    b(BinaryOp::Sub, b(BinaryOp::Add, c(3), r(10)), c(offset)),
+                    width,
+                )),
+                step(vec![Assignment {
+                    destination: Place::Memory {
+                        address: b(BinaryOp::Sub, r(1), c(offset)),
+                        width,
+                    },
+                    value: Expr::load(b(BinaryOp::Add, c(offset), r(0)), width),
+                }]),
+            ];
+            let before = nodes.clone();
+            let mapping = |reg: Reg| match reg.0 {
+                0 | 10 => Some(0),
+                1 => Some(1),
+                _ => None,
+            };
+            assert_eq!(
+                infer(&nodes, mapping),
+                BTreeMap::from([(0, ValueRole::Address), (1, ValueRole::Address),])
+            );
+            assert_eq!(nodes, before);
+        }
+    }
+}
+
+#[test]
+fn variable_indices_scales_reversed_subtractions_and_selected_bases_do_not_name_operands() {
+    for address in [
+        b(BinaryOp::Add, r(0), r(1)),
+        b(BinaryOp::Add, r(0), b(BinaryOp::Mul, r(1), c(8))),
+        b(BinaryOp::Shl, r(0), c(3)),
+        b(BinaryOp::Sub, c(8), r(0)),
+        b(BinaryOp::Xor, r(0), c(7)),
+        Expr::select(c(1), b(BinaryOp::Add, r(0), c(8)), r(1)),
+    ] {
+        assert!(infer(&[Node::Evaluate(Expr::load(address, Width::U64))], slots).is_empty());
+    }
+    let aliases = [Node::Evaluate(Expr::load(
+        b(BinaryOp::Add, r(0), r(10)),
+        Width::U8,
+    ))];
+    assert!(
+        infer(&aliases, |_| Some(0)).is_empty(),
+        "two register operands stay ambiguous even when aliased"
+    );
+}
+
+#[test]
+fn offset_address_candidates_keep_existing_data_use_and_role_conflict_suppression() {
+    let mapping = |reg: Reg| matches!(reg.0, 0 | 10).then_some(0);
+    let load = Node::Evaluate(Expr::load(b(BinaryOp::Sub, r(10), c(8)), Width::U64));
+    for data_use in [
+        Node::Return(r(0)),
+        Node::If {
+            condition: r(0),
+            taken: vec![],
+            not_taken: vec![],
+        },
+        Node::Evaluate(b(BinaryOp::Xor, r(0), c(3))),
+        step(vec![set(2, b(BinaryOp::Add, r(0), c(4)))]),
+        step(vec![Assignment {
+            destination: Place::Memory {
+                address: r(4),
+                width: Width::U64,
+            },
+            value: r(0),
+        }]),
+    ] {
+        assert!(infer(&[load.clone(), data_use], mapping).is_empty());
+    }
+    assert_eq!(
+        infer(
+            &[load, step(vec![set(10, b(BinaryOp::Add, r(0), c(8)))]),],
+            mapping
+        ),
+        BTreeMap::from([(0, ValueRole::Address)])
+    );
+    let conflict = [
+        counted(0, 2),
+        Node::Evaluate(Expr::load(b(BinaryOp::Add, r(0), c(8)), Width::U64)),
+    ];
+    assert!(!infer(&conflict, slots).contains_key(&0));
+}
+
+#[allow(dead_code)]
+#[path = "support/native.rs"]
+mod native;
+
+#[test]
+fn compiled_sum_o0_names_the_constant_offset_output_base_without_changing_ir() {
+    let scratch = native::Scratch::new();
+    let object = scratch.0.join("sum-O0.o");
+    native::object(
+        &native::fixture_root().join("cases/sum.c"),
+        &object,
+        "-O0",
+        "fixture",
+    );
+    let lifted = nirvana::frontend::lift_elf(&std::fs::read(object).unwrap(), "fixture").unwrap();
+    let before = lifted.program.instructions().to_vec();
+    let output = nirvana::readable::emit_readable_c_with_options(
+        &lifted.program,
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(nirvana::x86::RSP)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        output
+            .locals
+            .iter()
+            .any(|local| local.role == Some(ValueRole::Address)
+                && output
+                    .code
+                    .contains(&format!("write64({} + 16,", local.name))
+                && output
+                    .code
+                    .contains(&format!("write64({} + 24,", local.name))),
+        "{}",
+        output.code
+    );
+    for role in [ValueRole::Counter, ValueRole::Accumulator, ValueRole::Limit] {
+        assert!(output.locals.iter().any(|local| local.role == Some(role)));
+    }
+    assert_eq!(lifted.program.instructions(), before);
 }
