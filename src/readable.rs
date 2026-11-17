@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-use crate::allocation::allocate_locals;
 use crate::block_verify::Validation;
 use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
 use crate::goto_layout::GotoLayout;
@@ -16,9 +15,11 @@ use crate::structure_verify::StructureEvidence;
 use crate::value_role::ValueRole;
 use crate::verify::Solver;
 
+mod locals;
 mod prepare;
 mod syntax;
 mod views;
+use locals::LocalPlan;
 use prepare::{PreparedFunction, is_break, is_continue};
 use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 
@@ -66,6 +67,8 @@ pub struct ReadableC {
     pub locals: Vec<LocalValue>,
     /// Number of individual IR local registers before assigning C storage.
     pub local_value_count: usize,
+    /// Storage reuse and the finer local identities selected for C naming.
+    pub local_plan: LocalPlanStats,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -77,6 +80,18 @@ pub struct LocalValue {
     pub width: Width,
     /// A conservative generated storage role, not an original source name.
     pub role: Option<ValueRole>,
+}
+
+/// Counts describe generated C locals, not recovered source variables.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LocalPlanStats {
+    /// Slots from the width-partitioned interference allocator.
+    pub storage_slots: usize,
+    /// Connected identity components, before selecting useful role splits.
+    /// None means disabled or the bounded candidate was unavailable.
+    pub identity_groups: Option<usize>,
+    pub local_variables: usize,
+    pub split_storage_groups: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1193,10 +1208,6 @@ pub fn emit_readable_c_with_checked_reduction_and_options(
     ))
 }
 
-fn groups_count(slots: &BTreeMap<usize, usize>) -> usize {
-    slots.values().max().map_or(0, |slot| slot + 1)
-}
-
 fn emit_reduced_c(
     reduced: ReducedFunction,
     options: ReadableOptions,
@@ -1250,106 +1261,23 @@ fn emit_reduced_c(
         }
         arguments.extend(["uint8_t *memory", "uint64_t base", "uint64_t size"].map(String::from));
     }
-    let eligible: Vec<_> = read
-        .iter()
-        .filter(|r| !names.contains_key(r))
-        .map(|&r| Reg(r))
-        .collect();
-    let local_value_count = eligible.len();
-    // Keep storage classes separate so reusing a wide pointer temporary never
-    // erases an inferred byte/word type merely to save another declaration.
-    let mut colors: Vec<_> = (0..eligible.len()).collect();
-    if options.coalesce_locals {
-        let mut next_color = 0;
-        for width in [Width::U64, Width::U32, Width::U16, Width::U8] {
-            let members: Vec<_> = eligible
-                .iter()
-                .enumerate()
-                .filter(|(_, r)| value_widths.width(**r) == width)
-                .map(|(i, &r)| (i, r))
-                .collect();
-            let registers: Vec<_> = members.iter().map(|(_, r)| *r).collect();
-            let allocated = allocate_locals(program, &registers).and_then(|a| {
-                registers
-                    .iter()
-                    .map(|&r| a.color(r))
-                    .collect::<Option<Vec<_>>>()
-            });
-            let palette = allocated.unwrap_or_else(|| (0..members.len()).collect());
-            let palette_size = palette.iter().max().map_or(0, |c| c + 1);
-            for ((index, _), color) in members.into_iter().zip(palette) {
-                colors[index] = next_color + color;
-            }
-            next_color += palette_size;
-        }
-    }
-    let mut groups: BTreeMap<usize, Vec<Reg>> = BTreeMap::new();
-    for (&reg, color) in eligible.iter().zip(colors) {
-        groups.entry(color).or_default().push(reg);
-    }
-    let slots: BTreeMap<usize, usize> = groups
-        .iter()
-        .flat_map(|(&color, registers)| registers.iter().map(move |reg| (reg.0, color)))
-        .collect();
-    let roles = crate::value_role::infer(display_nodes.unwrap_or(&[]), |reg| {
-        slots.get(&reg.0).copied()
-    });
-    let mut role_counts = BTreeMap::new();
-    for role in roles.values() {
-        *role_counts.entry(role.stem()).or_insert(0usize) += 1;
-    }
-    let mut role_serials = BTreeMap::new();
-    let mut widths = BTreeMap::new();
-    let mut locals = Vec::new();
-    let single_local = groups.len() == 1;
-    for (color, registers) in groups {
-        let width = registers
-            .iter()
-            .map(|&r| value_widths.width(r))
-            .max_by_key(|w| w.bits())
-            .unwrap_or(Width::U64);
-        let role = roles.get(&color).copied();
-        let name = if options.compact_memory {
-            if let Some(role) = role {
-                let stem = role.stem();
-                if role_counts[stem] == 1 {
-                    stem.into()
-                } else {
-                    let serial = role_serials.entry(stem).or_insert(0usize);
-                    let name = format!("{stem}{serial}");
-                    *serial += 1;
-                    name
-                }
-            } else if single_local {
-                "value".into()
-            } else {
-                format!("value{color}")
-            }
-        } else {
-            format!("v{color}")
-        };
-        for reg in &registers {
-            names.insert(reg.0, name.clone());
-            widths.insert(reg.0, width);
-        }
-        locals.push(LocalValue {
-            register: registers[0],
-            registers,
-            name,
-            width,
-            role,
-        });
-    }
-    let mut printer_slots = slots.clone();
-    let first_parameter = groups_count(&slots);
-    let mut initial_slots = Vec::new();
-    for (index, reg) in reduced.parameters().iter().enumerate() {
-        if read.contains(&reg.0) {
-            let slot = first_parameter + index;
-            printer_slots.insert(reg.0, slot);
-            initial_slots.push(slot);
-        }
-    }
+    let LocalPlan {
+        names,
+        widths,
+        slots: printer_slots,
+        initial_slots,
+        locals,
+        value_count: local_value_count,
+        stats: local_plan,
+    } = LocalPlan::build(
+        program,
+        reduced.parameters(),
+        &read,
+        names,
+        &value_widths,
+        display_nodes.unwrap_or(&[]),
+        options,
+    );
     let arguments = if arguments.is_empty() {
         "void".into()
     } else {
@@ -1559,5 +1487,6 @@ fn emit_reduced_c(
         object_views,
         locals,
         local_value_count,
+        local_plan,
     })
 }

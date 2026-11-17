@@ -262,6 +262,115 @@ fn sequencing_limits_return_an_error_instead_of_emitting_an_unordered_expression
 }
 
 #[test]
+fn native_c_limit_identity_excludes_an_earlier_unrelated_byte_lifetime() {
+    let program = Program::new(
+        0,
+        6,
+        vec![
+            instruction(
+                0,
+                vec![
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(r(0), Width::U8),
+                    },
+                    store(c(0x100f), Width::U8, r(2)),
+                    Assignment {
+                        destination: Reg(3).into(),
+                        value: b(
+                            BinaryOp::Add,
+                            b(BinaryOp::And, Expr::load(r(1), Width::U8), c(3)),
+                            c(1),
+                        ),
+                    },
+                    Assignment {
+                        destination: Reg(4).into(),
+                        value: c(0),
+                    },
+                    Assignment {
+                        destination: Reg(5).into(),
+                        value: c(0),
+                    },
+                ],
+                Control::Next,
+            ),
+            instruction(
+                1,
+                vec![],
+                Control::Branch {
+                    condition: b(BinaryOp::Ult, r(4), r(3)),
+                    target: 3,
+                },
+            ),
+            instruction(
+                2,
+                vec![],
+                Control::Return(b(BinaryOp::Xor, r(5), load(r(0)))),
+            ),
+            instruction(
+                3,
+                vec![
+                    store(r(0), Width::U8, r(4)),
+                    Assignment {
+                        destination: Reg(5).into(),
+                        value: b(BinaryOp::Add, r(5), r(4)),
+                    },
+                    Assignment {
+                        destination: Reg(4).into(),
+                        value: b(BinaryOp::Add, r(4), c(1)),
+                    },
+                ],
+                Control::Jump(1),
+            ),
+        ],
+    )
+    .unwrap();
+    let reduced = nirvana::reduce::reduce(&program).unwrap();
+    let Place::Register(early_byte) =
+        reduced.program().instructions()[0].assignments[0].destination
+    else {
+        panic!("fixture must retain the early faulting byte read");
+    };
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            coalesce_locals: true,
+            compact_memory: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let limit = output
+        .locals
+        .iter()
+        .find(|local| local.role == Some(nirvana::value_role::ValueRole::Limit))
+        .expect("the cached loop bound has an invariant limit role");
+    assert!(!limit.registers.contains(&early_byte), "{output:?}");
+    assert!(output.local_plan.split_storage_groups > 0, "{output:?}");
+    assert!(output.local_plan.local_variables > output.local_plan.storage_slots);
+    assert_eq!(
+        output.structure_evidence,
+        Some(
+            nirvana::structure::StructuredFunction::recover(reduced.program())
+                .unwrap()
+                .evidence()
+        ),
+        "local identity planning must not change the checked AST"
+    );
+    compare(
+        &program,
+        &[
+            [0x1000, 0x1008],
+            [0x1008, 0x1000],
+            [0x100f, 0x1008],
+            [0xffff, 0x1008],
+            [0x1000, 0xffff],
+            [0xffff, 0xffff],
+        ],
+    );
+}
+
+#[test]
 fn coalesced_load_chains_use_one_local_and_keep_faulting_memory_effects() {
     let p = Program::new(
         0,
