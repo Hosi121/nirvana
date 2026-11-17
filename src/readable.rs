@@ -629,18 +629,38 @@ impl Printer {
                 .zip(self.names.get(&b.0))
                 .is_some_and(|(a, b)| a == b)
         };
-        let (op, right) = crate::self_update::extract(value, destination, same).or_else(|| {
-            // Subtraction has no associative-chain rule; preserve the existing
-            // direct x=x-y spelling without reassociating any operands.
-            if let Expr::Binary(BinaryOp::Sub, left, right) = value
-                && let Expr::Register(source) = **left
-                && same(destination, source)
-            {
-                Some((BinaryOp::Sub, (**right).clone()))
-            } else {
-                None
+        let (mut op, mut right) =
+            crate::self_update::extract(value, destination, same).or_else(|| {
+                // Subtraction has no associative-chain rule; preserve the existing
+                // direct x=x-y spelling without reassociating any operands.
+                if let Expr::Binary(BinaryOp::Sub, left, right) = value
+                    && let Expr::Register(source) = **left
+                    && same(destination, source)
+                {
+                    Some((BinaryOp::Sub, (**right).clone()))
+                } else {
+                    None
+                }
+            })?;
+        // x + (2^64 - n) and x - n have the same unsigned low bits at
+        // every supported storage width. Keep small decrements readable.
+        if op == BinaryOp::Add
+            && let Expr::Const(value) = right
+            && value > i64::MAX as u64
+        {
+            op = BinaryOp::Sub;
+            right = Expr::Const(value.wrapping_neg());
+        }
+        // These are standalone updates (also used as for-loop clauses), so
+        // no expression consumes the old or new value. Unsigned ++/-- retain
+        // the same wrap and narrowing as the corresponding compound update.
+        if right == Expr::Const(1) {
+            match op {
+                BinaryOp::Add => return Some(format!("++{};", self.register(destination))),
+                BinaryOp::Sub => return Some(format!("--{};", self.register(destination))),
+                _ => {}
             }
-        })?;
+        }
         let symbol = match op {
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
