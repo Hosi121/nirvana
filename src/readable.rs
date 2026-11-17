@@ -85,6 +85,9 @@ pub struct ReadableC {
     /// Exhaustive correspondence for adopted pure finite display regions.
     /// This does not replace either original-IR structure certificate.
     pub finite_regions: Vec<crate::finite_region::FiniteEvidence>,
+    /// Correspondence for finite-control regions with one arbitrary u64 input.
+    /// Exact affine arithmetic replaces enumeration of that symbolic input.
+    pub affine_regions: Vec<crate::affine_region::AffineEvidence>,
 }
 
 /// Outcome of the optional definition-web pass. Invalid or unavailable
@@ -1506,6 +1509,7 @@ fn emit_prepared_c(
         initial_slots,
     };
     let mut finite_regions = Vec::new();
+    let mut affine_regions = Vec::new();
     let (fallback_reason, display_structure_evidence) = match structured {
         Ok(function) => {
             let nonlocal = nonlocal(function.body());
@@ -1543,7 +1547,10 @@ fn emit_prepared_c(
                     && max_indent(&candidate) <= max_indent(&body)
                 {
                     body = candidate;
-                    finite_regions.push(recovered.evidence);
+                    match recovered.evidence {
+                        loops::RegionEvidence::Finite(evidence) => finite_regions.push(evidence),
+                        loops::RegionEvidence::Affine(evidence) => affine_regions.push(evidence),
+                    }
                 }
             }
             code.push_str(&body);
@@ -1576,5 +1583,6 @@ fn emit_prepared_c(
         stack_roles,
         stack_cells,
         finite_regions,
+        affine_regions,
     })
 }

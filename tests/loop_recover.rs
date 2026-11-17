@@ -1,5 +1,5 @@
 // Local path wiring keeps the deliverable limited to this test and the module.
-use nirvana::{ir, structure, value_role};
+use nirvana::{affine_region, ir, structure, value_role};
 #[allow(dead_code)]
 #[path = "../src/finite_region.rs"]
 mod finite_region;
@@ -7,7 +7,7 @@ mod finite_region;
 mod loop_recover;
 
 use ir::{Assignment, BinaryOp, Expr, Place, Reg, Width};
-use loop_recover::recover;
+use loop_recover::{recover, recover_affine};
 use structure::Node;
 use value_role::ValueRole;
 
@@ -464,4 +464,196 @@ fn failed_candidates_do_not_authorize_later_unchecked_regions_or_exceed_attempt_
     exhausted.extend((0..17).map(|_| unused_loops()));
     exhausted.push(unrolled(BinaryOp::Add));
     assert!(recover(&exhausted, &roles(), &widths(Width::U64)).is_none());
+}
+
+fn seeded_input(operator: BinaryOp) -> Vec<Node> {
+    let mut nodes = input(7, 0, operator);
+    nodes[0] = step(
+        100,
+        vec![
+            set(0, c(0)),
+            set(1, Expr::load(r(4), Width::U64)),
+            set(2, b(BinaryOp::And, r(3), c(7))),
+        ],
+    );
+    nodes
+}
+
+#[test]
+fn affine_recovery_proves_all_seed_values_with_prefix_derived_finite_control() {
+    let original = seeded_input(BinaryOp::Add);
+    let before = original.clone();
+    assert!(recover(&original, &roles(), &widths(Width::U64)).is_none());
+    let result = recover_affine(&original, &roles(), &widths(Width::U64))
+        .expect("arbitrary loaded accumulator, eight finite limits");
+    assert_eq!(result.region(), 1..2);
+    assert_eq!(result.replacement(), &[ordinary(10)]);
+    assert_eq!(result.nodes()[0], original[0]);
+    assert_eq!(result.nodes()[2..], original[2..]);
+    assert_eq!(original, before);
+    assert_eq!(result.evidence().cases, 8);
+    assert_eq!(result.evidence().symbolic_input, Reg(1));
+    assert_eq!(
+        result.evidence().inputs,
+        vec![(Reg(0), vec![0]), (Reg(2), (0..8).collect())]
+    );
+    assert_eq!(result.evidence().observed, vec![Reg(0), Reg(1)]);
+    assert!(result.evidence().maxima.contains(&(Reg(1), u64::MAX)));
+
+    // Independent concrete replay samples wraparound and poisoned values of
+    // registers outside the pure region's declared interface. The certificate
+    // itself covers every u64 seed, rather than this sample's guessed range.
+    for seed in [0, 1, 255, 1 << 63, u64::MAX - 20, u64::MAX] {
+        for limit in 0u64..8 {
+            let mut expected = vec![0, seed, limit, 0xdead_beef, u64::MAX];
+            let mut actual = expected.clone();
+            execute(&original[1..2], &mut expected, &mut 10000);
+            execute(result.replacement(), &mut actual, &mut 10000);
+            assert_eq!(actual, expected, "seed={seed},limit={limit}");
+            assert_eq!(actual[0], limit);
+            assert_eq!(
+                actual[1],
+                seed.wrapping_add(limit * limit.saturating_sub(1) / 2)
+            );
+        }
+    }
+}
+
+#[test]
+fn affine_recovery_keeps_loaded_prefix_and_memory_continuation_exact() {
+    use ir::{Control, IrInstruction, Program, RunStatus};
+
+    fn memory_step(node: &Node, registers: &[u64], memory: &[u8]) -> ir::RunReport {
+        let Node::Step {
+            address,
+            assignments,
+        } = node
+        else {
+            panic!("one executable memory step")
+        };
+        Program::new(
+            *address,
+            registers.len(),
+            vec![IrInstruction {
+                address: *address,
+                size: 1,
+                assignments: assignments.clone(),
+                control: Control::Return(r(1)),
+            }],
+        )
+        .unwrap()
+        .run_with_memory(registers, 0x1000, memory, 100)
+        .unwrap()
+    }
+
+    let mut original = seeded_input(BinaryOp::Add);
+    original.insert(
+        2,
+        step(
+            812,
+            vec![Assignment {
+                destination: Place::Memory {
+                    address: b(BinaryOp::Add, r(4), c(8)),
+                    width: Width::U64,
+                },
+                value: r(1),
+            }],
+        ),
+    );
+    let result = recover_affine(&original, &roles(), &widths(Width::U64)).unwrap();
+    assert_eq!(result.nodes()[0], original[0]);
+    assert_eq!(result.nodes()[2..], original[2..]);
+    for seed in [0u64, 1, 1 << 63, u64::MAX] {
+        let memory: Vec<_> = seed.to_le_bytes().into_iter().chain([0xa5; 8]).collect();
+        for pointer in [0x1000, 0x1008, 0x1009, 0, u64::MAX] {
+            for raw_limit in [0, 1, 7, u64::MAX] {
+                let input = [91, 92, 93, raw_limit, pointer];
+                let prefix = memory_step(&original[0], &input, &memory);
+                assert_eq!(prefix, memory_step(&result.nodes()[0], &input, &memory));
+                if matches!(prefix.status, RunStatus::Fault(_)) {
+                    continue;
+                }
+                let mut expected = prefix.state.registers.clone();
+                let mut actual = expected.clone();
+                execute(&original[1..2], &mut expected, &mut 10000);
+                execute(result.replacement(), &mut actual, &mut 10000);
+                let suffix = memory_step(&original[2], &expected, &prefix.state.memory);
+                assert_eq!(
+                    suffix,
+                    memory_step(&result.nodes()[2], &actual, &prefix.state.memory),
+                    "seed={seed},pointer={pointer:#x},raw_limit={raw_limit}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn affine_recovery_rejects_symbolic_control_wrong_arithmetic_and_other_unknown_inputs() {
+    let mut dependent_guard = seeded_input(BinaryOp::Add);
+    let Node::If { condition, .. } = &mut dependent_guard[1] else {
+        unreachable!()
+    };
+    *condition = b(BinaryOp::Ne, b(BinaryOp::And, r(1), c(1)), c(0));
+    assert!(recover_affine(&dependent_guard, &roles(), &widths(Width::U64)).is_none());
+    assert!(recover_affine(&seeded_input(BinaryOp::Xor), &roles(), &widths(Width::U64)).is_none());
+    let mut wrong_coefficient = seeded_input(BinaryOp::Add);
+    let Node::If { taken, .. } = &mut wrong_coefficient[1] else {
+        unreachable!()
+    };
+    taken[0] = step(
+        10,
+        vec![
+            set(1, b(BinaryOp::Add, b(BinaryOp::Mul, r(1), c(2)), r(0))),
+            set(0, b(BinaryOp::Add, r(0), c(1))),
+        ],
+    );
+    assert!(recover_affine(&wrong_coefficient, &roles(), &widths(Width::U64)).is_none());
+    let mut unknown_limit = seeded_input(BinaryOp::Add);
+    unknown_limit[0] = step(
+        100,
+        vec![
+            set(0, c(0)),
+            set(1, Expr::load(r(4), Width::U64)),
+            set(2, r(3)),
+        ],
+    );
+    assert!(recover_affine(&unknown_limit, &roles(), &widths(Width::U64)).is_none());
+}
+
+#[test]
+fn affine_symbolic_maximum_requires_u64_accumulator_but_finite_controls_can_be_narrow() {
+    let original = seeded_input(BinaryOp::Add);
+    for width in [Width::U8, Width::U16, Width::U32] {
+        let declared = [(Reg(0), Width::U8), (Reg(1), width), (Reg(2), Width::U8)];
+        assert!(recover_affine(&original, &roles(), &declared).is_none());
+    }
+    let declared = [
+        (Reg(0), Width::U8),
+        (Reg(1), Width::U64),
+        (Reg(2), Width::U8),
+    ];
+    let result = recover_affine(&original, &roles(), &declared).unwrap();
+    assert!(result.evidence().maxima.contains(&(Reg(0), 7)));
+    assert!(result.evidence().maxima.contains(&(Reg(2), 7)));
+}
+
+#[test]
+fn affine_wrapper_keeps_the_shared_pure_region_and_resource_guards() {
+    let mut memory_region = seeded_input(BinaryOp::Add);
+    let Node::If { taken, .. } = &mut memory_region[1] else {
+        unreachable!()
+    };
+    taken.insert(0, Node::Evaluate(Expr::load(c(0), Width::U8)));
+    assert!(recover_affine(&memory_region, &roles(), &widths(Width::U64)).is_none());
+    let mut nonlocal = seeded_input(BinaryOp::Add);
+    let Node::If { not_taken, .. } = &mut nonlocal[1] else {
+        unreachable!()
+    };
+    not_taken.insert(0, Node::ContinueOuter { levels: 1 });
+    assert!(recover_affine(&nonlocal, &roles(), &widths(Width::U64)).is_none());
+    let mut large = vec![Node::Evaluate(c(0)); 8193];
+    large.extend(seeded_input(BinaryOp::Add));
+    assert!(recover_affine(&large, &roles(), &widths(Width::U64)).is_none());
+    assert!(recover_affine(&seeded_input(BinaryOp::Add), &[], &widths(Width::U64)).is_none());
 }

@@ -1,12 +1,13 @@
-//! Bounded candidates for undoing pure, finite compiler loop expansion.
+//! Bounded candidates for undoing pure compiler loop expansion.
 //!
-//! Roles only choose a proposal. Independent exhaustive finite-region validation
-//! is the acceptance gate; unknown domains, memory, nontermination or exhausted
-//! verification never authorize a rewrite. This is not a structure certificate
-//! for the original CFG, nor a claim about arbitrary unbounded input values.
+//! Roles only choose a proposal. Independent finite or affine region validation
+//! is the acceptance gate; memory, unbounded control domains, nontermination or
+//! exhausted verification never authorize a rewrite. This is not a structure
+//! certificate for the original CFG.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::affine_region::{self, AffineEvidence};
 use crate::finite_region::{self, FiniteEvidence};
 use crate::ir::{Assignment, BinaryOp, Expr, Place, Reg, Width};
 use crate::structure::Node;
@@ -18,23 +19,26 @@ const MAX_METADATA: usize = 4096;
 const MAX_WINDOW: usize = 16;
 const MAX_ATTEMPTS: usize = 16;
 
-pub struct LoopRecovery {
+pub struct Recovery<E> {
     nodes: Vec<Node>,
-    evidence: FiniteEvidence,
+    evidence: E,
     region: std::ops::Range<usize>,
     replacement_len: usize,
 }
 
-impl LoopRecovery {
+pub type LoopRecovery = Recovery<FiniteEvidence>;
+pub type AffineLoopRecovery = Recovery<AffineEvidence>;
+
+impl<E> Recovery<E> {
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
 
-    pub fn evidence(&self) -> &FiniteEvidence {
+    pub fn evidence(&self) -> &E {
         &self.evidence
     }
 
-    /// Original root sibling indices covered by the finite-region evidence.
+    /// Original root sibling indices covered by the region evidence.
     pub fn region(&self) -> std::ops::Range<usize> {
         self.region.clone()
     }
@@ -56,6 +60,70 @@ pub fn recover(
     roles: &[(Reg, ValueRole)],
     widths: &[(Reg, Width)],
 ) -> Option<LoopRecovery> {
+    search(
+        nodes,
+        roles,
+        widths,
+        |prefix, original, candidate, inputs, observed| {
+            finite_region::validate(prefix, original, candidate, inputs, observed).ok()
+        },
+    )
+}
+
+/// Use the same single-template search with an arbitrary initial accumulator.
+/// Only the accumulator is symbolic; the independent affine validator derives
+/// all finite control domains from the unchanged prefix. Its symbolic maximum
+/// also passes the ordinary storage-width gate, requiring full u64 storage.
+pub fn recover_affine(
+    nodes: &[Node],
+    roles: &[(Reg, ValueRole)],
+    widths: &[(Reg, Width)],
+) -> Option<AffineLoopRecovery> {
+    search(
+        nodes,
+        roles,
+        widths,
+        |prefix, original, candidate, inputs, observed| {
+            affine_region::validate(
+                prefix,
+                original,
+                candidate,
+                inputs,
+                observed,
+                *inputs.get(1)?,
+            )
+            .ok()
+        },
+    )
+}
+
+trait RegionEvidence {
+    fn cases(&self) -> usize;
+    fn maxima(&self) -> &[(Reg, u64)];
+}
+impl RegionEvidence for FiniteEvidence {
+    fn cases(&self) -> usize {
+        self.cases
+    }
+    fn maxima(&self) -> &[(Reg, u64)] {
+        &self.maxima
+    }
+}
+impl RegionEvidence for AffineEvidence {
+    fn cases(&self) -> usize {
+        self.cases
+    }
+    fn maxima(&self) -> &[(Reg, u64)] {
+        &self.maxima
+    }
+}
+
+fn search<E: RegionEvidence>(
+    nodes: &[Node],
+    roles: &[(Reg, ValueRole)],
+    widths: &[(Reg, Width)],
+    validate: impl Fn(&[Node], &[Node], &[Node], &[Reg], &[Reg]) -> Option<E>,
+) -> Option<Recovery<E>> {
     let registers = Roles::new(roles, widths)?;
     // Inspect the entire input, including untouched memory expressions and dead
     // suffixes, before any recursive cloning or candidate validation.
@@ -99,7 +167,7 @@ pub fn recover(
                 return None;
             }
             attempts += 1;
-            let Ok(evidence) = finite_region::validate(
+            let Some(evidence) = validate(
                 &nodes[..start],
                 &nodes[start..=end],
                 &candidate,
@@ -116,7 +184,7 @@ pub fn recover(
             let replacement_len = candidate.len();
             result.extend(candidate);
             result.extend_from_slice(&nodes[end + 1..]);
-            return Some(LoopRecovery {
+            return Some(Recovery {
                 nodes: result,
                 evidence,
                 region: start..end + 1,
@@ -172,11 +240,11 @@ impl Roles {
             ],
         })
     }
-    fn fits(&self, evidence: &FiniteEvidence) -> bool {
+    fn fits(&self, evidence: &impl RegionEvidence) -> bool {
         let mut seen = BTreeSet::new();
         let registers = [self.counter, self.accumulator, self.limit];
-        evidence.cases > 0
-            && evidence.maxima.iter().all(|&(reg, maximum)| {
+        evidence.cases() > 0
+            && evidence.maxima().iter().all(|&(reg, maximum)| {
                 let Some(index) = registers.iter().position(|candidate| *candidate == reg) else {
                     return false;
                 };

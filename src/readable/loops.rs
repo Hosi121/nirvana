@@ -10,7 +10,12 @@ use super::{LocalValue, Printer};
 
 pub(super) struct BodyRecovery {
     pub nodes: Vec<Node>,
-    pub evidence: FiniteEvidence,
+    pub evidence: RegionEvidence,
+}
+
+pub(super) enum RegionEvidence {
+    Finite(FiniteEvidence),
+    Affine(crate::affine_region::AffineEvidence),
 }
 
 pub(super) fn recover(
@@ -41,7 +46,25 @@ pub(super) fn recover(
         budget: 32_768,
     }
     .nodes(nodes, 0)?;
-    let recovered = crate::loop_recover::recover(&canonical, &roles, &widths)?;
+    if let Some(recovered) = crate::loop_recover::recover(&canonical, &roles, &widths) {
+        let (nodes, evidence) = restore(nodes, &recovered);
+        return Some(BodyRecovery {
+            nodes,
+            evidence: RegionEvidence::Finite(evidence),
+        });
+    }
+    let recovered = crate::loop_recover::recover_affine(&canonical, &roles, &widths)?;
+    let (nodes, evidence) = restore(nodes, &recovered);
+    Some(BodyRecovery {
+        nodes,
+        evidence: RegionEvidence::Affine(evidence),
+    })
+}
+
+fn restore<E: Clone>(
+    nodes: &[Node],
+    recovered: &crate::loop_recover::Recovery<E>,
+) -> (Vec<Node>, E) {
     let region = recovered.region();
     let mut result = Vec::with_capacity(nodes.len() + recovered.replacement().len());
     // Projection inspected every original node/expression before these clones.
@@ -50,10 +73,7 @@ pub(super) fn recover(
     result.extend_from_slice(&nodes[..region.start]);
     result.extend_from_slice(recovered.replacement());
     result.extend_from_slice(&nodes[region.end..]);
-    Some(BodyRecovery {
-        nodes: result,
-        evidence: recovered.evidence().clone(),
-    })
+    (result, recovered.evidence().clone())
 }
 
 struct Project<'a> {

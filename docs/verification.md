@@ -51,6 +51,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [web_verify](../src/web_verify.rs) | Reg以外の構文を変えない改名。CFG上のMUST関係で書込み前の各readを検査し、入口ABIと任意のfresh初期値を扱う | 最終レジスタ配列の一致、演算の書換え、C |
 | [allocation_verify](../src/allocation_verify.rs) | 元Regとu64保存slotのMUST対応。未定義の入口read、上書き、合流と同値copyを検査 | Cの幅選択・描画、元Reg配列の最終一致 |
 | [finite_region](../src/finite_region.rs) | 実際の前段から得た有限値集合の全組合せで、純粋領域の正常fallthroughと全write先を照合。中間値の最大も記録 | 領域内のメモリ・例外・非局所転送、命令trace、C全体 |
+| [affine_region](../src/affine_region.rs) | 有限制御値の全組合せと、任意のu64入力Aに対する厳密な `a*A+b` の対応。演算はmod 2^64、全write先と中間値の上限を検査 | 非線形演算、A依存の分岐、領域内メモリ・例外・非局所転送、C全体 |
 
 純粋式の検査は、非選択枝に含まれるLoadも未対応です。メモリを自由変数へ置き換えて証明しません。
 SMT検査ではUNSATのみを`EquivalentUnderModel`とします。SATはモデルをIRで再実行して差を確認し、不完全・不正・再現不能なモデルは成功へ昇格させません。
@@ -62,6 +63,9 @@ SAT反例の再実行にだけ小さいメモリ制限を使い、その制限�
 構造化の検査はrecoverの成功条件です。webの候補も独立検査を通してから表示に使います。
 元IRの構造証拠と改名後の表示IRの構造証拠を分け、C表示全体の証明に読み替えません。
 検査器・エンコーダ自体は証明支援系で証明しておらず、共通IRの意味と検査実装も信頼する部分です。
+
+表示用ループの候補は役割名から提案しますが、採用には有限領域またはaffine領域の独立検査を必要とします。
+値域は変更しない前段から導出し、記録した全中間値がC保存幅に収まることも検査します。証拠は `ReadableC.finite_regions`・`affine_regions` に分け、元CFGの構造証拠を保持します。
 
 ## 未判定と退避
 
