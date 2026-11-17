@@ -10,6 +10,7 @@ pub mod block_verify;
 pub mod cfg;
 pub mod elf;
 pub mod emit;
+pub mod for_loop;
 pub mod frontend;
 pub mod goto_layout;
 pub mod hir;
