@@ -46,5 +46,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
+`main`へのpushとpull requestでは、[GitHub Actions](.github/workflows/ci.yml)がRust/Pythonの通常テスト、Clippy、fmtを検査します。
+
 [ドキュメント](docs/README.md)に設計・実行モデル・検証方法をまとめています。
 テスト入力の追加と生成方法は[C fixtures](tests/fixtures/README.md)を参照してください。
