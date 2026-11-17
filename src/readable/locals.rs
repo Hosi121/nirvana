@@ -196,10 +196,10 @@ fn storage_colors(
     colors
 }
 
-// Keep anonymous components in their original shared storage. Separate a
-// component only when its own uses provide positive role evidence. In
-// particular, a byte read used before loop initialization must not inherit the
-// later invariant limit's name just because both fit one storage color.
+// Share components with the same role within their original storage color.
+// Split incompatible roles and anonymous values, rather than giving every
+// pointer reload a new C declaration. A byte used before loop initialization
+// must not inherit the later invariant limit's name merely because both fit.
 fn semantic_colors(
     eligible: &[Reg],
     storage: &[usize],
@@ -215,7 +215,7 @@ fn semantic_colors(
     let keys: BTreeSet<_> = storage
         .iter()
         .zip(identities)
-        .map(|(&origin, &id)| (origin, roles.contains_key(&id).then_some(id)))
+        .map(|(&origin, &id)| (origin, roles.get(&id).map(|role| role.stem())))
         .collect();
     let palette: BTreeMap<_, _> = keys
         .into_iter()
@@ -225,6 +225,6 @@ fn semantic_colors(
     storage
         .iter()
         .zip(identities)
-        .map(|(&origin, &id)| palette[&(origin, roles.contains_key(&id).then_some(id))])
+        .map(|(&origin, &id)| palette[&(origin, roles.get(&id).map(|role| role.stem()))])
         .collect()
 }

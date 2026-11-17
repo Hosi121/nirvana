@@ -371,6 +371,70 @@ fn native_c_limit_identity_excludes_an_earlier_unrelated_byte_lifetime() {
 }
 
 #[test]
+fn native_c_independent_pointer_reloads_can_share_an_address_local() {
+    let program = Program::new(
+        0,
+        6,
+        vec![instruction(
+            0,
+            vec![
+                store(c(0x1000), Width::U64, c(0x1008)),
+                store(c(0x1008), Width::U64, c(0x100f)),
+                Assignment {
+                    destination: Reg(2).into(),
+                    value: load(r(0)),
+                },
+                Assignment {
+                    destination: Reg(3).into(),
+                    value: Expr::load(r(2), Width::U8),
+                },
+                store(c(0x100e), Width::U8, r(3)),
+                Assignment {
+                    destination: Reg(4).into(),
+                    value: load(r(1)),
+                },
+                Assignment {
+                    destination: Reg(5).into(),
+                    value: Expr::load(r(4), Width::U8),
+                },
+            ],
+            Control::Return(b(BinaryOp::Add, r(5), Expr::load(c(0x100e), Width::U8))),
+        )],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            coalesce_locals: true,
+            compact_memory: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        output
+            .locals
+            .iter()
+            .filter(|local| local.role == Some(nirvana::value_role::ValueRole::Address))
+            .count(),
+        1,
+        "same-role pointer temporaries need not each get a declaration: {output:?}"
+    );
+    assert!(output.local_plan.identity_groups.unwrap() > output.local_plan.local_variables);
+    compare(
+        &program,
+        &[
+            [0x1000, 0x1000],
+            [0x1000, 0x1008],
+            [0x1000, 0xffff],
+            [0x1008, 0x1000],
+            [0xffff, 0x1000],
+            [0xffff, 0xffff],
+        ],
+    );
+}
+
+#[test]
 fn coalesced_load_chains_use_one_local_and_keep_faulting_memory_effects() {
     let p = Program::new(
         0,
