@@ -1038,3 +1038,329 @@ fn dependency_invalidation_work_failure_discards_previously_inferred_roles() {
     // compound dependencies exhausts the independently charged work budget.
     assert!(infer(&input(800), |reg| Some(reg.0)).is_empty());
 }
+
+fn quotient(value: Expr) -> Expr {
+    b(
+        BinaryOp::Shr,
+        b(BinaryOp::UMulHigh, value, c(0xcccc_cccc_cccc_cccd)),
+        c(3),
+    )
+}
+fn arithmetic(nodes: &[Node]) -> BTreeMap<usize, ValueRole> {
+    nirvana::value_role::infer_with_arithmetic(nodes, |reg| Some(reg.0))
+}
+#[test]
+fn quotient_is_a_final_only_optional_role_for_an_entry_prefix_division() {
+    let nodes = vec![step(vec![set(0, quotient(r(50)))]), Node::Return(r(0))];
+    assert!(infer(&nodes, |reg| Some(reg.0)).is_empty());
+    assert_eq!(
+        arithmetic(&nodes),
+        BTreeMap::from([(0, ValueRole::Quotient)])
+    );
+    assert_eq!(ValueRole::Quotient.stem(), "quotient");
+}
+#[test]
+fn quotient_first_write_cannot_consume_an_incoming_alias_value() {
+    let mapping = |reg: Reg| match reg.0 {
+        0 | 10 => Some(0),
+        50 => Some(50),
+        _ => None,
+    };
+    for nodes in [
+        vec![step(vec![set(10, quotient(r(0)))])],
+        vec![step(vec![set(50, r(0)), set(10, quotient(r(50)))])],
+        vec![step(vec![
+            Assignment {
+                destination: Place::Memory {
+                    address: r(0),
+                    width: Width::U8,
+                },
+                value: c(3),
+            },
+            set(10, quotient(r(50))),
+        ])],
+        vec![step(vec![set(10, r(0)), set(0, quotient(r(50)))])],
+    ] {
+        assert_ne!(
+            nirvana::value_role::infer_with_arithmetic(&nodes, mapping).get(&0),
+            Some(&ValueRole::Quotient)
+        );
+    }
+    let valid = vec![
+        step(vec![set(10, quotient(r(50))), set(0, r(10))]),
+        Node::Return(r(0)),
+    ];
+    assert_eq!(
+        nirvana::value_role::infer_with_arithmetic(&valid, mapping).get(&0),
+        Some(&ValueRole::Quotient)
+    );
+}
+#[test]
+fn quotient_first_definition_must_precede_every_root_control_or_evaluation() {
+    for before in [
+        Node::If {
+            condition: r(50),
+            taken: vec![],
+            not_taken: vec![],
+        },
+        Node::Loop(vec![Node::Break]),
+        Node::Evaluate(c(1)),
+    ] {
+        assert!(arithmetic(&[before, step(vec![set(0, quotient(r(50)))])]).is_empty());
+    }
+    let nodes = vec![Node::If {
+        condition: r(50),
+        taken: vec![step(vec![set(0, quotient(r(51)))])],
+        not_taken: vec![step(vec![set(0, quotient(r(52)))])],
+    }];
+    assert!(arithmetic(&nodes).is_empty());
+}
+#[test]
+fn quotient_any_unrelated_write_permanently_suppresses_the_group() {
+    for value in [
+        c(0),
+        r(1),
+        Expr::load(r(50), Width::U64),
+        b(BinaryOp::Add, r(0), c(1)),
+        b(BinaryOp::And, quotient(r(50)), c(0xffff)),
+    ] {
+        for nested in [false, true] {
+            let write = step(vec![set(0, value.clone()), set(0, quotient(r(51)))]);
+            let tail = if nested {
+                Node::If {
+                    condition: r(52),
+                    taken: vec![write],
+                    not_taken: vec![],
+                }
+            } else {
+                write
+            };
+            let nodes = vec![
+                step(vec![set(0, quotient(r(50)))]),
+                tail,
+                Node::Return(r(0)),
+            ];
+            assert_ne!(arithmetic(&nodes).get(&0), Some(&ValueRole::Quotient));
+        }
+    }
+}
+#[test]
+fn quotient_all_aliased_definitions_must_be_divisions_or_same_slot_copies() {
+    let mapping = |reg: Reg| match reg.0 {
+        0 | 10 | 11 => Some(0),
+        _ => Some(reg.0),
+    };
+    let good = vec![
+        step(vec![set(0, quotient(r(50))), set(10, r(0))]),
+        Node::If {
+            condition: r(51),
+            taken: vec![step(vec![set(11, quotient(r(52)))])],
+            not_taken: vec![step(vec![set(0, r(10))])],
+        },
+        Node::Return(r(11)),
+    ];
+    assert_eq!(
+        nirvana::value_role::infer_with_arithmetic(&good, mapping).get(&0),
+        Some(&ValueRole::Quotient)
+    );
+    let mut bad = good;
+    bad.push(step(vec![set(11, r(50))]));
+    assert_ne!(
+        nirvana::value_role::infer_with_arithmetic(&bad, mapping).get(&0),
+        Some(&ValueRole::Quotient)
+    );
+}
+#[test]
+fn quotient_reads_after_definition_do_not_hide_later_forbidden_writes() {
+    let nodes = vec![
+        step(vec![set(0, quotient(r(50)))]),
+        Node::Return(r(0)),
+        step(vec![set(0, c(7))]),
+    ];
+    assert_ne!(arithmetic(&nodes).get(&0), Some(&ValueRole::Quotient));
+}
+#[test]
+fn quotient_keeps_original_limit_role_conflicts_and_address_suppressions() {
+    let init = step(vec![set(0, quotient(r(50)))]);
+    let limit = vec![init.clone(), counted(1, 0)];
+    let old = infer(&limit, |reg| Some(reg.0));
+    assert_eq!(old.get(&0), Some(&ValueRole::Limit));
+    assert_eq!(arithmetic(&limit), old);
+    let conflict = vec![
+        init.clone(),
+        counted(1, 0),
+        Node::Evaluate(Expr::load(r(0), Width::U8)),
+    ];
+    let old = infer(&conflict, |reg| Some(reg.0));
+    assert!(!old.contains_key(&0));
+    assert_eq!(arithmetic(&conflict), old);
+    let suppressed = vec![
+        init,
+        Node::Evaluate(Expr::load(r(0), Width::U8)),
+        Node::Return(r(0)),
+    ];
+    assert!(infer(&suppressed, |reg| Some(reg.0)).is_empty());
+    assert!(arithmetic(&suppressed).is_empty());
+}
+#[test]
+fn quotient_wrong_certificate_shapes_and_lazy_loads_never_name_a_slot() {
+    for value in [
+        b(
+            BinaryOp::Shr,
+            b(BinaryOp::UMulHigh, r(50), c(0xcccc_cccc_cccc_cccc)),
+            c(3),
+        ),
+        b(
+            BinaryOp::Shr,
+            b(BinaryOp::Mul, r(50), c(0xcccc_cccc_cccc_cccd)),
+            c(3),
+        ),
+        b(BinaryOp::And, quotient(r(50)), c(0xffff)),
+        quotient(Expr::select(
+            c(1),
+            r(50),
+            Expr::load(c(u64::MAX), Width::U64),
+        )),
+        b(
+            BinaryOp::Shr,
+            b(BinaryOp::UMulHigh, r(50), c(0xcccc_cccc_cccc_cccd)),
+            c(67),
+        ),
+    ] {
+        assert!(arithmetic(&[step(vec![set(0, value)])]).is_empty());
+    }
+}
+#[test]
+fn quotient_optional_map_and_work_exhaustion_keep_all_original_roles() {
+    let initial = step(vec![set(10, quotient(r(50)))]);
+    let mut maps = vec![initial.clone(), counted(0, 2)];
+    maps.extend((100..4300).map(|index| Node::Evaluate(r(index))));
+    let old = infer(&maps, |reg| Some(reg.0));
+    assert_eq!(old.get(&0), Some(&ValueRole::Counter));
+    assert_eq!(arithmetic(&maps), old);
+    let mapping = |reg: Reg| Some(if reg.0 >= 100 { 99 } else { reg.0 });
+    let work = vec![
+        initial,
+        step((100..3600).map(|i| set(i, c(0))).collect()),
+        counted(0, 2),
+    ];
+    let old = infer(&work, mapping);
+    assert_eq!(old.get(&0), Some(&ValueRole::Counter));
+    assert_eq!(
+        nirvana::value_role::infer_with_arithmetic(&work, mapping),
+        old
+    );
+}
+#[test]
+fn quotient_handles_sparse_slot_ids_without_architectural_zero_assumptions() {
+    let nodes = vec![step(vec![set(0, quotient(r(50)))]), Node::Return(r(0))];
+    assert_eq!(
+        nirvana::value_role::infer_with_arithmetic(&nodes, |reg| Some(if reg.0 == 0 {
+            usize::MAX
+        } else {
+            reg.0
+        }))
+        .get(&usize::MAX),
+        Some(&ValueRole::Quotient)
+    );
+    let reads_first = vec![step(vec![set(1, r(0)), set(0, quotient(r(50)))])];
+    assert!(arithmetic(&reads_first).is_empty());
+}
+
+#[test]
+fn actual_o2_division_qualifies_on_unchanged_final_c_groups_only() {
+    use nirvana::ir::{Control, Program};
+    use nirvana::value_role::infer_with_arithmetic;
+    let scratch = native::Scratch::new();
+    let object = scratch.0.join("division-O2.o");
+    native::object(
+        &native::fixture_root().join("recovery/unsigned-div-constant.c"),
+        &object,
+        "-O2",
+        "fixture",
+    );
+    let lifted = nirvana::frontend::lift_elf(&std::fs::read(&object).unwrap(), "fixture").unwrap();
+    let original = lifted.program.instructions().to_vec();
+    let output = nirvana::readable::emit_readable_c_with_options(
+        &lifted.program,
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(nirvana::x86::RSP)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    let reduced = nirvana::reduce::reduce(&lifted.program).unwrap();
+    let split = nirvana::web::split(reduced.program()).unwrap();
+    nirvana::web_verify::validate(reduced.program(), split.program()).unwrap();
+    let masked = nirvana::load_mask::propose(split.program(), reduced.parameters()).and_then(|p| {
+        nirvana::load_mask::validate(split.program(), &p, reduced.parameters())
+            .ok()
+            .map(|_| p)
+    });
+    let selected = masked.as_ref().unwrap_or_else(|| split.program());
+    let widths = nirvana::value_width::ValueWidths::analyze(selected);
+    let width = |reg| {
+        if reduced.parameters().contains(&reg) {
+            Width::U64
+        } else {
+            widths.width(reg)
+        }
+    };
+    let mut instructions = selected.instructions().to_vec();
+    for instruction in &mut instructions {
+        for assignment in &mut instruction.assignments {
+            assignment.value = nirvana::presentation::normalize(&assignment.value, width);
+            if let Place::Memory { address, .. } = &mut assignment.destination {
+                *address = nirvana::presentation::normalize(address, width);
+            }
+        }
+        match &mut instruction.control {
+            Control::Branch { condition, .. } | Control::Return(condition) => {
+                *condition = nirvana::presentation::normalize(condition, width)
+            }
+            _ => {}
+        }
+    }
+    let display = Program::new(
+        selected.cfg().block(selected.cfg().entry()).start,
+        selected.register_count(),
+        instructions,
+    )
+    .unwrap();
+    let structured = nirvana::structure::StructuredFunction::recover(&display).unwrap();
+    // This fixture is straight-line: empty Step compaction cannot alter its
+    // first-write prefix, and there is no alternate branch-tail layout.
+    assert!(
+        structured
+            .body()
+            .iter()
+            .all(|n| matches!(n, Node::Step { .. } | Node::Return(_)))
+    );
+    let slots: BTreeMap<_, _> = output
+        .locals
+        .iter()
+        .enumerate()
+        .flat_map(|(i, local)| local.registers.iter().map(move |r| (r.0, i)))
+        .collect();
+    let old = infer(structured.body(), |reg| slots.get(&reg.0).copied());
+    let proposed = infer_with_arithmetic(structured.body(), |reg| slots.get(&reg.0).copied());
+    let quotient_slots: Vec<_> = proposed
+        .iter()
+        .filter_map(|(&slot, &role)| (role == ValueRole::Quotient).then_some(slot))
+        .collect();
+    assert_eq!(quotient_slots.len(), 1);
+    let slot = quotient_slots[0];
+    assert!(!old.contains_key(&slot));
+    assert_eq!(output.locals[slot].registers.len(), 1);
+    assert!(output.code.contains(" / 10;"));
+    assert_eq!(
+        proposed
+            .iter()
+            .filter_map(|(&s, &r)| (r != ValueRole::Quotient).then_some((s, r)))
+            .collect::<BTreeMap<_, _>>(),
+        old
+    );
+    assert_eq!(lifted.program.instructions(), original);
+}

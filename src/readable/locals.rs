@@ -132,14 +132,26 @@ impl LocalPlan {
             .zip(colors)
             .map(|(reg, color)| (reg.0, color))
             .collect();
-        let inferred = infer(nodes, |reg| slots.get(&reg.0).copied());
+        let inferred =
+            crate::value_role::infer_with_arithmetic(nodes, |reg| slots.get(&reg.0).copied());
         let roles: BTreeMap<_, _> = groups
             .iter()
             .filter_map(|(&color, registers)| {
+                let candidate = inferred.get(&color).copied();
+                let candidate = if candidate == Some(ValueRole::Quotient)
+                    && stack_roles.as_ref().is_some_and(|stack| {
+                        registers
+                            .iter()
+                            .any(|&reg| stack.register_role(reg).is_some())
+                    }) {
+                    None
+                } else {
+                    candidate
+                };
                 Some((
                     color,
                     local_role(
-                        inferred.get(&color).copied(),
+                        candidate,
                         registers,
                         stack_roles.as_ref(),
                         stack_cells.as_ref(),

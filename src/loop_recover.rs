@@ -216,7 +216,7 @@ impl Roles {
                 ValueRole::Counter => &mut counter,
                 ValueRole::Accumulator => &mut accumulator,
                 ValueRole::Limit => &mut limit,
-                ValueRole::Address => continue,
+                ValueRole::Address | ValueRole::Quotient => continue,
             };
             if target.replace(reg).is_some() {
                 return None;

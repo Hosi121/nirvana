@@ -57,7 +57,7 @@ def metrics(code):
                           if name in locals_ and delimiter == "="}
     copies = sum(a in locals_ and b in locals_ for a, b in
                  re.findall(r"\b(\w+)\s*=\s*(\w+)\s*(?=[,;)])", plain))
-    named_roles = sum(re.fullmatch(r"(?:counter|accumulator|limit|address)\d*", name) is not None
+    named_roles = sum(re.fullmatch(r"(?:counter|accumulator|limit|address|quotient)\d*", name) is not None
                       for name in locals_)
     return {"unit_bytes": len(code.encode()), "function_bytes": len(body.encode()),
             "tokens": len(re.findall(r"[A-Za-z_][A-Za-z_0-9]*|0x[0-9a-f]+|[0-9]+|[^\s]", plain)),

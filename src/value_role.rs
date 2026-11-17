@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ir::{BinaryOp, Expr, Place, Reg};
 use crate::structure::Node;
 
+mod arithmetic;
+
 const MAX_DEPTH: usize = 128;
 const MAX_NODES: usize = 32_768;
 const MAX_SLOTS: usize = 4096;
@@ -19,6 +21,7 @@ pub enum ValueRole {
     Accumulator,
     Limit,
     Address,
+    Quotient,
 }
 
 impl ValueRole {
@@ -28,6 +31,7 @@ impl ValueRole {
             Self::Accumulator => "accumulator",
             Self::Limit => "limit",
             Self::Address => "address",
+            Self::Quotient => "quotient",
         }
     }
 }
@@ -37,18 +41,46 @@ impl ValueRole {
 /// Contradictory evidence is permanently suppressed. Any resource failure
 /// discards all results, rather than returning a partially named function.
 pub fn infer(nodes: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> BTreeMap<usize, ValueRole> {
-    let mut remaining = MAX_NODES;
-    if validate_nodes(nodes, 0, &mut remaining).is_none() {
+    infer_base(nodes, &slot)
+        .map(|base| base.roles)
+        .unwrap_or_default()
+}
+
+/// Add certified arithmetic naming hints for the final C storage groups only.
+/// The callback includes named local storage and excludes input parameters.
+/// Keep `infer` for identity/grouping and projected stack-web analysis. Existing
+/// roles and their original contradictions/suppressions always take priority.
+/// Exhausting the optional arithmetic pass leaves all original roles intact.
+pub fn infer_with_arithmetic(
+    nodes: &[Node],
+    slot: impl Fn(Reg) -> Option<usize>,
+) -> BTreeMap<usize, ValueRole> {
+    let Some(mut base) = infer_base(nodes, &slot) else {
         return BTreeMap::new();
+    };
+    if let Some(quotients) = arithmetic::quotients(nodes, &slot, &base.blocked) {
+        for slot in quotients {
+            base.roles.entry(slot).or_insert(ValueRole::Quotient);
+        }
     }
+    base.roles
+}
+
+struct BaseRoles {
+    roles: BTreeMap<usize, ValueRole>,
+    blocked: BTreeSet<usize>,
+}
+
+fn infer_base(nodes: &[Node], slot: &impl Fn(Reg) -> Option<usize>) -> Option<BaseRoles> {
+    let mut remaining = MAX_NODES;
+    validate_nodes(nodes, 0, &mut remaining)?;
     let mut analysis = Analysis {
-        slot: &slot,
+        slot,
         roles: BTreeMap::new(),
         work: MAX_WORK,
     };
-    if analysis.visit(nodes).is_none() {
-        return BTreeMap::new();
-    }
+    analysis.visit(nodes)?;
+    let blocked = analysis.roles.keys().copied().collect();
     // A storage group can be reused for an unrelated scalar lifetime. Address
     // dereference evidence alone must not name that entire group "address".
     if analysis
@@ -57,18 +89,19 @@ pub fn infer(nodes: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> BTreeMap<us
         .any(|role| *role == Some(ValueRole::Address))
     {
         let mut data = BTreeSet::new();
-        if analysis.data_uses(nodes, &mut data).is_none() {
-            return BTreeMap::new();
-        }
+        analysis.data_uses(nodes, &mut data)?;
         analysis
             .roles
             .retain(|slot, role| *role != Some(ValueRole::Address) || !data.contains(slot));
     }
-    analysis
-        .roles
-        .into_iter()
-        .filter_map(|(slot, role)| Some((slot, role?)))
-        .collect()
+    Some(BaseRoles {
+        roles: analysis
+            .roles
+            .into_iter()
+            .filter_map(|(slot, role)| Some((slot, role?)))
+            .collect(),
+        blocked,
+    })
 }
 
 fn spend(remaining: &mut usize, amount: usize) -> Option<()> {

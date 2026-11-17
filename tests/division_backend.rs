@@ -190,6 +190,12 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 },
             )
             .unwrap();
+            if source_optimization == "-O2" {
+                assert!(output.locals.iter().any(|local| {
+                    local.role == Some(nirvana::value_role::ValueRole::Quotient)
+                        && local.name == "quotient"
+                }));
+            }
             let body = output
                 .code
                 .split("uint64_t nirvana_readable(")

@@ -56,6 +56,19 @@ uint64_t nirvana_readable(uint64_t arg0) {
         self.assertEqual(result["named_roles"], 1)
         self.assertEqual(result["initialized_locals"], 1)
 
+    def test_arithmetic_names_are_counted_with_the_existing_roles(self):
+        code = """uint64_t nirvana_readable(uint64_t arg0) {
+    uint64_t quotient = arg0 / 10;
+    uint64_t quotient1 = arg0 / 3;
+    uint64_t value = quotient + quotient1;
+    return value;
+}
+"""
+        result = MODULE.metrics(code)
+        self.assertEqual(result["locals"], 3)
+        self.assertEqual(result["named_roles"], 2)
+        self.assertEqual(result["initialized_locals"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
