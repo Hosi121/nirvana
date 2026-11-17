@@ -98,6 +98,7 @@ python3 tools/validate_recovery_artifacts.py
 ```
 
 後者は保存した元C/readable CをUBSan付きで再実行し、診断と観測差を検出します。
+`--inputs FILE` で空白区切りの4ワード行を指定でき、追加した入力も同じ検査へ渡せます。
 
 追加の生成C比較は任意で実行できます。ソース数は1〜64（既定64）で、`cc`と`sha256sum`が必要です。失敗した入力・機械語・生成C・フラグ・ハッシュを含め、`target/generated-recovery/`へ保存します。未対応命令をskipして成功に数えません。
 

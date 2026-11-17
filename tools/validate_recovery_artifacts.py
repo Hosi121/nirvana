@@ -24,13 +24,24 @@ def main():
     parser.add_argument("--artifacts", type=Path, default=Path("target/memory-recovery/generated"))
     parser.add_argument("--out", type=Path, default=Path("target/memory-recovery/ubsan"))
     parser.add_argument("--cc", default="cc")
+    parser.add_argument("--inputs", type=Path, help="optional whitespace-separated rows of four unsigned words")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     args.out.mkdir(parents=True, exist_ok=True)
     inputs = []
-    for row in (root / "tests/fixtures/inputs.tsv").read_text().splitlines():
+    input_file = args.inputs or root / "tests/fixtures/inputs.tsv"
+    for number, row in enumerate(input_file.read_text().splitlines(), 1):
+        row = row.strip()
         if row and not row.startswith("#"):
-            inputs.append(" ".join(row.split("\t")[1:]))
+            fields = row.split() if args.inputs else row.split("\t")[1:]
+            if len(fields) != 4:
+                raise ValueError(f"{input_file}:{number}: expected four unsigned words")
+            words = [int(word) for word in fields]
+            if any(word < 0 or word > (1 << 64) - 1 for word in words):
+                raise ValueError(f"{input_file}:{number}: word outside u64")
+            inputs.append(" ".join(map(str, words)))
+    if not inputs:
+        raise ValueError("no input rows")
     data = "\n".join(inputs) + "\n"
     flags = ["-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-fno-lto",
              "-fsanitize=undefined", "-fno-sanitize-recover=undefined", "-DFIXTURE_ENTRY=fixture"]
@@ -39,6 +50,7 @@ def main():
         raise RuntimeError("retain artifacts with NIRVANA_RECOVERY_ARTIFACTS before running")
     report = {"compiler": invoke([args.cc, "--version"]).splitlines()[0], "flags": flags,
               "observations": "return and four state words; UBSan diagnostics fail",
+              "input_file": str(input_file.resolve()),
               "input_sha256": hashlib.sha256(data.encode()).hexdigest(), "cases": []}
     for source in sources:
         opt = source.stem.rsplit("-", 1)[1]
