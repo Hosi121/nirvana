@@ -16,7 +16,7 @@
 | `fixture.h` | unsigned 64-bitの入力状態4要素と返り値の共通契約 |
 | `harness.c` | 標準入力から状態を読み、返り値と最終状態4要素を出す |
 | `helpers.c` | 関数呼び出しfixtureで使う別翻訳単位の関数 |
-| `recovery/*.c` | 別corpusの6ソース。幅・alias・添字・複数入口goto・早期脱出 |
+| `recovery/*.c` | 別corpusの7ソース。幅・alias・添字・複数入口goto・早期脱出 |
 
 入力値、計算結果、状態はすべてunsigned 64-bitです。演算の折り返しを許可し、シフト量はマスクします。
 配列の添字とループ回数は入力から小さな範囲へ制限しています。全fixtureが自動検査の入力で停止するようにしています。
@@ -63,9 +63,10 @@ cargo test --test recovery_fixture -- --nocapture
 そのうち32構成は構造化前後の命令trace・全レジスタ・全メモリも比較します。
 未対応の7構成は再配置が必要なケースです。詳細は[機械語フロントエンド](../../docs/machine-frontend.md)を参照してください。
 
-`recovery_fixture`は独立した6ソース×O0/O2×69入力、計828比較を行います。
+`recovery_fixture`は独立した7ソース×O0/O2×69入力、計966比較を行います。
 `byte-fields`・`packed-update`は幅と重なる更新、`strided-input`は添字、`selected-alias`は選択されたポインタ、
-`three-entry-goto`は3か所から入る有限循環、`early-exit-chain`は複数の脱出を確かめます。
+`three-entry-goto`は3か所から入る有限循環、`early-exit-chain`は複数の脱出、
+`volatile-bound`は上限の再読と途中breakを確かめます。
 全構成のliftを必須とし、失敗をskipしません。元C・IRの返り値と4状態ワードに加え、
 readable CとIRはstackを含む64KiB全体のdigestも照合します。
 

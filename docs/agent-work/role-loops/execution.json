@@ -1,0 +1,93 @@
+{
+  "baseline": "6990e7f",
+  "commits": {
+    "fixture": "9e58088",
+    "role_foundation": "b133cd4",
+    "for_foundation": "ff12b66",
+    "backend_and_address_refinement": "d7cfdb2"
+  },
+  "workers": [
+    {
+      "id": "roles",
+      "agent": "/root/variable_hir",
+      "files": [
+        "src/value_role.rs",
+        "tests/value_role.rs"
+      ],
+      "results": "12 tests, Clippy -D warnings, fmt pass. Conservative final-slot inference; sticky conflicts; bounded whole-result fallback; Address-only data-use exclusion added after real output inspection."
+    },
+    {
+      "id": "for",
+      "agent": "/root/expression_sequence",
+      "files": [
+        "src/for_loop.rs",
+        "tests/for_loop.rs"
+      ],
+      "results": "11 tests, Clippy -D warnings, fmt pass. Borrowed contiguous suffix, copybacks, memory-store anchor and needed reloads. Independent replay for budgets0..79 preserves status/regs/full bytes."
+    }
+  ],
+  "integration": {
+    "sole_shared_writer": "parent",
+    "dependency_evidence": "roles and for modules depended on frozen Node/slot APIs and disjoint snapshots; parent integrated actual artifacts, refined memory-store anchoring without decoder/flag changes",
+    "address_issue": "Actual sum O0 storage reused as pointer/data/return was initially called address. Whole-slot data-use exclusion now retains valueN for mixed use; new regression and positive pointer-only alias/update chain pass.",
+    "for_rendering": "Exact setup and suffix order, no early continue/nonlocal/nested candidates; pure stores and ≤1 load per register RHS; long headers split across lines. Original structure evidence and execution IR kept."
+  },
+  "sequential_review": {
+    "agent": "/root/stack_analysis",
+    "scope": "static/directed-test code inspection of foundations and parent integration; later spot-check of Address refinement",
+    "result": "No concrete semantic counterexample or identifier collision found. No source writes or extra experiments; native suites executed by parent."
+  },
+  "verification": {
+    "all_tests": 314,
+    "normal_tests": 305,
+    "optional_smt_tests": 9,
+    "failures": 0,
+    "ignored": 0,
+    "clippy": "all targets, -D warnings pass",
+    "format": "cargo fmt --check pass",
+    "diff": "git diff --check pass",
+    "native": "63/70 configurations,4117 input comparisons; return/state and readable/IR complete64KiB digest; seven original relocation rejects",
+    "faults": "new for native regression compares break/continue/normal/fault paths with full bytes and first fault address, views on/off, compact/explicit, O0/O2",
+    "ubsan": "16 generated configs,1008 comparisons, no diagnostics",
+    "measurement": {
+      "configs": 47,
+      "total": 54,
+      "before": {
+        "unit_bytes": 227769,
+        "function_bytes": 80421,
+        "tokens": 16051,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 104,
+        "casts": 33,
+        "locals": 158,
+        "copies": 20,
+        "named_roles": 0,
+        "for_headers": 0
+      },
+      "after": {
+        "unit_bytes": 228262,
+        "function_bytes": 80914,
+        "tokens": 16055,
+        "gotos": 14,
+        "labels": 12,
+        "masks": 104,
+        "casts": 33,
+        "locals": 158,
+        "copies": 20,
+        "named_roles": 15,
+        "for_headers": 4
+      },
+      "all_outputs_compile": "47 before and47 after, unchanged C11 strict compiler flags"
+    }
+  },
+  "limits": [
+    "Names are syntax evidence about C storage groups, not original variable names/types, monotonicity or termination.",
+    "Coalesced slots can have temporary uses outside the named loop role; ambiguous roles fall back.",
+    "For memory-store anchor is only a presentation hint, not alias/progress proof.",
+    "No early continue/nonlocal/nested loop candidates or complex faulting store expressions; old rendering retained.",
+    "Existing SMT/AST certificates do not certify these entire presentation passes; concrete replay/native evidence retained.",
+    "No decoder, relocation, indirect call/branch or global SSA expansion."
+  ],
+  "cleanup": "Both snapshots differed only by scoped source/test files and local lib exports; source/test bytes matched retained commits. Removed only task-owned snapshots after audit. Baseline source/binary, machine objects, before/after C, reports/logs retained under target/role-loops."
+}
