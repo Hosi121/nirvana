@@ -135,6 +135,7 @@ fn compiled_sum_o2_finite_loop_matches_lifted_ir_full_memory_and_first_fault() {
         )
         .unwrap();
         assert_eq!(output.finite_regions.len(), 1, "{}", output.code);
+        assert!(!output.load_mask_evidence.as_ref().unwrap().folds.is_empty());
         assert_eq!(output.finite_regions[0].cases, 8);
         let body = output
             .code

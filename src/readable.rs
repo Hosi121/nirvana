@@ -75,6 +75,9 @@ pub struct ReadableC {
     /// Structural check for the selected display IR, after validated web renaming.
     /// It does not replace the original reduced-IR evidence above.
     pub display_structure_evidence: Option<StructureEvidence>,
+    /// Validated paired display rewrites with unchanged load sites and effects.
+    /// The unique-use intermediate receives its mask at the original load site.
+    pub load_mask_evidence: Option<crate::load_mask::LoadMaskEvidence>,
     pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
@@ -1352,6 +1355,7 @@ fn emit_prepared_c(
         source_evidence: structure_evidence,
         source_stats: structure_stats,
         web_recovery,
+        load_mask_evidence,
     } = prepared;
     let program = &presented;
     let display_nodes = nodes.as_deref();
@@ -1662,6 +1666,7 @@ fn emit_prepared_c(
         structure_stats,
         structure_evidence,
         display_structure_evidence,
+        load_mask_evidence,
         web_recovery,
         stack_views,
         object_views,

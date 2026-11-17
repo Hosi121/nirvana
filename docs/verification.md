@@ -53,6 +53,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [structure_verify](../src/structure_verify.rs) / `structured-flow-v1` | 元IRとNodeを独立にグラフ化し、命令・逐次代入・条件・両分岐先・ループ転送を照合 |
 | [web_verify](../src/web_verify.rs) | レジスタ改名後の各readで、元の値とのMUST対応と入口ABIを検査 |
 | [allocation_verify](../src/allocation_verify.rs) | 元レジスタとu64保存slotの対応。入口read、上書き、合流、同値copyを検査 |
+| [load_mask](../src/load_mask.rs) | 表示用のLoadとmaskの対。変更形・全read・単一定義・同一ブロックの順序と、元のLoadの位置を検査 |
 | [finite_region](../src/finite_region.rs) | 前段から導出した有限入力の全組合せについて、純粋領域を抜ける時点の全write先を照合 |
 | [affine_region](../src/affine_region.rs) | 有限制御値の全組合せと任意のu64入力Aについて、`a*A+b mod 2^64`の対応を検査 |
 

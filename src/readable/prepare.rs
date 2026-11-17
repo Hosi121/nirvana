@@ -18,6 +18,7 @@ pub(super) struct PreparedFunction {
     pub source_evidence: Option<StructureEvidence>,
     pub source_stats: Option<StructureStats>,
     pub web_recovery: WebRecovery,
+    pub load_mask_evidence: Option<crate::load_mask::LoadMaskEvidence>,
 }
 
 pub(super) fn prepare(
@@ -54,6 +55,12 @@ fn prepare_selected(
     selected: webs::SelectedWebs,
 ) -> Result<PreparedFunction, ReductionError> {
     let input = selected.program.as_ref().unwrap_or(original);
+    let masked = crate::load_mask::propose(input, parameters).and_then(|candidate| {
+        crate::load_mask::validate(input, &candidate, parameters)
+            .ok()
+            .map(|evidence| (candidate, evidence))
+    });
+    let input = masked.as_ref().map_or(input, |(program, _)| program);
     let widths = ValueWidths::analyze(input);
     let width = |reg| {
         if parameters.contains(&reg) {
@@ -66,7 +73,13 @@ fn prepare_selected(
     // certificate intact. All dependency/view/allocation analyses see the same
     // expressions that will actually be printed.
     let program = presentation_program(input, &width)?;
-    let structure = selected.structure;
+    // Each paired rewrite has its own correspondence evidence. Recover a
+    // fresh tree from that same program, while retaining the source certificate.
+    let structure = if masked.is_some() {
+        StructuredFunction::recover(input)
+    } else {
+        selected.structure
+    };
     let candidates = structure.as_ref().ok().map(|function| {
         let nodes = presentation_nodes(function.body(), &width);
         // Exact program points are part of suffix equality: memory views
@@ -88,6 +101,7 @@ fn prepare_selected(
         source_evidence: selected.source_evidence,
         source_stats: selected.source_stats,
         web_recovery: selected.recovery,
+        load_mask_evidence: masked.map(|(_, evidence)| evidence),
     })
 }
 

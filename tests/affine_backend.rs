@@ -137,6 +137,7 @@ fn compiled_seeded_sum_o2_affine_loop_matches_ir_full_memory_return_and_first_fa
         .unwrap();
         assert!(output.finite_regions.is_empty(), "{}", output.code);
         assert_eq!(output.affine_regions.len(), 1, "{}", output.code);
+        assert!(!output.load_mask_evidence.as_ref().unwrap().folds.is_empty());
         let evidence = &output.affine_regions[0];
         assert_eq!(evidence.cases, 8);
         assert!(
