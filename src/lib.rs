@@ -23,6 +23,7 @@ pub mod hir;
 pub mod indexed;
 pub mod ir;
 mod join;
+pub mod load_mask;
 pub mod local_identity;
 pub mod loop_exit;
 pub mod loop_labels;
