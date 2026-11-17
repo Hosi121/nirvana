@@ -24,6 +24,55 @@ struct Source {
     code: String,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct Profiles {
+    // Canonical compiler flags, preserving requested order. Effective always
+    // starts with O0 so every optimized native result has the same baseline.
+    requested: Vec<&'static str>,
+    effective: Vec<&'static str>,
+}
+
+/// Comma-separated names, not arbitrary compiler flags. Bound before parsing.
+fn parse_profiles(value: Option<&str>) -> Result<Profiles, String> {
+    let mut requested = Vec::new();
+    if let Some(value) = value {
+        if value.len() > 64 {
+            return Err("NIRVANA_RECOVERY_PROFILES exceeds 64 bytes".to_owned());
+        }
+        for token in value.split(',') {
+            if requested.len() == 5 {
+                return Err("NIRVANA_RECOVERY_PROFILES allows at most 5 profiles".to_owned());
+            }
+            let flag = match token.trim() {
+                "O0" => "-O0",
+                "O1" => "-O1",
+                "O2" => "-O2",
+                "Os" => "-Os",
+                "O3" => "-O3",
+                "" => return Err("NIRVANA_RECOVERY_PROFILES contains an empty profile".to_owned()),
+                _ => return Err("NIRVANA_RECOVERY_PROFILES allows only O0,O1,O2,Os,O3".to_owned()),
+            };
+            if requested.contains(&flag) {
+                return Err(format!("NIRVANA_RECOVERY_PROFILES repeats {flag}"));
+            }
+            requested.push(flag);
+        }
+    } else {
+        requested.extend(["-O0", "-O2"]);
+    }
+    let mut effective = vec!["-O0"];
+    effective.extend(
+        requested
+            .iter()
+            .copied()
+            .filter(|profile| *profile != "-O0"),
+    );
+    Ok(Profiles {
+        requested,
+        effective,
+    })
+}
+
 fn sources() -> Vec<Source> {
     let mut sources = vec![];
     for (family, name) in [
@@ -207,7 +256,13 @@ int main(void) {{
     )
 }
 
-fn exercise_sources(sources: &[Source], inputs: &[[u64; 4]], root: &Path) -> usize {
+fn exercise_sources(
+    sources: &[Source],
+    inputs: &[[u64; 4]],
+    root: &Path,
+    optimizations: &[&str],
+) -> usize {
+    assert_eq!(optimizations.first(), Some(&"-O0"));
     let mut input_text = String::new();
     for input in inputs {
         writeln!(
@@ -223,7 +278,7 @@ fn exercise_sources(sources: &[Source], inputs: &[[u64; 4]], root: &Path) -> usi
     let mut native_references = BTreeMap::new();
     let mut comparisons = 0;
     std::fs::write(root.join("inputs.txt"), &input_text).unwrap();
-    for optimization in ["-O0", "-O2"] {
+    for &optimization in optimizations {
         let directory = root.join(optimization);
         std::fs::create_dir(&directory).unwrap();
         let harness = directory.join("harness.o");
@@ -253,7 +308,7 @@ fn exercise_sources(sources: &[Source], inputs: &[[u64; 4]], root: &Path) -> usi
             } else {
                 assert_eq!(
                     native, native_references[name],
-                    "{name}: native O0/O2 differ"
+                    "{name}: native O0/{optimization} differ"
                 );
             }
             progress(root, name, optimization, "lift-and-execute-ir");
@@ -331,10 +386,14 @@ fn exercise_sources(sources: &[Source], inputs: &[[u64; 4]], root: &Path) -> usi
             comparisons += inputs.len();
         }
     }
-    assert_eq!(comparisons, sources.len() * 2 * inputs.len());
+    assert_eq!(
+        comparisons,
+        sources.len() * optimizations.len() * inputs.len()
+    );
     println!(
-        "generated recovery: {} variants x 2 optimization levels x {} inputs = {comparisons} native/IR/readable comparisons",
+        "generated recovery: {} variants x {} optimization levels x {} inputs = {comparisons} native/IR/readable comparisons",
         sources.len(),
+        optimizations.len(),
         inputs.len(),
     );
     comparisons
@@ -355,6 +414,17 @@ fn json(value: &str) -> String {
     }
     result.push('"');
     result
+}
+
+fn json_array(values: &[&str]) -> String {
+    format!(
+        "[{}]",
+        values
+            .iter()
+            .map(|value| json(value))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 
 fn record_command(root: &Path, arguments: &[String]) {
@@ -452,6 +522,7 @@ fn manifest(
     label: &str,
     sources: usize,
     inputs: usize,
+    profiles: &Profiles,
     failure: Option<&str>,
 ) -> Result<(), String> {
     let compiler = std::process::Command::new("cc")
@@ -477,8 +548,12 @@ fn manifest(
     }
     std::fs::write(root.join("files.sha256"), hashes.stdout).map_err(|error| error.to_string())?;
     let body = format!(
-        "{{\n  \"campaign\":{},\n  \"source_count\":{sources},\n  \"input_count\":{inputs},\n  \"machine_optimizations\":[\"-O0\",\"-O2\"],\n  \"readable_optimization\":\"same as machine object\",\n  \"memory_comparison\":\"IR/readable full 65536-byte guest-memory FNV1a64 digest\",\n  \"compiler\":{},\n  \"architecture\":{},\n  \"os\":{},\n  \"status\":{},\n  \"failure\":{},\n  \"files\":{}\n}}\n",
+        "{{\n  \"campaign\":{},\n  \"source_count\":{sources},\n  \"input_count\":{inputs},\n  \"requested_profiles\":{},\n  \"effective_profiles\":{},\n  \"machine_optimizations\":{},\n  \"expected_comparisons\":{},\n  \"readable_optimization\":\"same as machine object\",\n  \"memory_comparison\":\"IR/readable full 65536-byte guest-memory FNV1a64 digest\",\n  \"compiler\":{},\n  \"architecture\":{},\n  \"os\":{},\n  \"status\":{},\n  \"failure\":{},\n  \"files\":{}\n}}\n",
         json(label),
+        json_array(&profiles.requested),
+        json_array(&profiles.effective),
+        json_array(&profiles.effective),
+        sources * inputs * profiles.effective.len(),
         json(&String::from_utf8_lossy(&compiler.stdout)),
         json(std::env::consts::ARCH),
         json(std::env::consts::OS),
@@ -493,7 +568,7 @@ fn manifest(
     std::fs::write(root.join("manifest.json"), body).map_err(|error| error.to_string())
 }
 
-fn run_preserving(label: &str, sources: Vec<Source>, inputs: Vec<[u64; 4]>) {
+fn run_preserving(label: &str, sources: Vec<Source>, inputs: Vec<[u64; 4]>, profiles: Profiles) {
     let directory = artifact_directory(label);
     std::fs::write(
         directory.join("generator.rs"),
@@ -502,7 +577,7 @@ fn run_preserving(label: &str, sources: Vec<Source>, inputs: Vec<[u64; 4]>) {
     .unwrap();
     println!("recovery artifacts: {}", directory.display());
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        exercise_sources(&sources, &inputs, &directory)
+        exercise_sources(&sources, &inputs, &directory, &profiles.effective)
     }));
     let failure = result.as_ref().err().map(|payload| {
         payload
@@ -523,6 +598,7 @@ fn run_preserving(label: &str, sources: Vec<Source>, inputs: Vec<[u64; 4]>) {
         label,
         sources.len(),
         inputs.len(),
+        &profiles,
         failure.as_deref(),
     );
     if let Err(payload) = result {
@@ -539,7 +615,8 @@ fn run_preserving(label: &str, sources: Vec<Source>, inputs: Vec<[u64; 4]>) {
 fn generated_holdout_sources_match_native_ir_and_readable_c() {
     let cases = sources();
     assert_eq!(cases.len(), VARIANTS);
-    run_preserving("holdout", cases, inputs());
+    // The regular test deliberately never reads the profile environment.
+    run_preserving("holdout", cases, inputs(), parse_profiles(None).unwrap());
 }
 
 struct Random(u64);
@@ -627,7 +704,8 @@ fn campaign_inputs() -> Vec<[u64; 4]> {
 }
 
 /// Explicit bounded opt-in: NIRVANA_RECOVERY_CASES=1..64 (default64).
-/// Requires cc and sha256sum; all sources/objects/C/commands stay in target/.
+/// Optional NIRVANA_RECOVERY_PROFILES=O0,O1,O2,Os,O3; default O0,O2.
+/// Missing O0 is prepended. Requires cc/sha256sum; artifacts stay in target/.
 #[test]
 #[ignore = "bounded differential campaign; set NIRVANA_RECOVERY_CASES=16 or64"]
 fn seeded_pipeline_differential_campaign() {
@@ -640,5 +718,70 @@ fn seeded_pipeline_differential_campaign() {
         (1..=64).contains(&count),
         "NIRVANA_RECOVERY_CASES must be in1..64"
     );
-    run_preserving("seeded-v1", campaign_sources(count), campaign_inputs());
+    let requested = match std::env::var("NIRVANA_RECOVERY_PROFILES") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("NIRVANA_RECOVERY_PROFILES must be Unicode")
+        }
+    };
+    let profiles = parse_profiles(requested.as_deref()).unwrap_or_else(|error| panic!("{error}"));
+    run_preserving(
+        "seeded-v1",
+        campaign_sources(count),
+        campaign_inputs(),
+        profiles,
+    );
+}
+
+#[test]
+fn profile_parser_defaults_and_preserves_requests_while_prepending_baseline() {
+    let default = parse_profiles(None).unwrap();
+    assert_eq!(default.requested, ["-O0", "-O2"]);
+    assert_eq!(default.effective, default.requested);
+    let only = parse_profiles(Some("O3")).unwrap();
+    assert_eq!(only.requested, ["-O3"]);
+    assert_eq!(only.effective, ["-O0", "-O3"]);
+    let reordered = parse_profiles(Some(" O3, O1, O0 ")).unwrap();
+    assert_eq!(reordered.requested, ["-O3", "-O1", "-O0"]);
+    assert_eq!(reordered.effective, ["-O0", "-O3", "-O1"]);
+    let full = parse_profiles(Some("O0,O1,O2,Os,O3")).unwrap();
+    assert_eq!(full.requested.len(), 5);
+    assert_eq!(full.requested, full.effective);
+    let filled = parse_profiles(Some("O1,O2,Os,O3")).unwrap();
+    assert_eq!(filled.effective, full.effective);
+}
+
+#[test]
+fn profile_parser_rejects_empty_duplicate_and_unlisted_flags() {
+    for value in [
+        "",
+        "  ",
+        ",",
+        "O0,",
+        ",O2",
+        "O1,,O3",
+        "O0,O0",
+        "O2, O2",
+        "O4",
+        "Ofast",
+        "-O2",
+        "o0",
+        "OS",
+        "O2,-march=native",
+        "O0,O1,O2,Os,O3,O0",
+    ] {
+        assert!(parse_profiles(Some(value)).is_err(), "{value:?}");
+    }
+}
+
+#[test]
+fn profile_parser_checks_byte_budget_before_splitting() {
+    let boundary = format!("{:>64}", "O3");
+    assert_eq!(
+        parse_profiles(Some(&boundary)).unwrap().effective,
+        ["-O0", "-O3"]
+    );
+    assert!(parse_profiles(Some(&(" ".to_owned() + &boundary))).is_err());
+    assert!(parse_profiles(Some(&"O3,".repeat(1000))).is_err());
 }

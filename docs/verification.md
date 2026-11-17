@@ -101,6 +101,7 @@ python3 tools/validate_recovery_artifacts.py
 `--inputs FILE` で空白区切りの4ワード行を指定でき、追加した入力も同じ検査へ渡せます。
 
 追加の生成C比較は任意で実行できます。ソース数は1〜64（既定64）で、`cc`と`sha256sum`が必要です。失敗した入力・機械語・生成C・フラグ・ハッシュを含め、`target/generated-recovery/`へ保存します。未対応命令をskipして成功に数えません。
+`NIRVANA_RECOVERY_PROFILES=O0,O1,O2,Os,O3`で追加profileを指定できます。既定はO0/O2で、O0の基準実行を補完し、要求列と実効列を保存します。
 
 ```sh
 NIRVANA_RECOVERY_CASES=16 cargo test --test generated_recovery seeded_pipeline_differential_campaign -- --ignored --exact
