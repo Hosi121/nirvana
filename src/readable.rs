@@ -56,7 +56,7 @@ pub struct ReadableC {
     pub reduction_stats: ReductionStats,
     pub fallback_reason: Option<StructureError>,
     pub structure_stats: Option<StructureStats>,
-    /// Correspondence for the Node AST, before compact/loop/C rendering.
+    /// Correspondence for the Node AST, before tail sharing/compact/loop/C rendering.
     pub structure_evidence: Option<StructureEvidence>,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
@@ -1132,6 +1132,13 @@ fn line(code: &mut String, indent: usize, text: &str) {
     }
 }
 
+fn max_indent(code: &str) -> usize {
+    code.lines()
+        .map(|line| line.len() - line.trim_start().len())
+        .max()
+        .unwrap_or(0)
+}
+
 fn nonlocal(nodes: &[Node]) -> bool {
     nodes.iter().any(|node| match node {
         Node::BreakOuter { .. } | Node::ContinueOuter { .. } => true,
@@ -1373,10 +1380,15 @@ fn emit_reduced_c(
     let presented = presentation_program(original, &width)?;
     let program = &presented;
     let structured = StructuredFunction::recover(original);
-    let display_nodes = structured
-        .as_ref()
-        .ok()
-        .map(|function| compact(&presentation_nodes(function.body(), &width)));
+    let candidates = structured.as_ref().ok().map(|function| {
+        let nodes = presentation_nodes(function.body(), &width);
+        // Exact program points are part of suffix equality: memory views
+        // are proved at those points. Keep the original presentation tree
+        // when the whole bounded pass cannot complete.
+        let shared = crate::branch_tail::factor(&nodes);
+        (compact(&nodes), shared.map(|nodes| compact(&nodes)))
+    });
+    let display_nodes = candidates.as_ref().map(|(nodes, _)| nodes.as_slice());
     let views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
     let address_uses = if options.recover_objects {
@@ -1457,7 +1469,7 @@ fn emit_reduced_c(
         .iter()
         .flat_map(|(&color, registers)| registers.iter().map(move |reg| (reg.0, color)))
         .collect();
-    let roles = crate::value_role::infer(display_nodes.as_deref().unwrap_or(&[]), |reg| {
+    let roles = crate::value_role::infer(display_nodes.unwrap_or(&[]), |reg| {
         slots.get(&reg.0).copied()
     });
     let mut role_counts = BTreeMap::new();
@@ -1682,13 +1694,26 @@ fn emit_reduced_c(
                 line(&mut code, 1, "uint64_t nirvana_transfer = 0;");
                 line(&mut code, 1, "int nirvana_continue = 0;");
             }
-            printer.nodes(
-                &mut code,
-                display_nodes.as_deref().expect("recovered nodes"),
-                1,
-                0,
-                nonlocal,
-            )?;
+            let nodes = display_nodes.expect("recovered nodes");
+            let mut body = String::new();
+            printer.nodes(&mut body, nodes, 1, 0, nonlocal)?;
+            if let Some((_, Some(shared))) = &candidates
+                && shared != nodes
+            {
+                let mut candidate = String::new();
+                // Compare the same C body using the same names, storage,
+                // widths, views and checks. Sharing a lone break/return can
+                // otherwise replace flat exits by deep else chains.
+                if printer
+                    .nodes(&mut candidate, shared, 1, 0, nonlocal)
+                    .is_ok()
+                    && candidate.len() < body.len()
+                    && max_indent(&candidate) <= max_indent(&body)
+                {
+                    body = candidate;
+                }
+            }
+            code.push_str(&body);
             (None, Some(function.stats()), Some(function.evidence()))
         }
         Err(reason) => {

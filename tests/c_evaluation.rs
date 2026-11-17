@@ -77,6 +77,97 @@ fn native_c_sequences_binary_select_and_nested_address_faults() {
 }
 
 #[test]
+fn native_c_shared_branch_return_keeps_prefix_writes_and_first_fault() {
+    let result = b(BinaryOp::Add, load(r(1)), load(c(0x1000)));
+    let program = Program::new(
+        0,
+        2,
+        vec![
+            instruction(
+                0,
+                vec![store(c(0x100f), Width::U8, c(0x7f))],
+                Control::Branch {
+                    condition: b(BinaryOp::Eq, load(r(0)), load(r(1))),
+                    target: 3,
+                },
+            ),
+            instruction(1, vec![store(r(0), Width::U8, c(0xaa))], Control::Next),
+            instruction(2, vec![], Control::Return(result.clone())),
+            instruction(3, vec![store(r(1), Width::U8, c(0xbb))], Control::Next),
+            instruction(4, vec![], Control::Return(result)),
+        ],
+    )
+    .unwrap();
+    let inputs: Vec<_> = [0x1000, 0x1008, 0x100f, 0xffff]
+        .into_iter()
+        .flat_map(|a| {
+            [0x1000, 0x1008, 0x100f, 0xffff]
+                .into_iter()
+                .map(move |b| [a, b])
+        })
+        .collect();
+    let output = emit_readable_c_with_options(&program, ReadableOptions::default()).unwrap();
+    let function = output
+        .code
+        .split("uint64_t nirvana_readable(")
+        .nth(1)
+        .unwrap();
+    assert_eq!(function.matches("return ").count(), 1, "{function}");
+    compare(&program, &inputs);
+}
+
+#[test]
+fn native_c_equal_branch_bodies_still_evaluate_ordered_faulting_condition() {
+    let result = b(BinaryOp::Xor, load(c(0x1000)), r(1));
+    for condition in [
+        r(0),
+        Expr::select(
+            b(BinaryOp::And, Expr::load(r(0), Width::U8), c(1)),
+            b(BinaryOp::Eq, load(r(1)), load(c(0x1000))),
+            load(c(0xfffe)),
+        ),
+    ] {
+        let program = Program::new(
+            0,
+            2,
+            vec![
+                instruction(
+                    0,
+                    vec![store(c(0x100f), Width::U8, c(0x5a))],
+                    Control::Branch {
+                        condition,
+                        target: 2,
+                    },
+                ),
+                instruction(1, vec![], Control::Return(result.clone())),
+                instruction(2, vec![], Control::Return(result.clone())),
+            ],
+        )
+        .unwrap();
+        let output = emit_readable_c_with_options(&program, ReadableOptions::default()).unwrap();
+        let function = output
+            .code
+            .split("uint64_t nirvana_readable(")
+            .nth(1)
+            .unwrap();
+        assert_eq!(function.matches("return ").count(), 1, "{function}");
+        assert!(function.contains("(void)("), "{function}");
+        compare(
+            &program,
+            &[
+                [0, 0x1008],
+                [0x1000, 0x1008],
+                [0x1008, 0x1000],
+                [0xffff, 0x1008],
+                [0x1000, 0xffff],
+                [0x100f, 0x1008],
+                [0x100f, 0xffff],
+            ],
+        );
+    }
+}
+
+#[test]
 fn native_c_sequences_store_address_before_rhs_and_commits_nothing_after_fault() {
     let p = Program::new(
         0,
