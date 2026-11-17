@@ -108,6 +108,10 @@ pub enum Operation {
     ByteSwap {
         destination: Register,
     },
+    BitTest {
+        base: Register,
+        index: Operand,
+    },
     Imul {
         destination: Register,
         left: Operand,
@@ -675,6 +679,23 @@ impl Decoder<'_> {
                             condition: second & 15,
                             destination,
                         }
+                    }
+                    0xa3 | 0xba => {
+                        let (index, base, group) = self.modrm(width)?;
+                        if second == 0xba && group != 4 {
+                            return Err(
+                                self.error("only BT /4 is supported; BTS/BTR/BTC are unsupported")
+                            );
+                        }
+                        let Operand::Register(base) = base else {
+                            return Err(self.error("memory BT is unsupported"));
+                        };
+                        let index = if second == 0xba {
+                            Operand::Immediate(self.unsigned(1)?)
+                        } else {
+                            Operand::Register(index)
+                        };
+                        Operation::BitTest { base, index }
                     }
                     0xaf => {
                         let (destination, right, _) = self.modrm(width)?;

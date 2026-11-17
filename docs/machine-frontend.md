@@ -24,6 +24,7 @@ return 後の padding を一律に命令として扱わない。
 - 明示オペランドの IMUL、直接 JMP/Jcc、SETcc、CMOVcc。
 - 64-bit PUSH/POP/LEAVE、RET、NOP、ENDBR64。
 - 32/64-bit BSWAP（実効16-bit形式は拒否）。
+- 16/32/64-bitレジスタのBT。memory形式とBTS/BTR/BTCは未対応。
 
 部分レジスタと CF/ZF/SF/OF/PF を IR に展開する。
 入口のフラグは未定義として解析し、全到達経路で定義を確認できないフラグの読出しは拒否する。

@@ -155,6 +155,8 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
             kind: Unary::Neg, ..
         } => (0, ALL, 0),
         Operation::Imul { .. } => (0, F_CF | F_OF, F_ZF | F_SF | F_PF),
+        // BT defines CF, preserves ZF, and leaves OF/SF/PF undefined.
+        Operation::BitTest { .. } => (0, F_CF, F_OF | F_SF | F_PF),
         Operation::Rotate {
             destination, count, ..
         } => {
@@ -548,6 +550,26 @@ impl Lifter {
         // BSWAP leaves every arithmetic flag unchanged.
         self.write_register(destination, r(A));
     }
+    fn bit_test(&mut self, base: Register, index: Operand) {
+        // Intel SDM vol.2A 3-130/3-131: register bit offsets wrap modulo
+        // operand width. The base is read-only, including the 32-bit form.
+        self.set(
+            CF,
+            and(
+                b(
+                    B::Shr,
+                    self.read_register(base),
+                    and(self.read(index), k(u64::from(base.width.bits() - 1))),
+                ),
+                k(1),
+            ),
+        );
+        // Deterministic placeholders for flags which check_flags makes
+        // unavailable. ZF is preserved; neither input GPR is written.
+        for flag in [OF, SF, PF] {
+            self.set(flag, k(0));
+        }
+    }
     fn pop(&mut self, destination: Register) {
         self.set(A, Expr::load(r(RSP), Width::U64));
         self.set(RSP, add(r(RSP), k(8)));
@@ -634,6 +656,7 @@ impl Lifter {
                 count,
             } => self.rotate(kind, destination, count),
             Operation::ByteSwap { destination } => self.byte_swap(destination),
+            Operation::BitTest { base, index } => self.bit_test(base, index),
             Operation::Imul {
                 destination,
                 left,

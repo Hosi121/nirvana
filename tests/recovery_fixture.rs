@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 const BASE: u64 = 0x1000;
 const STATE: usize = 0x1000;
 const MEMORY_SIZE: usize = 0x10000;
-const CASES: [&str; 17] = [
+const CASES: [&str; 18] = [
     "byte-fields",
     "strided-input",
     "selected-alias",
@@ -33,6 +33,7 @@ const CASES: [&str; 17] = [
     "seeded-sum",
     "rotates",
     "byte-swap",
+    "bit-test",
 ];
 
 fn inputs() -> Vec<[u64; 4]> {
