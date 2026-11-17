@@ -79,6 +79,9 @@ pub struct ReadableC {
     /// Candidate stack spill/reload lineages in the selected display IR.
     /// These are naming/allocation preferences, not original source identities.
     pub stack_roles: Option<crate::stack_role::StackRoles>,
+    /// Exact load locations, independent of uncertainty about reaching stores.
+    /// Location evidence does not authorize caching or removing a load.
+    pub stack_cells: Option<crate::stack_cells::CellBindings>,
     /// Exhaustive correspondence for adopted pure finite display regions.
     /// This does not replace either original-IR structure certificate.
     pub finite_regions: Vec<crate::finite_region::FiniteEvidence>,
@@ -1328,6 +1331,7 @@ fn emit_prepared_c(
         value_count: local_value_count,
         stats: local_plan,
         stack_roles,
+        stack_cells,
     } = LocalPlan::build(
         program,
         reduced.parameters(),
@@ -1570,6 +1574,7 @@ fn emit_prepared_c(
         local_value_count,
         local_plan,
         stack_roles,
+        stack_cells,
         finite_regions,
     })
 }

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::allocation::allocate_locals_with_hints;
 use crate::ir::{Program, Reg, Width};
+use crate::stack_cells::CellBindings;
 use crate::stack_role::StackRoles;
 use crate::structure::Node;
 use crate::value_role::{ValueRole, infer};
@@ -23,6 +24,7 @@ pub(super) struct LocalPlan {
     pub value_count: usize,
     pub stats: LocalPlanStats,
     pub stack_roles: Option<StackRoles>,
+    pub stack_cells: Option<CellBindings>,
 }
 
 impl LocalPlan {
@@ -44,6 +46,10 @@ impl LocalPlan {
             .stack_register
             .filter(|_| options.coalesce_locals)
             .and_then(|stack| StackRoles::analyze(program, stack, nodes));
+        let stack_cells = options
+            .stack_register
+            .filter(|_| options.coalesce_locals)
+            .and_then(|stack| CellBindings::analyze(program, stack, &eligible));
         let StorageColors {
             colors: storage,
             verified: verified_storage_pools,
@@ -96,15 +102,18 @@ impl LocalPlan {
                 semantic_colors(&eligible, &storage, refined, nodes, stack_roles.as_ref())
             })
             .unwrap_or_else(|| storage.clone());
-        let source_candidate = stack_roles.as_ref().and_then(|roles| {
-            let initial: Vec<_> = eligible
-                .iter()
-                .copied()
-                .zip(colors.iter().copied())
-                .collect();
-            let lineages = source_lineages(&eligible, roles);
-            crate::source_locals::recover(program, &initial, &lineages)
-        });
+        let source_candidate = (stack_roles.is_some() || stack_cells.is_some())
+            .then(|| {
+                let initial: Vec<_> = eligible
+                    .iter()
+                    .copied()
+                    .zip(colors.iter().copied())
+                    .collect();
+                let lineages =
+                    source_lineages(&eligible, stack_roles.as_ref(), stack_cells.as_ref());
+                crate::source_locals::recover(program, &initial, &lineages)
+            })
+            .flatten();
         // The candidate covers every eligible register and is independently
         // checked as a whole. Width selection below uses the maximum member
         // width, including when a candidate spans old width pools/colors.
@@ -133,6 +142,7 @@ impl LocalPlan {
                         inferred.get(&color).copied(),
                         registers,
                         stack_roles.as_ref(),
+                        stack_cells.as_ref(),
                     )?,
                 ))
             })
@@ -209,6 +219,7 @@ impl LocalPlan {
             value_count: eligible.len(),
             stats,
             stack_roles,
+            stack_cells,
         }
     }
 }
@@ -355,6 +366,7 @@ fn local_role(
     inferred: Option<ValueRole>,
     registers: &[Reg],
     stack: Option<&StackRoles>,
+    cells: Option<&CellBindings>,
 ) -> Option<ValueRole> {
     let Some(stack) = stack else {
         return inferred;
@@ -367,14 +379,11 @@ fn local_role(
     }
     let location = registers
         .first()
-        .and_then(|&reg| stack.web_location(stack.register_web(reg)?));
+        .and_then(|&reg| binding_location(Some(stack), cells, reg));
     if location.is_some_and(|location| {
-        registers.iter().all(|&reg| {
-            stack
-                .register_web(reg)
-                .and_then(|web| stack.web_location(web))
-                == Some(location)
-        })
+        registers
+            .iter()
+            .all(|&reg| binding_location(Some(stack), cells, reg) == Some(location))
     }) {
         let mut agreed = None;
         for &reg in registers {
@@ -398,24 +407,29 @@ fn local_role(
 enum SourceKey {
     Location(crate::stack_values::StackLocation),
     Web(usize),
+    Register(usize),
 }
 
 // Distinct reaching-store webs can be updates of one source variable. A shared
 // exact cell is a broader naming preference when its known roles agree. Reused
 // cells remain ambiguous source identities; the allocation checker, not this
 // heuristic, determines whether their values may share C storage.
-fn source_lineages(eligible: &[Reg], roles: &StackRoles) -> Vec<(Reg, usize)> {
+fn source_lineages(
+    eligible: &[Reg],
+    roles: Option<&StackRoles>,
+    cells: Option<&CellBindings>,
+) -> Vec<(Reg, usize)> {
     let bindings: Vec<_> = eligible
         .iter()
         .filter_map(|&reg| {
-            let web = roles.register_web(reg)?;
-            Some((reg, web, roles.web_location(web)?))
+            let web = roles.and_then(|roles| roles.register_web(reg));
+            Some((reg, web, binding_location(roles, cells, reg)?))
         })
         .collect();
     let mut by_location = BTreeMap::<_, BTreeSet<_>>::new();
     for &(reg, _, location) in &bindings {
         let known = by_location.entry(location).or_default();
-        if let Some(role) = roles.register_role(reg) {
+        if let Some(role) = roles.and_then(|roles| roles.register_role(reg)) {
             known.insert(role.stem());
         }
     }
@@ -426,10 +440,20 @@ fn source_lineages(eligible: &[Reg], roles: &StackRoles) -> Vec<(Reg, usize)> {
             let key = if by_location[&location].len() <= 1 {
                 SourceKey::Location(location)
             } else {
-                SourceKey::Web(web)
+                web.map_or(SourceKey::Register(reg.0), SourceKey::Web)
             };
             let next = labels.len();
             (reg, *labels.entry(key).or_insert(next))
         })
         .collect()
+}
+
+fn binding_location(
+    roles: Option<&StackRoles>,
+    cells: Option<&CellBindings>,
+    register: Reg,
+) -> Option<crate::stack_values::StackLocation> {
+    roles
+        .and_then(|roles| roles.web_location(roles.register_web(register)?))
+        .or_else(|| cells.and_then(|cells| cells.location(register)))
 }

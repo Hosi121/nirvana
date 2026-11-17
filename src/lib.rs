@@ -35,6 +35,7 @@ pub mod sequence;
 pub mod simplify;
 pub mod source_locals;
 pub mod stack;
+pub mod stack_cells;
 pub mod stack_role;
 pub mod stack_values;
 pub mod structure;

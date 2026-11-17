@@ -1293,6 +1293,79 @@ fn native_c_source_lineage_across_storage_widths_retains_full_values_and_faults(
     compare_with_stack(&program, &inputs, Some(Reg(0)));
 }
 
+#[test]
+fn native_c_load_cell_identity_never_caches_a_value_across_an_aliasing_store() {
+    let program = Program::new(
+        0,
+        4,
+        vec![
+            instruction(0, vec![store(r(0), Width::U64, c(1))], Control::Jump(1)),
+            instruction(
+                1,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: load(r(0)),
+                }],
+                Control::Jump(2),
+            ),
+            instruction(2, vec![store(r(1), Width::U8, c(0xaa))], Control::Jump(3)),
+            instruction(
+                3,
+                vec![Assignment {
+                    destination: Reg(3).into(),
+                    value: load(r(0)),
+                }],
+                Control::Jump(4),
+            ),
+            instruction(
+                4,
+                vec![],
+                Control::Return(b(BinaryOp::Xor, b(BinaryOp::Shl, r(2), c(16)), r(3))),
+            ),
+        ],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            stack_register: Some(Reg(0)),
+            coalesce_locals: true,
+            compact_memory: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let cells = output.stack_cells.as_ref().unwrap();
+    assert!(
+        output
+            .locals
+            .iter()
+            .flat_map(|local| &local.registers)
+            .any(|&reg| {
+                cells.location(reg).is_some()
+                    && output
+                        .stack_roles
+                        .as_ref()
+                        .and_then(|roles| roles.register_web(reg))
+                        .is_none()
+            }),
+        "late load has a location without a reaching-store web"
+    );
+    assert!(
+        output.local_plan.source_allocation.is_none(),
+        "live old and new values must remain distinct"
+    );
+    let inputs: Vec<_> = [0x1000, 0x1008, 0x100f, 0xffff]
+        .into_iter()
+        .flat_map(|stack| {
+            [0x1000, 0x1008, 0x100f, 0xffff]
+                .into_iter()
+                .map(move |alias| [stack, alias])
+        })
+        .collect();
+    compare_with_stack(&program, &inputs, Some(Reg(0)));
+}
+
 fn compare(program: &Program, inputs: &[[u64; 2]]) {
     compare_with_stack(program, inputs, None);
 }

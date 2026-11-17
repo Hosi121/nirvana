@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if objects.is_empty() {
         return Err("usage: cargo run --example measure_variables -- FILE.o ...".into());
     }
-    println!("object\tlocal\tregister\tweb\toffset\twidth\trole");
+    println!("object\tlocal\tregister\tweb\toffset\twidth\trole\tbasis");
     for object in objects {
         let path = std::path::Path::new(&object);
         let input = frontend::lift_elf(&std::fs::read(path)?, "fixture")?;
@@ -33,9 +33,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .stack_roles
                     .as_ref()
                     .and_then(|roles| roles.register_web(register));
-                let location = web.and_then(|web| output.stack_roles.as_ref()?.web_location(web));
+                let stored = web.and_then(|web| output.stack_roles.as_ref()?.web_location(web));
+                let loaded = output
+                    .stack_cells
+                    .as_ref()
+                    .and_then(|cells| cells.location(register));
+                let location = stored.or(loaded);
+                let basis = if stored.is_some() {
+                    "store-web"
+                } else if loaded.is_some() {
+                    "load-cell"
+                } else {
+                    "-"
+                };
                 println!(
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     cell(&path.display().to_string()),
                     cell(&local.name),
                     register.0,
@@ -44,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     location
                         .map_or_else(|| "-".into(), |location| location.width.bytes().to_string()),
                     local.role.map_or("-", |role| role.stem()),
+                    basis,
                 );
             }
         }
