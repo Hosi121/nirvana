@@ -1364,3 +1364,48 @@ fn actual_o2_division_qualifies_on_unchanged_final_c_groups_only() {
     );
     assert_eq!(lifted.program.instructions(), original);
 }
+
+#[test]
+fn actual_seven_o2_names_only_the_clean_certified_add_division_group() {
+    let scratch = native::Scratch::new();
+    let object = scratch.0.join("seven-O2.o");
+    native::object(
+        &native::fixture_root().join("recovery/unsigned-div-seven.c"),
+        &object,
+        "-O2",
+        "fixture",
+    );
+    let input = nirvana::frontend::lift_elf(&std::fs::read(object).unwrap(), "fixture").unwrap();
+    let original = input.program.instructions().to_vec();
+    let output = nirvana::readable::emit_readable_c_with_options(
+        &input.program,
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(nirvana::x86::RSP)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    let quotients: Vec<_> = output
+        .locals
+        .iter()
+        .filter(|l| l.role == Some(ValueRole::Quotient))
+        .collect();
+    assert_eq!(quotients.len(), 1);
+    assert_eq!(quotients[0].name, "quotient");
+    assert_eq!(quotients[0].registers.len(), 1);
+    assert!(output.code.contains("uint64_t quotient = "));
+    assert!(output.code.contains(" / 7;"));
+    assert_eq!(input.program.instructions(), original);
+}
+
+#[test]
+fn unrelated_shifted_sums_keep_previously_certified_quotient_names() {
+    let mut assignments = vec![set(0, quotient(r(50)))];
+    assignments.extend(
+        (0..100).map(|index| set(5, b(BinaryOp::Shr, b(BinaryOp::Add, r(6), c(index)), c(1)))),
+    );
+    let nodes = [step(assignments), Node::Return(r(0))];
+    assert_eq!(arithmetic(&nodes).get(&0), Some(&ValueRole::Quotient));
+}

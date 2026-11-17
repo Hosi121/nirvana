@@ -27,6 +27,28 @@ pub struct AddDivisionView<'a> {
     pub evidence: AddDivisionEvidence,
 }
 
+/// Constant-depth syntax hint for callers budgeting optional recognition.
+/// Recognition and validation provide the arithmetic proof; this only excludes
+/// unrelated shifted sums before their callers reserve more analysis work.
+pub fn has_kernel_shape(expression: &Expr) -> bool {
+    let Expr::Binary(BinaryOp::Shr, average, count) = expression else {
+        return false;
+    };
+    if !matches!(&**count, Expr::Const(0..=62)) {
+        return false;
+    }
+    let Expr::Binary(BinaryOp::Add, a, b) = &**average else {
+        return false;
+    };
+    [(&**a, &**b), (&**b, &**a)]
+        .into_iter()
+        .any(|(high, half)| {
+            matches!(high, Expr::Binary(BinaryOp::UMulHigh, _, _))
+                && half_difference(half)
+                    .is_some_and(|(_, high)| matches!(high, Expr::Binary(BinaryOp::UMulHigh, _, _)))
+        })
+}
+
 /// All loads, even in dead lazy arms, and exhausted whole-tree bounds decline.
 /// Both Add and high-product operand orders are accepted. Every dividend must
 /// be structurally equal; register names, widths, and earlier writes add no facts.

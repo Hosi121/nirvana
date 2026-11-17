@@ -104,7 +104,16 @@ pub(super) fn quotients(
                         &mut scan.work,
                         expression_nodes.checked_mul(3)?.checked_add(128)?,
                     )?;
-                    let division = crate::division_expr::recognize(&assignment.value).is_some();
+                    let mut division = crate::division_expr::recognize(&assignment.value).is_some();
+                    // The reciprocal-add recognizer may recheck three copies
+                    // of its dividend. Charge its extra bounded scans first.
+                    if !division && crate::add_division_expr::has_kernel_shape(&assignment.value) {
+                        spend(
+                            &mut scan.work,
+                            expression_nodes.checked_mul(16)?.checked_add(512)?,
+                        )?;
+                        division = crate::add_division_expr::recognize(&assignment.value).is_some();
+                    }
                     let copy = if let Expr::Register(source) = assignment.value {
                         scan.slot(source)? == Some(destination)
                     } else {
