@@ -205,6 +205,12 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 has_division_by_ten(body),
                 "constant division was not adopted: {source_optimization}, views={recover_objects}\n{body}"
             );
+            if source_optimization == "-O2" {
+                assert!(
+                    !body.contains("0xcccccccd"),
+                    "narrow reciprocal remains: {body}"
+                );
+            }
             assert_eq!(program.instructions(), original);
             let source =
                 checked_c::source_with_size(&output, program.register_count(), 4, MEMORY_SIZE);

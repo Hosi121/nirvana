@@ -30,6 +30,7 @@ pub mod loop_exit;
 pub mod loop_labels;
 pub mod loop_recover;
 pub mod loop_shape;
+pub mod narrow_division_expr;
 pub mod narrow_rotate;
 pub mod observe;
 pub mod postdom;
