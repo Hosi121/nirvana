@@ -498,3 +498,185 @@ fn cartesian_case_cap_and_whole_tree_depth_bounds_are_checked_before_execution()
             .is_resource_limit()
     );
 }
+
+fn raw_remainder(dividend: Expr, multiplier: u64, shift: u64, divisor: u64) -> Expr {
+    let quotient = binary(
+        BinaryOp::Shr,
+        binary(BinaryOp::UMulHigh, c(multiplier), dividend.clone()),
+        c(shift),
+    );
+    binary(
+        BinaryOp::Sub,
+        dividend,
+        binary(BinaryOp::Mul, quotient, c(divisor)),
+    )
+}
+
+fn remainder10(dividend: Expr) -> Expr {
+    raw_remainder(dividend, 0xcccc_cccc_cccc_cccd, 3, 10)
+}
+
+#[test]
+fn certified_raw_remainder_derives_numeric_interval_from_arbitrary_inputs() {
+    use nirvana::finite_region::{PrefixDomain, derive_domains};
+
+    let prefix = vec![step(vec![set(0, remainder10(r(9)))])];
+    let unchanged = prefix.clone();
+    let domain: Vec<_> = (0..10).collect();
+    assert_eq!(
+        derive_domains(&prefix, &[Reg(0)]).unwrap(),
+        [(Reg(0), PrefixDomain::Finite(domain.clone()))]
+    );
+    let evidence = validate(&prefix, &[], &[], &[Reg(0)], &[Reg(0)]).unwrap();
+    assert_eq!(evidence.cases, 10);
+    assert_eq!(values(&evidence, 0), domain);
+    assert_eq!(maximum(&evidence, 0), 9);
+    assert_eq!(prefix, unchanged);
+
+    // Independent executable IR replay checks interval membership and exact
+    // remainder at wrap/sign/division boundaries. These samples supplement
+    // the quotient certificate; they do not supply the abstract bound.
+    let program = Program::new(
+        0,
+        10,
+        vec![IrInstruction {
+            address: 0,
+            size: 1,
+            assignments: vec![set(0, remainder10(r(9)))],
+            control: Control::Return(r(0)),
+        }],
+    )
+    .unwrap();
+    let mut samples = vec![0, 1, 9, 10, 11, u64::MAX, u64::MAX - 1, 1 << 63];
+    for quotient in [1, 2, 3, 0xffff, u64::MAX / 10] {
+        let center = quotient * 10;
+        samples.extend([center.wrapping_sub(1), center, center.wrapping_add(1)]);
+    }
+    for input in samples {
+        let mut registers = vec![0; 10];
+        registers[9] = input;
+        let result = program.execute(&registers, 4).unwrap();
+        assert_eq!(result.value, input % 10);
+        assert!(domain.contains(&result.value));
+    }
+}
+
+#[test]
+fn remainder_domains_require_raw_certificates_and_fit_the_existing_set_cap() {
+    use nirvana::finite_region::{PrefixDomain, derive_domains};
+
+    let product = binary(
+        BinaryOp::Mul,
+        binary(
+            BinaryOp::Shr,
+            binary(BinaryOp::UMulHigh, c(0xcccc_cccc_cccc_cccd), r(9)),
+            c(3),
+        ),
+        c(10),
+    );
+    let bad_product_mask = binary(BinaryOp::Sub, r(9), binary(BinaryOp::And, product, c(9)));
+    let beyond_cap = raw_remainder(r(9), 0xf0f0_f0f0_f0f0_f0f1, 4, 17);
+    assert_eq!(
+        nirvana::remainder_expr::recognize(&beyond_cap)
+            .unwrap()
+            .maximum_remainder,
+        16,
+    );
+    let load = Expr::load(c(0x1000), Width::U64);
+    let lazy_load = Expr::select(c(1), r(9), load.clone());
+    let negatives = [
+        // A valid quotient for a different divisor cannot justify this %10.
+        raw_remainder(r(9), 0xcccc_cccc_cccc_cccd, 4, 10),
+        raw_remainder(r(9), 0xcccc_cccc_cccc_cccd, 67, 10),
+        // Noncontiguous numeric bound9 is not a sufficient product mask.
+        bad_product_mask,
+        // A correct %17 has 17 possible values, exceeding the existing cap16.
+        beyond_cap,
+        remainder10(load),
+        remainder10(lazy_load),
+        // Separate register quotient: no substitution of dataflow facts.
+        binary(BinaryOp::Sub, r(9), binary(BinaryOp::Mul, r(8), c(10))),
+        // Distinct dividend syntax cannot borrow the other input's certificate.
+        binary(
+            BinaryOp::Sub,
+            r(8),
+            binary(
+                BinaryOp::Mul,
+                binary(
+                    BinaryOp::Shr,
+                    binary(BinaryOp::UMulHigh, c(0xcccc_cccc_cccc_cccd), r(9)),
+                    c(3),
+                ),
+                c(10),
+            ),
+        ),
+    ];
+    for expression in negatives {
+        let prefix = vec![step(vec![set(0, expression.clone())])];
+        assert_eq!(
+            derive_domains(&prefix, &[Reg(0)]).unwrap(),
+            [(Reg(0), PrefixDomain::Unknown)],
+            "{expression:?}"
+        );
+        assert!(matches!(
+            validate(&prefix, &[], &[], &[Reg(0)], &[Reg(0)]),
+            Err(FiniteError::UnknownInput { register: Reg(0) })
+        ));
+    }
+}
+
+#[test]
+fn remainder_prefix_certifies_ten_case_sum_with_arbitrary_loaded_seed() {
+    let prefix = vec![step(vec![
+        set(9, Expr::load(c(0x1000), Width::U64)),
+        set(0, c(0)),
+        set(1, Expr::load(c(0x1008), Width::U64)),
+        set(2, remainder10(r(9))),
+    ])];
+    let unchanged = prefix.clone();
+    let evidence = nirvana::affine_region::validate(
+        &prefix,
+        &paired_sum(),
+        &simple_sum(),
+        &INPUTS,
+        &[Reg(0), Reg(1)],
+        Reg(1),
+    )
+    .unwrap();
+    assert_eq!(evidence.cases, 10);
+    assert_eq!(
+        evidence.inputs,
+        [(Reg(0), vec![0]), (Reg(2), (0..10).collect())]
+    );
+    assert_eq!(evidence.symbolic_input, Reg(1));
+    assert!(evidence.maxima.contains(&(Reg(1), u64::MAX)));
+    assert_eq!(prefix, unchanged);
+
+    let wrong = vec![step(vec![set(1, add(r(1), c(1)))])];
+    assert!(matches!(
+        nirvana::affine_region::validate(
+            &prefix,
+            &paired_sum(),
+            &wrong,
+            &INPUTS,
+            &[Reg(0), Reg(1)],
+            Reg(1),
+        ),
+        Err(nirvana::affine_region::AffineError::Counterexample { .. })
+    ));
+}
+
+#[test]
+fn repeated_remainder_probes_consume_the_existing_whole_work_budget() {
+    use nirvana::finite_region::derive_domains;
+
+    let prefix: Vec<_> = (0..8)
+        .map(|index| step(vec![set(index, remainder10(r(100)))]))
+        .collect();
+    assert!(matches!(
+        derive_domains(&prefix, &[Reg(0)]),
+        Err(FiniteError::Unavailable {
+            resource: "whole work"
+        })
+    ));
+}

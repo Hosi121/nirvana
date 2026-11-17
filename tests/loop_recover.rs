@@ -1,10 +1,4 @@
-// Local path wiring keeps the deliverable limited to this test and the module.
-use nirvana::{affine_region, ir, structure, value_role};
-#[allow(dead_code)]
-#[path = "../src/finite_region.rs"]
-mod finite_region;
-#[path = "../src/loop_recover.rs"]
-mod loop_recover;
+use nirvana::{ir, loop_recover, structure, value_role};
 
 use ir::{Assignment, BinaryOp, Expr, Place, Reg, Width};
 use loop_recover::{recover, recover_affine};

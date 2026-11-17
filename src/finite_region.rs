@@ -126,9 +126,13 @@ fn unavailable(resource: &'static str) -> FiniteError {
 struct Work(usize);
 impl Work {
     fn spend(&mut self) -> Result<()> {
+        self.reserve(1)
+    }
+
+    fn reserve(&mut self, amount: usize) -> Result<()> {
         self.0 = self
             .0
-            .checked_sub(1)
+            .checked_sub(amount)
             .ok_or_else(|| unavailable("whole work"))?;
         Ok(())
     }
@@ -296,7 +300,7 @@ fn abstract_value(
     work: &mut Work,
 ) -> Result<Values> {
     work.spend()?;
-    Ok(match expression {
+    let value = match expression {
         Expr::Const(value) => Values::constant(*value),
         Expr::Register(reg) => facts.get(&reg.0).cloned().unwrap_or(Values::Unknown),
         Expr::Load { .. } => Values::Unknown,
@@ -360,7 +364,34 @@ fn abstract_value(
                 ),
             }
         }
-    })
+    };
+    if matches!(value, Values::Unknown)
+        && let Expr::Binary(BinaryOp::Sub, _, product) = expression
+        && matches!(
+            &**product,
+            Expr::Binary(BinaryOp::Mul | BinaryOp::And, _, _)
+        )
+    {
+        // Recognition independently proves a raw, pure unsigned remainder.
+        // Reserve a conservative upper bound for its own scans, both quotient
+        // recognizers and nested independent certificate validation. Repeated
+        // unsuccessful probes therefore consume this pass's ordinary budget.
+        work.reserve(16 * crate::remainder_expr::MAX_WORK)?;
+        if let Some(remainder) = crate::remainder_expr::recognize(expression)
+            && remainder.maximum_remainder < MAX_SET_VALUES as u64
+        {
+            // This numeric interval is a sound overapproximation, not a
+            // possible-one mask or a guess from tested dividend values. Loads
+            // in other prefix assignments stay at their original sites.
+            let mut values = BTreeSet::new();
+            for value in 0..=remainder.maximum_remainder {
+                work.spend()?;
+                values.insert(value);
+            }
+            return Ok(Values::Finite(values));
+        }
+    }
+    Ok(value)
 }
 
 fn kill_writes(nodes: &[Node], facts: &mut BTreeMap<usize, Values>, work: &mut Work) -> Result<()> {
