@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::allocation::allocate_locals;
+use crate::allocation::allocate_locals_with_hints;
 use crate::ir::{Program, Reg, Width};
 use crate::stack_role::StackRoles;
 use crate::structure::Node;
@@ -40,11 +40,21 @@ impl LocalPlan {
             .filter(|reg| !names.contains_key(reg))
             .map(|&reg| Reg(reg))
             .collect();
-        let storage = storage_colors(program, &eligible, widths, options.coalesce_locals);
         let stack_roles = options
             .stack_register
             .filter(|_| options.coalesce_locals)
             .and_then(|stack| StackRoles::analyze(program, stack, nodes));
+        let StorageColors {
+            colors: storage,
+            verified: verified_storage_pools,
+            fallbacks: storage_verification_fallbacks,
+        } = storage_colors(
+            program,
+            &eligible,
+            widths,
+            options.coalesce_locals,
+            stack_roles.as_ref(),
+        );
         let storage_slots = storage.iter().copied().collect::<BTreeSet<_>>().len();
         let pairs: Vec<_> = eligible
             .iter()
@@ -162,6 +172,8 @@ impl LocalPlan {
             identity_groups,
             local_variables: locals.len(),
             split_storage_groups: origins.values().filter(|colors| colors.len() > 1).count(),
+            verified_storage_pools,
+            storage_verification_fallbacks,
         };
         let mut initial_slots = Vec::new();
         for (index, reg) in parameters.iter().enumerate() {
@@ -184,13 +196,22 @@ impl LocalPlan {
     }
 }
 
+struct StorageColors {
+    colors: Vec<usize>,
+    verified: usize,
+    fallbacks: usize,
+}
+
 fn storage_colors(
     program: &Program,
     eligible: &[Reg],
     widths: &ValueWidths,
     coalesce: bool,
-) -> Vec<usize> {
+    stack_roles: Option<&StackRoles>,
+) -> StorageColors {
     let mut colors: Vec<_> = (0..eligible.len()).collect();
+    let mut verified = 0;
+    let mut fallbacks = 0;
     if coalesce {
         let mut next_color = 0;
         for width in [Width::U64, Width::U32, Width::U16, Width::U8] {
@@ -200,13 +221,31 @@ fn storage_colors(
                 .filter(|(_, reg)| widths.width(**reg) == width)
                 .map(|(index, &reg)| (index, reg))
                 .collect();
+            if members.is_empty() {
+                continue;
+            }
             let registers: Vec<_> = members.iter().map(|(_, reg)| *reg).collect();
-            let allocated = allocate_locals(program, &registers).and_then(|allocation| {
-                registers
-                    .iter()
-                    .map(|&reg| allocation.color(reg))
-                    .collect::<Option<Vec<_>>>()
+            let mut lineages = BTreeMap::<usize, Vec<Reg>>::new();
+            if let Some(roles) = stack_roles {
+                for &reg in &registers {
+                    if let Some(web) = roles.register_web(reg) {
+                        lineages.entry(web).or_default().push(reg);
+                    }
+                }
+            }
+            let hints: Vec<_> = lineages
+                .values()
+                .flat_map(|members| members.windows(2).map(|pair| (pair[0], pair[1])))
+                .collect();
+            let allocated = checked_colors(program, &registers, &hints).or_else(|| {
+                fallbacks += 1;
+                if hints.is_empty() {
+                    None
+                } else {
+                    checked_colors(program, &registers, &[])
+                }
             });
+            verified += usize::from(allocated.is_some());
             let palette = allocated.unwrap_or_else(|| (0..members.len()).collect());
             let size = palette.iter().max().map_or(0, |color| color + 1);
             for ((index, _), color) in members.into_iter().zip(palette) {
@@ -215,7 +254,33 @@ fn storage_colors(
             next_color += size;
         }
     }
-    colors
+    StorageColors {
+        colors,
+        verified,
+        fallbacks,
+    }
+}
+
+fn checked_colors(
+    program: &Program,
+    registers: &[Reg],
+    hints: &[(Reg, Reg)],
+) -> Option<Vec<usize>> {
+    let allocation = allocate_locals_with_hints(program, registers, hints)?;
+    let colors: Vec<_> = registers
+        .iter()
+        .map(|&reg| allocation.color(reg))
+        .collect::<Option<_>>()?;
+    if colors.iter().any(|&color| color >= registers.len()) {
+        return None;
+    }
+    let mapping: Vec<_> = registers
+        .iter()
+        .copied()
+        .zip(colors.iter().copied())
+        .collect();
+    crate::allocation_verify::validate(program, &mapping).ok()?;
+    Some(colors)
 }
 
 // Share components with the same role within their original storage color.

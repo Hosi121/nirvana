@@ -255,6 +255,34 @@ fn compiled_o0_sum_exposes_spilled_roles_without_rewriting_executable_inputs() {
     }
     assert_eq!(program.instructions(), before);
     assert_eq!(tree.body(), nodes);
+    let output = nirvana::readable::emit_readable_c_with_options(
+        &lifted.program,
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(nirvana::x86::RSP)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    assert!(output.local_plan.verified_storage_pools > 0);
+    assert_eq!(output.local_plan.storage_verification_fallbacks, 0);
+    let limits: Vec<_> = output
+        .locals
+        .iter()
+        .filter(|local| local.role == Some(ValueRole::Limit))
+        .collect();
+    assert_eq!(limits.len(), 1, "spilled limit should share one C local");
+    let stack = output.stack_roles.as_ref().unwrap();
+    assert!(
+        limits[0]
+            .registers
+            .iter()
+            .filter(|&&reg| stack.register_role(reg) == Some(ValueRole::Limit))
+            .count()
+            >= 2,
+        "at least two separately lifted reloads must share that local"
+    );
 }
 
 #[test]

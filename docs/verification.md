@@ -49,6 +49,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [block_verify](../src/block_verify.rs) / `checked-memory-block-v1` | 同じCFG境界での還元。対応入力から次の境界・返り値・全メモリ・最初のFaultを比較 | リフト、構造化、C描画 |
 | [structure_verify](../src/structure_verify.rs) / `structured-flow-v1` | Nodeを独立にグラフ化し、元の命令・逐次代入・条件と両制御先・ループ転送を対応検査 | 表示用のcompact・ループ整形・C文字列 |
 | [web_verify](../src/web_verify.rs) | Reg以外の構文を変えない改名。CFG上のMUST関係で書込み前の各readを検査し、入口ABIと任意のfresh初期値を扱う | 最終レジスタ配列の一致、演算の書換え、C |
+| [allocation_verify](../src/allocation_verify.rs) | 元Regとu64保存slotのMUST対応。未定義の入口read、上書き、合流と同値copyを検査 | Cの幅選択・描画、元Reg配列の最終一致 |
 
 純粋式の検査は、非選択枝に含まれるLoadも未対応です。メモリを自由変数へ置き換えて証明しません。
 SMT検査ではUNSATのみを`EquivalentUnderModel`とします。SATはモデルをIRで再実行して差を確認し、不完全・不正・再現不能なモデルは成功へ昇格させません。

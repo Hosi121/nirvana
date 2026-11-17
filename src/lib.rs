@@ -5,6 +5,7 @@
 //! structuring and C emission use no external disassembler or compiler framework.
 
 pub mod allocation;
+pub mod allocation_verify;
 pub mod analysis;
 pub mod block_verify;
 pub mod branch_tail;

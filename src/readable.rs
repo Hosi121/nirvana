@@ -75,6 +75,9 @@ pub struct ReadableC {
     pub local_value_count: usize,
     /// Storage reuse and the finer local identities selected for C naming.
     pub local_plan: LocalPlanStats,
+    /// Candidate stack spill/reload lineages in the selected display IR.
+    /// These are naming/allocation preferences, not original source identities.
+    pub stack_roles: Option<crate::stack_role::StackRoles>,
 }
 
 /// Outcome of the optional definition-web pass. Invalid or unavailable
@@ -113,6 +116,10 @@ pub struct LocalPlanStats {
     pub identity_groups: Option<usize>,
     pub local_variables: usize,
     pub split_storage_groups: usize,
+    /// Width pools whose chosen storage map passed independent correspondence.
+    pub verified_storage_pools: usize,
+    /// Pools whose first allocation/check was unavailable or rejected.
+    pub storage_verification_fallbacks: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1540,5 +1547,6 @@ fn emit_prepared_c(
         locals,
         local_value_count,
         local_plan,
+        stack_roles,
     })
 }

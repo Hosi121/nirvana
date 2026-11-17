@@ -17,6 +17,8 @@ const MAX_STEPS: usize = 100_000;
 const MAX_WORK: usize = 10_000_000;
 const MAX_EDGES: usize = 100_000;
 const MAX_DEPTH: usize = 256;
+const MAX_HINTS: usize = 8192;
+const MAX_HINT_WORK: usize = 2_000_000;
 
 type Live = BTreeSet<usize>;
 
@@ -60,6 +62,23 @@ struct BlockFacts {
 /// allocation is returned. Equal widths are not required: consumers must choose
 /// a storage width that fits every register assigned to a color.
 pub fn allocate_locals(program: &Program, eligible: &[Reg]) -> Option<LocalAllocation> {
+    allocate_locals_with_hints(program, eligible, &[])
+}
+
+/// Add preferences between compatible local values without weakening any
+/// interference edge. Empty hints retain the ordinary allocation exactly.
+/// Hints are undirected, deduplicated pairs; self-pairs have no effect. All
+/// endpoints must belong to `eligible`. Invalid, excessive or exhausted hints
+/// discard the entire hinted candidate and retain the ordinary allocation.
+///
+/// The candidate competes by storage count, then cut hint pairs, then remaining
+/// copy weight. It can never increase the ordinary allocation's storage count.
+/// Width compatibility is the caller's responsibility, as with allocate_locals.
+pub fn allocate_locals_with_hints(
+    program: &Program,
+    eligible: &[Reg],
+    hints: &[(Reg, Reg)],
+) -> Option<LocalAllocation> {
     if eligible.len() > MAX_ELIGIBLE {
         return None;
     }
@@ -194,6 +213,36 @@ pub fn allocate_locals(program: &Program, eligible: &[Reg]) -> Option<LocalAlloc
     if let Some(candidate) = candidate {
         chosen = candidate;
     }
+    // Hint processing is deliberately isolated: neither bad preferences nor
+    // an exhausted optional pass can invalidate the existing allocation.
+    if !hints.is_empty() {
+        let hinted = (|| {
+            let mut hint_budget = Budget(MAX_HINT_WORK);
+            let hints = hint_affinities(hints, &indices, &mut hint_budget)?;
+            let (graph, copies) = interference(
+                program,
+                &indices,
+                &reachable,
+                &outgoing,
+                true,
+                &mut hint_budget,
+            )?;
+            let candidate =
+                color_graph_with_hints(&graph, Some(&copies), Some(&hints), &mut hint_budget)?;
+            let score = |coloring: &Coloring, budget: &mut Budget| {
+                Some((
+                    coloring.count,
+                    cut_weight(&hints, coloring, budget)?,
+                    cut_weight(&copies, coloring, budget)?,
+                ))
+            };
+            (score(&candidate, &mut hint_budget)? < score(&chosen, &mut hint_budget)?)
+                .then_some(candidate)
+        })();
+        if let Some(candidate) = hinted {
+            chosen = candidate;
+        }
+    }
     Some(LocalAllocation {
         by_register: indices
             .into_iter()
@@ -204,6 +253,39 @@ pub fn allocate_locals(program: &Program, eligible: &[Reg]) -> Option<LocalAlloc
 }
 
 type Affinities = Vec<BTreeMap<usize, usize>>;
+
+fn hint_affinities(
+    pairs: &[(Reg, Reg)],
+    indices: &BTreeMap<usize, usize>,
+    budget: &mut Budget,
+) -> Option<Affinities> {
+    if pairs.len() > MAX_HINTS {
+        return None;
+    }
+    let mut hints = vec![BTreeMap::new(); indices.len()];
+    for &(a, b) in pairs {
+        budget.spend(1)?;
+        let (&a, &b) = (indices.get(&a.0)?, indices.get(&b.0)?);
+        if a != b {
+            hints[a].insert(b, 1);
+            hints[b].insert(a, 1);
+        }
+    }
+    Some(hints)
+}
+
+fn cut_weight(affinity: &Affinities, coloring: &Coloring, budget: &mut Budget) -> Option<usize> {
+    let mut cost = 0usize;
+    for (a, neighbors) in affinity.iter().enumerate() {
+        budget.spend(neighbors.len() + 1)?;
+        for (&b, &weight) in neighbors {
+            if a < b && coloring.colors[a] != coloring.colors[b] {
+                cost = cost.checked_add(weight)?;
+            }
+        }
+    }
+    Some(cost)
+}
 
 fn interference(
     program: &Program,
@@ -283,6 +365,15 @@ fn color_graph(
     affinity: Option<&Affinities>,
     budget: &mut Budget,
 ) -> Option<Coloring> {
+    color_graph_with_hints(graph, affinity, None, budget)
+}
+
+fn color_graph_with_hints(
+    graph: &Graph,
+    affinity: Option<&Affinities>,
+    hints: Option<&Affinities>,
+    budget: &mut Budget,
+) -> Option<Coloring> {
     let mut order: Vec<_> = (0..graph.adjacent.len()).collect();
     order.sort_by_key(|&index| (std::cmp::Reverse(graph.adjacent[index].len()), index));
     let mut colors: Vec<Option<usize>> = vec![None; graph.adjacent.len()];
@@ -306,9 +397,20 @@ fn color_graph(
                 }
             }
         }
+        let mut hint_preference = vec![0usize; count];
+        if let Some(hints) = hints {
+            budget.spend(count + hints[vertex].len())?;
+            for (&neighbor, &weight) in &hints[vertex] {
+                if let Some(color) = colors[neighbor]
+                    && !used[color]
+                {
+                    hint_preference[color] += weight;
+                }
+            }
+        }
         let preferred = (0..count)
             .filter(|&c| !used[c])
-            .max_by_key(|&c| (preference[c], std::cmp::Reverse(c)));
+            .max_by_key(|&c| (hint_preference[c], preference[c], std::cmp::Reverse(c)));
         let color = preferred.unwrap_or(count);
         count = count.max(color + 1);
         colors[vertex] = Some(color);
