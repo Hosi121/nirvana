@@ -10,7 +10,8 @@ use std::fmt;
 use crate::block_verify::{Validation, validate_program};
 use crate::cfg::Target;
 use crate::ir::{
-    Control, ExecutionError, Expr, IrInstruction, Place, Program, ProgramError, Reg, RunReport,
+    BinaryOp, Control, ExecutionError, Expr, IrInstruction, Place, Program, ProgramError, Reg,
+    RunReport,
 };
 use crate::simplify::{node_count, simplify};
 use crate::verify::Solver;
@@ -395,7 +396,11 @@ fn propagate(program: &Program, instructions: &mut [IrInstruction]) {
                         });
                         let mut dependencies = Live::new();
                         reads(&assignment.value, &mut dependencies);
-                        let cheap = matches!(assignment.value, Expr::Const(_) | Expr::Register(_));
+                        // Small differences expose paired sign/overflow uses.
+                        let cheap = matches!(assignment.value, Expr::Const(_) | Expr::Register(_))
+                            || (matches!(assignment.value, Expr::Binary(BinaryOp::Sub, _, _))
+                                && node_count(&assignment.value) <= 3
+                                && uses.get(&reg.0).copied().unwrap_or(0) <= 2);
                         if !assignment.value.uses_memory()
                             && !dependencies.contains(&reg.0)
                             && (cheap || uses.get(&reg.0).copied().unwrap_or(0) <= 1)

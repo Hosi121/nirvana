@@ -151,6 +151,63 @@ fn pure_dead_definitions_do_not_make_arguments_live() {
 }
 
 #[test]
+fn shared_differences_keep_old_operands_across_overwrites_edges_and_faults() {
+    use BinaryOp::*;
+    let program = program(
+        5,
+        vec![
+            (
+                vec![
+                    set(3, Expr::binary(Sub, r(0), r(1))),
+                    set(4, Expr::binary(Shr, r(3), c(63))),
+                    Assignment {
+                        destination: Place::Memory {
+                            address: r(2),
+                            width: Width::U8,
+                        },
+                        value: r(4),
+                    },
+                    set(0, Expr::binary(Add, r(0), c(1))),
+                ],
+                Control::Branch {
+                    condition: r(4),
+                    target: 2,
+                },
+            ),
+            (
+                vec![set(1, Expr::binary(Sub, r(1), c(1)))],
+                Control::Return(Expr::binary(Add, Expr::binary(Xor, r(3), r(0)), r(1))),
+            ),
+            (
+                vec![Assignment {
+                    destination: Place::Memory {
+                        address: Expr::binary(Add, r(2), c(1)),
+                        width: Width::U64,
+                    },
+                    value: r(3),
+                }],
+                Control::Return(Expr::binary(Add, Expr::binary(Xor, r(3), r(0)), r(1))),
+            ),
+        ],
+    );
+    let memory: Vec<_> = (1..=16).collect();
+    for left in [0, 1, (1 << 63) - 1, 1 << 63, u64::MAX] {
+        for right in [0, 1, (1 << 63) - 1, 1 << 63, u64::MAX] {
+            for address in [0, 7, 8, 15, u64::MAX] {
+                for limit in [0, 1, 2, 3, 10] {
+                    compare(
+                        &program,
+                        &[left, right, address, !left, !right],
+                        &memory,
+                        limit,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn seeded_arbitrary_cfgs_preserve_observations_including_step_limits() {
     let mut state = 0x1a29_789a_bced_5791u64;
     let mut random = || {

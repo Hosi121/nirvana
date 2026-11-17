@@ -165,15 +165,10 @@ fn actual_signed_helpers_preserve_full_guest_memory_return_and_first_fault() {
                     .split("uint64_t nirvana_readable(")
                     .nth(1)
                     .unwrap();
-                if name == "signed-compare" || original_optimization == "-O0" {
-                    assert!(
-                        body.contains("nirvana_slt64(") || body.contains("nirvana_sle64("),
-                        "helper absent from function body: {name}{original_optimization}, views={recover_objects}\n{body}"
-                    );
-                }
-                // O2 signed-branch can materialize the subtraction result in
-                // an independent register. Recognition conservatively declines
-                // that site; no source-value equality is assumed here.
+                assert!(
+                    body.contains("nirvana_slt64(") || body.contains("nirvana_sle64("),
+                    "helper absent from function body: {name}{original_optimization}, views={recover_objects}\n{body}"
+                );
                 assert_eq!(program.instructions(), instructions);
                 let source =
                     checked_c::source_with_size(&output, program.register_count(), 4, MEMORY_SIZE);
@@ -205,4 +200,72 @@ fn actual_signed_helpers_preserve_full_guest_memory_return_and_first_fault() {
     println!(
         "signed helper backend: {compared} exact return/full-256-byte/first-fault comparisons"
     );
+}
+
+#[test]
+#[ignore = "requires NIRVANA_Z3; checked-memory block obligations for shared differences"]
+fn shared_difference_reduction_preserves_live_boundaries_and_checked_memory() {
+    use nirvana::ir::{
+        Assignment, BinaryOp as B, Control, Expr, IrInstruction, Place, Program, Width,
+    };
+    let solver = nirvana::verify::Solver::new(
+        std::env::var_os("NIRVANA_Z3").expect("set NIRVANA_Z3 to the optional solver"),
+    );
+    let r = |index| Expr::Register(Reg(index));
+    let c = Expr::Const;
+    let b = Expr::binary;
+    let set = |index, value| Assignment {
+        destination: Place::Register(Reg(index)),
+        value,
+    };
+    let overflow = b(
+        B::Ne,
+        b(
+            B::And,
+            b(B::And, b(B::Xor, r(0), r(1)), b(B::Xor, r(0), r(3))),
+            c(SIGN),
+        ),
+        c(0),
+    );
+    let instructions = vec![
+        IrInstruction {
+            address: 0,
+            size: 1,
+            assignments: vec![set(3, b(B::Sub, r(0), r(1)))],
+            control: Control::Next,
+        },
+        IrInstruction {
+            address: 1,
+            size: 1,
+            assignments: vec![
+                set(4, b(B::Shr, r(3), c(63))),
+                set(5, overflow),
+                set(6, b(B::Xor, r(4), r(5))),
+            ],
+            control: Control::Next,
+        },
+        IrInstruction {
+            address: 2,
+            size: 1,
+            assignments: vec![Assignment {
+                destination: Place::Memory {
+                    address: r(2),
+                    width: Width::U8,
+                },
+                value: r(6),
+            }],
+            control: Control::Jump(3),
+        },
+        IrInstruction {
+            address: 3,
+            size: 1,
+            assignments: vec![],
+            control: Control::Return(r(6)),
+        },
+    ];
+    let program = Program::new(0, 7, instructions).unwrap();
+    let reduced = nirvana::reduce::reduce(&program).unwrap();
+    let validation = nirvana::block_verify::validate_program(&program, reduced.program(), &solver);
+    assert!(validation.accepted(), "{validation:?}");
+    assert_eq!(validation.blocks.len(), 2);
 }

@@ -1,9 +1,7 @@
-use nirvana::ir;
+use nirvana::{ir, signed_expr};
 #[allow(dead_code)]
 #[path = "support/native.rs"]
 mod native;
-#[path = "../src/signed_expr.rs"]
-mod signed_expr;
 
 use ir::{BinaryOp as B, Control, Expr, IrInstruction, Program, Reg, RunStatus, Width};
 use signed_expr::{SignedKind, recognize};
@@ -518,6 +516,7 @@ fn actual_signed_fixtures_keep_native_ir_results_and_only_explicit_raw_candidate
                     ("signed-compare", "-O0") => 4,
                     ("signed-compare", "-O2") => 1,
                     ("signed-branch", "-O0") => 2,
+                    ("signed-branch", "-O2") => 1,
                     _ => 0,
                 },
                 "{name}{opt}: {counts:?}"
