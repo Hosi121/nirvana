@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
+use std::rc::Rc;
 
 use crate::block_verify::Validation;
 use crate::emit::{MEMORY_HELPERS, MULTIPLY_HELPER};
@@ -15,6 +16,7 @@ use crate::structure_verify::StructureEvidence;
 use crate::value_role::ValueRole;
 use crate::verify::Solver;
 
+mod declarations;
 mod idioms;
 mod locals;
 mod loops;
@@ -22,6 +24,7 @@ mod prepare;
 mod syntax;
 mod views;
 mod webs;
+use declarations::DeclarationPlan;
 use locals::LocalPlan;
 use prepare::{PreparedFunction, is_break, is_continue};
 use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
@@ -182,6 +185,7 @@ struct Printer {
     compact_memory: bool,
     slots: BTreeMap<usize, usize>,
     initial_slots: Vec<usize>,
+    declarations: Rc<DeclarationPlan>,
 }
 
 impl Printer {
@@ -532,25 +536,26 @@ impl Printer {
                         continue;
                     }
                     if self.read.contains(&reg.0) {
-                        if let Some(value) = self.address_value(*reg, point, &assignment.value) {
-                            line(code, indent, &format!("{} = {value};", self.register(*reg)));
+                        let name = self.register(*reg);
+                        let width = self.widths.get(&reg.0).copied().unwrap_or(Width::U64);
+                        let initialize = self.declarations.at((address, index), &name);
+                        let prefix = if initialize {
+                            format!("uint{}_t {name} = ", width.bits())
                         } else {
-                            let width = self.widths.get(&reg.0).copied().unwrap_or(Width::U64);
+                            format!("{name} = ")
+                        };
+                        if let Some(value) = self.address_value(*reg, point, &assignment.value) {
+                            line(code, indent, &format!("{prefix}{value};"));
+                        } else {
                             let value = stored_value(&assignment.value, width);
-                            if self.compact_memory
+                            if !initialize
+                                && self.compact_memory
                                 && let Some(statement) = self.compound(*reg, value, point)
                             {
                                 line(code, indent, &statement);
                                 continue;
                             }
-                            self.value_statement(
-                                code,
-                                indent,
-                                value,
-                                point,
-                                &format!("{} = ", self.register(*reg)),
-                                ";",
-                            )?;
+                            self.value_statement(code, indent, value, point, &prefix, ";")?;
                         }
                     } else if assignment.value.uses_memory() {
                         self.value_statement(
@@ -1457,6 +1462,7 @@ fn emit_prepared_c(
             compact_memory: options.compact_memory,
             slots: printer_slots.clone(),
             initial_slots: initial_slots.clone(),
+            declarations: Rc::new(DeclarationPlan::default()),
         };
         for view in views.stack_views() {
             let base = Expr::Register(options.stack_register.expect("stack view base"));
@@ -1500,6 +1506,7 @@ fn emit_prepared_c(
             compact_memory: options.compact_memory,
             slots: printer_slots.clone(),
             initial_slots: initial_slots.clone(),
+            declarations: Rc::new(DeclarationPlan::default()),
         };
         for object in &views.objects {
             line(
@@ -1561,7 +1568,18 @@ fn emit_prepared_c(
             line(&mut code, 1, "};");
         }
     }
+    let eligible = locals.iter().map(|local| local.name.clone()).collect();
+    let declarations = Rc::new(DeclarationPlan::build(
+        display_nodes,
+        shared_nodes.as_deref(),
+        &names,
+        &read,
+        &eligible,
+    ));
     for local in &locals {
+        if declarations.inline(&local.name) {
+            continue;
+        }
         line(
             &mut code,
             1,
@@ -1586,6 +1604,7 @@ fn emit_prepared_c(
         compact_memory: options.compact_memory,
         slots: printer_slots,
         initial_slots,
+        declarations,
     };
     let mut finite_regions = Vec::new();
     let mut affine_regions = Vec::new();

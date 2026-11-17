@@ -50,6 +50,9 @@ IR・構造・C描画は、それぞれの段階に合った[検査](verificatio
 `source_locals`は位置・幅・役割の整合する候補をまとめ、元の色を跨ぐ統合も全体検査へ渡します。
 結果は表示変数の候補と、採用した保存場所の対応として保持します。
 
+関数先頭の逐次代入では、初回のreadより前にある最初のwriteを宣言と初期化にまとめます。
+`DeclarationPlan`が最終的な保存名と命令位置を照合し、共通末尾の候補とも安全な位置を選びます。
+
 スタック解析は次の情報を供給します。
 
 | 解析 | 情報と用途 |
@@ -70,7 +73,8 @@ while・for・do-whileや複合代入は、元の更新順と脱出先を保つ�
 共通分岐末尾は命令位置まで一致する場合に共有候補とします。
 候補の選択条件は、C本体が短くなり、最大の字下げが同じか小さくなることです。
 
-純粋なrotate・byte swapの厳密な式にはC helperを使い、使用する定義を出力します。
+純粋なrotate・byte swap・符号付き比較の厳密な式にはC helperを使い、使用する定義を出力します。
+小さい幅のrotateは、入力と結果のmaskが式内で確認できる形を扱います。
 展開された加算ループは、前段から導出した有限入力全体の対応とC保存幅を検査して通常ループへ戻します。
 初期累積値が任意のu64なら、有限な制御値ごとに`a*A+b mod 2^64`の対応を検査します。
 表示領域の証拠は`finite_regions`・`affine_regions`に記録し、元CFGの証拠も保持します。
@@ -86,8 +90,8 @@ goto配置では空の無条件経路を畳み、空の巡回には代表を残�
 | 実行と観測 | [ir.rs](../src/ir.rs)、[observe.rs](../src/observe.rs) |
 | CFGと構造 | [cfg.rs](../src/cfg.rs)、[structure.rs](../src/structure.rs)、[structure_verify.rs](../src/structure_verify.rs) |
 | 還元と改名 | [reduce.rs](../src/reduce.rs)、[block_verify.rs](../src/block_verify.rs)、[web.rs](../src/web.rs)、[web_verify.rs](../src/web_verify.rs) |
-| 表示変数 | [locals.rs](../src/readable/locals.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[source_locals.rs](../src/source_locals.rs) |
+| 表示変数 | [locals.rs](../src/readable/locals.rs)、[declarations.rs](../src/readable/declarations.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[source_locals.rs](../src/source_locals.rs) |
 | メモリとスタック | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs)、[stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs) |
-| 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs)、[bit_expr.rs](../src/bit_expr.rs)、[narrow_rotate.rs](../src/narrow_rotate.rs) |
+| 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs)、[bit_expr.rs](../src/bit_expr.rs)、[narrow_rotate.rs](../src/narrow_rotate.rs)、[signed_expr.rs](../src/signed_expr.rs) |
 | ループ表示 | [for_loop.rs](../src/for_loop.rs)、[loop_shape.rs](../src/loop_shape.rs)、[loop_exit.rs](../src/loop_exit.rs) |
 | 純粋領域の復元 | [loop_recover.rs](../src/loop_recover.rs)、[finite_region.rs](../src/finite_region.rs)、[affine_region.rs](../src/affine_region.rs) |
