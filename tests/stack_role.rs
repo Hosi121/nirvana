@@ -100,6 +100,11 @@ fn stack_reload_sum_roles_and_inputs_remain_unchanged() {
     assert_eq!(roles.offset_role(-8), Some(ValueRole::Counter));
     assert_eq!(roles.offset_role(-16), Some(ValueRole::Accumulator));
     assert_eq!(roles.offset_role(-24), Some(ValueRole::Limit));
+    let counter_web = roles.register_web(Reg(1)).unwrap();
+    assert_eq!(roles.register_web(Reg(5)), Some(counter_web));
+    assert_ne!(roles.register_web(Reg(3)), Some(counter_web));
+    assert_eq!(roles.web_location(counter_web).unwrap().offset, -8);
+    assert_eq!(roles.web_location(usize::MAX), None);
     assert_eq!(program.instructions(), before);
     assert_eq!(nodes, tree.body());
 }

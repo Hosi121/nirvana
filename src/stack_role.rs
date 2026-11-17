@@ -27,6 +27,8 @@ type ReadKey = (u64, usize, i64, usize);
 pub struct StackRoles {
     registers: BTreeMap<usize, ValueRole>,
     offsets: BTreeMap<i64, ValueRole>,
+    webs: BTreeMap<usize, usize>,
+    locations: BTreeMap<usize, StackLocation>,
 }
 
 impl StackRoles {
@@ -36,6 +38,18 @@ impl StackRoles {
 
     pub fn offset_role(&self, offset: i64) -> Option<ValueRole> {
         self.offsets.get(&offset).copied()
+    }
+
+    /// A candidate spill/reload lineage, even when its role is unknown. IDs
+    /// are local to this analysis. Members need not hold equal values at once;
+    /// consumers may use them as allocation preferences, never as permission
+    /// to share storage or eliminate a memory operation.
+    pub fn register_web(&self, register: Reg) -> Option<usize> {
+        self.webs.get(&register.0).copied()
+    }
+
+    pub fn web_location(&self, web: usize) -> Option<StackLocation> {
+        self.locations.get(&web).copied()
     }
 
     /// Own/upstream exhaustion returns None. The bounded role inference may
@@ -251,7 +265,16 @@ impl StackRoles {
                     .then_some((offset, role))
             })
             .collect();
-        Some(Self { registers, offsets })
+        let locations = definitions
+            .iter()
+            .map(|definition| (roots[definition.id], definition.location))
+            .collect();
+        Some(Self {
+            registers,
+            offsets,
+            webs: projection.registers,
+            locations,
+        })
     }
 }
 
