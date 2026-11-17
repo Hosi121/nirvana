@@ -45,7 +45,8 @@ def main():
     data = "\n".join(inputs) + "\n"
     flags = ["-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-fno-lto",
              "-fsanitize=undefined", "-fno-sanitize-recover=undefined", "-DFIXTURE_ENTRY=fixture"]
-    sources = sorted(list(args.artifacts.glob("*-O0.c")) + list(args.artifacts.glob("*-O2.c")))
+    sources = sorted(source for opt in ("O0", "O1", "O2", "O3", "Os")
+                     for source in args.artifacts.glob(f"*-{opt}.c"))
     if not sources:
         raise RuntimeError("retain artifacts with NIRVANA_RECOVERY_ARTIFACTS before running")
     report = {"compiler": invoke([args.cc, "--version"]).splitlines()[0], "flags": flags,
