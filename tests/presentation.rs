@@ -178,6 +178,35 @@ fn narrow_register_masks_are_removed_or_tightened_without_zero_assumptions() {
 }
 
 #[test]
+fn adjacent_power_of_two_scales_fold_after_masks_without_moving_loads() {
+    let operands = [
+        r(0),
+        load(r(2), Width::U16),
+        Expr::select(r(0), load(r(2), Width::U8), r(1)),
+    ];
+    for operand in operands {
+        for factor in [0, 3, 5, 9, 1 << 31, u64::MAX] {
+            for scale in [2, 4, 8, 1 << 32, 1 << 63] {
+                let expression = b(B::Mul, b(B::Mul, operand.clone(), c(factor)), c(scale));
+                check(&expression, [Width::U64; 3]);
+            }
+        }
+    }
+    let revealed = b(
+        B::Mul,
+        b(B::And, b(B::Mul, r(0), c(5)), c(u32::MAX as u64)),
+        c(2),
+    );
+    assert_eq!(normalize(&revealed, |_| Width::U8), b(B::Mul, r(0), c(10)));
+    check(&revealed, [Width::U8, Width::U64, Width::U64]);
+    let clipped = b(B::Mul, b(B::And, b(B::Mul, r(0), c(5)), c(255)), c(2));
+    check(&clipped, [Width::U64; 3]);
+    assert_ne!(normalize(&clipped, |_| Width::U64), b(B::Mul, r(0), c(10)));
+    let non_power = b(B::And, b(B::Mul, b(B::Mul, r(0), c(3)), c(3)), c(31));
+    check(&non_power, [Width::U8, Width::U64, Width::U64]);
+}
+
+#[test]
 fn partial_register_merges_drop_only_proven_zero_high_parts() {
     let expression = b(
         B::Or,

@@ -146,6 +146,26 @@ fn binary(op: B, left: Value, right: Value) -> Value {
     if possible == 0 && pure {
         return Value::constant(0);
     }
+    // Masks can expose an adjacent scale after executable-IR simplification.
+    // An outer power of two preserves the existing possible-bit bound; checked
+    // constants keep this one-pass rewrite nonexpanding and idempotent.
+    if op == B::Mul
+        && let Some(scale) = b
+        && scale > 1
+        && scale.is_power_of_two()
+        && let Expr::Binary(B::Mul, _, factor) = &left.expression
+        && let Expr::Const(factor) = **factor
+        && let Some(combined) = factor.checked_mul(scale)
+    {
+        let Expr::Binary(_, value, _) = left.expression else {
+            unreachable!()
+        };
+        return Value {
+            expression: Expr::binary(B::Mul, *value, Expr::Const(combined)),
+            possible,
+            pure,
+        };
+    }
     match op {
         B::And => {
             if let Some(mask) = b {
