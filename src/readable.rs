@@ -16,6 +16,7 @@ use crate::value_role::ValueRole;
 use crate::verify::Solver;
 
 mod locals;
+mod loops;
 mod prepare;
 mod syntax;
 mod views;
@@ -78,6 +79,9 @@ pub struct ReadableC {
     /// Candidate stack spill/reload lineages in the selected display IR.
     /// These are naming/allocation preferences, not original source identities.
     pub stack_roles: Option<crate::stack_role::StackRoles>,
+    /// Exhaustive correspondence for adopted pure finite display regions.
+    /// This does not replace either original-IR structure certificate.
+    pub finite_regions: Vec<crate::finite_region::FiniteEvidence>,
 }
 
 /// Outcome of the optional definition-web pass. Invalid or unavailable
@@ -1497,6 +1501,7 @@ fn emit_prepared_c(
         slots: printer_slots,
         initial_slots,
     };
+    let mut finite_regions = Vec::new();
     let (fallback_reason, display_structure_evidence) = match structured {
         Ok(function) => {
             let nonlocal = nonlocal(function.body());
@@ -1505,6 +1510,7 @@ fn emit_prepared_c(
                 line(&mut code, 1, "int nirvana_continue = 0;");
             }
             let nodes = display_nodes.expect("recovered nodes");
+            let mut selected = nodes;
             let mut body = String::new();
             printer.nodes(&mut body, nodes, 1, 0, nonlocal)?;
             if let Some(shared) = &shared_nodes
@@ -1521,6 +1527,19 @@ fn emit_prepared_c(
                     && max_indent(&candidate) <= max_indent(&body)
                 {
                     body = candidate;
+                    selected = shared;
+                }
+            }
+            if !nonlocal && let Some(recovered) = loops::recover(&printer, selected, &locals) {
+                let mut candidate = String::new();
+                if printer
+                    .nodes(&mut candidate, &recovered.nodes, 1, 0, false)
+                    .is_ok()
+                    && candidate.len() < body.len()
+                    && max_indent(&candidate) <= max_indent(&body)
+                {
+                    body = candidate;
+                    finite_regions.push(recovered.evidence);
                 }
             }
             code.push_str(&body);
@@ -1551,5 +1570,6 @@ fn emit_prepared_c(
         local_value_count,
         local_plan,
         stack_roles,
+        finite_regions,
     })
 }
