@@ -523,6 +523,31 @@ impl Lifter {
         // memory still faults, and a 32-bit destination still clears upper32.
         self.write(destination, r(RESULT));
     }
+    fn byte_swap(&mut self, destination: Register) {
+        // Swap byte pairs, then 16-bit halves, then 32-bit halves. This is
+        // unsigned pure IR; the original register is written only at the end.
+        self.set(A, self.read_register(destination));
+        for (shift, bits) in [
+            (8, 0x00ff_00ff_00ff_00ff),
+            (16, 0x0000_ffff_0000_ffff),
+            (32, 0x0000_0000_ffff_ffff),
+        ] {
+            if shift >= destination.width.bits() {
+                break;
+            }
+            let bits = bits & destination.width.mask();
+            self.set(
+                A,
+                or(
+                    b(B::Shl, and(r(A), k(bits)), k(u64::from(shift))),
+                    and(b(B::Shr, r(A), k(u64::from(shift))), k(bits)),
+                ),
+            );
+        }
+        // The common register writer also zero-extends the 32-bit form.
+        // BSWAP leaves every arithmetic flag unchanged.
+        self.write_register(destination, r(A));
+    }
     fn pop(&mut self, destination: Register) {
         self.set(A, Expr::load(r(RSP), Width::U64));
         self.set(RSP, add(r(RSP), k(8)));
@@ -608,6 +633,7 @@ impl Lifter {
                 destination,
                 count,
             } => self.rotate(kind, destination, count),
+            Operation::ByteSwap { destination } => self.byte_swap(destination),
             Operation::Imul {
                 destination,
                 left,

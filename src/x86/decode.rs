@@ -105,6 +105,9 @@ pub enum Operation {
         destination: Operand,
         count: Operand,
     },
+    ByteSwap {
+        destination: Register,
+    },
     Imul {
         destination: Register,
         left: Operand,
@@ -679,6 +682,16 @@ impl Decoder<'_> {
                             destination,
                             left: Operand::Register(destination),
                             right,
+                        }
+                    }
+                    0xc8..=0xcf => {
+                        if width == Width::U16 {
+                            return Err(self.error("16-bit BSWAP has undefined results"));
+                        }
+                        // The register is in opcode+rd. REX.B extends it;
+                        // REX.R is ignored (Intel SDM documentation correction).
+                        Operation::ByteSwap {
+                            destination: self.register((second & 7) | ((self.rex & 1) << 3), width),
                         }
                     }
                     0xb6 | 0xb7 | 0xbe | 0xbf => {
