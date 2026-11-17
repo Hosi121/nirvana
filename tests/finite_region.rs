@@ -680,3 +680,32 @@ fn repeated_remainder_probes_consume_the_existing_whole_work_budget() {
         })
     ));
 }
+
+#[test]
+fn ordinary_unknown_products_do_not_spend_the_remainder_certificate_budget() {
+    use nirvana::finite_region::{PrefixDomain, derive_domains};
+
+    let mut assignments: Vec<_> = (0..4)
+        .map(|index| {
+            set(
+                index,
+                binary(
+                    BinaryOp::Sub,
+                    r(100 + index),
+                    binary(BinaryOp::Mul, r(200 + index), c(2)),
+                ),
+            )
+        })
+        .collect();
+    assignments.push(set(9, c(7)));
+    let prefix = vec![step(assignments)];
+    let unchanged = prefix.clone();
+    assert_eq!(
+        derive_domains(&prefix, &[Reg(9)]).unwrap(),
+        [(Reg(9), PrefixDomain::Finite(vec![7]))]
+    );
+    let evidence = validate(&prefix, &[], &[], &[Reg(9)], &[Reg(9)]).unwrap();
+    assert_eq!(evidence.cases, 1);
+    assert_eq!(values(&evidence, 9), [7]);
+    assert_eq!(prefix, unchanged);
+}

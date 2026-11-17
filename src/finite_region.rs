@@ -294,6 +294,46 @@ fn union(a: Values, b: Values) -> Values {
         _ => Values::Unknown,
     }
 }
+// A constant-depth rejection hint only: every accepted interval still comes
+// exclusively from the full raw-expression recognizer and its validator.
+fn remainder_shape_hint(expression: &Expr) -> bool {
+    let Expr::Binary(BinaryOp::Sub, _, product) = expression else {
+        return false;
+    };
+    let product = match &**product {
+        Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
+            (body, Expr::Const(_)) | (Expr::Const(_), body) => body,
+            _ => return false,
+        },
+        product => product,
+    };
+    let Expr::Binary(BinaryOp::Mul, a, b) = product else {
+        return false;
+    };
+    [(&**a, &**b), (&**b, &**a)]
+        .into_iter()
+        .any(|(quotient, factor)| {
+            if !matches!(factor, Expr::Const(divisor) if *divisor >= 2) {
+                return false;
+            }
+            let product = match quotient {
+                Expr::Binary(BinaryOp::UMulHigh, _, _) => quotient,
+                Expr::Binary(BinaryOp::Shr, product, count)
+                    if matches!(&**count, Expr::Const(shift) if *shift <= 63) =>
+                {
+                    &**product
+                }
+                _ => return false,
+            };
+            matches!(
+                product,
+                Expr::Binary(BinaryOp::UMulHigh | BinaryOp::Mul, a, b)
+                    if matches!(&**a, Expr::Const(m) if *m != 0)
+                        || matches!(&**b, Expr::Const(m) if *m != 0)
+            )
+        })
+}
+
 fn abstract_value(
     expression: &Expr,
     facts: &BTreeMap<usize, Values>,
@@ -365,13 +405,7 @@ fn abstract_value(
             }
         }
     };
-    if matches!(value, Values::Unknown)
-        && let Expr::Binary(BinaryOp::Sub, _, product) = expression
-        && matches!(
-            &**product,
-            Expr::Binary(BinaryOp::Mul | BinaryOp::And, _, _)
-        )
-    {
+    if matches!(value, Values::Unknown) && remainder_shape_hint(expression) {
         // Recognition independently proves a raw, pure unsigned remainder.
         // Reserve a conservative upper bound for its own scans, both quotient
         // recognizers and nested independent certificate validation. Repeated
