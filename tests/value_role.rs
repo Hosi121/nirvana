@@ -340,3 +340,208 @@ fn address_only_alias_copies_and_constant_updates_retain_address_evidence() {
     );
     assert_eq!(nodes, before);
 }
+
+fn exit_tail() -> Vec<Node> {
+    vec![
+        step(vec![
+            Assignment {
+                destination: Place::Memory {
+                    address: r(4),
+                    width: Width::U8,
+                },
+                value: c(7),
+            },
+            set(3, r(1)),
+        ]),
+        Node::Evaluate(Expr::load(c(u64::MAX), Width::U8)),
+        Node::Break,
+    ]
+}
+
+#[test]
+fn continue_guard_controls_the_loop_when_effectful_fallthrough_suffix_exits() {
+    for inverted in [false, true] {
+        let (taken, not_taken) = if inverted {
+            (vec![], vec![Node::Continue])
+        } else {
+            (vec![Node::Continue], vec![])
+        };
+        let mut body = vec![
+            step(vec![set(0, b(BinaryOp::Add, r(0), c(1)))]),
+            Node::If {
+                condition: b(BinaryOp::Ult, r(0), r(2)),
+                taken,
+                not_taken,
+            },
+        ];
+        body.extend(exit_tail());
+        let nodes = vec![Node::Loop(body)];
+        let original = nodes.clone();
+        let roles = infer(&nodes, slots);
+        assert_eq!(roles.get(&0), Some(&ValueRole::Counter));
+        assert_eq!(roles.get(&2), Some(&ValueRole::Limit));
+        assert_eq!(nodes, original, "faulting suffix must remain untouched");
+    }
+}
+
+#[test]
+fn nested_conditionals_can_definitely_continue_or_exit_via_the_same_suffix() {
+    let both_continue = Node::If {
+        condition: r(5),
+        taken: vec![Node::Continue],
+        not_taken: vec![Node::Continue],
+    };
+    let mut body = vec![
+        step(vec![set(0, b(BinaryOp::Sub, r(0), c(1)))]),
+        Node::If {
+            condition: b(BinaryOp::Eq, b(BinaryOp::Ult, r(0), r(2)), c(0)),
+            taken: vec![both_continue],
+            not_taken: vec![],
+        },
+    ];
+    body.push(Node::If {
+        condition: r(5),
+        taken: vec![Node::Break],
+        not_taken: vec![Node::Return(c(9))],
+    });
+    let roles = infer(&[Node::Loop(body)], slots);
+    assert_eq!(roles.get(&0), Some(&ValueRole::Counter));
+    assert_eq!(roles.get(&2), Some(&ValueRole::Limit));
+}
+
+#[test]
+fn conditional_or_unreachable_exit_suffixes_do_not_establish_a_counter() {
+    let update = step(vec![set(0, b(BinaryOp::Add, r(0), c(1)))]);
+    let continue_guard = Node::If {
+        condition: b(BinaryOp::Ult, r(0), r(2)),
+        taken: vec![Node::Continue],
+        not_taken: vec![],
+    };
+    for suffix in [
+        vec![update.clone()],
+        vec![Node::If {
+            condition: r(5),
+            taken: vec![Node::Break],
+            not_taken: vec![Node::Continue],
+        }],
+        vec![Node::Continue, Node::Break],
+        vec![Node::Loop(vec![Node::Break]), Node::Break],
+        vec![Node::ContinueOuter { levels: 1 }, Node::Break],
+    ] {
+        let mut body = vec![update.clone(), continue_guard.clone()];
+        body.extend(suffix);
+        let roles = infer(&[Node::Loop(body)], slots);
+        assert_ne!(roles.get(&0), Some(&ValueRole::Counter));
+        assert!(!roles.contains_key(&2));
+    }
+    let body = vec![update, Node::Continue, guard(b(BinaryOp::Ult, r(0), r(2)))];
+    assert_eq!(
+        infer(&[Node::Loop(body)], slots).get(&0),
+        Some(&ValueRole::Accumulator)
+    );
+}
+
+#[test]
+fn both_continuing_arms_and_inner_or_outer_transfers_are_not_current_loop_exits() {
+    for taken in [
+        vec![Node::Continue],
+        vec![Node::Loop(vec![Node::Continue])],
+        vec![Node::Loop(vec![Node::Break]), Node::Continue],
+        vec![Node::BreakOuter { levels: 1 }],
+        vec![Node::ContinueOuter { levels: 1 }],
+    ] {
+        let both_continue = matches!(taken.as_slice(), [Node::Continue]);
+        let body = vec![
+            step(vec![set(0, b(BinaryOp::Add, r(0), c(1)))]),
+            Node::If {
+                condition: b(BinaryOp::Ult, r(0), r(2)),
+                taken,
+                not_taken: if both_continue {
+                    vec![Node::Continue]
+                } else {
+                    vec![]
+                },
+            },
+            Node::Break,
+        ];
+        let roles = infer(&[Node::Loop(body)], slots);
+        assert_ne!(roles.get(&0), Some(&ValueRole::Counter));
+        assert!(!roles.contains_key(&2));
+    }
+    let nodes = vec![Node::Loop(vec![
+        step(vec![set(0, b(BinaryOp::Add, r(0), c(1)))]),
+        Node::Loop(vec![guard(b(BinaryOp::Ult, r(0), r(2))), Node::Continue]),
+    ])];
+    assert_ne!(infer(&nodes, slots).get(&0), Some(&ValueRole::Counter));
+}
+
+#[test]
+fn common_break_suffix_factoring_keeps_inner_continuation_guard_evidence() {
+    let mut taken = vec![
+        Node::If {
+            condition: b(BinaryOp::Ult, r(0), r(2)),
+            taken: vec![Node::Continue],
+            not_taken: vec![],
+        },
+        step(vec![Assignment {
+            destination: Place::Memory {
+                address: r(4),
+                width: Width::U8,
+            },
+            value: c(7),
+        }]),
+    ];
+    let mut not_taken = vec![Node::Evaluate(Expr::load(c(u64::MAX), Width::U8))];
+    let update = step(vec![set(0, b(BinaryOp::Add, r(0), c(1)))]);
+    let factored = vec![Node::Loop(vec![
+        update.clone(),
+        Node::If {
+            condition: r(5),
+            taken: taken.clone(),
+            not_taken: not_taken.clone(),
+        },
+        Node::Break,
+    ])];
+    taken.push(Node::Break);
+    not_taken.push(Node::Break);
+    let original = vec![Node::Loop(vec![
+        update,
+        Node::If {
+            condition: r(5),
+            taken,
+            not_taken,
+        },
+    ])];
+    let expected = BTreeMap::from([(0, ValueRole::Counter), (2, ValueRole::Limit)]);
+    assert_eq!(infer(&original, slots), expected);
+    assert_eq!(infer(&factored, slots), expected);
+}
+
+#[test]
+fn explicit_exit_guard_still_controls_multi_exit_loop_header_and_its_inverse() {
+    for inverted in [false, true] {
+        let compare = b(BinaryOp::Ult, r(0), r(2));
+        let (condition, taken, not_taken) = if inverted {
+            (b(BinaryOp::Eq, compare, c(0)), vec![], vec![Node::Break])
+        } else {
+            (compare, vec![Node::Break], vec![])
+        };
+        let nodes = vec![Node::Loop(vec![
+            Node::If {
+                condition,
+                taken,
+                not_taken,
+            },
+            Node::If {
+                condition: r(3),
+                taken: vec![Node::Break],
+                not_taken: vec![],
+            },
+            step(vec![set(0, b(BinaryOp::Add, r(0), c(1)))]),
+            Node::Continue,
+        ])];
+        let roles = infer(&nodes, slots);
+        assert_eq!(roles.get(&0), Some(&ValueRole::Counter));
+        assert_eq!(roles.get(&2), Some(&ValueRole::Limit));
+    }
+}

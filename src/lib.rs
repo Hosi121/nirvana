@@ -7,6 +7,7 @@
 pub mod allocation;
 pub mod analysis;
 pub mod block_verify;
+pub mod branch_tail;
 pub mod cfg;
 pub mod elf;
 pub mod emit;

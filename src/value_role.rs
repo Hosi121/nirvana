@@ -141,6 +141,36 @@ struct Writes {
     nested: bool,
 }
 
+// Normal completion outcomes relative to the loop currently being analyzed.
+// Faulting expressions are untouched; Step/Evaluate fall through if successful.
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct Flow(u8);
+impl Flow {
+    const FALL: Self = Self(1);
+    const CONTINUE: Self = Self(2);
+    const EXIT: Self = Self(4);
+    const OTHER: Self = Self(8);
+
+    fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    fn falls_through(self) -> bool {
+        self.0 & Self::FALL.0 != 0
+    }
+    fn then(self, after: Self) -> Self {
+        Self((self.0 & !Self::FALL.0) | if self.falls_through() { after.0 } else { 0 })
+    }
+    fn controls(self, other: Self) -> bool {
+        // An explicit exit remains a controlling guard even if another later
+        // guard can also exit. Unknown/outer flow cannot establish this fact.
+        // Continue versus a mixed Continue/Exit path is still insufficient.
+        let can_continue = |flow: Self| {
+            flow.0 & Self::CONTINUE.0 != 0 && flow.0 & !(Self::CONTINUE.0 | Self::EXIT.0) == 0
+        };
+        (self == Self::EXIT && can_continue(other)) || (other == Self::EXIT && can_continue(self))
+    }
+}
+
 struct Analysis<'a, F> {
     slot: &'a F,
     roles: BTreeMap<usize, Option<ValueRole>>,
@@ -395,7 +425,13 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         let mut writes = BTreeMap::new();
         self.writes(body, false, &mut writes)?;
         let mut counters = BTreeSet::new();
-        self.guards(body, &writes, &mut BTreeMap::new(), &mut counters)?;
+        self.guards(
+            body,
+            &writes,
+            &mut BTreeMap::new(),
+            &mut counters,
+            Flow::CONTINUE,
+        )?;
         for (&slot, write) in &writes {
             if counters.contains(&slot) {
                 self.mark(slot, ValueRole::Counter)?;
@@ -412,8 +448,17 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         writes: &BTreeMap<usize, Writes>,
         definitions: &mut BTreeMap<usize, &'a Expr>,
         counters: &mut BTreeSet<usize>,
+        continuation: Flow,
     ) -> Option<()> {
-        for node in nodes {
+        let flows = nodes
+            .iter()
+            .map(|node| self.flow_node(node))
+            .collect::<Option<Vec<_>>>()?;
+        let mut suffix = vec![continuation; nodes.len() + 1];
+        for index in (0..nodes.len()).rev() {
+            suffix[index] = flows[index].then(suffix[index + 1]);
+        }
+        for (index, node) in nodes.iter().enumerate() {
             spend(&mut self.work, 1)?;
             match node {
                 Node::Step { assignments, .. } => {
@@ -433,7 +478,9 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
                     taken,
                     not_taken,
                 } => {
-                    if exits(taken) != exits(not_taken) {
+                    let taken_flow = self.flow_nodes(taken)?.then(suffix[index + 1]);
+                    let not_taken_flow = self.flow_nodes(not_taken)?.then(suffix[index + 1]);
+                    if taken_flow.controls(not_taken_flow) {
                         self.predicate(
                             condition,
                             writes,
@@ -444,16 +491,56 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
                         )?;
                     }
                     spend(&mut self.work, definitions.len().checked_mul(2)?)?;
-                    self.guards(taken, writes, &mut definitions.clone(), counters)?;
-                    self.guards(not_taken, writes, &mut definitions.clone(), counters)?;
+                    self.guards(
+                        taken,
+                        writes,
+                        &mut definitions.clone(),
+                        counters,
+                        suffix[index + 1],
+                    )?;
+                    self.guards(
+                        not_taken,
+                        writes,
+                        &mut definitions.clone(),
+                        counters,
+                        suffix[index + 1],
+                    )?;
                     // No path-sensitive definition merge is claimed.
                     definitions.clear();
                 }
                 Node::Loop(_) => definitions.clear(),
                 _ => {}
             }
+            // A transfer prevents later syntactic nodes from being evidence.
+            if !flows[index].falls_through() {
+                break;
+            }
         }
         Some(())
+    }
+
+    fn flow_nodes(&mut self, nodes: &[Node]) -> Option<Flow> {
+        let mut result = Flow::FALL;
+        for node in nodes.iter().rev() {
+            result = self.flow_node(node)?.then(result);
+        }
+        Some(result)
+    }
+
+    fn flow_node(&mut self, node: &Node) -> Option<Flow> {
+        spend(&mut self.work, 1)?;
+        Some(match node {
+            Node::Step { .. } | Node::Evaluate(_) => Flow::FALL,
+            Node::Continue => Flow::CONTINUE,
+            Node::Break | Node::Return(_) => Flow::EXIT,
+            Node::If {
+                taken, not_taken, ..
+            } => self.flow_nodes(taken)?.union(self.flow_nodes(not_taken)?),
+            // Inner-loop transfers must not be mistaken for this loop's
+            // transfers. Its completion is deliberately not proved here.
+            Node::Loop(_) => Flow::OTHER.union(Flow::FALL),
+            Node::BreakOuter { .. } | Node::ContinueOuter { .. } => Flow::OTHER,
+        })
     }
 
     fn predicate(
@@ -516,8 +603,4 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
         }
         Some(())
     }
-}
-
-fn exits(nodes: &[Node]) -> bool {
-    matches!(nodes.last(), Some(Node::Break | Node::Return(_)))
 }
