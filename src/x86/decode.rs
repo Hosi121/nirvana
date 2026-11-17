@@ -108,6 +108,10 @@ pub enum Operation {
     ByteSwap {
         destination: Register,
     },
+    Movbe {
+        destination: Operand,
+        source: Operand,
+    },
     BitTest {
         base: Register,
         index: Operand,
@@ -660,6 +664,26 @@ impl Decoder<'_> {
                             return Err(self.error("unsupported multi-byte NOP group"));
                         }
                         Operation::Nop
+                    }
+                    0x38 => {
+                        let third = self.byte()?;
+                        if !matches!(third, 0xf0 | 0xf1) {
+                            return Err(self.error(format!("unsupported opcode 0f 38 {third:02x}")));
+                        }
+                        let (register, memory, _) = self.modrm(width)?;
+                        if !matches!(memory, Operand::Memory { .. }) {
+                            return Err(self.error("MOVBE requires one memory operand"));
+                        }
+                        let register = Operand::Register(register);
+                        let (destination, source) = if third == 0xf0 {
+                            (register, memory)
+                        } else {
+                            (memory, register)
+                        };
+                        Operation::Movbe {
+                            destination,
+                            source,
+                        }
                     }
                     0x40..=0x4f => {
                         let (destination, source, _) = self.modrm(width)?;

@@ -525,19 +525,19 @@ impl Lifter {
         // memory still faults, and a 32-bit destination still clears upper32.
         self.write(destination, r(RESULT));
     }
-    fn byte_swap(&mut self, destination: Register) {
-        // Swap byte pairs, then 16-bit halves, then 32-bit halves. This is
-        // unsigned pure IR; the original register is written only at the end.
-        self.set(A, self.read_register(destination));
+    fn swapped_bytes(&mut self, value: Expr, width: Width) -> Expr {
+        // Shared by BSWAP and MOVBE. Capture the source exactly once, then
+        // swap byte pairs, 16-bit halves and (for 64 bits) 32-bit halves.
+        self.set(A, value);
         for (shift, bits) in [
             (8, 0x00ff_00ff_00ff_00ff),
             (16, 0x0000_ffff_0000_ffff),
             (32, 0x0000_0000_ffff_ffff),
         ] {
-            if shift >= destination.width.bits() {
+            if shift >= width.bits() {
                 break;
             }
-            let bits = bits & destination.width.mask();
+            let bits = bits & width.mask();
             self.set(
                 A,
                 or(
@@ -546,9 +546,38 @@ impl Lifter {
                 ),
             );
         }
+        r(A)
+    }
+    fn byte_swap(&mut self, destination: Register) {
+        let value = self.swapped_bytes(self.read_register(destination), destination.width);
         // The common register writer also zero-extends the 32-bit form.
         // BSWAP leaves every arithmetic flag unchanged.
-        self.write_register(destination, r(A));
+        self.write_register(destination, value);
+    }
+    fn movbe(&mut self, destination: Operand, source: Operand) {
+        // Intel SDM vol.2B 4-52..4-54. MOVBE is one same-width memory
+        // access, never read/modify/write, and preserves every flag.
+        match (destination, source) {
+            (Operand::Register(destination), Operand::Memory { address, width }) => {
+                self.set(ADDRESS, self.address(address));
+                let value = self.swapped_bytes(Expr::load(r(ADDRESS), width), width);
+                self.write_register(destination, value);
+            }
+            (Operand::Memory { address, width }, Operand::Register(source)) => {
+                // Freeze the address before reading the source, including
+                // aliases. There is deliberately no old-destination load.
+                self.set(ADDRESS, self.address(address));
+                let value = self.swapped_bytes(self.read_register(source), width);
+                self.assignments.push(Assignment {
+                    destination: Place::Memory {
+                        address: r(ADDRESS),
+                        width,
+                    },
+                    value,
+                });
+            }
+            _ => unreachable!("decoder enforces MOVBE register/memory operands"),
+        }
     }
     fn bit_test(&mut self, base: Register, index: Operand) {
         // Intel SDM vol.2A 3-130/3-131: register bit offsets wrap modulo
@@ -656,6 +685,10 @@ impl Lifter {
                 count,
             } => self.rotate(kind, destination, count),
             Operation::ByteSwap { destination } => self.byte_swap(destination),
+            Operation::Movbe {
+                destination,
+                source,
+            } => self.movbe(destination, source),
             Operation::BitTest { base, index } => self.bit_test(base, index),
             Operation::Imul {
                 destination,

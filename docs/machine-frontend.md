@@ -29,6 +29,7 @@ ELF入力はELF64・little-endian・`EM_X86_64`・`ET_REL`のオブジェクト�
 | 条件と分岐 | 直接JMP/Jcc、SETcc、CMOVcc |
 | スタックと境界 | 64-bit PUSH/POP/LEAVE、RET |
 | byte/bit操作 | 32/64-bit BSWAP、16/32/64-bitレジスタのBT |
+| メモリのbyte順変換 | 16/32/64-bit MOVBE load/store |
 | その他 | NOP、ENDBR64 |
 
 部分レジスタとCF/ZF/SF/OF/PFをIRへ展開します。
