@@ -72,8 +72,9 @@ pub struct ReadableC {
     /// Correspondence for the original reduced IR and its Node AST, before
     /// definition-web renaming or any C presentation transforms.
     pub structure_evidence: Option<StructureEvidence>,
-    /// Structural check for the selected display IR, after validated web renaming.
-    /// It does not replace the original reduced-IR evidence above.
+    /// Structural correspondence for selected reduced IR after validated web/
+    /// load-mask rewrites, before expression and layout presentation.
+    /// The original reduced-IR certificate is retained separately above.
     pub display_structure_evidence: Option<StructureEvidence>,
     /// Validated paired display rewrites with unchanged load sites and effects.
     /// The unique-use intermediate receives its mask at the original load site.

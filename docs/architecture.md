@@ -32,7 +32,8 @@ Nodeを独立にフローグラフへ戻して元IRと照合し、構造に応�
 演算・幅・代入順・命令位置・分岐先・入口ABIを保持したまま、レジスタIDを割り当て直します。
 `web_verify`は、追加レジスタの任意の初期値を含め、各readで元の値との対応を検査します。
 
-元IRの構造証拠は`ReadableC.structure_evidence`、表示IRの証拠は`display_structure_evidence`に保持します。
+`ReadableC.structure_evidence`は、元の還元IRと構造ASTの対応を保持します。
+`display_structure_evidence`は、web改名・load-mask選択後、式と制御構造の表示変換前のIRと構造ASTの対応です。
 `web_recovery`には候補の採用状態と退避理由を記録します。
 IR・構造・C描画は、それぞれの段階に合った[検査](verification.md)を持ちます。
 

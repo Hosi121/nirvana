@@ -46,10 +46,11 @@ pub fn infer(nodes: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> BTreeMap<us
         .unwrap_or_default()
 }
 
-/// Add certified arithmetic naming hints for the final C storage groups only.
+/// Add certified arithmetic hints for C names and copy-compatibility filters.
 /// The callback includes named local storage and excludes input parameters.
-/// Keep `infer` for identity/grouping and projected stack-web analysis. Existing
-/// roles and their original contradictions/suppressions always take priority.
+/// `infer` supplies canonical identity/loop and projected stack-web roles.
+/// Storage sharing uses independent allocation validation; these hints constrain
+/// copy proposals. Existing roles and their contradictions take priority.
 /// Exhausting the optional arithmetic pass leaves all original roles intact.
 pub fn infer_with_arithmetic(
     nodes: &[Node],

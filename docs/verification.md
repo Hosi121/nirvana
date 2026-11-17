@@ -72,7 +72,7 @@ fault時の比較対象は正確なfaultと全メモリです。SAT反例は小�
 | 未判定 | 時間・資源上限、未実装の構文、再現条件などにより採否を保留 |
 
 検査の信頼基盤はIRの意味、検査器、エンコーダ、使用するソルバです。
-構造証拠は`ReadableC.structure_evidence`、表示IRの証拠は`display_structure_evidence`に保持します。
+`ReadableC.structure_evidence`は元の還元IR、`display_structure_evidence`はweb改名・load-mask選択後、式と制御構造の表示変換前のIRと構造ASTの対応を保持します。
 表示用ループには`finite_regions`・`affine_regions`を付け、導出値域と全中間値のC保存幅も検査します。
 Cの幅選択と描画は、次節の再コンパイル・実行比較で確認します。
 
