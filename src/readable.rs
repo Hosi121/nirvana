@@ -143,8 +143,11 @@ pub struct LocalPlanStats {
     /// Pools whose first allocation/check was unavailable or rejected.
     pub storage_verification_fallbacks: usize,
     /// Heuristic improvement and independent correspondence for an accepted
-    /// global source-candidate map. None means the previous map was retained.
+    /// source-lineage candidate, before optional copy refinement.
     pub source_allocation: Option<crate::source_locals::SourceStats>,
+    /// Separate heuristic scores for checked direct-copy sharing preferences.
+    /// These classes describe copy hints rather than source-variable identities.
+    pub copy_allocation: Option<crate::source_locals::SourceStats>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

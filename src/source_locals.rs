@@ -133,6 +133,143 @@ pub fn recover(
     None
 }
 
+/// Prefer sharing current C colors connected by direct register copies.
+/// Copies provide proposal hints only; `recover` retains the unchanged MUST
+/// correspondence check and pure-comparison rollback. Existing color groups
+/// stay whole, and merges preserve their maximum width, compatible roles and
+/// previously known source/stack lineage classes. Copy classes are hints only.
+/// Any malformed metadata or exhausted bound discards the entire proposal.
+pub fn recover_copies(
+    program: &Program,
+    initial: &[(Reg, usize)],
+    widths: &[(Reg, crate::ir::Width)],
+    roles: &[(Reg, crate::value_role::ValueRole)],
+    lineages: &[(Reg, usize)],
+) -> Option<SourceAllocation> {
+    const MAX_COPIES: usize = 4096;
+    if initial.len() > MAX_REGISTERS
+        || widths.len() != initial.len()
+        || roles.len() > MAX_REGISTERS
+        || lineages.len() > MAX_LINEAGES
+        || program.instructions().len() > allocation_verify::MAX_POINTS
+        || program.cfg().blocks().len() > allocation_verify::MAX_BLOCKS
+    {
+        return None;
+    }
+    let mut work = Work(MAX_WORK);
+    let mut by_register = BTreeMap::new();
+    let mut color_ids = BTreeMap::new();
+    for &(reg, color) in initial {
+        work.spend(1)?;
+        if reg.0 >= program.register_count() || by_register.insert(reg.0, color).is_some() {
+            return None;
+        }
+        let next = color_ids.len();
+        color_ids.entry(color).or_insert(next);
+    }
+    let mut group_widths = vec![0; color_ids.len()];
+    let mut seen = BTreeSet::new();
+    for &(reg, width) in widths {
+        work.spend(1)?;
+        let color = *by_register.get(&reg.0)?;
+        if !seen.insert(reg.0) {
+            return None;
+        }
+        let index = color_ids[&color];
+        group_widths[index] = group_widths[index].max(width.bits());
+    }
+    let mut group_roles = vec![None; color_ids.len()];
+    let mut conflicts = vec![false; color_ids.len()];
+    seen.clear();
+    for &(reg, role) in roles {
+        work.spend(1)?;
+        let color = *by_register.get(&reg.0)?;
+        if !seen.insert(reg.0) {
+            return None;
+        }
+        let index = color_ids[&color];
+        if group_roles[index].is_some_and(|old| old != role) {
+            conflicts[index] = true;
+        }
+        group_roles[index] = Some(role);
+    }
+    let mut group_lineages = vec![None; color_ids.len()];
+    seen.clear();
+    for &(reg, lineage) in lineages {
+        work.spend(1)?;
+        let color = *by_register.get(&reg.0)?;
+        if !seen.insert(reg.0) {
+            return None;
+        }
+        let index = color_ids[&color];
+        if group_lineages[index].is_some_and(|old| old != lineage) {
+            conflicts[index] = true;
+        }
+        group_lineages[index] = Some(lineage);
+    }
+    let mut parents: Vec<_> = (0..color_ids.len()).collect();
+    let mut copies = 0usize;
+    let mut merged = false;
+    let cfg = program.cfg();
+    work.spend(cfg.blocks().len().checked_mul(3)?)?;
+    for block in cfg.reachable_blocks() {
+        for instruction in &program.instructions()[cfg.block(block).instructions.clone()] {
+            work.spend(1)?;
+            for assignment in &instruction.assignments {
+                work.spend(1)?;
+                let (Place::Register(destination), Expr::Register(source)) =
+                    (&assignment.destination, &assignment.value)
+                else {
+                    continue;
+                };
+                let (Some(a), Some(b)) =
+                    (by_register.get(&destination.0), by_register.get(&source.0))
+                else {
+                    continue;
+                };
+                copies = copies.checked_add(1)?;
+                if copies > MAX_COPIES {
+                    return None;
+                }
+                let a = copy_root(&mut parents, color_ids[a], &mut work)?;
+                let b = copy_root(&mut parents, color_ids[b], &mut work)?;
+                if a == b
+                    || group_widths[a] != group_widths[b]
+                    || conflicts[a]
+                    || conflicts[b]
+                    || matches!((group_roles[a], group_roles[b]), (Some(a), Some(b)) if a != b)
+                    || matches!((group_lineages[a], group_lineages[b]), (Some(a), Some(b)) if a != b)
+                {
+                    continue;
+                }
+                let (keep, remove) = if a < b { (a, b) } else { (b, a) };
+                parents[remove] = keep;
+                group_roles[keep] = group_roles[keep].or(group_roles[remove]);
+                group_lineages[keep] = group_lineages[keep].or(group_lineages[remove]);
+                merged = true;
+            }
+        }
+    }
+    if !merged {
+        return None;
+    }
+    let mut lineages = Vec::with_capacity(initial.len());
+    for &(reg, color) in initial {
+        work.spend(1)?;
+        lineages.push((reg, copy_root(&mut parents, color_ids[&color], &mut work)?));
+    }
+    recover(program, initial, &lineages)
+}
+
+fn copy_root(parents: &mut [usize], mut index: usize, work: &mut Work) -> Option<usize> {
+    while parents[index] != index {
+        work.spend(1)?;
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    Some(index)
+}
+
 // Equal-value copies may legally share abstract u64 storage, but a new C
 // spelling such as `value == value` is rejected by strict C compilers. Preserve
 // the initial partition for the responsible lineage instead of rewriting the

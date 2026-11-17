@@ -121,6 +121,38 @@ impl LocalPlan {
             .as_ref()
             .and_then(|candidate| eligible.iter().map(|&reg| candidate.color(reg)).collect())
             .unwrap_or(colors);
+        // A direct copy is only a sharing preference. The same independent
+        // storage and pure-comparison checks authorize this complete map.
+        let copy_candidate = options
+            .coalesce_locals
+            .then(|| {
+                let initial: Vec<_> = eligible
+                    .iter()
+                    .copied()
+                    .zip(colors.iter().copied())
+                    .collect();
+                let by_register: BTreeMap<_, _> = initial.iter().map(|(r, c)| (r.0, *c)).collect();
+                let inferred = crate::value_role::infer_with_arithmetic(nodes, |r| {
+                    by_register.get(&r.0).copied()
+                });
+                let roles: Vec<_> = initial
+                    .iter()
+                    .filter_map(|(r, c)| Some((*r, *inferred.get(c)?)))
+                    .collect();
+                let widths: Vec<_> = eligible.iter().map(|&r| (r, widths.width(r))).collect();
+                crate::source_locals::recover_copies(
+                    program,
+                    &initial,
+                    &widths,
+                    &roles,
+                    &source_lineages(&eligible, stack_roles.as_ref(), stack_cells.as_ref()),
+                )
+            })
+            .flatten();
+        let colors = copy_candidate
+            .as_ref()
+            .and_then(|candidate| eligible.iter().map(|&reg| candidate.color(reg)).collect())
+            .unwrap_or(colors);
         let mut groups: BTreeMap<usize, Vec<Reg>> = BTreeMap::new();
         let mut origins: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
         for ((&reg, &color), &origin) in eligible.iter().zip(&colors).zip(&storage) {
@@ -213,6 +245,7 @@ impl LocalPlan {
             verified_storage_pools,
             storage_verification_fallbacks,
             source_allocation: source_candidate.as_ref().map(|candidate| candidate.stats()),
+            copy_allocation: copy_candidate.as_ref().map(|candidate| candidate.stats()),
         };
         let mut initial_slots = Vec::new();
         for (index, reg) in parameters.iter().enumerate() {
