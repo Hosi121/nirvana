@@ -20,6 +20,7 @@ pub(super) struct PreparedFunction {
     pub web_recovery: WebRecovery,
     pub load_mask_evidence: Option<crate::load_mask::LoadMaskEvidence>,
     pub expression_evidence: Option<crate::expression_ir::ExpressionEvidence>,
+    pub ssa_constants: Option<crate::ssa_constants::ConstantEvidence>,
 }
 
 pub(super) fn prepare(
@@ -81,6 +82,27 @@ fn prepare_selected(
     } else {
         selected.structure
     };
+    // SSA facts cross predecessor edges and loop phis. Check the actual
+    // constant rewrite and subsequent DCE before rebuilding structure/widths.
+    let constants = crate::ssa_constants::ConstantPlan::analyze(&program).and_then(|plan| {
+        let (expanded, evidence) = plan.propose(&program)?;
+        let candidate = crate::display_dce::propose(&expanded)?;
+        if !crate::display_dce::validate(&expanded, &candidate) {
+            return None;
+        }
+        let recovered = StructuredFunction::recover(&candidate);
+        if structure.is_ok() && recovered.is_err() {
+            return None;
+        }
+        let candidate_widths = ValueWidths::analyze(&candidate);
+        Some((candidate, candidate_widths, recovered, evidence))
+    });
+    let (program, widths, structure, ssa_constants) = match constants {
+        Some((program, widths, structure, evidence)) => {
+            (program, widths, structure, Some(evidence))
+        }
+        None => (program, widths, structure, None),
+    };
     // Choose arithmetic before any read/liveness/allocation consumer. Explicit
     // snapshots retain historical numerators; independent DCE removes pure work.
     let arithmetic = crate::expression_ir::ExpressionPlan::analyze(&program).and_then(|plan| {
@@ -103,7 +125,7 @@ fn prepare_selected(
         None => (program, widths, structure, None),
     };
     let candidates = structure.as_ref().ok().map(|function| {
-        let nodes = if expression_evidence.is_some() {
+        let nodes = if expression_evidence.is_some() || ssa_constants.is_some() {
             function.body().to_vec()
         } else {
             let width = |reg| {
@@ -136,6 +158,7 @@ fn prepare_selected(
         web_recovery: selected.recovery,
         load_mask_evidence: masked.map(|(_, evidence)| evidence),
         expression_evidence,
+        ssa_constants,
     })
 }
 

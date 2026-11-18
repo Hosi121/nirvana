@@ -73,7 +73,7 @@ pub struct ReadableC {
     /// definition-web renaming or any C presentation transforms.
     pub structure_evidence: Option<StructureEvidence>,
     /// Structural correspondence for the selected display IR after validated
-    /// web/load-mask/arithmetic selection, before final C layout.
+    /// web/load-mask/SSA/arithmetic selection, before final C layout.
     /// The original reduced-IR certificate is retained separately above.
     pub display_structure_evidence: Option<StructureEvidence>,
     /// Validated paired display rewrites with unchanged load sites and effects.
@@ -81,6 +81,8 @@ pub struct ReadableC {
     pub load_mask_evidence: Option<crate::load_mask::LoadMaskEvidence>,
     /// Source-bound arithmetic selected before reads, widths and C allocation.
     pub expression_evidence: Option<crate::expression_ir::ExpressionEvidence>,
+    /// Source-bound constants proved across SSA predecessor and loop phi edges.
+    pub ssa_constants: Option<crate::ssa_constants::ConstantEvidence>,
     pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
@@ -1445,6 +1447,7 @@ fn emit_prepared_c(
         web_recovery,
         load_mask_evidence,
         expression_evidence,
+        ssa_constants,
     } = prepared;
     let program = &presented;
     let context_remainders = expression_evidence
@@ -1771,6 +1774,7 @@ fn emit_prepared_c(
         display_structure_evidence,
         load_mask_evidence,
         expression_evidence,
+        ssa_constants,
         web_recovery,
         stack_views,
         object_views,

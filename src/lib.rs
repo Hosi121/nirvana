@@ -51,6 +51,7 @@ pub mod signed_expr;
 pub mod simplify;
 pub mod source_locals;
 pub mod ssa;
+pub mod ssa_constants;
 pub mod stack;
 pub mod stack_cells;
 pub mod stack_role;
