@@ -8,7 +8,8 @@ Nirvanaは、指定した関数の機械語を[ELF reader](../src/elf.rs)で切�
 
 ELF入力はELF64・little-endian・`EM_X86_64`・`ET_REL`のオブジェクトファイルです。
 名前と正のサイズを持つ`STT_FUNC`シンボルを使い、既定名は`fixture`です。
-対象関数の再配置は入力時に検査し、未解決のREL/RELAがあれば位置と種類をエラーに出します。
+実行IR・C生成では対象関数の再配置を検査し、解決が必要な参照を位置と種類で報告します。
+`--emit references`では、元の再配置を使って文字列・シンボル・呼出し引数の対応を解析します。
 
 `--raw`ではコード領域のbyte列を入力します。
 `--base`はコード先頭、`--entry`は領域内の入口アドレスです。
@@ -61,6 +62,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
+| `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |
 | `--run A,B,C,D` | fixture ABIで実行し、返り値と最終状態4要素を出力 |
@@ -103,3 +105,21 @@ cargo run -- /tmp/nirvana-record.o --emit types
 `layout_candidates`はこれらをまとめたフィールド・配列の候補です。重なるアクセスは`overlaps`に残します。
 `maximum_bits`は値を格納できる上位ビット境界、`storage_bits_candidate`はその候補幅です。
 元の型宣言やオブジェクト全体の大きさは、候補を評価する次の段階で扱います。
+
+## 文字列と呼出し参照
+
+```sh
+cc -O2 -c tests/fixtures/references/hello.c -o /tmp/nirvana-hello.o
+cargo run -- /tmp/nirvana-hello.o --emit references
+```
+
+この例では、再配置から`puts`と文字列のアドレスを解決し、
+`calls[].source_hint`に`puts("Hello, world!")`を表示します。
+参照先はセクション番号とオフセット、外部シンボルは名前とaddendで保持します。
+文字列アドレスのPC相対・絶対32/64bit参照、GOT経由の呼出し、末尾JMPによる呼出しを扱います。
+
+`literals`は読取り専用セクションのNUL終端ファイルbyte列です。
+`references`には元の再配置・命令位置・解決先、`calls`にはSysV ABIの引数候補レジスタを記録します。
+分岐・ループの全流入が同じ参照先を持つ場合に引数を特定し、CALL後はABIの破壊レジスタを更新します。
+`source_hint`はこの静的な対応の表示で、外部呼出しの効果は`call_effects: "opaque"`として保持します。
+実行IRへのCALL導入と標準出力などの効果のモデル化は、次の段階でこの情報へ接続します。

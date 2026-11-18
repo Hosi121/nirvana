@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|types|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -79,6 +79,19 @@ fn run() -> Result<(), Box<dyn Error>> {
         );
     }
     let bytes = std::fs::read(path)?;
+    if format == "references" {
+        if raw || input.is_some() || base.is_some() || entry.is_some() {
+            return Err("--emit references requires an ELF object and static inspection".into());
+        }
+        let analysis = nirvana::object_refs::ObjectReferences::analyze(&bytes, &symbol)?;
+        print!(
+            "{}",
+            analysis
+                .to_json()
+                .ok_or("object-reference report exceeds output bound")?
+        );
+        return Ok(());
+    }
     let (program, code, code_base) = if raw {
         let base = base.unwrap_or(0);
         (x86::lift(&bytes, base, entry.unwrap_or(base))?, bytes, base)

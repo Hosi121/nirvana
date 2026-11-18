@@ -37,6 +37,7 @@ return value;
 制御フローに応じて`if/else`、`for`、`while`、`do/while`、`goto`を出力します。
 変数名は値の使われ方から生成し、整数型は保存する値の幅から選びます。
 `--emit types`では、SSA値の使用制約とフィールド・配列の候補をJSONで確認できます。
+`--emit references`では、ELFの文字列・シンボル・外部呼出しの引数の対応を確認できます。
 参照幅が揃う局所アドレスには型名を付け、動的な配列参照を`element(base, index, stride)`で表示します。
 入力条件・対応命令・今後の対象は[機械語とCLI](docs/machine-frontend.md)にまとめています。
 

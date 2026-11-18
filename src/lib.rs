@@ -39,6 +39,7 @@ pub mod loop_recover;
 pub mod loop_shape;
 pub mod narrow_division_expr;
 pub mod narrow_rotate;
+pub mod object_refs;
 pub mod observe;
 pub mod postdom;
 pub mod presentation;

@@ -64,6 +64,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [type_infer](../src/type_infer.rs) | SSA値の上位ビット境界を初期値・φ入力・定義式から検査。符号・アドレス・参照形状は根拠付きの検査用候補として出力 |
 | [access_expr](../src/access_expr.rs) | 現在の純粋アドレス式に含まれるbase・indexを借用し、modulo 2^64の対応とオペランドの同一性を独立に照合 |
 | [address_types](../src/address_types.rs) | 実際のreadと参照幅を照合して表示用の型名を選択。Cの保存型は`uint64_t`を維持し、統合する全メンバーの候補一致を要求 |
+| [object_refs](../src/object_refs.rs) | 再配置を実opcodeとフィールド幅・位置へ照合し、CFG全流入とSysV破壊規則から静的な引数参照を導出。文字列byte列を実リンカによる異なる配置の実行とも比較 |
 | [arithmetic_graph](../src/arithmetic_graph.rs) | 分子・上位乗算・商の定義と剰余の値対応を再構築し、除算証明と積の係数を照合 |
 | [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |
 | [display_dce](../src/display_dce.rs) | 候補が元の代入列の部分列であることと、削除した純粋代入の死活性をCFG上で検査。全Storeと構文上の全Loadを保持 |
