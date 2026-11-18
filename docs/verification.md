@@ -61,6 +61,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [remainder_graph](../src/remainder_graph.rs) | 値グラフで共有された上位乗算と商を照合。商の証明、積の係数、Storeの順序、元の減算左辺との値対応を再検査 |
 | [ssa/verify](../src/ssa/verify.rs) | 実際のread・逐次定義・φの全先行辺と出口値の対応。仮想入口と戻り辺を含む実行辺について帰納的に照合 |
 | [ssa_constants](../src/ssa_constants.rs) | 任意の初期値に対する定数の閉じた不変条件と、純粋な式片の定数化を照合。メモリ操作と分岐先を保持 |
+| [type_infer](../src/type_infer.rs) | SSA値の上位ビット境界を初期値・φ入力・定義式から検査。符号・アドレス・参照形状は根拠付きの検査用候補として出力 |
 | [arithmetic_graph](../src/arithmetic_graph.rs) | 分子・上位乗算・商の定義と剰余の値対応を再構築し、除算証明と積の係数を照合 |
 | [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |
 | [display_dce](../src/display_dce.rs) | 候補が元の代入列の部分列であることと、削除した純粋代入の死活性をCFG上で検査。全Storeと構文上の全Loadを保持 |

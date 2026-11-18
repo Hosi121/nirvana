@@ -60,6 +60,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--base ADDRESS` / `--entry ADDRESS` | rawの先頭／入口。既定は0／base |
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
+| `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |
 | `--run A,B,C,D` | fixture ABIで実行し、返り値と最終状態4要素を出力 |
@@ -90,3 +91,15 @@ readable-cの`nirvana_readable`は、必要な入口レジスタを`uint64_t`の
 対応は生成Cのコメントに記載します。メモリ操作を持つ関数には、同じ`memory, base, size`も渡します。
 メモリhelperはアクセス範囲を検査し、無効なアクセスで`abort`します。
 詳しい[実行モデル](equivalence.md)と[検証方法](verification.md)も参照してください。
+
+## 型制約の確認
+
+```sh
+cc -O2 -c tests/fixtures/types/record-index.c -o /tmp/nirvana-record.o
+cargo run -- /tmp/nirvana-record.o --emit types
+```
+
+`values`はSSA値の上位ビット境界と直接・伝播後の使用、`accesses`は幅・位置・参照形状を示します。
+`layout_candidates`はこれらをまとめたフィールド・配列の候補です。重なるアクセスは`overlaps`に残します。
+`maximum_bits`は値を格納できる上位ビット境界、`storage_bits_candidate`はその候補幅です。
+元の型宣言やオブジェクト全体の大きさは、候補を評価する次の段階で扱います。

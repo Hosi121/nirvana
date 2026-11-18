@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|types|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nUnsupported instructions and unresolved relocations are errors.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -171,6 +171,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                 program.register_count()
             );
             print!("{}", output.code);
+        }
+        "types" => {
+            let reduced = nirvana::reduce::reduce(&program)?;
+            let analysis = nirvana::type_infer::TypeAnalysis::analyze(reduced.program())
+                .ok_or("type-constraint analysis unavailable under resource/control bounds")?;
+            let report = analysis
+                .to_json()
+                .ok_or("type-constraint report exceeds output bound")?;
+            print!("{report}");
         }
         "ir" => {
             for instruction in program.instructions() {
