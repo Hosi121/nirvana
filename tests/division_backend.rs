@@ -21,12 +21,21 @@ const BASE: u64 = 4096;
 const MEMORY_SIZE: usize = 256;
 const FIELDS: usize = 5 + MEMORY_SIZE / 8;
 const SIGN: u64 = 1 << 63;
-const VALUES: [u64; 19] = [
+const VALUES: [u64; 28] = [
     0,
     1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
     9,
     10,
     11,
+    17,
+    18,
     19,
     20,
     21,
@@ -101,6 +110,9 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
     for (fixture, divisor, source_optimization) in [
         ("unsigned-div-constant", 10_u64),
         ("unsigned-div-seven", 7_u64),
+        ("unsigned-div-three", 3_u64),
+        ("unsigned-div-five", 5_u64),
+        ("unsigned-div-nine", 9_u64),
         ("unsigned-div-fifteen", 15_u64),
         ("unsigned-div-large", (1_u64 << 63) - 1),
     ]
@@ -230,7 +242,10 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 .split("uint64_t nirvana_readable(")
                 .nth(1)
                 .unwrap();
-            if divisor == 10 || source_optimization == "-O2" {
+            // The graph remainder view keeps the original high/shift quotient
+            // computation and its read dependencies. Raw quotient views still
+            // cover the existing inline reciprocal fixtures.
+            if divisor == 10 || (source_optimization == "-O2" && ![3, 5, 9].contains(&divisor)) {
                 assert!(
                     has_constant_operator(body, "/", divisor),
                     "constant division was not adopted: {fixture}, {source_optimization}, views={recover_objects}\n{body}"
@@ -279,13 +294,17 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
         }
         assert_eq!(program.instructions(), original);
         println!(
-            "{fixture} {source_optimization}: 1140 inputs, returns={returns}, read faults={read_faults}, write faults={write_faults}; BASE oracles={base_oracles}; views2/Copts2 agree"
+            "{fixture} {source_optimization}: {} inputs, returns={returns}, read faults={read_faults}, write faults={write_faults}; BASE oracles={base_oracles}; views2/Copts2 agree",
+            expected.len()
         );
     }
     // A source optimization can turn all near-end cases into read faults before
     // a destination is reached. Require destination-fault coverage for the whole
     // cohort, while comparing each actual first access and width independently.
     assert!(total_write_faults > 0);
-    assert_eq!(comparisons, 36480);
+    assert_eq!(
+        comparisons,
+        7 * 2 * 2 * 2 * ADDRESSES.len() * VALUES.len() * WORDS.len()
+    );
     println!("division backend: {comparisons} full256-byte/return/exact-first-fault comparisons");
 }

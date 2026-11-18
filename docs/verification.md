@@ -58,6 +58,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [add_division_expr](../src/add_division_expr.rs) | `/7`などの補正付き上位乗算。65bitの逆数と丸め誤差の上限から、全u64入力に対する十分条件を再計算 |
 | [remainder_expr](../src/remainder_expr.rs) | 同じ入力の証明済み商から `X - (X / d) * d` を `% d` と表示。積・差の非overflowと、各マスクが数値上限の全ビットを覆うことを再照合 |
 | [context_remainder](../src/context_remainder.rs) | 商を別レジスタに保存した剰余。定義・商のStore・使用の順序と、同一ブロック内の入力・商への上書きを再照合 |
+| [remainder_graph](../src/remainder_graph.rs) | 値グラフで共有された上位乗算と商を照合。商の証明、積の係数、Storeの順序、元の減算左辺との値対応を再検査 |
 | [finite_region](../src/finite_region.rs) | 前段から導出した有限入力の全組合せについて、純粋領域を抜ける時点の全write先を照合 |
 | [affine_region](../src/affine_region.rs) | 有限制御値の全組合せと任意のu64入力Aについて、`a*A+b mod 2^64`の対応を検査 |
 

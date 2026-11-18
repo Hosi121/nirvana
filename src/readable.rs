@@ -190,6 +190,7 @@ impl Render {
 struct Printer<'a> {
     source_program: &'a Program,
     context_remainders: Option<&'a crate::context_remainder::ContextRemainders>,
+    graph_remainders: Option<&'a crate::remainder_graph::GraphRemainders>,
     names: BTreeMap<usize, String>,
     read: BTreeSet<usize>,
     views: Option<MemoryViews>,
@@ -212,8 +213,22 @@ impl Printer<'_> {
             return None;
         }
         let (instruction, assignment) = point?;
-        self.context_remainders?
-            .view(self.source_program, instruction, assignment, expression)
+        self.context_remainders
+            .and_then(|plan| plan.view(self.source_program, instruction, assignment, expression))
+            .or_else(|| {
+                let view = self.graph_remainders?.view(
+                    self.source_program,
+                    instruction,
+                    assignment,
+                    expression,
+                )?;
+                Some(crate::context_remainder::ContextView {
+                    value: view.value,
+                    divisor: view.divisor,
+                    maximum_remainder: view.maximum_remainder,
+                    quotient: view.quotient,
+                })
+            })
     }
 
     fn expression(&self, expr: &Expr) -> Render {
@@ -1430,6 +1445,7 @@ fn emit_prepared_c(
     } = prepared;
     let program = &presented;
     let context_remainders = crate::context_remainder::ContextRemainders::analyze(program);
+    let graph_remainders = crate::remainder_graph::GraphRemainders::analyze(program);
     let display_nodes = nodes.as_deref();
     let mut views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
@@ -1513,6 +1529,7 @@ fn emit_prepared_c(
         let printer = Printer {
             source_program: program,
             context_remainders: None,
+            graph_remainders: None,
             names: names.clone(),
             read: read.clone(),
             views: None,
@@ -1559,6 +1576,7 @@ fn emit_prepared_c(
         let printer = Printer {
             source_program: program,
             context_remainders: None,
+            graph_remainders: None,
             names: names.clone(),
             read: read.clone(),
             views: None,
@@ -1659,6 +1677,7 @@ fn emit_prepared_c(
     let printer = Printer {
         source_program: program,
         context_remainders: context_remainders.as_ref(),
+        graph_remainders: graph_remainders.as_ref(),
         names,
         read,
         views,
