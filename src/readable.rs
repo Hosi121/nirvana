@@ -129,6 +129,9 @@ pub struct LocalValue {
     pub registers: Vec<Reg>,
     pub name: String,
     pub width: Width,
+    /// Uniform observed guest access width. Storage remains an unsigned u64
+    /// address; this hint carries no host pointer or object-size assumption.
+    pub address_width: Option<Width>,
     /// A conservative generated storage role, not an original source name.
     pub role: Option<ValueRole>,
 }
@@ -191,6 +194,13 @@ impl Render {
     }
 }
 
+fn local_type(width: Width, address_width: Option<Width>) -> String {
+    match address_width {
+        Some(element) if width == Width::U64 => format!("nirvana_u{}_address", element.bits()),
+        _ => format!("uint{}_t", width.bits()),
+    }
+}
+
 struct Printer<'a> {
     source_program: &'a Program,
     context_remainders: Option<&'a crate::context_remainder::ContextRemainders>,
@@ -200,7 +210,9 @@ struct Printer<'a> {
     views: Option<MemoryViews>,
     first_temporary: usize,
     widths: BTreeMap<usize, Width>,
+    address_types: BTreeMap<usize, Width>,
     address_uses: BTreeSet<usize>,
+    recover_objects: bool,
     compact_memory: bool,
     slots: BTreeMap<usize, usize>,
     initial_slots: Vec<usize>,
@@ -462,10 +474,43 @@ impl Printer<'_> {
     }
 
     fn address_view(&self, point: Option<(u64, usize)>, address: &Expr) -> Option<String> {
-        self.views
-            .as_ref()?
-            .at(point, address)
-            .map(|view| view.render(self.compact_memory, |index| self.expression(index).text))
+        if let Some(view) = self.views.as_ref().and_then(|v| v.at(point, address)) {
+            return Some(view.render(self.compact_memory, |index| self.expression(index).text));
+        }
+        if !self.recover_objects {
+            return None;
+        }
+        // Borrow the current address's operands. An SSA alias representative
+        // may no longer occupy its old C slot, so it cannot supply new reads.
+        let view = crate::access_expr::recognize(address)?;
+        if !crate::access_expr::validate(address, &view) {
+            return None;
+        }
+        let base = self.expression(view.base).text;
+        let index = self.expression(view.index).text;
+        if self.compact_memory {
+            let element = format!(
+                "element({base}, {index}, {})",
+                syntax::argument(view.stride)
+            );
+            Some(if view.offset == 0 {
+                element
+            } else {
+                format!("field({element}, {})", syntax::argument(view.offset))
+            })
+        } else {
+            Some(format!(
+                "nirvana_view_index((struct nirvana_view){{{base}}}, {index}, UINT64_C({}), UINT64_C({}))",
+                view.stride, view.offset
+            ))
+        }
+    }
+
+    fn local_type(&self, reg: Reg) -> String {
+        local_type(
+            self.widths.get(&reg.0).copied().unwrap_or(Width::U64),
+            self.address_types.get(&reg.0).copied(),
+        )
     }
 
     fn load(
@@ -618,7 +663,7 @@ impl Printer<'_> {
                         let width = self.widths.get(&reg.0).copied().unwrap_or(Width::U64);
                         let initialize = self.declarations.at((address, index), &name);
                         let prefix = if initialize {
-                            format!("uint{}_t {name} = ", width.bits())
+                            format!("{} {name} = ", self.local_type(*reg))
                         } else {
                             format!("{name} = ")
                         };
@@ -1487,7 +1532,7 @@ fn emit_prepared_c(
     }
     if program.uses_memory() {
         code.push_str(MEMORY_HELPERS);
-        if views.is_some() || options.compact_memory {
+        if views.is_some() || options.compact_memory || options.recover_objects {
             code.push_str(VIEW_HELPERS);
         }
         if options.compact_memory {
@@ -1500,7 +1545,7 @@ fn emit_prepared_c(
         widths,
         slots: printer_slots,
         initial_slots,
-        locals,
+        mut locals,
         value_count: local_value_count,
         stats: local_plan,
         stack_roles,
@@ -1514,6 +1559,40 @@ fn emit_prepared_c(
         display_nodes.unwrap_or(&[]),
         options,
     );
+    let hints = if options.recover_objects && program.uses_memory() {
+        crate::address_types::register_hints(program)
+    } else {
+        BTreeMap::new()
+    };
+    let mut address_types = BTreeMap::new();
+    let mut typedefs = BTreeSet::new();
+    for local in &mut locals {
+        if local.width != Width::U64 {
+            continue;
+        }
+        let Some(&width) = hints.get(&local.register.0) else {
+            continue;
+        };
+        // Coalescing can put several unrelated SSA lifetimes in one C local.
+        // Give the whole local a hint only when every member agrees.
+        if local
+            .registers
+            .iter()
+            .all(|r| hints.get(&r.0) == Some(&width))
+        {
+            local.address_width = Some(width);
+            typedefs.insert(width.bits());
+            for reg in &local.registers {
+                address_types.insert(reg.0, width);
+            }
+        }
+    }
+    if !typedefs.is_empty() {
+        code.push_str("\n/* Guest addresses, grouped by observed access width. */\n");
+        for bits in typedefs {
+            writeln!(code, "typedef uint64_t nirvana_u{bits}_address;").unwrap();
+        }
+    }
     if options.compact_memory
         && let (Some(views), Some(roles)) = (&mut views, &stack_roles)
     {
@@ -1547,7 +1626,9 @@ fn emit_prepared_c(
             views: None,
             first_temporary: program.register_count(),
             widths: widths.clone(),
+            address_types: BTreeMap::new(),
             address_uses: address_uses.clone(),
+            recover_objects: false,
             compact_memory: options.compact_memory,
             slots: printer_slots.clone(),
             initial_slots: initial_slots.clone(),
@@ -1594,7 +1675,9 @@ fn emit_prepared_c(
             views: None,
             first_temporary: program.register_count(),
             widths: widths.clone(),
+            address_types: BTreeMap::new(),
             address_uses: address_uses.clone(),
+            recover_objects: false,
             compact_memory: options.compact_memory,
             slots: printer_slots.clone(),
             initial_slots: initial_slots.clone(),
@@ -1675,7 +1758,11 @@ fn emit_prepared_c(
         line(
             &mut code,
             1,
-            &format!("uint{}_t {};", local.width.bits(), local.name),
+            &format!(
+                "{} {};",
+                local_type(local.width, local.address_width),
+                local.name
+            ),
         );
     }
     let stack_views = views
@@ -1695,7 +1782,9 @@ fn emit_prepared_c(
         views,
         first_temporary: program.register_count(),
         widths,
+        address_types,
         address_uses,
+        recover_objects: options.recover_objects,
         compact_memory: options.compact_memory,
         slots: printer_slots,
         initial_slots,

@@ -51,7 +51,7 @@ def metrics(code):
     # unit bytes are retained too: shorter calls add a shared helper prelude.
     plain = re.sub(r"/\*.*?\*/|//[^\n]*", "", body, flags=re.S)
     declarations = re.findall(
-        r"^\s*uint(?:8|16|32|64)_t\s+(\w+)\s*([;=])", plain, re.M)
+        r"^\s*(?:uint(?:8|16|32|64)_t|nirvana_u(?:8|16|32|64)_address)\s+(\w+)\s*([;=])", plain, re.M)
     locals_ = {name for name, _ in declarations if not name.startswith("nirvana_")}
     initialized_locals = {name for name, delimiter in declarations
                           if name in locals_ and delimiter == "="}

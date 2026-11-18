@@ -234,6 +234,7 @@ impl LocalPlan {
                 registers,
                 name,
                 width,
+                address_width: None,
                 role,
             });
         }

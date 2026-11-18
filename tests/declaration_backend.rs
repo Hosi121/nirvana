@@ -66,13 +66,21 @@ fn body(output: &ReadableC) -> &str {
         .1
 }
 fn bare(output: &ReadableC, local: &nirvana::readable::LocalValue) -> usize {
+    let ty = local.address_width.map_or_else(
+        || format!("uint{}_t", local.width.bits()),
+        |w| format!("nirvana_u{}_address", w.bits()),
+    );
     body(output)
-        .matches(&format!("uint{}_t {};", local.width.bits(), local.name))
+        .matches(&format!("{ty} {};", local.name))
         .count()
 }
 fn initialized(output: &ReadableC, local: &nirvana::readable::LocalValue) -> usize {
+    let ty = local.address_width.map_or_else(
+        || format!("uint{}_t", local.width.bits()),
+        |w| format!("nirvana_u{}_address", w.bits()),
+    );
     body(output)
-        .matches(&format!("uint{}_t {} = ", local.width.bits(), local.name))
+        .matches(&format!("{ty} {} = ", local.name))
         .count()
 }
 

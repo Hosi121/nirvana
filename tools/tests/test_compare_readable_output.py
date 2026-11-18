@@ -12,6 +12,18 @@ SPEC.loader.exec_module(MODULE)
 
 
 class DeclarationMetrics(unittest.TestCase):
+    def test_guest_address_typedefs_keep_storage_metrics_comparable(self):
+        before = """uint64_t nirvana_readable(uint64_t arg0) {
+    uint64_t address = arg0;
+    uint64_t value = address;
+    return value;
+}
+"""
+        after = before.replace("uint64_t address", "nirvana_u32_address address")
+        old, new = MODULE.metrics(before), MODULE.metrics(after)
+        for key in ["locals", "initialized_locals", "named_roles", "copies"]:
+            self.assertEqual(old[key], new[key])
+
     def test_initializers_preserve_local_role_and_copy_counts(self):
         before = """uint64_t nirvana_readable(uint64_t arg0) {
     uint64_t counter;

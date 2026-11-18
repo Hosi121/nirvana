@@ -17,8 +17,8 @@ static inline struct nirvana_view nirvana_location_view(struct nirvana_view view
 #define write16(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 2, (value))
 #define write32(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 4, (value))
 #define write64(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 8, (value))
-#define element(base, index, stride) nirvana_view_index((base), (index), (stride), UINT64_C(0))
-#define field(base, offset) nirvana_view_index((base), UINT64_C(0), UINT64_C(1), (offset))
+#define element(base, index, stride) nirvana_view_index(NIRVANA_LOCATION(base), (index), (stride), UINT64_C(0))
+#define field(base, offset) nirvana_view_index(NIRVANA_LOCATION(base), UINT64_C(0), UINT64_C(1), (offset))
 "#;
 
 pub(super) const COMPACT_END: &str = r#"
