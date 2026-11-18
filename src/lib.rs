@@ -58,6 +58,7 @@ pub mod stack_role;
 pub mod stack_values;
 pub mod structure;
 pub mod structure_verify;
+pub mod type_infer;
 pub mod value_graph;
 pub mod value_role;
 pub mod value_width;
