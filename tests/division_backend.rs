@@ -242,14 +242,21 @@ fn actual_constant_division_preserves_aliases_partial_memory_and_exact_first_fau
                 .split("uint64_t nirvana_readable(")
                 .nth(1)
                 .unwrap();
-            // The graph remainder view keeps the original high/shift quotient
-            // computation and its read dependencies. Raw quotient views still
-            // cover the existing inline reciprocal fixtures.
-            if divisor == 10 || (source_optimization == "-O2" && ![3, 5, 9].contains(&divisor)) {
+            if divisor == 10 || source_optimization == "-O2" {
                 assert!(
                     has_constant_operator(body, "/", divisor),
                     "constant division was not adopted: {fixture}, {source_optimization}, views={recover_objects}\n{body}"
                 );
+            }
+            if [3, 5, 9].contains(&divisor) && source_optimization == "-O2" {
+                let evidence = output
+                    .expression_evidence
+                    .expect("preallocation expression plan");
+                assert_eq!(
+                    (evidence.snapshots, evidence.divisions, evidence.remainders),
+                    (1, 1, 1)
+                );
+                assert!(!body.contains("nirvana_umul_high"), "{body}");
             }
             if divisor == 10 && source_optimization == "-O2" {
                 assert!(

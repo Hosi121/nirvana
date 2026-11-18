@@ -59,6 +59,9 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [remainder_expr](../src/remainder_expr.rs) | 同じ入力の証明済み商から `X - (X / d) * d` を `% d` と表示。積・差の非overflowと、各マスクが数値上限の全ビットを覆うことを再照合 |
 | [context_remainder](../src/context_remainder.rs) | 商を別レジスタに保存した剰余。定義・商のStore・使用の順序と、同一ブロック内の入力・商への上書きを再照合 |
 | [remainder_graph](../src/remainder_graph.rs) | 値グラフで共有された上位乗算と商を照合。商の証明、積の係数、Storeの順序、元の減算左辺との値対応を再検査 |
+| [arithmetic_graph](../src/arithmetic_graph.rs) | 分子・上位乗算・商の定義と剰余の値対応を再構築し、除算証明と積の係数を照合 |
+| [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |
+| [display_dce](../src/display_dce.rs) | 候補が元の代入列の部分列であることと、削除した純粋代入の死活性をCFG上で検査。全Storeと構文上の全Loadを保持 |
 | [finite_region](../src/finite_region.rs) | 前段から導出した有限入力の全組合せについて、純粋領域を抜ける時点の全write先を照合 |
 | [affine_region](../src/affine_region.rs) | 有限制御値の全組合せと任意のu64入力Aについて、`a*A+b mod 2^64`の対応を検査 |
 
@@ -73,8 +76,9 @@ fault時の比較対象は正確なfaultと全メモリです。SAT反例は小�
 | 未判定 | 時間・資源上限、未実装の構文、再現条件などにより採否を保留 |
 
 検査の信頼基盤はIRの意味、検査器、エンコーダ、使用するソルバです。
-`ReadableC.structure_evidence`は元の還元IR、`display_structure_evidence`はweb改名・load-mask選択後、式と制御構造の表示変換前のIRと構造ASTの対応を保持します。
+`ReadableC.structure_evidence`は元の還元IR、`display_structure_evidence`はweb改名・load-mask・算術式選択を経て採用した表示IRと構造ASTの対応を保持します。
 表示用ループには`finite_regions`・`affine_regions`を付け、導出値域と全中間値のC保存幅も検査します。
+`expression_evidence`には採用した分子の保存・除算・剰余の件数を記録します。
 Cの幅選択と描画は、次節の再コンパイル・実行比較で確認します。
 
 ## 変換候補の採用

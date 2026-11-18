@@ -19,6 +19,7 @@ pub(super) struct PreparedFunction {
     pub source_stats: Option<StructureStats>,
     pub web_recovery: WebRecovery,
     pub load_mask_evidence: Option<crate::load_mask::LoadMaskEvidence>,
+    pub expression_evidence: Option<crate::expression_ir::ExpressionEvidence>,
 }
 
 pub(super) fn prepare(
@@ -80,8 +81,40 @@ fn prepare_selected(
     } else {
         selected.structure
     };
+    // Choose arithmetic before any read/liveness/allocation consumer. Explicit
+    // snapshots retain historical numerators; independent DCE removes pure work.
+    let arithmetic = crate::expression_ir::ExpressionPlan::analyze(&program).and_then(|plan| {
+        let expanded = plan.lower(&program)?;
+        let candidate = crate::display_dce::propose(&expanded)?;
+        if !crate::display_dce::validate(&expanded, &candidate) {
+            return None;
+        }
+        let recovered = StructuredFunction::recover(&candidate);
+        if structure.is_ok() && recovered.is_err() {
+            return None;
+        }
+        let candidate_widths = ValueWidths::analyze(&candidate);
+        Some((candidate, candidate_widths, recovered, plan.evidence()))
+    });
+    let (program, widths, structure, expression_evidence) = match arithmetic {
+        Some((program, widths, structure, evidence)) => {
+            (program, widths, structure, Some(evidence))
+        }
+        None => (program, widths, structure, None),
+    };
     let candidates = structure.as_ref().ok().map(|function| {
-        let nodes = presentation_nodes(function.body(), &width);
+        let nodes = if expression_evidence.is_some() {
+            function.body().to_vec()
+        } else {
+            let width = |reg| {
+                if parameters.contains(&reg) {
+                    Width::U64
+                } else {
+                    widths.width(reg)
+                }
+            };
+            presentation_nodes(function.body(), &width)
+        };
         // Exact program points are part of suffix equality: memory views
         // are proved at those points. Keep the original presentation tree
         // when the whole bounded pass cannot complete.
@@ -102,6 +135,7 @@ fn prepare_selected(
         source_stats: selected.source_stats,
         web_recovery: selected.recovery,
         load_mask_evidence: masked.map(|(_, evidence)| evidence),
+        expression_evidence,
     })
 }
 

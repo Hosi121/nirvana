@@ -19,6 +19,7 @@ pub mod display_dce;
 pub mod division_expr;
 pub mod elf;
 pub mod emit;
+pub mod expression_ir;
 pub mod finite_region;
 pub mod for_loop;
 pub mod frontend;

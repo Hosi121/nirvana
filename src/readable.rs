@@ -72,13 +72,15 @@ pub struct ReadableC {
     /// Correspondence for the original reduced IR and its Node AST, before
     /// definition-web renaming or any C presentation transforms.
     pub structure_evidence: Option<StructureEvidence>,
-    /// Structural correspondence for selected reduced IR after validated web/
-    /// load-mask rewrites, before expression and layout presentation.
+    /// Structural correspondence for the selected display IR after validated
+    /// web/load-mask/arithmetic selection, before final C layout.
     /// The original reduced-IR certificate is retained separately above.
     pub display_structure_evidence: Option<StructureEvidence>,
     /// Validated paired display rewrites with unchanged load sites and effects.
     /// The unique-use intermediate receives its mask at the original load site.
     pub load_mask_evidence: Option<crate::load_mask::LoadMaskEvidence>,
+    /// Source-bound arithmetic selected before reads, widths and C allocation.
+    pub expression_evidence: Option<crate::expression_ir::ExpressionEvidence>,
     pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
@@ -1442,10 +1444,17 @@ fn emit_prepared_c(
         source_stats: structure_stats,
         web_recovery,
         load_mask_evidence,
+        expression_evidence,
     } = prepared;
     let program = &presented;
-    let context_remainders = crate::context_remainder::ContextRemainders::analyze(program);
-    let graph_remainders = crate::remainder_graph::GraphRemainders::analyze(program);
+    let context_remainders = expression_evidence
+        .is_none()
+        .then(|| crate::context_remainder::ContextRemainders::analyze(program))
+        .flatten();
+    let graph_remainders = expression_evidence
+        .is_none()
+        .then(|| crate::remainder_graph::GraphRemainders::analyze(program))
+        .flatten();
     let display_nodes = nodes.as_deref();
     let mut views = MemoryViews::recover(program, reduced.parameters(), options);
     let read = rendered_reads(program, views.as_ref());
@@ -1761,6 +1770,7 @@ fn emit_prepared_c(
         structure_evidence,
         display_structure_evidence,
         load_mask_evidence,
+        expression_evidence,
         web_recovery,
         stack_views,
         object_views,
