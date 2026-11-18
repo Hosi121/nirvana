@@ -87,7 +87,9 @@ fn aliases(source: &Program, graph: &SsaFunction) -> Option<Vec<ValueId>> {
             let a = root(&mut parent, a, &mut budget)?;
             let b = root(&mut parent, b, &mut budget)?;
             if a != b {
-                parent[a.max(b)] = a.min(b);
+                // Keep the copy input as representative; numeric ID order
+                // does not imply availability at the address use site.
+                parent[a] = b;
                 changed = true;
             }
         }
@@ -110,12 +112,12 @@ fn aliases(source: &Program, graph: &SsaFunction) -> Option<Vec<ValueId>> {
                     other = Some(input);
                 }
                 if !ambiguous && let Some(other) = other {
-                    parent[own.max(other)] = own.min(other);
+                    parent[own] = other;
                     changed = true;
                 }
             }
         }
-        // Compress every path; root labels remain deterministic minimum IDs.
+        // Compress toward source inputs rather than later copies/entry phis.
         for i in 0..parent.len() {
             budget.spend(1).ok()?;
             let r = root(&mut parent, i, &mut budget)?;

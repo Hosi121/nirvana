@@ -349,3 +349,100 @@ fn read_write_alias_evidence_does_not_modify_faults_or_memory() {
         assert_eq!(p.instructions(), original);
     }
 }
+
+#[test]
+fn loop_address_representative_keeps_the_input_phi_instead_of_a_later_copy() {
+    let p = Program::new(
+        0,
+        16,
+        vec![
+            ins(0, vec![set(2, r(0))], Control::Jump(1)),
+            ins(
+                1,
+                vec![set(1, Expr::load(r(2), Width::U8))],
+                Control::Branch {
+                    condition: b(B::Eq, r(1), c(0)),
+                    target: 3,
+                },
+            ),
+            ins(
+                2,
+                vec![
+                    set(3, r(2)),
+                    Assignment {
+                        destination: Place::Memory {
+                            address: b(B::Add, r(3), c(4)),
+                            width: Width::U8,
+                        },
+                        value: r(1),
+                    },
+                    set(2, Expr::load(b(B::Add, r(2), c(8)), Width::U64)),
+                ],
+                Control::Jump(1),
+            ),
+            ins(3, vec![], Control::Return(r(1))),
+        ],
+    )
+    .unwrap();
+    let a = TypeAnalysis::analyze(&p).unwrap();
+    let phi = a
+        .graph()
+        .values
+        .iter()
+        .position(|d| {
+            matches!(
+                d,
+                Definition::Phi {
+                    block: 1,
+                    register: Reg(2),
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    let root = a.aliases()[phi];
+    assert!(matches!(
+        a.graph().values[root.0],
+        Definition::Phi {
+            block: 1,
+            register: Reg(2),
+            ..
+        }
+    ));
+    let header = a
+        .accesses()
+        .iter()
+        .find(|x| x.site.instruction == 1)
+        .unwrap();
+    assert!(matches!(header.address,AddressShape::Base{base,..}if base==root));
+}
+
+#[test]
+fn forwarded_pointer_keeps_its_load_definition_as_the_alias_representative() {
+    let p = Program::new(
+        0,
+        16,
+        vec![
+            ins(
+                0,
+                vec![
+                    set(1, Expr::load(b(B::Add, r(0), c(8)), Width::U64)),
+                    set(2, Expr::load(r(1), Width::U8)),
+                ],
+                Control::Jump(1),
+            ),
+            ins(
+                1,
+                vec![set(3, Expr::load(r(1), Width::U16))],
+                Control::Return(r(3)),
+            ),
+        ],
+    )
+    .unwrap();
+    let a = TypeAnalysis::analyze(&p).unwrap();
+    let loaded = value(&a, 0, 0);
+    assert_eq!(a.aliases()[loaded], nirvana::ssa::ValueId(loaded));
+    assert!(a.layouts().iter().any(|l| l.base.0 == loaded
+        && l.fields.iter().any(|f| f.width == Width::U8)
+        && l.fields.iter().any(|f| f.width == Width::U16)));
+}
