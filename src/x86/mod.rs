@@ -1,14 +1,16 @@
 //! A self-contained x86-64 integer decoder and lifter. No external disassembler.
 //! The first target is a single known function, with explicit guest memory and
-//! a root return. Calls, SIMD, privileged instructions and relocation resolution
-//! are deliberately rejected.
+//! a root return. Executable decoding rejects calls and indirect branches;
+//! reference inspection can decode near calls and indirect branches without
+//! lifting them. SIMD, privileged instructions and relocation resolution are
+//! deliberately rejected.
 
 mod decode;
 mod lift;
 
 pub use decode::{
     Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
-    Unary, decode_at, decode_reachable,
+    Unary, decode_at, decode_reachable, decode_reference_at,
 };
 pub use lift::{LiftError, lift};
 

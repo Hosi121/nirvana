@@ -141,6 +141,12 @@ pub enum Operation {
     Push(Operand),
     Pop(Register),
     Leave,
+    /// Inspection only; executable decoding and lifting reject calls.
+    Call(u64),
+    /// Near 64-bit call through a register or memory operand; inspection only.
+    IndirectCall(Operand),
+    /// Near 64-bit jump through a register or memory operand; inspection only.
+    IndirectJump(Operand),
     Jump(u64),
     Branch {
         condition: u8,
@@ -162,6 +168,7 @@ impl DecodedInstruction {
     pub fn layout(self) -> Instruction {
         let flow = match self.operation {
             Operation::Jump(target) => Flow::Jump(target),
+            Operation::IndirectJump(_) => Flow::IndirectJump,
             Operation::Branch { target, .. } => Flow::Branch(target),
             Operation::Return { .. } => Flow::Return,
             _ => Flow::Next,
@@ -183,6 +190,12 @@ impl fmt::Display for DecodeError {
 }
 impl std::error::Error for DecodeError {}
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DecodePolicy {
+    Executable,
+    ReferenceInspection,
+}
+
 struct Decoder<'a> {
     bytes: &'a [u8],
     address: u64,
@@ -190,6 +203,7 @@ struct Decoder<'a> {
     rex: u8,
     rex_seen: bool,
     operand16: bool,
+    policy: DecodePolicy,
 }
 
 impl Decoder<'_> {
@@ -321,6 +335,11 @@ impl Decoder<'_> {
 
     fn operation(&mut self) -> Result<Operation, DecodeError> {
         let mut repeat = false;
+        // Keep executable prefix handling unchanged. Reference-only control
+        // transfers accept one optional REX and no legacy prefixes: operand
+        // overrides, NOTRACK/BND and redundant prefix combinations are outside
+        // the supported near-64 forms.
+        let mut reference_prefixes_supported = true;
         let opcode = loop {
             let byte = self.byte()?;
             match byte {
@@ -329,8 +348,10 @@ impl Decoder<'_> {
                         return Err(self.error("legacy prefix after REX is unsupported"));
                     }
                     self.operand16 = true;
+                    reference_prefixes_supported = false;
                 }
                 0x40..=0x4f => {
+                    reference_prefixes_supported &= !self.rex_seen;
                     self.rex = byte & 15;
                     self.rex_seen = true;
                 }
@@ -339,11 +360,13 @@ impl Decoder<'_> {
                         return Err(self.error("legacy prefix after REX is unsupported"));
                     }
                     repeat = true;
+                    reference_prefixes_supported = false;
                 }
                 0x26 | 0x2e | 0x36 | 0x3e => {
                     if self.rex_seen {
                         return Err(self.error("legacy prefix after REX is unsupported"));
                     }
+                    reference_prefixes_supported = false;
                 }
                 0x64 | 0x65 | 0x67 | 0xf0 | 0xf2 => {
                     return Err(self.error(format!("unsupported prefix {byte:#04x}")));
@@ -600,6 +623,12 @@ impl Decoder<'_> {
                 }
                 Operation::Leave
             }
+            0xe8 if self.policy == DecodePolicy::ReferenceInspection => {
+                if !reference_prefixes_supported {
+                    return Err(self.error("unsupported prefixes on reference control transfer"));
+                }
+                Operation::Call(self.relative(4)?)
+            }
             0xe9 | 0xeb => Operation::Jump(self.relative(if opcode == 0xe9 { 4 } else { 1 })?),
             0xf6 | 0xf7 => {
                 let size = if opcode == 0xf6 { Width::U8 } else { width };
@@ -631,9 +660,15 @@ impl Decoder<'_> {
                     .ok_or_else(|| self.error("truncated ModR/M"))?
                     >> 3)
                     & 7;
+                let reference_control = opcode == 0xff
+                    && matches!(group, 2 | 4)
+                    && self.policy == DecodePolicy::ReferenceInspection;
+                if reference_control && !reference_prefixes_supported {
+                    return Err(self.error("unsupported prefixes on reference control transfer"));
+                }
                 let size = if opcode == 0xfe {
                     Width::U8
-                } else if group == 6 {
+                } else if group == 6 || reference_control {
                     Width::U64
                 } else {
                     width
@@ -644,6 +679,8 @@ impl Decoder<'_> {
                         kind: if group == 0 { Unary::Inc } else { Unary::Dec },
                         destination,
                     },
+                    2 if reference_control => Operation::IndirectCall(destination),
+                    4 if reference_control => Operation::IndirectJump(destination),
                     6 if opcode == 0xff && !self.operand16 => Operation::Push(destination),
                     _ => return Err(self.error("indirect call/jump or unsupported FF group")),
                 }
@@ -772,6 +809,21 @@ impl Decoder<'_> {
 }
 
 pub fn decode_at(bytes: &[u8], address: u64) -> Result<DecodedInstruction, DecodeError> {
+    decode_with_policy(bytes, address, DecodePolicy::Executable)
+}
+
+/// Decode one instruction for reference inspection, including direct calls and
+/// near 64-bit indirect calls/jumps. This does not enable their execution in
+/// [`super::lift`] or change the policy of [`decode_at`] / [`decode_reachable`].
+pub fn decode_reference_at(bytes: &[u8], address: u64) -> Result<DecodedInstruction, DecodeError> {
+    decode_with_policy(bytes, address, DecodePolicy::ReferenceInspection)
+}
+
+fn decode_with_policy(
+    bytes: &[u8],
+    address: u64,
+    policy: DecodePolicy,
+) -> Result<DecodedInstruction, DecodeError> {
     let mut decoder = Decoder {
         bytes,
         address,
@@ -779,6 +831,7 @@ pub fn decode_at(bytes: &[u8], address: u64) -> Result<DecodedInstruction, Decod
         rex: 0,
         rex_seen: false,
         operand16: false,
+        policy,
     };
     let operation = decoder.operation()?;
     address

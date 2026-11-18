@@ -604,7 +604,7 @@ impl Lifter {
         self.set(RSP, add(r(RSP), k(8)));
         self.write_register(destination, r(A));
     }
-    fn instruction(mut self, decoded: DecodedInstruction) -> IrInstruction {
+    fn instruction(mut self, decoded: DecodedInstruction) -> Result<IrInstruction, LiftError> {
         let mut control = Control::Next;
         match decoded.operation {
             Operation::Nop => {}
@@ -797,6 +797,13 @@ impl Lifter {
                     shift: 0,
                 });
             }
+            Operation::Call(_) | Operation::IndirectCall(_) | Operation::IndirectJump(_) => {
+                return Err(LiftError::Decode(DecodeError {
+                    address: decoded.address,
+                    reason: "calls and indirect jumps are supported only for reference inspection"
+                        .into(),
+                }));
+            }
             Operation::Jump(target) => control = Control::Jump(target),
             Operation::Branch {
                 condition: code,
@@ -812,12 +819,12 @@ impl Lifter {
                 control = Control::Return(r(RAX));
             }
         }
-        IrInstruction {
+        Ok(IrInstruction {
             address: decoded.address,
             size: u32::from(decoded.size),
             assignments: self.assignments,
             control,
-        }
+        })
     }
 }
 
@@ -842,6 +849,6 @@ pub fn lift(bytes: &[u8], base: u64, entry: u64) -> Result<Program, LiftError> {
             }
             .instruction(instruction)
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
     Program::new(entry, REGISTER_COUNT, instructions).map_err(LiftError::Program)
 }
