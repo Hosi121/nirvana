@@ -38,6 +38,7 @@ return value;
 変数名は値の使われ方から生成し、整数型は保存する値の幅から選びます。
 `--emit types`では、SSA値の使用制約とフィールド・配列の候補をJSONで確認できます。
 `--emit references`では、ELFの文字列・シンボル・外部呼出しの引数の対応を確認できます。
+`--emit effects-c`は`puts`の外部結果入力を持つ実行可能Cを出力し、`--run-effects 7`で出力と返り値を試せます。
 参照幅が揃う局所アドレスには型名を付け、動的な配列参照を`element(base, index, stride)`で表示します。
 入力条件・対応命令・今後の対象は[機械語とCLI](docs/machine-frontend.md)にまとめています。
 

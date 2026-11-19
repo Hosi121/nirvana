@@ -10,7 +10,7 @@ mod sequence;
 use crate::loop_labels::LoopLabels;
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
 use crate::structure_verify::StructureEvidence;
-use sequence::{Expressions, validate_program};
+pub(crate) use sequence::{Expressions, validate_program};
 
 pub(crate) const MULTIPLY_HELPER: &str = r#"
 static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {

@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
+const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|effects-c|effects-ir|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-ir uses the explicit puts output/outcome model.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -38,6 +38,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut base = None;
     let mut entry = None;
     let mut input = None;
+    let mut effect_results = None;
     let mut limit = 100_000;
     let mut solver = None;
     let mut coalesce_locals = true;
@@ -46,6 +47,16 @@ fn run() -> Result<(), Box<dyn Error>> {
             "--symbol" => symbol = args.next().ok_or("--symbol requires a name")?,
             "--emit" => format = args.next().ok_or("--emit requires a format")?,
             "--raw" => raw = true,
+            "--run-effects" => {
+                let text = args
+                    .next()
+                    .ok_or("--run-effects requires comma-separated signed int return inputs")?;
+                let results = text
+                    .split(',')
+                    .map(str::parse::<i32>)
+                    .collect::<Result<Vec<_>, _>>()?;
+                effect_results = Some(results);
+            }
             "--no-coalesce-locals" => coalesce_locals = false,
             "--verify-reduction" => {
                 solver = Some(Solver::new(
@@ -79,6 +90,72 @@ fn run() -> Result<(), Box<dyn Error>> {
         );
     }
     let bytes = std::fs::read(path)?;
+    let effect_mode =
+        matches!(format.as_str(), "effects-c" | "effects-ir") || effect_results.is_some();
+    if effect_mode {
+        if raw
+            || input.is_some()
+            || base.is_some()
+            || entry.is_some()
+            || solver.is_some()
+            || !coalesce_locals
+            || effect_results.is_some() && format != "c"
+        {
+            return Err(
+                "effect modes require an ELF object and separate execution or emission options"
+                    .into(),
+            );
+        }
+        let function =
+            frontend::lift_elf_effects(&bytes, &symbol, nirvana::loader::LoadOptions::default())?;
+        if let Some(results) = effect_results {
+            let outcomes: Vec<_> = results
+                .into_iter()
+                .map(|r| nirvana::effects::PutsOutcome::success(u64::from(r as u32)))
+                .collect();
+            let mut registers = vec![0; function.program.register_count()];
+            registers[x86::RSP] = function.image.stack_pointer;
+            let report = function.program.run(
+                &registers,
+                function.image.memory_base,
+                &function.image.memory,
+                &outcomes,
+                nirvana::effects::Limits {
+                    instructions: limit,
+                    ..Default::default()
+                },
+            )?;
+            use std::io::Write as _;
+            std::io::stdout().write_all(&report.output)?;
+            return match report.status {
+                nirvana::effects::Status::Returned(value) => {
+                    eprintln!(
+                        "{}: returned {value}; {} outcomes consumed",
+                        nirvana::effects::MODEL_ID,
+                        report.consumed
+                    );
+                    Ok(())
+                }
+                status => Err(format!(
+                    "{}: {status:?}; {} outcomes consumed",
+                    nirvana::effects::MODEL_ID,
+                    report.consumed
+                )
+                .into()),
+            };
+        }
+        if format == "effects-ir" {
+            for instruction in function.program.instructions() {
+                println!("{instruction:#?}");
+            }
+        } else {
+            print!(
+                "{}",
+                nirvana::effects_emit::emit_image(&function.program, &function.image)?
+            );
+        }
+        return Ok(());
+    }
     if format == "references" {
         if raw || input.is_some() || base.is_some() || entry.is_some() {
             return Err("--emit references requires an ELF object and static inspection".into());

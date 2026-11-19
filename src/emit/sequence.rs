@@ -11,7 +11,7 @@ use crate::sequence::{
 // rendering. Per-expression limits agree with the shared sequencing pass.
 const MAX_PROGRAM_NODES: usize = 1_048_576;
 
-pub(super) fn validate_program(program: &Program) -> Result<(), SequenceError> {
+pub(crate) fn validate_program(program: &Program) -> Result<(), SequenceError> {
     let mut remaining = MAX_PROGRAM_NODES;
     for instruction in program.instructions() {
         remaining = remaining
@@ -77,12 +77,12 @@ pub(super) fn validate_program(program: &Program) -> Result<(), SequenceError> {
     Ok(())
 }
 
-pub(super) struct Expressions {
+pub(crate) struct Expressions {
     first_temporary: usize,
 }
 
 impl Expressions {
-    pub(super) fn new(program: &Program) -> Self {
+    pub(crate) fn new(program: &Program) -> Self {
         Self {
             first_temporary: program.register_count(),
         }
@@ -165,7 +165,7 @@ impl Expressions {
         Ok(self.expression(&plan.value))
     }
 
-    pub(super) fn begin(
+    pub(crate) fn begin(
         &self,
         code: &mut String,
         indent: usize,
@@ -181,13 +181,13 @@ impl Expressions {
         Ok((inner, value))
     }
 
-    pub(super) fn end(&self, code: &mut String, indent: usize, inner: usize) {
+    pub(crate) fn end(&self, code: &mut String, indent: usize, inner: usize) {
         if inner != indent {
             line(code, indent, "}");
         }
     }
 
-    pub(super) fn statement(
+    pub(crate) fn statement(
         &self,
         code: &mut String,
         indent: usize,
@@ -201,7 +201,7 @@ impl Expressions {
         Ok(())
     }
 
-    pub(super) fn assignments(
+    pub(crate) fn assignments(
         &self,
         code: &mut String,
         indent: usize,

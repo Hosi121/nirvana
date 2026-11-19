@@ -42,8 +42,8 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 
 | 分野 | 今後の対象 |
 | --- | --- |
-| コード画像 | ET_EXEC/ET_DYN、PE、関数境界の推定、リンクと再配置の解決 |
-| 関数間制御 | CALL、間接JMP、戻り先の探索 |
+| コード画像 | ET_EXEC/ET_DYN、PE、関数境界の推定、汎用的なリンク・import解決 |
+| 関数間制御 | 任意の外部・内部関数のCALL、間接JMP、戻り先の探索 |
 | 命令と環境 | SIMD、DIV/IDIV、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base |
 
 ## CLI
@@ -63,6 +63,8 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
 | `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |
+| `--emit effects-c` / `effects-ir` | `puts`モデル付きの実行可能C／明示的なCALLを持つIR |
+| `--run-effects RESULTS` | 指定したint返り値列でモデルを実行し、出力byte列を標準出力へ送る |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |
 | `--run A,B,C,D` | fixture ABIで実行し、返り値と最終状態4要素を出力 |
@@ -122,4 +124,30 @@ cargo run -- /tmp/nirvana-hello.o --emit references
 `references`には元の再配置・命令位置・解決先、`calls`にはSysV ABIの引数候補レジスタを記録します。
 分岐・ループの全流入が同じ参照先を持つ場合に引数を特定し、CALL後はABIの破壊レジスタを更新します。
 `source_hint`はこの静的な対応の表示で、外部呼出しの効果は`call_effects: "opaque"`として保持します。
-実行IRへのCALL導入と標準出力などの効果のモデル化は、次の段階でこの情報へ接続します。
+`effects-ir`・`effects-c`では、この参照先の照合を実行モデルへ接続します。
+
+## putsモデルの実行とC出力
+
+```sh
+cc -O2 -c tests/fixtures/references/hello.c -o /tmp/nirvana-hello.o
+cargo run -- /tmp/nirvana-hello.o --run-effects 7
+cargo run -- /tmp/nirvana-hello.o --emit effects-c > /tmp/nirvana-hello.c
+cc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -c /tmp/nirvana-hello.c
+```
+
+`--run-effects 7`は`Hello, world!`と改行を出力し、返り値7を標準エラーへ報告します。
+複数の呼出しには`--run-effects 3,7`のように結果入力を列挙します。
+このCLIは全文出力、指定int値を下位32bitに持つRAX、他の破壊値0を入力とします。
+GPレジスタの初期値は0、RSPは配置したstackの入口です。
+詳細な結果入力と予算には[実行API](equivalence.md#putsの外部効果)を使います。
+
+生成Cは`nirvana_effect_init(r, memory)`で再配置済みの初期imageとレジスタを用意し、
+`nirvana_effect_run(r, memory, base, size, &effects)`で実行します。
+`struct nirvana_effects`に結果入力列、独立した出力bufferと容量、各予算を渡します。
+終了status・返り値・出力長・消費数・faultは同じ構造体へ返します。
+レジスタ、ゲストRAM、出力buffer、結果入力列には、それぞれ独立したホスト領域を用意します。
+
+モデル付き読込みは割当てセクションのalignment、BSS、コード・データのRELA、GOTを扱います。
+対応importは`puts`で、通常CALL・GOT経由・末尾CALLを実行します。
+配置先は`loader::LoadOptions`で指定でき、RAMはpadding・GOT・stackを含めて16 MiBが上限です。
+元オブジェクトの呼出し証拠と配置後の命令を照合し、実行時にもGOTの値を検査します。

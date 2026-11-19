@@ -2,6 +2,7 @@
 
 Nirvanaは、対応する初期状態からの実行結果を比較します。
 読みやすいCの観測対象は、返り値・ゲストメモリ全体・最初のメモリfaultです。
+`puts`を含むモデル付きCでは、出力byte列と外部結果入力の消費数も比較します。
 
 ## 値と評価順
 
@@ -80,3 +81,37 @@ CPUのページ権限・その他の例外・MMIO・並行実行は今後の拡�
 | `Inconclusive` | 片方以上が予算に到達し、最終観測は未判定 |
 
 入力集合やモデル全体を対象とする検証は、[検証ガイド](verification.md)にまとめています。
+
+## putsの外部効果
+
+`effects::MODEL_ID`は`puts-byte-output-tape-v1`です。
+`effects::Program`は通常の整数・メモリ命令と明示的なCALLを実行します。
+文字列・GOT・stackは同じゲストRAMにあり、`puts`は呼出し時のRAMを読みます。
+
+CALLの順序は次のとおりです。
+
+1. 命令予算を使い、直接値・レジスタ・GOTのLoadから呼出先を得る。
+2. 通常CALLではRSPを8減らし、戻り先をStoreする。末尾CALLは現在のstackを使う。
+3. 呼出先を照合し、RDIからNULまで1 byteずつchecked Loadする。
+4. 次の`PutsOutcome`を検査し、出力prefix・破壊レジスタ・入力消費を確定する。
+5. calleeのRETとしてRSPを8進め、継続または関数の終了へ移る。
+
+faultでは、それまでのStoreと以前の呼出しの出力を保持します。
+文字列読出しを完了した呼出しに、指定した入出力結果を適用するモデルです。
+この規則をIR/Cの比較に使い、実マシンのABIとは結果を制御する外部関数oracleを通して照合します。
+抽象化したcalleeのRAM効果は文字列の読出しで、戻り先Storeは呼出し側の効果として保持します。
+
+`PutsOutcome`は全RAX、SysVの破壊レジスタと5つのBoolean flag、出力するprefixを指定します。
+RAXの下位32bitが非負のintなら文字列と改行を全て出力し、負なら指定prefixを出力します。
+RAXの上位32bitも結果入力として保持します。`Output::All`は全文、`Output::Prefix(n)`は先頭n byteです。
+`PutsOutcome::success(value)`は、RAXをvalue、他の破壊値を0とする入力の便宜コンストラクタです。
+
+`Program::run`へ初期レジスタ・RAM・結果入力列・`Limits`を渡すと、
+`Report`に終了状態、部分状態、`output`、`consumed`が返ります。
+命令、外部読出し、出力、呼出し数の各予算は個別に設定します。
+
+`effects_observe::Contract::return_memory_output()`は、同じ初期状態・import・結果入力の下で、
+返り値／正確なfault・全RAM・出力・消費数を比較します。
+予算切れ、結果入力の不足・不正、未対応の呼出先は`Inconclusive`です。
+`full_ir_state()`はIR間の比較に全レジスタと命令traceも加えます。
+生成Cの診断情報には命令開始数と現在位置を保持します。
