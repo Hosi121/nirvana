@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|readable-c|effects-c|effects-readable-c|effects-ir|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
+const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|readable-c|effects-c|effects-readable-c|effects-ir|module-c|module-ir|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--emit module-c/module-ir lifts sized linked functions with internal/indirect calls; default symbol main.\nmodule-c emits a standalone Linux x86-64 C program with checked POSIX imports.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -33,6 +33,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let mut symbol = String::from("fixture");
+    let mut symbol_given = false;
     let mut format = String::from("c");
     let mut raw = false;
     let mut base = None;
@@ -44,7 +45,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut coalesce_locals = true;
     while let Some(argument) = args.next() {
         match argument.as_str() {
-            "--symbol" => symbol = args.next().ok_or("--symbol requires a name")?,
+            "--symbol" => {
+                symbol = args.next().ok_or("--symbol requires a name")?;
+                symbol_given = true;
+            }
             "--emit" => format = args.next().ok_or("--emit requires a format")?,
             "--raw" => raw = true,
             "--run-effects" => {
@@ -90,6 +94,47 @@ fn run() -> Result<(), Box<dyn Error>> {
         );
     }
     let bytes = std::fs::read(path)?;
+    if matches!(format.as_str(), "module-c" | "module-ir") {
+        if raw
+            || input.is_some()
+            || effect_results.is_some()
+            || base.is_some()
+            || entry.is_some()
+            || solver.is_some()
+            || !coalesce_locals
+        {
+            return Err("module modes require a linked ELF and separate emission options".into());
+        }
+        if !symbol_given {
+            symbol = "main".into();
+        }
+        let options = nirvana::linked_elf::LinkedOptions {
+            load_bias: if bytes.get(16..18) == Some(&[2, 0]) {
+                0
+            } else {
+                0x10000
+            },
+            ..Default::default()
+        };
+        let module = nirvana::module_ir::lift_elf(&bytes, &symbol, options)?;
+        if format == "module-c" {
+            print!("{}", nirvana::module_emit::emit_c(&module)?);
+        } else {
+            for function in module.program.functions() {
+                println!(
+                    "function {} at {:#x}, {} bytes",
+                    function.name, function.address, function.size
+                );
+            }
+            for import in module.program.imports() {
+                println!("import {:?} at {:#x}", import.name, import.address);
+            }
+            for instruction in module.program.instructions() {
+                println!("{instruction:#?}");
+            }
+        }
+        return Ok(());
+    }
     let effect_mode = matches!(
         format.as_str(),
         "effects-c" | "effects-readable-c" | "effects-ir"

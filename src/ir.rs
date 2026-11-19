@@ -395,6 +395,21 @@ pub(crate) struct Machine {
 }
 
 impl Machine {
+    pub(crate) fn checked_bytes(&self, address: u64, width: usize) -> Option<&[u8]> {
+        if width != 0 {
+            address.checked_add(u64::try_from(width - 1).ok()?)?;
+        }
+        let offset = usize::try_from(address.checked_sub(self.memory_base)?).ok()?;
+        self.memory.get(offset..offset.checked_add(width)?)
+    }
+
+    pub(crate) fn checked_bytes_mut(&mut self, address: u64, width: usize) -> Option<&mut [u8]> {
+        if width != 0 {
+            address.checked_add(u64::try_from(width - 1).ok()?)?;
+        }
+        let offset = usize::try_from(address.checked_sub(self.memory_base)?).ok()?;
+        self.memory.get_mut(offset..offset.checked_add(width)?)
+    }
     pub fn new(count: usize, input: &[u64], limit: usize) -> Result<Self, ExecutionError> {
         if input.len() != count {
             return Err(ExecutionError::RegisterCount {
@@ -476,6 +491,10 @@ impl Machine {
         }
         self.remaining -= 1;
         self.trace.push(address);
+        self.assign(assignments)
+    }
+
+    pub(crate) fn assign(&mut self, assignments: &[Assignment]) -> Result<(), Stop> {
         for assignment in assignments {
             match &assignment.destination {
                 Place::Register(reg) => self.registers[reg.0] = assignment.value.evaluate(self)?,

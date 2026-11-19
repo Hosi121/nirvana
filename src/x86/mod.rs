@@ -16,6 +16,8 @@ pub use decode::{
 };
 pub(crate) use effects::lift_effects_with_resolver;
 pub use effects::{EffectLiftError, lift_effects};
+pub(crate) use lift::check_effect_flags;
+pub(crate) use lift::lift_instruction;
 pub use lift::{LiftError, lift};
 pub use vector::{VectorInstruction, VectorMemory, decode_vector_at};
 

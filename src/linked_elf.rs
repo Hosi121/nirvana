@@ -37,6 +37,14 @@ pub struct ImportSlot {
     pub width: u64,
     pub kind: u32,
     pub modeled: bool,
+    pub addend: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionSymbol {
+    pub name: String,
+    pub address: u64,
+    pub size: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,6 +53,7 @@ pub struct BinaryImage {
     pub elf_type: u16,
     pub bias: u64,
     pub imports: Vec<ImportSlot>,
+    pub functions: Vec<FunctionSymbol>,
     executable: Vec<(u64, u64)>,
 }
 
@@ -486,11 +495,23 @@ fn select_function(
     dynamic: &Dynamic,
     name: &str,
     work: &mut Work,
-) -> Result<Symbol> {
+) -> Result<(Symbol, Vec<FunctionSymbol>)> {
     let mut selected: Option<Symbol> = None;
+    let mut functions = BTreeMap::<u64, FunctionSymbol>::new();
     let mut accept =
         |symbol: Symbol, names: &[u8], section_check: bool, work: &mut Work| -> Result<()> {
-            if symbol.section == 0 || work.name(names, symbol.name)? != name {
+            if symbol.section == 0 {
+                return Ok(());
+            }
+            let symbol_name = work.name(names, symbol.name)?;
+            let wanted = symbol_name == name;
+            if !wanted
+                && (symbol.kind() != 2
+                    || symbol.size == 0
+                    || symbol.size > MAX_FUNCTION
+                    || symbol.section >= 0xff00
+                    || !mapping.contains(symbol.value, symbol.size, true))
+            {
                 return Ok(());
             }
             if symbol.kind() == 10 {
@@ -535,14 +556,33 @@ fn select_function(
                     ));
                 }
             }
-            if selected.is_some_and(|old| {
-                old.value != symbol.value
-                    || old.size != symbol.size
-                    || old.section != symbol.section
-            }) {
+            if wanted
+                && selected.is_some_and(|old| {
+                    old.value != symbol.value
+                        || old.size != symbol.size
+                        || old.section != symbol.section
+                })
+            {
                 return Err(BinaryError::AmbiguousFunction(name.to_owned()));
             }
-            selected = Some(symbol);
+            if let Some(old) = functions.get(&symbol.value)
+                && old.size != symbol.size
+            {
+                return Err(BinaryError::AmbiguousFunction(symbol_name.to_owned()));
+            }
+            functions
+                .entry(symbol.value)
+                .or_insert_with(|| FunctionSymbol {
+                    name: symbol_name.to_owned(),
+                    address: symbol.value,
+                    size: symbol.size,
+                });
+            if functions.len() > 4096 {
+                return Err(BinaryError::Limit("function catalog exceeds 4096 entries"));
+            }
+            if wanted {
+                selected = Some(symbol);
+            }
             Ok(())
         };
     for table in sections.iter().filter(|s| matches!(s.kind, 2 | 11)) {
@@ -578,7 +618,9 @@ fn select_function(
             accept(symbol, names, !sections.is_empty(), work)?;
         }
     }
-    selected.ok_or_else(|| BinaryError::MissingFunction(name.to_owned()))
+    selected
+        .map(|symbol| (symbol, functions.into_values().collect()))
+        .ok_or_else(|| BinaryError::MissingFunction(name.to_owned()))
 }
 
 #[derive(Clone, Copy)]
@@ -775,7 +817,11 @@ pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<Binar
     let sections = sections(object)?;
     let mut work = Work(MAX_WORK);
     let dynamic = dynamic(&mapping, &sections, dyn_segment, &mut work)?;
-    let selected = select_function(&mapping, &sections, &dynamic, symbol, &mut work)?;
+    let (selected, mut functions) =
+        select_function(&mapping, &sections, &dynamic, symbol, &mut work)?;
+    for function in &mut functions {
+        function.address = end(function.address, options.load_bias)?;
+    }
     let relocations = relocations(&mapping, &dynamic, &mut work)?;
     let mut imports = Vec::new();
     let mut patches = Vec::new();
@@ -827,6 +873,7 @@ pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<Binar
                     width: 8,
                     kind: record.kind,
                     modeled,
+                    addend: record.addend,
                 });
                 target
             } else if sym.section == 0xfff1 {
@@ -917,6 +964,7 @@ pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<Binar
         elf_type,
         bias: options.load_bias,
         imports,
+        functions,
         executable,
     })
 }

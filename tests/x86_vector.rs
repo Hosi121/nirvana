@@ -53,7 +53,7 @@ fn guarded(
 ) -> Result<Execution, u32> {
     if let Some(guard) = &instruction.memory {
         let address = evaluate(guard.address.clone(), registers);
-        if address % u64::from(guard.alignment) != 0 {
+        if !address.is_multiple_of(u64::from(guard.alignment)) {
             return Err(9);
         }
         let valid = address
@@ -383,10 +383,10 @@ fn native_oracle(
         )
         .unwrap();
         writeln!(assembly, ".global {name}\n.type {name}, @function\n{name}:\npush r15\nmovdqu xmm{destination}, [rdi]").unwrap();
-        if let Some(register) = case.source {
-            if register != destination {
-                writeln!(assembly, "movdqu xmm{register}, [rdi+16]").unwrap();
-            }
+        if let Some(register) = case.source
+            && register != destination
+        {
+            writeln!(assembly, "movdqu xmm{register}, [rdi+16]").unwrap();
         }
         assembly.push_str("lea r8, [rdi+32]\nmov r9, 8\n");
         let operand = if let Some(register) = case.gpr {
@@ -574,11 +574,11 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
             registers[9] = 8;
             registers[32 + case.destination as usize * 2] = words[0];
             registers[33 + case.destination as usize * 2] = words[1];
-            if let Some(source) = case.source {
-                if source != case.destination {
-                    registers[32 + source as usize * 2] = words[2];
-                    registers[33 + source as usize * 2] = words[3];
-                }
+            if let Some(source) = case.source
+                && source != case.destination
+            {
+                registers[32 + source as usize * 2] = words[2];
+                registers[33 + source as usize * 2] = words[3];
             }
             if let Some(gpr) = case.gpr {
                 registers[[0, 10, 15][gpr as usize]] = words[2];

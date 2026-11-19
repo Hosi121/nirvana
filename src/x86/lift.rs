@@ -218,7 +218,7 @@ fn check_flags(cfg: &Cfg, decoded: &[DecodedInstruction]) -> Result<(), LiftErro
 
 // The effect environment supplies all five modeled flag values explicitly.
 // Legacy decoding/lifting never gains this definition for opaque calls.
-pub(super) fn check_effect_flags(
+pub(crate) fn check_effect_flags(
     cfg: &Cfg,
     decoded: &[DecodedInstruction],
 ) -> Result<(), LiftError> {
@@ -875,7 +875,7 @@ pub fn lift(bytes: &[u8], base: u64, entry: u64) -> Result<Program, LiftError> {
 
 // Decode/layout/flags stay the caller's responsibility. The instruction's
 // assignments and fault order are shared exactly with the legacy frontend.
-pub(super) fn lift_instruction(
+pub(crate) fn lift_instruction(
     instruction: DecodedInstruction,
 ) -> Result<IrInstruction, LiftError> {
     Lifter {
