@@ -5,6 +5,9 @@ use crate::ir::Program;
 use crate::x86::{self, LiftError};
 use std::fmt;
 
+mod effects;
+pub use effects::{EffectFrontendError, EffectFunction, lift_elf_effects};
+
 #[derive(Clone, Debug)]
 pub struct LiftedFunction {
     pub image: FunctionImage,

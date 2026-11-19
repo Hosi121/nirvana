@@ -1,17 +1,19 @@
 //! A self-contained x86-64 integer decoder and lifter. No external disassembler.
 //! The first target is a single known function, with explicit guest memory and
-//! a root return. Executable decoding rejects calls and indirect branches;
-//! reference inspection can decode near calls and indirect branches without
-//! lifting them. SIMD, privileged instructions and relocation resolution are
-//! deliberately rejected.
+//! a root return. Default executable decoding uses the integer/memory model;
+//! the opt-in effect lifter models puts with a supplied outcome tape.
+//! Reference inspection also decodes near calls and indirect branches. ELF
+//! placement and relocation resolution live in the separate loader.
 
 mod decode;
+mod effects;
 mod lift;
 
 pub use decode::{
     Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
     Unary, decode_at, decode_reachable, decode_reference_at,
 };
+pub use effects::{EffectLiftError, lift_effects};
 pub use lift::{LiftError, lift};
 
 pub const RAX: usize = 0;

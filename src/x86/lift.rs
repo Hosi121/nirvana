@@ -213,6 +213,32 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
 }
 
 fn check_flags(cfg: &Cfg, decoded: &[DecodedInstruction]) -> Result<(), LiftError> {
+    check_flags_with_calls(cfg, decoded, false)
+}
+
+// The effect environment supplies all five modeled flag values explicitly.
+// Legacy decoding/lifting never gains this definition for opaque calls.
+pub(super) fn check_effect_flags(
+    cfg: &Cfg,
+    decoded: &[DecodedInstruction],
+) -> Result<(), LiftError> {
+    check_flags_with_calls(cfg, decoded, true)
+}
+
+fn check_flags_with_calls(
+    cfg: &Cfg,
+    decoded: &[DecodedInstruction],
+    calls_define_flags: bool,
+) -> Result<(), LiftError> {
+    let effect = |operation| {
+        if calls_define_flags
+            && matches!(operation, Operation::Call(_) | Operation::IndirectCall(_))
+        {
+            (0, ALL, 0)
+        } else {
+            flag_effect(operation)
+        }
+    };
     let reachable = cfg.reachable_blocks();
     let mut incoming = vec![ALL; cfg.blocks().len()];
     let mut outgoing = vec![ALL; cfg.blocks().len()];
@@ -231,7 +257,7 @@ fn check_flags(cfg: &Cfg, decoded: &[DecodedInstruction]) -> Result<(), LiftErro
             };
             let mut known = start;
             for instruction in &decoded[block.instructions.clone()] {
-                let (_, defined, undefined) = flag_effect(instruction.operation);
+                let (_, defined, undefined) = effect(instruction.operation);
                 known = (known & !undefined) | defined;
             }
             if incoming[id.index()] != start || outgoing[id.index()] != known {
@@ -247,7 +273,7 @@ fn check_flags(cfg: &Cfg, decoded: &[DecodedInstruction]) -> Result<(), LiftErro
     for &id in &reachable {
         let mut known = incoming[id.index()];
         for instruction in &decoded[cfg.block(id).instructions.clone()] {
-            let (read, defined, undefined) = flag_effect(instruction.operation);
+            let (read, defined, undefined) = effect(instruction.operation);
             if read & !known != 0 {
                 return Err(LiftError::UndefinedFlags {
                     address: instruction.address,
@@ -842,13 +868,19 @@ pub fn lift(bytes: &[u8], base: u64, entry: u64) -> Result<Program, LiftError> {
     check_flags(&cfg, &decoded)?;
     let instructions = decoded
         .into_iter()
-        .map(|instruction| {
-            Lifter {
-                next: instruction.address + u64::from(instruction.size),
-                assignments: Vec::new(),
-            }
-            .instruction(instruction)
-        })
+        .map(lift_instruction)
         .collect::<Result<_, _>>()?;
     Program::new(entry, REGISTER_COUNT, instructions).map_err(LiftError::Program)
+}
+
+// Decode/layout/flags stay the caller's responsibility. The instruction's
+// assignments and fault order are shared exactly with the legacy frontend.
+pub(super) fn lift_instruction(
+    instruction: DecodedInstruction,
+) -> Result<IrInstruction, LiftError> {
+    Lifter {
+        next: instruction.address + u64::from(instruction.size),
+        assignments: Vec::new(),
+    }
+    .instruction(instruction)
 }
