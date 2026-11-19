@@ -31,6 +31,7 @@ pub struct SectionImage<'a> {
     pub flags: u64,
     pub address: u64,
     pub size: u64,
+    pub alignment: u64,
     pub bytes: Option<&'a [u8]>,
 }
 
@@ -45,7 +46,8 @@ pub enum RelocationTarget {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectRelocation {
-    /// Byte offset from the beginning of the selected function.
+    /// Byte offset from the selected function, or from the target section in
+    /// `SectionRelocation`.
     pub offset: u64,
     pub kind: u32,
     pub width: Option<u64>,
@@ -56,6 +58,14 @@ pub struct ObjectRelocation {
     pub symbol_index: usize,
     pub symbol_kind: u8,
     pub target: RelocationTarget,
+}
+
+/// A relocation whose site is in an SHF_ALLOC section. The relocation offset
+/// is relative to `section`, independent of function boundaries or placement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SectionRelocation {
+    pub section: usize,
+    pub relocation: ObjectRelocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -157,6 +167,7 @@ struct Section {
     size: u64,
     link: u32,
     info: u32,
+    alignment: u64,
     entry_size: u64,
 }
 
@@ -293,32 +304,78 @@ pub fn read_function_context<'a>(
     let mut limits = Limits::new(true);
     let parsed = ParsedObject::parse(object, &mut limits)?;
     let mut result = parsed.function(symbol, &mut limits)?;
-    result.sections = parsed
-        .sections
-        .iter()
-        .enumerate()
-        .map(|(index, section)| {
-            limits.work(1)?;
-            Ok(SectionImage {
-                index,
-                name: parsed
-                    .names
-                    .map(|names| string_at(names, section.name, &mut limits))
-                    .transpose()?
-                    .flatten(),
-                kind: section.kind,
-                flags: section.flags,
-                address: section.address,
-                size: section.size,
-                bytes: if section.kind == SHT_NOBITS {
-                    None
-                } else {
-                    Some(range(object, section.offset, section.size)?)
-                },
-            })
-        })
-        .collect::<Result<_, ElfError>>()?;
+    result.sections = parsed.section_images(&mut limits)?;
     Ok(result)
+}
+
+/// Inspect every relocation whose target section has SHF_ALLOC, including
+/// writable initializers and other functions. REL addends and unknown widths
+/// remain explicit `None`; this API never resolves or applies relocations.
+/// The same context work, name-storage and reference limits apply.
+pub fn read_allocated_relocations(object: &[u8]) -> Result<Vec<SectionRelocation>, ElfError> {
+    let mut limits = Limits::new(true);
+    let parsed = ParsedObject::parse(object, &mut limits)?;
+    parsed.allocated_relocations(&mut limits)
+}
+
+/// Loader preflight uses the shared reader with one aggregate metadata budget.
+/// Strict checks happen before copying the function or allocating guest RAM.
+pub(crate) fn read_link_context<'a>(
+    object: &'a [u8],
+    symbol: &str,
+) -> Result<(FunctionContext<'a>, Vec<SectionRelocation>), ElfError> {
+    if object.len() > 64 * 1024 * 1024 {
+        return Err(ElfError::Unsupported("ELF link file size limit exceeded"));
+    }
+    // Read the count before parse's section vectors are allocated.
+    if u16_at(object, 60)? > 4096 {
+        return Err(ElfError::Unsupported(
+            "ELF link section count limit exceeded",
+        ));
+    }
+    let mut limits = Limits::new(true);
+    let parsed = ParsedObject::parse(object, &mut limits)?;
+    parsed.validate_link_metadata(&mut limits)?;
+    let mut context = parsed.function(symbol, &mut limits)?;
+    context.sections = parsed.section_images(&mut limits)?;
+    let relocations = parsed.allocated_relocations(&mut limits)?;
+    Ok((context, relocations))
+}
+
+struct ParsedRelocation<'a> {
+    section: usize,
+    offset: u64,
+    kind: u32,
+    width: Option<u64>,
+    addend: Option<i64>,
+    symbol: Symbol<'a>,
+    symbol_table: usize,
+    symbol_index: usize,
+}
+
+impl ParsedRelocation<'_> {
+    fn owned(&self, offset: u64, limits: &mut Limits) -> Result<ObjectRelocation, ElfError> {
+        let target = match self.symbol.section {
+            0 => RelocationTarget::Undefined,
+            SHN_ABS => RelocationTarget::Absolute(self.symbol.value),
+            index if index >= SHN_LORESERVE => RelocationTarget::Reserved(index),
+            index => RelocationTarget::Section {
+                index: usize::from(index),
+                offset: self.symbol.value,
+            },
+        };
+        Ok(ObjectRelocation {
+            offset,
+            kind: self.kind,
+            width: self.width,
+            addend: self.addend,
+            symbol: limits.owned_name(self.symbol.name)?,
+            symbol_table: self.symbol_table,
+            symbol_index: self.symbol_index,
+            symbol_kind: self.symbol.kind,
+            target,
+        })
+    }
 }
 
 impl<'a> SymbolTable<'a> {
@@ -401,6 +458,7 @@ impl<'a> ParsedObject<'a> {
                 size: u64_at(data, 32)?,
                 link: u32_at(data, 40)?,
                 info: u32_at(data, 44)?,
+                alignment: u64_at(data, 48)?,
                 entry_size: u64_at(data, 56)?,
             };
             if section.kind == 18 {
@@ -466,6 +524,220 @@ impl<'a> ParsedObject<'a> {
         })
     }
 
+    fn section_images(&self, limits: &mut Limits) -> Result<Vec<SectionImage<'a>>, ElfError> {
+        self.sections
+            .iter()
+            .enumerate()
+            .map(|(index, section)| {
+                limits.work(1)?;
+                Ok(SectionImage {
+                    index,
+                    name: self
+                        .names
+                        .map(|names| string_at(names, section.name, limits))
+                        .transpose()?
+                        .flatten(),
+                    kind: section.kind,
+                    flags: section.flags,
+                    address: section.address,
+                    size: section.size,
+                    alignment: section.alignment,
+                    bytes: if section.kind == SHT_NOBITS {
+                        None
+                    } else {
+                        Some(range(self.object, section.offset, section.size)?)
+                    },
+                })
+            })
+            .collect()
+    }
+
+    fn for_relocations(
+        &self,
+        limits: &mut Limits,
+        mut visit: impl FnMut(ParsedRelocation<'a>, &mut Limits) -> Result<(), ElfError>,
+    ) -> Result<(), ElfError> {
+        for section in self
+            .sections
+            .iter()
+            .filter(|section| matches!(section.kind, SHT_RELA | SHT_REL))
+        {
+            let target = section_index(section.info, self.sections.len())?;
+            let linked = section_index(section.link, self.sections.len())?;
+            let table = self.tables[linked]
+                .ok_or_else(|| invalid("relocations do not link to SHT_SYMTAB"))?;
+            let entry_size = if section.kind == SHT_RELA { 24 } else { 16 };
+            let data = entries(self.object, section, entry_size)?;
+            for data in data.chunks_exact(entry_size as usize) {
+                limits.work(1)?;
+                let offset = u64_at(data, 0)?;
+                let info = u64_at(data, 8)?;
+                let kind = info as u32;
+                let width = relocation_width(kind);
+                let symbol_index = usize::try_from(info >> 32)
+                    .map_err(|_| invalid("relocation symbol index does not fit this host"))?;
+                if symbol_index >= table.data.len() / 24 {
+                    return Err(invalid("invalid relocation symbol index"));
+                }
+                let symbol = table.symbol(symbol_index, limits)?;
+                if symbol.section == SHN_XINDEX {
+                    return Err(ElfError::Unsupported("SHN_XINDEX extended symbol index"));
+                }
+                if symbol.section < SHN_LORESERVE
+                    && usize::from(symbol.section) >= self.sections.len()
+                {
+                    return Err(invalid("symbol section index exceeds section count"));
+                }
+                if offset >= self.sections[target].size {
+                    return Err(invalid("relocation site is outside its target section"));
+                }
+                if let Some(width) = width
+                    && offset
+                        .checked_add(width)
+                        .is_none_or(|end| end > self.sections[target].size)
+                {
+                    return Err(invalid("relocation field exceeds its target section"));
+                }
+                visit(
+                    ParsedRelocation {
+                        section: target,
+                        offset,
+                        kind,
+                        width,
+                        addend: if section.kind == SHT_RELA {
+                            Some(i64::from_le_bytes(array(data, 16)?))
+                        } else {
+                            None
+                        },
+                        symbol,
+                        symbol_table: linked,
+                        symbol_index,
+                    },
+                    limits,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn allocated_relocations(
+        &self,
+        limits: &mut Limits,
+    ) -> Result<Vec<SectionRelocation>, ElfError> {
+        let mut result = Vec::new();
+        self.for_relocations(limits, |record, limits| {
+            if self.sections[record.section].flags & 2 != 0 {
+                if result.len() == CONTEXT_REFERENCES {
+                    return Err(ElfError::Unsupported(
+                        "ELF allocated reference limit exceeded",
+                    ));
+                }
+                result.push(SectionRelocation {
+                    section: record.section,
+                    relocation: record.owned(record.offset, limits)?,
+                });
+            }
+            Ok(())
+        })?;
+        Ok(result)
+    }
+
+    fn validate_link_metadata(&self, limits: &mut Limits) -> Result<(), ElfError> {
+        let null = self.sections[0];
+        if null.name != 0
+            || null.flags != 0
+            || null.address != 0
+            || null.offset != 0
+            || null.link != 0
+            || null.info != 0
+            || null.alignment != 0
+            || null.entry_size != 0
+        {
+            return Err(invalid("nonzero null section metadata"));
+        }
+        if u16_at(self.object, 56)? != 0 {
+            return Err(ElfError::Unsupported(
+                "program headers in relocatable link input",
+            ));
+        }
+        let table_offset = u64_at(self.object, 40)?;
+        let mut ranges = vec![
+            (0, 64),
+            (table_offset, table_offset + self.sections.len() as u64 * 64),
+        ];
+        for section in self.sections.iter().skip(1) {
+            limits.work(1)?;
+            if section.flags & (0x400 | 0x800) != 0 {
+                return Err(ElfError::Unsupported("TLS or compressed link section"));
+            }
+            if section.flags & (0x80 | 0x100 | 0x200) != 0 {
+                return Err(ElfError::Unsupported(
+                    "link-order, group or OS-dependent section metadata",
+                ));
+            }
+            if !matches!(section.kind, 1..=4 | 7..=9) {
+                return Err(ElfError::Unsupported("unsupported link section metadata"));
+            }
+            if section.kind == SHT_REL {
+                return Err(ElfError::Unsupported("implicit REL addends in link input"));
+            }
+            if section.flags & 2 != 0 {
+                if !matches!(section.kind, 1 | 7 | SHT_NOBITS)
+                    || section.flags & !(1 | 2 | 4 | 0x10 | 0x20) != 0
+                {
+                    return Err(ElfError::Unsupported(
+                        "unsupported allocated section kind or flags",
+                    ));
+                }
+                if section.alignment > 1_048_576
+                    || (section.alignment != 0 && !section.alignment.is_power_of_two())
+                {
+                    return Err(ElfError::Unsupported(
+                        "invalid or excessive allocated section alignment",
+                    ));
+                }
+            }
+            if section.kind != SHT_NOBITS && section.size != 0 {
+                ranges.push((
+                    section.offset,
+                    section
+                        .offset
+                        .checked_add(section.size)
+                        .ok_or_else(|| invalid("section range overflow"))?,
+                ));
+            }
+        }
+        ranges.sort_unstable();
+        if ranges.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+            return Err(invalid("overlapping ELF file sections or metadata"));
+        }
+        for table in self.tables.iter().flatten() {
+            for index in 0..table.data.len() / 24 {
+                let symbol = table.symbol(index, limits)?;
+                if matches!(symbol.kind, 6 | 10) {
+                    return Err(ElfError::Unsupported(
+                        "TLS or indirect-function link symbol",
+                    ));
+                }
+                if symbol.section > 0 && symbol.section < SHN_LORESERVE {
+                    let section = self
+                        .sections
+                        .get(usize::from(symbol.section))
+                        .ok_or_else(|| invalid("symbol section index exceeds section count"))?;
+                    if section.flags & 2 != 0
+                        && symbol
+                            .value
+                            .checked_add(symbol.size)
+                            .is_none_or(|end| end > section.size)
+                    {
+                        return Err(invalid("symbol extends beyond allocated section"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn select(&self, name: &str, limits: &mut Limits) -> Result<Symbol<'a>, ElfError> {
         let mut selected = None;
         for table in self.tables.iter().flatten() {
@@ -528,111 +800,53 @@ impl<'a> ParsedObject<'a> {
             .ok_or_else(|| invalid("function address overflow"))?;
         let mut relocations = Vec::new();
         let mut references = Vec::new();
-        for relocation_section in self
-            .sections
-            .iter()
-            .filter(|section| matches!(section.kind, SHT_RELA | SHT_REL))
-        {
-            let target = section_index(relocation_section.info, self.sections.len())?;
-            let linked = section_index(relocation_section.link, self.sections.len())?;
-            let table = self.tables[linked]
-                .ok_or_else(|| invalid("relocations do not link to SHT_SYMTAB"))?;
-            let entry_size = if relocation_section.kind == SHT_RELA {
-                24
-            } else {
-                16
-            };
-            let data = entries(self.object, relocation_section, entry_size)?;
-            for data in data.chunks_exact(entry_size as usize) {
-                limits.work(1)?;
-                let offset = u64_at(data, 0)?;
-                let info = u64_at(data, 8)?;
-                let kind = info as u32;
-                let width = relocation_width(kind);
-                let symbol_index = usize::try_from(info >> 32)
-                    .map_err(|_| invalid("relocation symbol index does not fit this host"))?;
-                if symbol_index >= table.data.len() / 24 {
-                    return Err(invalid("invalid relocation symbol index"));
-                }
-                let referenced = table.symbol(symbol_index, limits)?;
-                if offset >= self.sections[target].size {
-                    return Err(invalid("relocation site is outside its target section"));
-                }
-                if let Some(width) = width
-                    && offset
-                        .checked_add(width)
-                        .is_none_or(|site_end| site_end > self.sections[target].size)
-                {
-                    return Err(invalid("relocation field exceeds its target section"));
-                }
-                if target != selected_section {
-                    continue;
-                }
-                if offset < selected.value {
-                    // Unknown widths cannot prove that the function is untouched.
-                    match width {
-                        Some(width)
-                            if offset
-                                .checked_add(width)
-                                .is_some_and(|end| end <= selected.value) =>
-                        {
-                            continue;
-                        }
-                        _ => {
-                            return Err(ElfError::Unsupported(
-                                "relocation may cross the function start",
-                            ));
-                        }
+        self.for_relocations(limits, |record, limits| {
+            if record.section != selected_section {
+                return Ok(());
+            }
+            let offset = record.offset;
+            if offset < selected.value {
+                // Unknown widths cannot prove that the function is untouched.
+                match record.width {
+                    Some(width)
+                        if offset
+                            .checked_add(width)
+                            .is_some_and(|end| end <= selected.value) =>
+                    {
+                        return Ok(());
+                    }
+                    _ => {
+                        return Err(ElfError::Unsupported(
+                            "relocation may cross the function start",
+                        ));
                     }
                 }
-                if offset >= end {
-                    continue;
-                }
-                if let Some(width) = width
-                    && offset
-                        .checked_add(width)
-                        .is_none_or(|site_end| site_end > end)
-                {
-                    return Err(invalid("relocation field crosses the function end"));
-                }
-                if limits.context && references.len() == CONTEXT_REFERENCES {
-                    return Err(ElfError::Unsupported(
-                        "ELF context reference limit exceeded",
-                    ));
-                }
-                relocations.push(Relocation {
-                    offset: offset - selected.value,
-                    kind,
-                    symbol: limits.owned_name(referenced.name)?,
-                });
-                if limits.context {
-                    let target = match referenced.section {
-                        0 => RelocationTarget::Undefined,
-                        SHN_ABS => RelocationTarget::Absolute(referenced.value),
-                        index if index >= SHN_LORESERVE => RelocationTarget::Reserved(index),
-                        index => RelocationTarget::Section {
-                            index: usize::from(index),
-                            offset: referenced.value,
-                        },
-                    };
-                    references.push(ObjectRelocation {
-                        offset: offset - selected.value,
-                        kind,
-                        width,
-                        addend: if relocation_section.kind == SHT_RELA {
-                            Some(i64::from_le_bytes(array(data, 16)?))
-                        } else {
-                            None
-                        },
-                        symbol: limits.owned_name(referenced.name)?,
-                        symbol_table: linked,
-                        symbol_index,
-                        symbol_kind: referenced.kind,
-                        target,
-                    });
-                }
             }
-        }
+            if offset >= end {
+                return Ok(());
+            }
+            if let Some(width) = record.width
+                && offset
+                    .checked_add(width)
+                    .is_none_or(|site_end| site_end > end)
+            {
+                return Err(invalid("relocation field crosses the function end"));
+            }
+            if limits.context && references.len() == CONTEXT_REFERENCES {
+                return Err(ElfError::Unsupported(
+                    "ELF context reference limit exceeded",
+                ));
+            }
+            relocations.push(Relocation {
+                offset: offset - selected.value,
+                kind: record.kind,
+                symbol: limits.owned_name(record.symbol.name)?,
+            });
+            if limits.context {
+                references.push(record.owned(offset - selected.value, limits)?);
+            }
+            Ok(())
+        })?;
         Ok(FunctionContext {
             image: FunctionImage {
                 name: limits.owned_name(Some(name))?.expect("name is present"),
