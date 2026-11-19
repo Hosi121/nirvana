@@ -103,15 +103,16 @@ impl Run<'_> {
     }
 
     fn call(&mut self, program: &Program, call: &CallInstruction) -> Result<(), Status> {
-        // The target operand is evaluated before the CALL stack write. This
-        // matters when the target pointer or string aliases the return slot.
-        let target = match call.target {
+        // CALL's operand is read before its stack write. A direct PLT call
+        // instead reads the GOT after that write, inside the import stub.
+        let mut target = match call.target {
             CallTarget::Direct(target) => target,
             CallTarget::Register(register) => self.machine.registers[register.0],
             CallTarget::Memory(address) => self
                 .machine
                 .load(address, Width::U64)
                 .map_err(Status::Fault)?,
+            CallTarget::Plt(_) => 0,
         };
         if !call.tail {
             self.machine.registers[RSP] = self.machine.registers[RSP].wrapping_sub(8);
@@ -121,6 +122,12 @@ impl Run<'_> {
                     Width::U64,
                     call.address + u64::from(call.size),
                 )
+                .map_err(Status::Fault)?;
+        }
+        if let CallTarget::Plt(address) = call.target {
+            target = self
+                .machine
+                .load(address, Width::U64)
                 .map_err(Status::Fault)?;
         }
         if target != program.puts_address() {

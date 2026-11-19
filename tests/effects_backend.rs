@@ -347,6 +347,9 @@ fn c_effects_match_full_state_output_faults_and_every_stop_boundary() {
         (CallTarget::Register(Reg(3)), false),
         (CallTarget::Memory(BASE), false),
         (CallTarget::Memory(BASE + 124), false),
+        (CallTarget::Plt(BASE), false),
+        (CallTarget::Plt(BASE), true),
+        (CallTarget::Plt(BASE + 124), false),
     ]
     .into_iter()
     .enumerate()

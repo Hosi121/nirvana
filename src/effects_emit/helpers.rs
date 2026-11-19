@@ -76,4 +76,26 @@ static inline unsigned nirvana_puts(struct nirvana_memory *m,uint64_t *r,uint64_
     ++e->consumed; --e->calls_left;
     return 1;
 }
+static inline unsigned nirvana_step(struct nirvana_memory *m,uint64_t address) {
+    struct nirvana_effects *e=m->effects;
+    e->instruction=address;
+    if(e->instructions_left==0) {e->status=5;return 0;}
+    --e->instructions_left; ++e->started;
+    return 1;
+}
+/* kind: direct/register value, indirect memory operand, direct PLT slot. */
+static inline unsigned nirvana_call_puts(struct nirvana_memory *m,uint64_t *r,unsigned kind,uint64_t operand,uint64_t next,unsigned tail,uint64_t puts_address) {
+    uint64_t target=kind==1?nirvana_load(m,operand,8):operand;
+    if(!tail) {
+        r[4]-=UINT64_C(8);
+        nirvana_store(m,r[4],8,next);
+    }
+    if(kind==2) target=nirvana_load(m,operand,8);
+    if(target!=puts_address) {
+        m->effects->unknown_target=target; m->effects->status=2; return 0;
+    }
+    if(!nirvana_puts(m,r,r[7])) return 0;
+    r[4]+=UINT64_C(8);
+    return 1;
+}
 "#;

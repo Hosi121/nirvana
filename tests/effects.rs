@@ -179,6 +179,64 @@ fn register_target_uses_rsp_before_stack_decrement() {
 }
 
 #[test]
+fn plt_reads_target_after_push_and_keeps_prior_stack_write_on_fault() {
+    let slot = BASE + 16;
+    let mut ram = memory();
+    ram[16..24].copy_from_slice(&PUTS.to_le_bytes());
+    let report = one_call(CallTarget::Plt(slot), false)
+        .run(
+            &input(),
+            BASE,
+            &ram,
+            &[PutsOutcome::success(7)],
+            Limits::default(),
+        )
+        .unwrap();
+    // CALL stores next PC=1 over the GOT slot before entering the PLT.
+    assert_eq!(report.status, Status::UnknownTarget(1));
+    assert_eq!(report.state.registers[RSP], slot);
+    assert_eq!(&report.state.memory[16..24], &1_u64.to_le_bytes());
+    assert_eq!(report.consumed, 0);
+
+    let report = one_call(CallTarget::Plt(u64::MAX), false)
+        .run(&input(), BASE, &ram, &[], Limits::default())
+        .unwrap();
+    assert_eq!(report.status, fault(AccessKind::Read, u64::MAX, Width::U64));
+    assert_eq!(report.state.registers[RSP], slot);
+    assert_eq!(&report.state.memory[16..24], &1_u64.to_le_bytes());
+
+    let mut registers = input();
+    registers[RSP] = BASE + 4;
+    let report = one_call(CallTarget::Plt(u64::MAX), false)
+        .run(&registers, BASE, &ram, &[], Limits::default())
+        .unwrap();
+    assert_eq!(
+        report.status,
+        fault(AccessKind::Write, BASE - 4, Width::U64)
+    );
+    assert_eq!(report.state.memory, ram);
+}
+
+#[test]
+fn plt_tail_reads_without_push_then_pops_existing_return_slot() {
+    let mut ram = memory();
+    ram[16..24].copy_from_slice(&PUTS.to_le_bytes());
+    let report = one_call(CallTarget::Plt(BASE + 16), true)
+        .run(
+            &input(),
+            BASE,
+            &ram,
+            &[PutsOutcome::success(9)],
+            Limits::default(),
+        )
+        .unwrap();
+    assert_eq!(report.status, Status::Returned(9));
+    assert_eq!(report.output, b"abc\n");
+    assert_eq!(report.state.registers[RSP], input()[RSP] + 8);
+    assert_eq!(report.state.memory, ram);
+}
+
+#[test]
 fn target_read_fault_precedes_stack_mutation_and_all_call_limits() {
     let report = one_call(CallTarget::Memory(u64::MAX), false)
         .run(

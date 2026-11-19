@@ -25,6 +25,9 @@ pub enum CallTarget {
     Register(Reg),
     /// Read a little-endian target pointer from this guest address.
     Memory(u64),
+    /// A direct call through a proven PLT stub: push first, then read its GOT
+    /// slot. This order differs from an indirect CALL memory operand.
+    Plt(u64),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -7,6 +7,12 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 mod helpers;
 
+pub(crate) fn runtime_header() -> &'static str {
+    helpers::HEADER
+}
+
+pub(crate) const FUNCTION_OPEN: &str = "\nunsigned nirvana_effect_run(uint64_t *r, uint8_t *memory, uint64_t base, uint64_t size, struct nirvana_effects *e) {\n    jmp_buf jump;\n    struct nirvana_memory m = {memory,base,size,e,&jump};\n    (void)r; (void)m;\n    e->status=0; e->result=0; e->output_size=0; e->consumed=0; e->started=0;\n    e->fault_address=0; e->fault_width=0; e->fault_access=0; e->unknown_target=0;\n    if(setjmp(jump)!=0) return e->status;\n";
+
 /// Registers, memory, output and outcome storage are distinct host objects.
 /// Result/fault/output metadata lives in `struct nirvana_effects` in the C API.
 pub fn emit_c(program: &Program) -> Result<String, SequenceError> {
@@ -16,15 +22,14 @@ pub fn emit_c(program: &Program) -> Result<String, SequenceError> {
     if program.shape().uses_high_multiply() {
         code.push_str(MULTIPLY_HELPER);
     }
-    code.push_str(helpers::HEADER);
+    code.push_str(runtime_header());
     writeln!(
         code,
         "\n#define NIRVANA_EFFECT_REGISTERS {}",
         program.register_count()
     )
     .unwrap();
-    code.push_str("\nunsigned nirvana_effect_run(uint64_t *r, uint8_t *memory, uint64_t base, uint64_t size, struct nirvana_effects *e) {\n");
-    code.push_str("    jmp_buf jump;\n    struct nirvana_memory m = {memory,base,size,e,&jump};\n    (void)r; (void)m;\n    e->status=0; e->result=0; e->output_size=0; e->consumed=0; e->started=0;\n    e->fault_address=0; e->fault_width=0; e->fault_access=0; e->unknown_target=0;\n    if(setjmp(jump)!=0) return e->status;\n");
+    code.push_str(FUNCTION_OPEN);
     writeln!(code, "    goto nirvana_pc_{};", program.entry()).unwrap();
     let reachable: BTreeSet<_> = program
         .cfg()
@@ -70,23 +75,13 @@ pub fn emit_c(program: &Program) -> Result<String, SequenceError> {
                 }
             }
             Instruction::Call(call) => {
-                let target = match call.target {
-                    CallTarget::Direct(value) => format!("UINT64_C({value})"),
-                    CallTarget::Register(reg) => format!("r[{}]", reg.0),
-                    CallTarget::Memory(address) => {
-                        format!("nirvana_load(&m,UINT64_C({address}),8)")
-                    }
+                let (kind, operand) = match call.target {
+                    CallTarget::Direct(value) => (0, format!("UINT64_C({value})")),
+                    CallTarget::Register(reg) => (0, format!("r[{}]", reg.0)),
+                    CallTarget::Memory(address) => (1, format!("UINT64_C({address})")),
+                    CallTarget::Plt(address) => (2, format!("UINT64_C({address})")),
                 };
-                writeln!(
-                    code,
-                    "    {{\n        const uint64_t nirvana_target={target};"
-                )
-                .unwrap();
-                if !call.tail {
-                    writeln!(code,"        r[4]-=UINT64_C(8);\n        nirvana_store(&m,r[4],8,UINT64_C({}));",address+u64::from(size)).unwrap();
-                }
-                writeln!(code,"        if(nirvana_target!=UINT64_C({})) {{e->unknown_target=nirvana_target;e->status=2;return e->status;}}",program.puts_address()).unwrap();
-                code.push_str("        if(!nirvana_puts(&m,r,r[7])) return e->status;\n        r[4]+=UINT64_C(8);\n");
+                writeln!(code,"    if(!nirvana_call_puts(&m,r,{kind},{operand},UINT64_C({}),{},UINT64_C({}))) return e->status;",address+u64::from(size),u8::from(call.tail),program.puts_address()).unwrap();
                 if call.tail {
                     code.push_str("        e->result=r[0]; e->status=0; return e->status;\n");
                 } else {
@@ -97,7 +92,6 @@ pub fn emit_c(program: &Program) -> Result<String, SequenceError> {
                     )
                     .unwrap();
                 }
-                code.push_str("    }\n");
             }
         }
     }
@@ -111,6 +105,12 @@ fn jump(code: &mut String, address: u64) {
 /// Emit the executable model together with its relocated initial guest image.
 pub fn emit_image(program: &Program, image: &crate::loader::LinkedImage) -> Result<String, String> {
     let mut code = emit_c(program).map_err(|e| e.to_string())?;
+    code.push_str(&image_initialization(image)?);
+    Ok(code)
+}
+
+pub(crate) fn image_initialization(image: &crate::loader::LinkedImage) -> Result<String, String> {
+    let mut code = String::new();
     let nonzero = image.memory.iter().filter(|&&b| b != 0).count();
     if nonzero > 500_000 {
         return Err("initial image exceeds C output bound".into());
