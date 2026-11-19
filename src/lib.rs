@@ -22,6 +22,7 @@ pub mod division_expr;
 pub mod effects;
 pub mod effects_emit;
 pub mod effects_observe;
+pub mod effects_readable;
 pub mod elf;
 pub mod emit;
 pub mod expression_ir;

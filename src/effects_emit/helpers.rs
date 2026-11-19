@@ -83,6 +83,9 @@ static inline unsigned nirvana_step(struct nirvana_memory *m,uint64_t address) {
     --e->instructions_left; ++e->started;
     return 1;
 }
+enum nirvana_target_kind {
+    NIRVANA_DIRECT_TARGET=0,NIRVANA_MEMORY_TARGET=1,NIRVANA_PLT_TARGET=2
+};
 /* kind: direct/register value, indirect memory operand, direct PLT slot. */
 static inline unsigned nirvana_call_puts(struct nirvana_memory *m,uint64_t *r,unsigned kind,uint64_t operand,uint64_t next,unsigned tail,uint64_t puts_address) {
     uint64_t target=kind==1?nirvana_load(m,operand,8):operand;
