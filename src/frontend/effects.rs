@@ -23,6 +23,7 @@ pub enum EffectFrontendError {
     },
     Load(LoadError),
     Lift(EffectLiftError),
+    Linked(String),
     ProofMismatch {
         instruction: u64,
         reason: &'static str,
@@ -42,6 +43,7 @@ impl fmt::Display for EffectFrontendError {
             ),
             Self::Load(error) => error.fmt(f),
             Self::Lift(error) => error.fmt(f),
+            Self::Linked(error) => f.write_str(error),
             Self::ProofMismatch {
                 instruction,
                 reason,

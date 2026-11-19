@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana FILE.o [--symbol fixture] [--emit c|readable-c|effects-c|effects-ir|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nObject input: ELF64 little-endian x86-64 ET_REL, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-ir uses the explicit puts output/outcome model.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
+const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|readable-c|effects-c|effects-readable-c|effects-ir|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\nExecutable modes require supported instructions and fully resolved code references.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -90,8 +90,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         );
     }
     let bytes = std::fs::read(path)?;
-    let effect_mode =
-        matches!(format.as_str(), "effects-c" | "effects-ir") || effect_results.is_some();
+    let effect_mode = matches!(
+        format.as_str(),
+        "effects-c" | "effects-readable-c" | "effects-ir"
+    ) || effect_results.is_some();
     if effect_mode {
         if raw
             || input.is_some()
@@ -102,12 +104,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             || effect_results.is_some() && format != "c"
         {
             return Err(
-                "effect modes require an ELF object and separate execution or emission options"
+                "effect modes require an ELF image and separate execution or emission options"
                     .into(),
             );
         }
-        let function =
-            frontend::lift_elf_effects(&bytes, &symbol, nirvana::loader::LoadOptions::default())?;
+        let function = frontend::lift_elf_effects_auto(&bytes, &symbol)?;
         if let Some(results) = effect_results {
             let outcomes: Vec<_> = results
                 .into_iter()
@@ -144,7 +145,13 @@ fn run() -> Result<(), Box<dyn Error>> {
                 .into()),
             };
         }
-        if format == "effects-ir" {
+        if format == "effects-readable-c" {
+            let output = nirvana::effects_readable::emit_image(&function.program, &function.image)?;
+            if let Some(reason) = output.fallback_reason {
+                eprintln!("effect structure fallback: {reason}");
+            }
+            print!("{}", output.code);
+        } else if format == "effects-ir" {
             for instruction in function.program.instructions() {
                 println!("{instruction:#?}");
             }
@@ -176,7 +183,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         if base.is_some() || entry.is_some() {
             return Err("--base and --entry require --raw".into());
         }
-        let lifted = frontend::lift_elf(&bytes, &symbol)?;
+        let lifted = frontend::lift_elf_auto(&bytes, &symbol)?;
         (lifted.program, lifted.image.bytes, lifted.image.address)
     };
     if let Some(input) = input {

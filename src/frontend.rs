@@ -6,7 +6,9 @@ use crate::x86::{self, LiftError};
 use std::fmt;
 
 mod effects;
+mod linked;
 pub use effects::{EffectFrontendError, EffectFunction, lift_elf_effects};
+pub use linked::{lift_elf_auto, lift_elf_effects_auto, lift_linked_elf, lift_linked_elf_effects};
 
 #[derive(Clone, Debug)]
 pub struct LiftedFunction {
@@ -19,6 +21,7 @@ pub enum FrontendError {
     Elf(ElfError),
     Relocations(Vec<Relocation>),
     Lift(LiftError),
+    Linked(String),
 }
 
 impl fmt::Display for FrontendError {
@@ -26,6 +29,7 @@ impl fmt::Display for FrontendError {
         match self {
             Self::Elf(error) => error.fmt(f),
             Self::Lift(error) => error.fmt(f),
+            Self::Linked(error) => f.write_str(error),
             Self::Relocations(relocations) => {
                 let Some(first) = relocations.first() else {
                     return f.write_str("unresolved relocations");

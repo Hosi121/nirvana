@@ -13,6 +13,7 @@ pub use decode::{
     Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
     Unary, decode_at, decode_reachable, decode_reference_at,
 };
+pub(crate) use effects::lift_effects_with_resolver;
 pub use effects::{EffectLiftError, lift_effects};
 pub use lift::{LiftError, lift};
 

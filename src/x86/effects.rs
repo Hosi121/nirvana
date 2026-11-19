@@ -78,7 +78,23 @@ fn call(
     base: u64,
     end: u64,
     puts_address: u64,
+    resolve: &mut impl FnMut(DecodedInstruction) -> Result<Option<CallTarget>, EffectLiftError>,
 ) -> Result<Option<CallInstruction>, EffectLiftError> {
+    let is_call = matches!(
+        instruction.operation,
+        Operation::Call(_) | Operation::IndirectCall(_) | Operation::IndirectJump(_)
+    ) || matches!(instruction.operation, Operation::Jump(target) if !(base..end).contains(&target));
+    if is_call && let Some(target) = resolve(instruction)? {
+        return Ok(Some(CallInstruction {
+            address: instruction.address,
+            size: u32::from(instruction.size),
+            target,
+            tail: matches!(
+                instruction.operation,
+                Operation::Jump(_) | Operation::IndirectJump(_)
+            ),
+        }));
+    }
     let (target, tail) = match instruction.operation {
         Operation::Call(target) => {
             if (base..end).contains(&target) || target != puts_address {
@@ -122,6 +138,17 @@ pub fn lift_effects(
     entry: u64,
     puts_address: u64,
 ) -> Result<Program, EffectLiftError> {
+    lift_effects_with_resolver(bytes, base, entry, puts_address, |_| Ok(None))
+}
+
+/// Internal boundary for a frontend with independent import identity evidence.
+pub(crate) fn lift_effects_with_resolver(
+    bytes: &[u8],
+    base: u64,
+    entry: u64,
+    puts_address: u64,
+    mut resolve: impl FnMut(DecodedInstruction) -> Result<Option<CallTarget>, EffectLiftError>,
+) -> Result<Program, EffectLiftError> {
     if bytes.len() > MAX_FUNCTION_BYTES {
         return Err(EffectLiftError::Limit("function bytes"));
     }
@@ -154,7 +181,7 @@ pub fn lift_effects(
         if decoded.range(address..next).next().is_some() {
             return Err(decode_error(address, "overlapping instruction streams"));
         }
-        let effect = call(instruction, base, end, puts_address)?;
+        let effect = call(instruction, base, end, puts_address, &mut resolve)?;
         if let Some(effect) = &effect {
             if !effect.tail {
                 pending.push(next);
