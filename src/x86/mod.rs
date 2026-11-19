@@ -8,6 +8,7 @@
 mod decode;
 mod effects;
 mod lift;
+mod vector;
 
 pub use decode::{
     Addressing, Alu, DecodeError, DecodedInstruction, Operand, Operation, Register, Rotate, Shift,
@@ -16,6 +17,7 @@ pub use decode::{
 pub(crate) use effects::lift_effects_with_resolver;
 pub use effects::{EffectLiftError, lift_effects};
 pub use lift::{LiftError, lift};
+pub use vector::{VectorInstruction, VectorMemory, decode_vector_at};
 
 pub const RAX: usize = 0;
 pub const RCX: usize = 1;
