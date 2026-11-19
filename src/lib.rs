@@ -20,6 +20,8 @@ pub mod context_remainder;
 pub mod display_dce;
 pub mod division_expr;
 pub mod elf;
+pub mod effects;
+pub mod effects_observe;
 pub mod emit;
 pub mod expression_ir;
 pub mod finite_region;

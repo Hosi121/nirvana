@@ -1,6 +1,7 @@
 //! An executable, unsigned-64-bit IR for checking control-flow recovery.
 //! Arithmetic wraps modulo 2^64. Shift counts are masked with 63. Expressions
-//! may read a checked little-endian byte memory. Calls are not modeled yet.
+//! may read a checked little-endian byte memory. Explicit external calls use
+//! the effect IR in `crate::effects` and reuse this core machine.
 
 use std::fmt;
 
@@ -448,11 +449,24 @@ impl Machine {
             })
     }
 
-    fn load(&self, address: u64, width: Width) -> Result<u64, MemoryFault> {
+    pub(crate) fn load(&self, address: u64, width: Width) -> Result<u64, MemoryFault> {
         let offset = self.offset(address, width, AccessKind::Read)?;
         let mut bytes = [0; 8];
         bytes[..width.bytes()].copy_from_slice(&self.memory[offset..offset + width.bytes()]);
         Ok(u64::from_le_bytes(bytes))
+    }
+
+    /// Commit a checked store atomically, retaining RAM on a failed access.
+    pub(crate) fn store(
+        &mut self,
+        address: u64,
+        width: Width,
+        value: u64,
+    ) -> Result<(), MemoryFault> {
+        let offset = self.offset(address, width, AccessKind::Write)?;
+        self.memory[offset..offset + width.bytes()]
+            .copy_from_slice(&value.to_le_bytes()[..width.bytes()]);
+        Ok(())
     }
 
     pub fn step(&mut self, address: Address, assignments: &[Assignment]) -> Result<(), Stop> {
@@ -489,7 +503,7 @@ impl Machine {
         }
     }
 
-    fn snapshot(self) -> Snapshot {
+    pub(crate) fn snapshot(self) -> Snapshot {
         Snapshot {
             registers: self.registers,
             trace: self.trace,
