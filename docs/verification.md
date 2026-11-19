@@ -67,6 +67,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [object_refs](../src/object_refs.rs) | 再配置を実opcodeとフィールド幅・位置へ照合し、CFG全流入とSysV破壊規則から静的な引数参照を導出。文字列byte列を実リンカによる異なる配置の実行とも比較 |
 | [effects](../src/effects.rs) / [effects_emit](../src/effects_emit.rs) | 同じ外部結果入力で、全レジスタ・全RAM・出力・fault・停止位置を具体比較。結果を制御する独立したputs oracleを用いて、元の機械語とのABI・出力・返り値も照合 |
 | [linked_elf](../src/linked_elf.rs) / [effects_readable](../src/effects_readable.rs) | ET_EXEC/PIE、PLT/GOT、再配置baseを変えてRustと生成Cを比較。構造化CALL・分岐・ループで命令予算、全状態、最初のfaultを照合 |
+| [module_ir](../src/module_ir.rs) / [module_emit](../src/module_emit.rs) | 内部・再帰・間接CALL、実stackのRET、ベクトル全幅のfault、全状態を照合。HTTPサーバの生成Cを起動し、元のサーバと同じsocketケースを実行 |
 | [arithmetic_graph](../src/arithmetic_graph.rs) | 分子・上位乗算・商の定義と剰余の値対応を再構築し、除算証明と積の係数を照合 |
 | [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |
 | [display_dce](../src/display_dce.rs) | 候補が元の代入列の部分列であることと、削除した純粋代入の死活性をCFG上で検査。全Storeと構文上の全Loadを保持 |

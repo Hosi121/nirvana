@@ -20,6 +20,13 @@ PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式�
 `effects_readable`は制御構造の対応検査を使い、元の各命令とCALLを構造ASTへ差し戻して描画します。
 命令予算・現在位置・全レジスタを保持するため、純粋IR向けの不要代入除去とは個別の経路を使います。
 
+`module_ir`は複数の関数とimportをまとめ、CALLの戻り先StoreとRETのLoadを明示します。
+動的な呼出し先・戻り先は、共通のゲストRAMと登録した命令位置を使ってdispatchします。
+スカラー命令は既存の実行器とlifterを共有し、ベクトル命令にはアクセス全幅とalignmentの事前検査を付けます。
+`Program::run`の外部効果は`Environment`へ渡します。
+`module_emit`は同じ制御をCへ展開し、POSIXアダプタがゲスト構造体とホストABIの変換を担います。
+ゲストのstackとPCを実行状態として保持し、再帰の深さもゲストRAMと命令予算で制限します。
+
 ## パイプライン
 
 ```text

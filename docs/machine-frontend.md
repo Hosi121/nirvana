@@ -15,7 +15,8 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 `PT_DYNAMIC`の再配置を使ってPIEのデータポインタとGOTを解決し、実際のPLT命令とimportを照合します。
 通常の実行ファイルは固定アドレス、PIEは既定bias `0x10000`を使います。
 ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
-選択した関数の整数処理と`puts`モデルを対象とし、内部CALL・他の外部関数は呼出位置付きで報告します。
+単一関数の`effects-*`は整数処理と`puts`モデルを扱い、追加の呼出しは位置付きで報告します。
+`module-*`は複数の関数を読み、内部CALL・間接CALL・RETとPOSIX importを扱います。
 初期状態はロード直後のモデル画像です。プロセス起動処理・constructor・実libcの内部状態は別の実行環境として扱います。
 ゲストRAMのアクセス規則は[実行モデル](equivalence.md)に従います。
 
@@ -51,7 +52,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 | 分野 | 今後の対象 |
 | --- | --- |
 | コード画像 | PE、関数境界の推定、汎用的なリンク・import解決 |
-| 関数間制御 | 任意の外部・内部関数のCALL、間接JMP、戻り先の探索 |
+| 関数間制御 | 関数境界の推定、呼出し規約・プロトタイプの回復、追加の外部効果 |
 | 命令と環境 | SIMD、DIV/IDIV、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base |
 
 ## CLI
@@ -73,6 +74,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |
 | `--emit effects-c` / `effects-ir` | `puts`モデル付きの実行可能C／明示的なCALLを持つIR |
 | `--emit effects-readable-c` | 命令ごとの予算・fault・CALLを保った構造化C |
+| `--emit module-c` / `module-ir` | 複数関数の実行用C／CALL・動的RETを持つIR。既定の入口は`main` |
 | `--run-effects RESULTS` | 指定したint返り値列でモデルを実行し、出力byte列を標準出力へ送る |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |
@@ -80,6 +82,12 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--steps N` | runの元命令数の上限。既定は100000 |
 | `--no-coalesce-locals` | readable-cで局所値ごとに保存場所を確保 |
 | `--verify-reduction PATH` | readable-cのIR還元を指定のZ3で検査 |
+
+`module-c`はゲストRAMとPC dispatchを持つstandalone C11を出力します。
+`cc -std=c11 -O2 server.c -o server`でコンパイルし、POSIX importをホストのLinux x86-64 libcへ接続します。
+入口引数はRSP以外をゼロで初期化し、独自の入力には`Module::initial_registers`と`Program::run`を使います。
+命令・import予算は生成Cの`NV_INSTRUCTION_LIMIT`・`NV_IMPORT_LIMIT`で指定できます。
+サーバ全体の再現コマンドは[HTTP fixture](../tests/fixtures/http-server/README.md)にあります。
 
 アドレスとrunの入力値は10進数または`0x`付き16進数です。
 `--no-coalesce-locals`と`--verify-reduction`はreadable-c出力時の設定で、`--run`は実行用の別モードです。

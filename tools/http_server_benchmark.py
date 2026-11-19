@@ -280,6 +280,40 @@ def probe_banner(nirvana, binary, timeout=10):
     return row
 
 
+def probe_module(nirvana, binary, out, cc, probe_timeout, compile_timeout, native_timeout):
+    """Compile emitted whole-module C, then exercise real network behavior."""
+    out.mkdir(exist_ok=True)
+    emitted = out / "server.c"
+    result = command([nirvana, binary, "--emit", "module-c"], probe_timeout)
+    row = {"emission": "module-c", "status": classify_probe(result), "emit": result,
+           "generated": []}
+    if row["status"] != "accepted":
+        return row
+    emitted.write_text(result["stdout"])
+    row["source"] = str(emitted)
+    row["source_sha256"] = sha256(emitted)
+    row["emit"].pop("stdout")
+    for optimization in ("O0", "O2"):
+        executable = out / f"server-{optimization}"
+        compilation = command([cc, *FLAGS, f"-{optimization}", emitted, "-o", executable],
+                              compile_timeout)
+        generated = {"optimization": optimization, "compile": compilation,
+                     "status": "compiled" if compilation["returncode"] == 0 else "compile-error"}
+        row["generated"].append(generated)
+        if generated["status"] != "compiled":
+            row["status"] = "generated-c-error"
+            continue
+        generated["binary"] = str(executable)
+        generated["binary_sha256"] = sha256(executable)
+        generated["native"] = [run_native_case(executable, case, native_timeout)
+                               for case in native_cases()]
+        generated["status"] = ("passed" if all(case["status"] == "passed"
+                                              for case in generated["native"]) else "failed")
+        if generated["status"] != "passed":
+            row["status"] = "module-behavior-error"
+    return row
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="artifact/report directory")
@@ -287,21 +321,31 @@ def main():
     parser.add_argument("--cc", default="cc")
     parser.add_argument("--timeout", type=float, default=5.0, help="native operation timeout, seconds")
     parser.add_argument("--probe-timeout", type=float, default=10.0)
+    parser.add_argument("--whole-module", action="store_true",
+                        help="compile module-c and run all socket cases on its generated executables")
+    parser.add_argument("--compile-timeout", type=float, default=60.0,
+                        help="whole-module C compilation timeout, seconds")
     parser.add_argument("--function", action="append", dest="functions",
                         help="probe only this symbol; repeat for multiple symbols")
     args = parser.parse_args()
-    if args.timeout <= 0 or args.probe_timeout <= 0:
+    if args.timeout <= 0 or args.probe_timeout <= 0 or args.compile_timeout <= 0:
         parser.error("timeouts must be positive")
+    if args.whole_module and not args.nirvana:
+        parser.error("--whole-module requires --nirvana")
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     nirvana = args.nirvana.resolve() if args.nirvana else None
     report = {
         "schema": "nirvana-http-server-benchmark-v1",
-        "claim": "Native modular server plus selected-function support; no whole-server decompilation claim.",
+        "claim": ("Native and regenerated module HTTP behavior on the bounded fixture."
+                  if args.whole_module else
+                  "Native modular server plus selected-function support; no whole-server decompilation claim."),
         "limits": {"requests_per_process": 1, "request_bytes": 1024, "path_bytes_including_nul": 128,
                    "response_bytes": 2048, "bind_address": "127.0.0.1", "port": "ephemeral",
                    "server_io_timeout_seconds": 3, "native_timeout_seconds": args.timeout,
-                   "probe_timeout_seconds": args.probe_timeout, "lto": False},
+                   "probe_timeout_seconds": args.probe_timeout, "lto": False,
+                   "whole_module": args.whole_module,
+                   "compile_timeout_seconds": args.compile_timeout},
         "compiler": command([args.cc, "--version"]),
         "sources": [{"path": str(path.relative_to(ROOT)), "sha256": sha256(path)}
                     for path in sorted(FIXTURE.iterdir()) if path.suffix in (".c", ".h")],
@@ -325,21 +369,36 @@ def main():
                                                 args.cc, args.probe_timeout)
                                  for symbol in args.functions or FUNCTIONS for emission in EMISSIONS]
                 row["probes"].append(probe_banner(nirvana, binary, args.probe_timeout))
+                if args.whole_module:
+                    row["module"] = probe_module(nirvana, binary, binary.parent / "module", args.cc,
+                                                 args.probe_timeout, args.compile_timeout, args.timeout)
             # Persist after each configuration so interrupted evaluations leave evidence.
             (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     native = [case for row in report["configurations"] for case in row.get("native", [])]
     probes = [probe for row in report["configurations"] for probe in row.get("probes", [])]
+    modules = [row["module"] for row in report["configurations"] if "module" in row]
+    module_native = [case for module in modules for generated in module["generated"]
+                     for case in generated.get("native", [])]
     summary = {"configurations": len(report["configurations"]),
                "builds_passed": sum(row["status"] == "passed" for row in report["configurations"]),
                "native_cases": len(native), "native_passed": sum(case["status"] == "passed" for case in native),
                "probe_statuses": dict(Counter(probe["status"] for probe in probes))}
+    if args.whole_module:
+        summary.update(module_statuses=dict(Counter(module["status"] for module in modules)),
+                       module_socket_cases=len(module_native),
+                       module_socket_passed=sum(case["status"] == "passed" for case in module_native))
     report["summary"] = summary
     (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({**summary, "report": str(out / "report.json")}, indent=2))
-    hard_errors = {"tool-error", "timeout", "generated-c-error", "modeled-output-error"}
+    hard_errors = {"tool-error", "timeout", "generated-c-error", "modeled-output-error",
+                   "module-behavior-error"}
     return 0 if (summary["builds_passed"] == 4 and len(native) == 4 * len(native_cases()) and
                  summary["native_passed"] == len(native) and
-                 not any(probe["status"] in hard_errors for probe in probes)) else 1
+                 not any(probe["status"] in hard_errors for probe in probes) and
+                 (not args.whole_module or
+                  len(modules) == 4 and all(module["status"] == "accepted" for module in modules) and
+                  len(module_native) == 8 * len(native_cases()) and
+                  all(case["status"] == "passed" for case in module_native))) else 1
 
 
 if __name__ == "__main__":

@@ -119,3 +119,24 @@ RAXの上位32bitも結果入力として保持します。`Output::All`は全�
 予算切れ、結果入力の不足・不正、未対応の呼出先は`Inconclusive`です。
 `full_ir_state()`はIR間の比較に全レジスタと命令traceも加えます。
 生成Cの診断情報には命令開始数と現在位置を保持します。
+
+## 複数関数とPOSIX
+
+`module_ir::MODEL_ID`は`module-normal-ram-calls-v1`です。
+通常CALLはtargetを評価してから戻り先をStoreし、直接PLTではStore後にGOTを読みます。
+RETとimportからの復帰は実際のゲストstackから戻り先をLoadします。
+再帰・末尾呼出し・間接呼出し・戻り先の書換えも、このPC dispatchで扱います。
+16-byteのベクトルアクセスは全範囲とalignmentを検査した後、レーンの値を反映します。
+未登録のtarget、予算到達、range／alignment違反は、部分状態付きの停止結果を返します。
+
+入口は指定したsized functionです。初期画像にはrootの戻り先markerとerrno用領域を置きます。
+生成Cの入口はRSP以外をゼロとし、プロセス起動処理・argv・constructor・TLSの復元は追加の実行環境の対象です。
+単一関数と同じ通常RAMの規則を使います。
+IR/Cの比較では、全レジスタ・全RAM・fault・PC・命令開始数を照合します。
+
+CのPOSIXアダプタはLinux x86-64の、有効なbufferを持つ呼出しを対象とします。
+socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを型に合わせて変換します。
+成功した出力はerrnoと重なっていても保持し、失敗した呼出しではerrnoを更新します。
+破壊レジスタにはSysV ABIで許される固定値を選び、callee-savedレジスタとRSPを保持します。
+sockaddrは128 byte、pollは65536要素、setsockoptは送受信timeoutのtimevalを扱います。
+HTTP比較の観測はstatus・headers・body・接続終了・プロセス終了です。各実行のportとfdはOSが割り当てます。

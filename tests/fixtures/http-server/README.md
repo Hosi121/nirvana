@@ -1,9 +1,8 @@
 # Modular HTTP linked-ELF benchmark
 
-This fixture measures selected-function recovery from a real linked program.
-The report distinguishes native socket behavior, C emission/compilation, and
-modeled execution. Whole-server equivalence requires interprocedural execution
-and socket effect models.
+This fixture measures selected-function and whole-module recovery from a real
+linked program. Whole-module mode regenerates executable C from `main`, then
+compares HTTP behavior with the native server through actual loopback sockets.
 
 The six separately compiled C modules contain request parsing (`parser.c`), route
 lookup and indirect dispatch (`routes.c`), a cross-module table of handler pointers
@@ -20,6 +19,7 @@ Run from the repository root:
 ```sh
 python3 tools/http_server_benchmark.py --out target/http-server-native
 python3 tools/http_server_benchmark.py --out target/http-server-probes --nirvana target/debug/nirvana
+python3 tools/http_server_benchmark.py --out target/http-server-module --nirvana target/debug/nirvana --whole-module
 python3 -m unittest tools/tests/test_http_server_benchmark.py
 ```
 
@@ -42,7 +42,16 @@ CLI modes, timeouts, tool errors, generated-C errors, and wrong modeled output.
 Explicit support rejections do not fail the harness; build/native failures and
 unexpected tool/C/output errors do. C compilation checks syntax, not equivalence.
 
+`--whole-module` additionally emits `module-c` for each binary, compiles it at
+O0/O2, and repeats all socket cases: 104 generated-server runs across eight
+combinations. A rejected module or a changed HTTP response fails this mode.
+The report retains emitted C, binary hashes, commands, and each socket result.
+`--compile-timeout` sets the whole-module compiler budget (default 60 seconds).
+The original six C modules and native test cases are shared by both paths.
+
 The server implements one bounded GET request per connection and fixed in-memory
 responses. Header names accept alphanumerics/hyphens; request/path/output limits
-are 1024/127/2048 bytes. Socket/errno effects, cross-function execution, and general
-indirect-call recovery are the next evaluation targets.
+are 1024/127/2048 bytes. Generated module C preserves a checked guest RAM,
+register file, stack, and PC dispatcher. Its Linux x86-64 adapter covers this
+fixture's socket/errno ABI; the [execution model](../../../docs/equivalence.md)
+defines the observation and supported environment.
