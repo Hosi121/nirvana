@@ -730,7 +730,8 @@ fn initial_string_views_are_bounded_escaped_and_leave_mutable_ram_authoritative(
                 0,
                 vec![Assignment {
                     destination: Reg(7).into(),
-                    value: c(BASE + 16),
+                    // RIP-relative address with a negative displacement.
+                    value: Expr::binary(B::Add, c(BASE + 128), c(u64::MAX - 111)),
                 }],
                 Control::Next,
             ),

@@ -209,8 +209,8 @@ fn emit_nodes(
 }
 
 // These are comments about the initial image, not inferred immutable strings.
-// Both scanning and output are bounded; only explicit pointer constants are
-// candidates, rather than unrelated strings found elsewhere in an ELF image.
+// Both scanning and output are bounded. Pointer constants and literal address
+// sums (including RIP-relative displacements) are candidates.
 fn initial_string_views(program: &Program, image: &crate::loader::LinkedImage) -> String {
     const MAX_CANDIDATES: usize = 256;
     const MAX_STRINGS: usize = 16;
@@ -237,7 +237,21 @@ fn initial_string_views(program: &Program, image: &crate::loader::LinkedImage) -
             Expr::Const(address) if candidates.len() < MAX_CANDIDATES => {
                 candidates.insert(*address);
             }
-            Expr::Binary(_, left, right) => pending.extend([&**left, &**right]),
+            Expr::Binary(op, left, right) => {
+                if candidates.len() < MAX_CANDIDATES
+                    && let (Expr::Const(left), Expr::Const(right)) = (&**left, &**right)
+                {
+                    let address = match op {
+                        crate::ir::BinaryOp::Add => Some(left.wrapping_add(*right)),
+                        crate::ir::BinaryOp::Sub => Some(left.wrapping_sub(*right)),
+                        _ => None,
+                    };
+                    if let Some(address) = address {
+                        candidates.insert(address);
+                    }
+                }
+                pending.extend([&**left, &**right]);
+            }
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {
                 condition,

@@ -145,6 +145,8 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -c /tmp/nirvana-hello.c
 ```
 
 `--run-effects 7`は`Hello, world!`と改行を出力し、返り値7を標準エラーへ報告します。
+`effects-readable-c`は制御構造とともに、RIP相対アドレスなどから得た初期文字列をコメントへ表示します。
+CALLは呼出し時のゲストRAMを読み、文字列の書換えを反映します。
 複数の呼出しには`--run-effects 3,7`のように結果入力を列挙します。
 このCLIは全文出力、指定int値を下位32bitに持つRAX、他の破壊値0を入力とします。
 GPレジスタの初期値は0、RSPは配置したstackの入口です。
