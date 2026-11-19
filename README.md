@@ -32,13 +32,14 @@ return value;
 
 ## 対応範囲
 
-入力は、関数シンボルとサイズを持つELF64の`.o`ファイルです。
+入力は、関数シンボルとサイズを持つELF64の`.o`、実行ファイル、PIEです。
 整数演算・比較・分岐・スタック操作の一部を扱います。
 制御フローに応じて`if/else`、`for`、`while`、`do/while`、`goto`を出力します。
 変数名は値の使われ方から生成し、整数型は保存する値の幅から選びます。
 `--emit types`では、SSA値の使用制約とフィールド・配列の候補をJSONで確認できます。
 `--emit references`では、ELFの文字列・シンボル・外部呼出しの引数の対応を確認できます。
-`--emit effects-c`は`puts`の外部結果入力を持つ実行可能Cを出力し、`--run-effects 7`で出力と返り値を試せます。
+`--emit effects-readable-c`は、`puts`の外部結果入力と境界検査を保ち、制御構造を復元したCを出力します。
+`--run-effects 7`で出力と返り値を試せます。
 参照幅が揃う局所アドレスには型名を付け、動的な配列参照を`element(base, index, stride)`で表示します。
 入力条件・対応命令・今後の対象は[機械語とCLI](docs/machine-frontend.md)にまとめています。
 
@@ -54,3 +55,4 @@ cargo fmt --check
 
 [ドキュメント](docs/README.md)に設計・実行モデル・検証方法をまとめています。
 テスト入力の追加と生成方法は[C fixtures](tests/fixtures/README.md)を参照してください。
+複数モジュール・間接呼出し・socket I/Oの評価には[小さなHTTPサーバ](tests/fixtures/http-server/README.md)を使います。

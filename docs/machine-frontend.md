@@ -6,10 +6,18 @@ Nirvanaは、指定した関数の機械語を[ELF reader](../src/elf.rs)で切�
 
 ## 入力
 
-ELF入力はELF64・little-endian・`EM_X86_64`・`ET_REL`のオブジェクトファイルです。
+ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`）、実行ファイル（`ET_EXEC`）、PIE（`ET_DYN`）です。
 名前と正のサイズを持つ`STT_FUNC`シンボルを使い、既定名は`fixture`です。
 実行IR・C生成では対象関数の再配置を検査し、解決が必要な参照を位置と種類で報告します。
 `--emit references`では、元の再配置を使って文字列・シンボル・呼出し引数の対応を解析します。
+
+リンク済みELFは`PT_LOAD`をゲストRAMへ配置し、BSSをゼロ初期化します。
+`PT_DYNAMIC`の再配置を使ってPIEのデータポインタとGOTを解決し、実際のPLT命令とimportを照合します。
+通常の実行ファイルは固定アドレス、PIEは既定bias `0x10000`を使います。
+ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
+選択した関数の整数処理と`puts`モデルを対象とし、内部CALL・他の外部関数は呼出位置付きで報告します。
+初期状態はロード直後のモデル画像です。プロセス起動処理・constructor・実libcの内部状態は別の実行環境として扱います。
+ゲストRAMのアクセス規則は[実行モデル](equivalence.md)に従います。
 
 `--raw`ではコード領域のbyte列を入力します。
 `--base`はコード先頭、`--entry`は領域内の入口アドレスです。
@@ -42,7 +50,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 
 | 分野 | 今後の対象 |
 | --- | --- |
-| コード画像 | ET_EXEC/ET_DYN、PE、関数境界の推定、汎用的なリンク・import解決 |
+| コード画像 | PE、関数境界の推定、汎用的なリンク・import解決 |
 | 関数間制御 | 任意の外部・内部関数のCALL、間接JMP、戻り先の探索 |
 | 命令と環境 | SIMD、DIV/IDIV、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base |
 
@@ -64,6 +72,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
 | `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |
 | `--emit effects-c` / `effects-ir` | `puts`モデル付きの実行可能C／明示的なCALLを持つIR |
+| `--emit effects-readable-c` | 命令ごとの予算・fault・CALLを保った構造化C |
 | `--run-effects RESULTS` | 指定したint返り値列でモデルを実行し、出力byte列を標準出力へ送る |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |

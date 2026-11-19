@@ -12,9 +12,13 @@ ELFの`read_function_context`は、セクションの識別と再配置のシン
 
 `loader`はELFの全割当てセクションを配置し、コード・データ・GOTの再配置を適用します。
 `frontend::lift_elf_effects`は元オブジェクトの`puts`参照を照合してから、配置済み命令をliftします。
+`linked_elf`は実行ファイルのsegmentと動的再配置を読み、`frontend::lift_linked_elf_effects`がimportの同一性を照合します。
+PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式を持ちます。
 `effects::Program`は通常命令とCALLを明示的に分け、整数・メモリ操作には既存の実行器を使います。
 外部結果入力が出力prefix・返り値・破壊レジスタを定め、Cバックエンドも同じ入力で実行します。
 このIR専用のC生成・比較APIを設け、各変換が扱う効果と検証範囲を型で区別しています。
+`effects_readable`は制御構造の対応検査を使い、元の各命令とCALLを構造ASTへ差し戻して描画します。
+命令予算・現在位置・全レジスタを保持するため、純粋IR向けの不要代入除去とは個別の経路を使います。
 
 ## パイプライン
 
