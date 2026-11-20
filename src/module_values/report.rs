@@ -184,6 +184,67 @@ impl Json {
         self.raw("}")
     }
     fn function(&mut self, values: &FunctionValues) -> Option<()> {
+        self.raw(",\"local_recovery\":{")?;
+        match &values.locals {
+            Err(reason) => {
+                self.raw("\"status\":\"unavailable\",\"reason\":")?;
+                self.string(reason)?;
+            }
+            Ok(recovery) => {
+                self.raw("\"status\":\"available\",\"locals\":")?;
+                self.number(recovery.plan.local_count)?;
+                self.raw(",\"ssa_values\":")?;
+                self.number(recovery.stats.ssa_values)?;
+                self.raw(",\"phi_inputs\":")?;
+                self.number(recovery.stats.phi_inputs)?;
+                self.raw(",\"edge_copies\":")?;
+                self.number(recovery.stats.edge_copies)?;
+                self.raw(",\"temporary_edges\":")?;
+                self.number(recovery.stats.temporary_edges)?;
+                self.raw(",\"by_value\":[")?;
+                for (i, local) in recovery.plan.by_value.iter().enumerate() {
+                    if i > 0 {
+                        self.raw(",")?;
+                    }
+                    self.number(local)?;
+                }
+                self.raw("],\"edges\":[")?;
+                for (i, edge) in recovery.edges.iter().enumerate() {
+                    if i > 0 {
+                        self.raw(",")?;
+                    }
+                    self.raw("{\"from\":")?;
+                    self.optional_number(edge.from)?;
+                    self.raw(",\"to\":")?;
+                    self.number(edge.to)?;
+                    self.raw(",\"parallel\":[")?;
+                    for (i, copy) in edge.parallel.iter().enumerate() {
+                        if i > 0 {
+                            self.raw(",")?;
+                        }
+                        self.raw("[")?;
+                        self.number(copy.destination)?;
+                        self.raw(",")?;
+                        self.number(copy.source)?;
+                        self.raw("]")?;
+                    }
+                    self.raw("],\"sequential\":[")?;
+                    for (i, copy) in edge.schedule.copies.iter().enumerate() {
+                        if i > 0 {
+                            self.raw(",")?;
+                        }
+                        self.raw("[")?;
+                        self.number(copy.destination)?;
+                        self.raw(",")?;
+                        self.number(copy.source)?;
+                        self.raw("]")?;
+                    }
+                    self.raw("]}")?;
+                }
+                self.raw("]")?;
+            }
+        }
+        self.raw("}")?;
         self.raw(",\"guest_registers\":")?;
         self.number(values.guest_registers)?;
         self.raw(",\"analysis_scratch_register\":")?;

@@ -395,6 +395,33 @@ for f in r['functions']:
         assert all(v[x['value']]['definition']['kind']=='opaque-output' for x in b['outputs'])
         assert not ({x['value'] for x in b['inputs']} & {x['value'] for x in b['outputs']})
         assert not ({x['register'] for x in b['preserved']} & {x['register'] for x in b['outputs']})
+    recovery=f['local_recovery']
+    if recovery['status']=='available':
+        mapping=recovery['by_value']; count=recovery['locals']
+        assert len(mapping)==len(v) and set(mapping)==set(range(count))
+        for value in v:
+            if value['definition']['kind'] in ('initial','analysis-scratch'):
+                assert mapping.count(mapping[value['id']])==1
+        for point in p.values():
+            for key in ('before','after'):
+                colors=[mapping[i] for i in point[key]]
+                assert len(colors)==len(set(colors))
+        expected={(None,f['address']):[]}
+        for value in v:
+            if value['definition']['kind']=='phi':
+                destination=mapping[value['id']]
+                for item in value['definition']['inputs']:
+                    source=mapping[item['value']]
+                    if source!=destination: expected.setdefault((item['predecessor'],value['definition']['block']),[]).append([destination,source])
+        assert {(e['from'],e['to']) for e in recovery['edges']}==set(expected)
+        for edge in recovery['edges']:
+            assert edge['parallel']==sorted(expected[edge['from'],edge['to']])
+            actual=list(range(count))+[None]; before=list(actual)
+            for destination,source in edge['sequential']:
+                assert 0<=destination<=count and 0<=source<=count and actual[source] is not None
+                actual[destination]=actual[source]
+            for destination,source in edge['parallel']: before[destination]=source
+            assert actual[:count]==before[:count]
 "#;
 
 #[test]

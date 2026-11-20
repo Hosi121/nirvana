@@ -44,6 +44,7 @@ return value;
 内部・間接呼出しとゲストスタックを保持し、Linux x86-64のPOSIXアダプタを通してHTTPサーバfixtureを実行できます。
 `--emit module-readable-c`は同じ実行状態を保ち、名前付き関数と`if/while`を使って出力します。
 `--emit module-values`では、関数ごとの値ID・使用箇所・生存集合と、呼出し前後の値をJSONで確認できます。
+`--emit ssa-c`は単一関数を名前付きの局所変数で描画し、元の全レジスタへ書込みを反映します。
 参照幅が揃う局所アドレスには型名を付け、動的な配列参照を`element(base, index, stride)`で表示します。
 入力条件・対応命令・今後の対象は[機械語とCLI](docs/machine-frontend.md)にまとめています。
 

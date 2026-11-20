@@ -65,6 +65,7 @@ pub struct FunctionValues {
     boundaries: Vec<Boundary>,
     source_instructions: usize,
     guest_registers: usize,
+    locals: Result<crate::ssa_destroy::Recovery, String>,
 }
 
 impl FunctionValues {
@@ -86,6 +87,9 @@ impl FunctionValues {
     }
     pub fn guest_registers(&self) -> usize {
         self.guest_registers
+    }
+    pub fn local_recovery(&self) -> &Result<crate::ssa_destroy::Recovery, String> {
+        &self.locals
     }
 }
 
@@ -145,7 +149,13 @@ pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
 fn members(values: &FunctionValues) -> usize {
     // Each component has already been bounded by SSA/liveness; account for all
     // retained sparse members across functions before retaining another result.
-    values.graph.values.len()
+    values.locals.as_ref().map_or(0, |r| {
+        r.plan.by_value.len()
+            + r.edges
+                .iter()
+                .map(|e| e.parallel.len() + e.schedule.copies.len())
+                .sum::<usize>()
+    }) + values.graph.values.len()
         + values.roles.len()
         + values
             .graph
@@ -480,6 +490,21 @@ fn analyze_function(
     let graph = SsaFunction::build(&event_program)
         .ok_or("module value SSA unavailable: control or resource limit")?;
     let lifetimes = value_liveness::analyze(&event_program, &graph).map_err(|e| e.to_string())?;
+    let excluded_copies = projection
+        .roles
+        .iter()
+        .filter_map(|(site, role)| {
+            (!matches!(
+                role,
+                PointRole::Assignment { .. } | PointRole::VectorAssignment { .. }
+            ))
+            .then_some(*site)
+        })
+        .collect();
+    // This remains analysis metadata: opaque module outputs have no executable
+    // numeric interpretation. Only real source copies introduce affinities.
+    let locals = crate::ssa_destroy::lower(&event_program, &graph, &excluded_copies)
+        .map(|f| f.into_recovery());
     let mut boundaries: BTreeMap<_, _> = projection
         .boundaries
         .into_iter()
@@ -550,5 +575,6 @@ fn analyze_function(
         boundaries,
         source_instructions: source.len(),
         guest_registers: program.register_count(),
+        locals,
     })
 }
