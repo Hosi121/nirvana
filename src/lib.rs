@@ -73,6 +73,7 @@ pub mod structure;
 pub mod structure_verify;
 pub mod type_infer;
 pub mod value_graph;
+pub mod value_liveness;
 pub mod value_role;
 pub mod value_width;
 pub mod verify;
