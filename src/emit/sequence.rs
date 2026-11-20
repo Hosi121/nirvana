@@ -277,6 +277,9 @@ impl Expressions {
     }
 
     fn expression(&self, expr: &Expr) -> String {
+        if self.local_range.is_some() {
+            return super::compact::expression(expr, |reg| self.register(reg));
+        }
         match expr {
             Expr::Const(value) => format!("UINT64_C({value})"),
             Expr::Register(reg) => self.register(*reg),

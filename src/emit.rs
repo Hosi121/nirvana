@@ -6,6 +6,7 @@ use crate::cfg::{BlockId, Target};
 use crate::ir::{Control, Program};
 use crate::sequence::SequenceError;
 
+mod compact;
 mod sequence;
 use crate::loop_labels::LoopLabels;
 use crate::structure::{Node, StructureError, StructureStats, StructuredFunction};
