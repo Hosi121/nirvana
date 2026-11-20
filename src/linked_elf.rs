@@ -968,7 +968,7 @@ fn load_selected(
     for (index, section) in sections
         .iter()
         .enumerate()
-        .filter(|(_, s)| s.flags & 2 != 0)
+        .filter(|(_, s)| s.flags & 2 != 0 && s.size != 0)
     {
         if !mapping.contains(section.address, section.size, false) {
             return Err(invalid("allocated section is outside PT_LOAD"));

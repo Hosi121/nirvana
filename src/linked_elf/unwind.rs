@@ -45,6 +45,9 @@ pub(super) fn catalog(
             ".eh_frame requires allocated uncompressed PROGBITS",
         ));
     }
+    if frame.size == 0 {
+        return Ok(catalog.into_values().collect());
+    }
     if frame.size > 4 * 1024 * 1024 {
         return Err(BinaryError::Limit(".eh_frame exceeds 4 MiB"));
     }

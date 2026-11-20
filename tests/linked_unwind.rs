@@ -205,6 +205,18 @@ fn sized_symbols_cover_fragments_and_name_selection_is_independent() {
 }
 
 #[test]
+fn empty_allocated_sections_require_no_guest_bytes_or_unwind_regions() {
+    let mut data = with_symbol(fixture(&[(0x400, 16)]), 16);
+    put64(&mut data, 0x800 + 3 * 64 + 16, 0x3000);
+    put64(&mut data, 0x800 + 3 * 64 + 32, 0);
+    let image = linked_elf::load(&data, "fixture", options(0)).unwrap();
+    assert!(!image.image.sections.iter().any(|s| s.index == 3));
+    let numeric = linked_elf::load_at(&data, 0x400, options(0)).unwrap();
+    assert_eq!(numeric.functions.len(), 1);
+    assert_eq!(numeric.functions[0].origin, FunctionOrigin::Symbol);
+}
+
+#[test]
 fn dynamic_relocations_in_unwind_data_have_an_explicit_boundary() {
     let mut data = fixture(&[(0x400, 16)]);
     put16(&mut data, 56, 2);
