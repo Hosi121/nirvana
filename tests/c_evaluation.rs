@@ -671,7 +671,7 @@ fn coalesced_load_chains_use_one_local_and_keep_faulting_memory_effects() {
 }
 
 #[test]
-fn native_c_goto_fallback_sequences_dispatch_faults_before_entering_a_cycle() {
+fn native_c_split_cycle_sequences_dispatch_faults_before_entering_a_cycle() {
     let increment = || Assignment {
         destination: Reg(2).into(),
         value: b(BinaryOp::Add, r(2), c(1)),
@@ -718,12 +718,72 @@ fn native_c_goto_fallback_sequences_dispatch_faults_before_entering_a_cycle() {
         ],
     )
     .unwrap();
-    assert!(
-        emit_readable_c_with_options(&p, ReadableOptions::default())
-            .unwrap()
-            .fallback_reason
-            .is_some()
+    let output = emit_readable_c_with_options(&p, ReadableOptions::default()).unwrap();
+    assert!(output.fallback_reason.is_none());
+    assert!(output.structure_evidence.is_some());
+    compare(
+        &p,
+        &[
+            [0x1000, 0x1008],
+            [0x1008, 0x1000],
+            [0x1000, 0x1000],
+            [0xffff, 0x1008],
+            [0x1000, 0xffff],
+            [0xffff, 0xffff],
+        ],
     );
+}
+
+#[test]
+fn native_c_goto_fallback_sequences_dispatch_faults_before_a_three_entry_cycle() {
+    let mut instructions = vec![
+        instruction(
+            0,
+            vec![
+                Assignment {
+                    destination: Reg(2).into(),
+                    value: c(0),
+                },
+                store(c(0x1000), Width::U8, c(2)),
+            ],
+            Control::Branch {
+                condition: b(
+                    BinaryOp::Eq,
+                    Expr::load(r(0), Width::U8),
+                    Expr::load(r(1), Width::U8),
+                ),
+                target: 10,
+            },
+        ),
+        instruction(
+            1,
+            vec![],
+            Control::Branch {
+                condition: b(BinaryOp::And, r(0), c(8)),
+                target: 20,
+            },
+        ),
+        instruction(2, vec![], Control::Jump(30)),
+    ];
+    for (entry, next) in [(10, 20), (20, 30), (30, 10)] {
+        instructions.push(instruction(
+            entry,
+            vec![Assignment {
+                destination: Reg(2).into(),
+                value: b(BinaryOp::Add, r(2), c(1)),
+            }],
+            Control::Branch {
+                condition: b(BinaryOp::Ule, c(3), r(2)),
+                target: 40,
+            },
+        ));
+        instructions.push(instruction(entry + 1, vec![], Control::Jump(next)));
+    }
+    instructions.push(instruction(40, vec![], Control::Return(r(2))));
+    let p = Program::new(0, 3, instructions).unwrap();
+    let output = emit_readable_c_with_options(&p, ReadableOptions::default()).unwrap();
+    assert!(output.fallback_reason.is_some());
+    assert!(output.code.contains("goto bb"));
     compare(
         &p,
         &[
@@ -824,7 +884,21 @@ fn native_c_while_setup_loads_repeat_in_order_including_final_visit_and_fault() 
     )
     .unwrap();
     let output = emit_readable_c_with_options(&p, ReadableOptions::default()).unwrap();
-    assert!(output.code.contains("while (("), "{}", output.code);
+    let header = output.code.find("while (1) {").expect("setup-bearing loop");
+    let first = output.code[header..]
+        .find("nirvana_load(&m, arg0, 1)")
+        .unwrap()
+        + header;
+    let second = output.code[header..]
+        .find("nirvana_load(&m, arg1, 1)")
+        .unwrap()
+        + header;
+    let exit = output.code[header..].find("break;").unwrap() + header;
+    assert!(
+        header < first && first < second && second < exit,
+        "{}",
+        output.code
+    );
     compare(
         &p,
         &[
