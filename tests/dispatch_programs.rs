@@ -66,11 +66,14 @@ fn oracle(name: &str, mut r: [u64; 4]) -> Vec<u64> {
             };
             r[2] = b.wrapping_add(key);
         }
-        "state-machine" => {
+        "state-machine" | "permuted-machine" => {
             let mut phase = r[0] & 7;
             let (mut value, mut total) = (a, b);
             for _ in 0..(d & 7) + 1 {
-                phase = match phase {
+                if name == "permuted-machine" {
+                    value = value.swap_bytes();
+                }
+                let next = match phase {
                     0 => {
                         value = value.wrapping_add(total);
                         3
@@ -104,7 +107,11 @@ fn oracle(name: &str, mut r: [u64; 4]) -> Vec<u64> {
                         4
                     }
                 };
-                phase ^= value & 3;
+                phase = if name == "permuted-machine" {
+                    (phase + (value & 7) + 1) & 7
+                } else {
+                    next ^ (value & 3)
+                };
             }
             r[0] = phase;
             r[1] = value;
@@ -138,7 +145,7 @@ fn oracle(name: &str, mut r: [u64; 4]) -> Vec<u64> {
     }
     let value = match name {
         "mapped-switch" => r[1] ^ r[2] ^ r[3],
-        "state-machine" => r[1] ^ r[2] ^ r[0],
+        "state-machine" | "permuted-machine" => r[1] ^ r[2] ^ r[0],
         _ => r[1] ^ r[2],
     };
     let mut result = vec![value];
@@ -167,7 +174,12 @@ fn matrix(compiler: &str, label: &str) {
         .collect();
     let mut native_count = 0;
     let mut generated_count = 0;
-    for name in ["mapped-switch", "state-machine", "reused-selector"] {
+    for name in [
+        "mapped-switch",
+        "state-machine",
+        "reused-selector",
+        "permuted-machine",
+    ] {
         let oracle_rows: Vec<_> = inputs.iter().map(|r| oracle(name, *r)).collect();
         for opt in ["-O0", "-O2"] {
             for pie in [false, true] {
@@ -282,6 +294,6 @@ fn matrix(compiler: &str, label: &str) {
         }
     }
     println!(
-        "dispatch programs {label}:12 profiles, {native_count} native/oracle/IR cases, {generated_count} generated state comparisons with UBSan"
+        "dispatch programs {label}:16 profiles, {native_count} native/oracle/IR cases, {generated_count} generated state comparisons with UBSan"
     );
 }

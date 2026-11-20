@@ -69,6 +69,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [linked_elf](../src/linked_elf.rs) / [effects_readable](../src/effects_readable.rs) | ET_EXEC/PIE、PLT/GOT、再配置baseを変えてRustと生成Cを比較。構造化CALL・分岐・ループで命令予算、全状態、最初のfaultを照合 |
 | [module_ir](../src/module_ir.rs) / [module_emit](../src/module_emit.rs) | 内部・再帰・間接CALL、実stackのRET、ベクトル全幅のfault、全状態を照合。HTTPサーバの生成Cを起動し、元のサーバと同じsocketケースを実行 |
 | [jump_tables](../src/jump_tables.rs) | 経路合流・taken側の範囲・幅と別名・stack退避・部分上書き・CALL破壊・循環と探索上限を検査。追加入口のflag検査、重なる命令列の退避、表の書換えと未知targetも照合。GCC/ClangのO0/O2・通常ELF/PIEでnative/oracle/IRと3種類の生成Cを比較。Clang cohortの生成CにはUBSanを適用 |
+| [dispatch programs](../tests/dispatch_programs.rs) | 分類表・状態機械・stack再利用・BSWAPを含むループで、IR書込み集合による表ベースの保持と不透明結果の無効化を比較。全生成CへUBSanを適用し、予算境界・途中PC・表の書換え・未知targetも照合 |
 | [module_outline](../src/module_outline.rs) / [module_readable](../src/module_readable.rs) | 全Stepから構造ASTを再入検査。分岐・ループ途中のPC、戻り先の書換え、host深さ1/2/64、GOT・stackの重なりで、Rust／新旧Cの完全状態を比較 |
 | [arithmetic_graph](../src/arithmetic_graph.rs) | 分子・上位乗算・商の定義と剰余の値対応を再構築し、除算証明と積の係数を照合 |
 | [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |

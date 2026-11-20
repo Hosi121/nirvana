@@ -1,8 +1,8 @@
 //! Initial-image jump-table candidates for instruction discovery. Candidates
 //! retain an open residual and never replace executable target expressions.
 
-use crate::ir::Width;
-use crate::x86::{Addressing, Alu, DecodedInstruction, Operand, Operation, Register, Shift};
+use crate::ir::{Place, Width};
+use crate::x86::{self, Addressing, Alu, DecodedInstruction, Operand, Operation, Register, Shift};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -391,6 +391,49 @@ impl Values {
             self.bounded_unknown(u64::from(u32::MAX))
         };
     }
+    fn forget(&mut self, index: u8) {
+        let unknown = self.unknown();
+        self.write(
+            Register {
+                index,
+                width: Width::U64,
+                shift: 0,
+            },
+            unknown,
+            false,
+        );
+    }
+    fn observe_effects(
+        &mut self,
+        instruction: DecodedInstruction,
+        comparison: Option<(Word, u64)>,
+    ) {
+        let Ok(ir) = x86::lift_instruction(instruction) else {
+            // Calls and effects outside scalar IR retain the opaque boundary.
+            self.spills.clear();
+            self.comparison = None;
+            for r in 0..16 {
+                self.forget(r);
+            }
+            return;
+        };
+        let mut clobbered = [false; 16];
+        let mut flags_written = false;
+        for assignment in ir.assignments {
+            match assignment.destination {
+                Place::Register(r) if r.0 < 16 => clobbered[r.0] = true,
+                Place::Register(r) if (x86::CF..=x86::PF).contains(&r.0) => flags_written = true,
+                Place::Memory { .. } => self.spills.clear(),
+                _ => {}
+            }
+        }
+        for (r, written) in clobbered.into_iter().enumerate() {
+            if written {
+                self.forget(r as u8);
+            }
+        }
+        self.comparison = if flags_written { None } else { comparison };
+    }
     fn observe(&mut self, i: DecodedInstruction, successor: u64) {
         let next = i.address + u64::from(i.size);
         let previous_comparison = self.comparison.take();
@@ -525,22 +568,9 @@ impl Values {
                     .unwrap_or_else(|| self.unknown());
                 self.write(r, value, false);
             }
-            // Unmodeled writes invalidate the whole local interpretation.
-            _ => {
-                self.spills.clear();
-                for r in 0..16 {
-                    let unknown = self.unknown();
-                    self.write(
-                        Register {
-                            index: r as u8,
-                            width: Width::U64,
-                            shift: 0,
-                        },
-                        unknown,
-                        false,
-                    );
-                }
-            }
+            // Reuse executable IR's write set for operations whose result is
+            // opaque here. Unchanged registers and memory keep their facts.
+            _ => self.observe_effects(i, previous_comparison),
         }
     }
 }
@@ -570,7 +600,9 @@ fn discover_path(
     memory: &[u8],
     function: std::ops::Range<u64>,
 ) -> Option<Candidate> {
-    let register = |r: Register| r.index < 16 && r.shift < 64;
+    let register = |r: Register| {
+        r.index < 16 && (r.shift == 0 || (r.width == Width::U8 && r.shift == 8 && r.index < 4))
+    };
     let address = |a: Addressing| {
         a.base.is_none_or(|r| r < 16)
             && a.index.is_none_or(|r| r < 16)
@@ -579,7 +611,7 @@ fn discover_path(
     let operand = |o: Operand| match o {
         Operand::Register(r) => register(r),
         Operand::Memory { address: a, .. } => address(a),
-        _ => true,
+        Operand::Immediate(_) => true,
     };
     for i in path {
         if i.size == 0
@@ -600,6 +632,10 @@ fn discover_path(
                 destination,
                 source,
                 ..
+            }
+            | Operation::Movbe {
+                destination,
+                source,
             } => operand(destination) && operand(source),
             Operation::Extend {
                 destination,
@@ -612,9 +648,45 @@ fn discover_path(
             } => register(destination) && address(a),
             Operation::Shift {
                 destination, count, ..
+            }
+            | Operation::Rotate {
+                destination, count, ..
             } => operand(destination) && operand(count),
-            Operation::IndirectJump(o) => operand(o),
-            _ => true,
+            Operation::Unary { destination, .. } => operand(destination),
+            Operation::ByteSwap { destination } | Operation::Pop(destination) => {
+                register(destination)
+            }
+            Operation::DoubleShift {
+                destination,
+                source,
+                ..
+            } => operand(destination) && register(source),
+            Operation::Imul {
+                destination,
+                left,
+                right,
+            } => register(destination) && operand(left) && operand(right),
+            Operation::BitTest { base, index } => register(base) && operand(index),
+            Operation::Exchange { left, right } => operand(left) && register(right),
+            Operation::Mul { source }
+            | Operation::Push(source)
+            | Operation::IndirectCall(source)
+            | Operation::IndirectJump(source) => operand(source),
+            Operation::Set {
+                condition,
+                destination,
+            } => condition < 16 && operand(destination),
+            Operation::Cmov {
+                condition,
+                destination,
+                source,
+            } => condition < 16 && register(destination) && operand(source),
+            Operation::Branch { condition, .. } => condition < 16,
+            Operation::Nop
+            | Operation::Leave
+            | Operation::Call(_)
+            | Operation::Jump(_)
+            | Operation::Return { .. } => true,
         };
         if !valid {
             return None;

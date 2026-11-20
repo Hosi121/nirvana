@@ -195,6 +195,103 @@ fn sign_extension_preserves_address_identity_only_with_a_clear_sign_bit() {
 }
 
 #[test]
+fn opaque_scalar_operations_invalidate_only_their_ir_write_effects() {
+    let memory: Vec<_> = [0x1050u64, 0x1060, 0x1070, 0x1080]
+        .into_iter()
+        .flat_map(u64::to_le_bytes)
+        .collect();
+    for (effect, hint) in [
+        (vec![0x48, 0x0f, 0xc8], Some(2)), // BSWAP RAX preserves RBX and flags.
+        (vec![0x48, 0xff, 0xc0], None),    // INC RAX changes flags, preserves RBX.
+        (vec![0x48, 0x0f, 0xba, 0xe1, 0], None), // BT RCX,0 changes CF.
+        (vec![0x58], Some(2)),             // POP RAX reads RAM and writes RSP, not RBX.
+        (vec![0x48, 0xf7, 0xe1], None),    // MUL RCX writes RAX/RDX and flags.
+        (vec![0x48, 0x0f, 0x44, 0xc3], Some(2)), // CMOVZ RAX,RBX preserves flags.
+        (vec![0x48, 0x87, 0xc8], Some(2)), // XCHG RAX,RCX preserves RBX.
+        (vec![0x0f, 0x94, 0x06], Some(2)), // SETZ [RSI] writes RAM, not flags.
+    ] {
+        let mut code = Vec::new();
+        rip_lea(&mut code, 3);
+        code.extend([0x48, 0x83, 0xff, 1]);
+        code.extend(&effect);
+        code.extend([0x77, 0x30, 0xff, 0x24, 0xfb]);
+        let c = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).unwrap();
+        assert_eq!(c.entry_limit_hint, hint, "{effect:x?}");
+        assert_eq!(c.entries.len(), if hint.is_some() { 2 } else { 4 });
+    }
+    for effect in [
+        vec![0x48, 0x0f, 0xcb],
+        vec![0x48, 0x87, 0xd8],
+        vec![0xe8, 0, 0, 0, 0],
+    ] {
+        let mut code = Vec::new();
+        rip_lea(&mut code, 3);
+        code.extend(&effect);
+        code.extend([0xff, 0x24, 0xfb]);
+        assert!(
+            jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).is_none(),
+            "{effect:x?}"
+        );
+    }
+    // A pure write to an unrelated GPR keeps saved values, while an opaque
+    // memory write invalidates them even when no GPR is changed.
+    for (effect, hint) in [
+        (vec![0x48, 0x0f, 0xc8], Some(2)),
+        (vec![0x0f, 0x94, 0x06], None),
+    ] {
+        let code = spill_guard(&effect, &[0x48, 0x8b, 0x7d, 0xf0]);
+        let c = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).unwrap();
+        assert_eq!(c.entry_limit_hint, hint);
+    }
+}
+
+#[test]
+fn malformed_opaque_effect_operands_decline_before_lifting() {
+    let memory = 0x1050u64.to_le_bytes().repeat(2);
+    let bad = Register {
+        index: 255,
+        width: Width::U64,
+        shift: 0,
+    };
+    let high = Register {
+        index: 0,
+        width: Width::U64,
+        shift: 255,
+    };
+    for operation in [
+        Operation::ByteSwap { destination: bad },
+        Operation::Pop(bad),
+        Operation::Unary {
+            kind: nirvana::x86::Unary::Inc,
+            destination: Operand::Register(high),
+        },
+        Operation::Set {
+            condition: 255,
+            destination: Operand::Register(Register {
+                index: 0,
+                width: Width::U8,
+                shift: 0,
+            }),
+        },
+        Operation::Imul {
+            destination: bad,
+            left: Operand::Immediate(1),
+            right: Operand::Immediate(2),
+        },
+    ] {
+        let mut code = vec![DecodedInstruction {
+            address: 0x1000,
+            size: 1,
+            operation,
+        }];
+        let mut branch = window(&absolute())[0];
+        branch.address = 0x1001;
+        code.push(branch);
+        assert!(jump_tables::discover(&code, 0x2000, &memory, 0x1000..0x1100).is_none());
+    }
+}
+
+#[test]
 fn repeated_targets_are_retained_as_distinct_entries_and_coverage_stays_open_at_the_cap() {
     let memory = 0x1050u64.to_le_bytes().repeat(MAX_ENTRIES + 1);
     let c = jump_tables::discover(&window(&absolute()), 0x2000, &memory, 0x1000..0x1100).unwrap();
