@@ -6,6 +6,7 @@
 //! placement and relocation resolution live in the separate loader.
 
 mod decode;
+pub mod divide;
 mod effects;
 mod lift;
 mod vector;

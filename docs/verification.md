@@ -32,6 +32,8 @@ NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --all-targets -- --ignored
 
 既存のZ3は`NIRVANA_Z3=/path/to/z3`で指定できます。上例は任意テストを資源上限付きで直列実行します。
 Clang比較は各fixtureのREADMEにあるコマンドで別途実行します。
+`divide_arithmetic`の任意テストは[除算のモデル雛形](../tests/models/division_step.smt2.in)を8/16/32/64-bitへ具体化し、
+`target/verification/division-step/`へ問い合わせと結果を保存します。繰返し除算の1段・商overflowの上位語判定・二語の符号反転を検査し、到達可能な正例とcarry判定を除いた反例も照合します。
 [guarded dispatchのモデル](../tests/models/guarded_dispatch.smt2)は、独立した初期／現在の表・添字・biasに対する分岐先選択を検査します。
 実targetを照合する形はUNSAT、照合を除いた負例は表の書換えでSATとなります。適用範囲は分岐選択と停止済みprefixで、C全体とISAの検証は別に扱います。
 問い合わせと採否を保存する例:
@@ -58,6 +60,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [allocation_verify](../src/allocation_verify.rs) | 元レジスタとu64保存slotの対応。入口read、上書き、合流、同値copyを検査 |
 | [load_mask](../src/load_mask.rs) | 表示用のLoadとmaskの対。変更形・全read・単一定義・同一ブロックの順序と、元のLoadの位置を検査 |
 | [division_expr](../src/division_expr.rs) | 上位乗算とシフトによる定数割算。丸め誤差の上限をu128で再計算し、全u64入力に対する十分条件を照合 |
+| [x86 divide arithmetic](../src/x86/divide.rs) | 8/16/32/64-bitのDIV/IDIV計算を、独立した実機assemblyとRustの倍幅整数で比較。レジスタ・メモリ・AL/AH/DX別名、商overflowとゼロ除算の#DE、部分書込みを照合。unsigned演算で組んだC helperはO0/O2・UBSanで比較し、算術lemmaは別のSMTで検査 |
 | [add_division_expr](../src/add_division_expr.rs) | `/7`などの補正付き上位乗算。65bitの逆数と丸め誤差の上限から、全u64入力に対する十分条件を再計算 |
 | [remainder_expr](../src/remainder_expr.rs) | 同じ入力の証明済み商から `X - (X / d) * d` を `% d` と表示。積・差の非overflowと、各マスクが数値上限の全ビットを覆うことを再照合 |
 | [context_remainder](../src/context_remainder.rs) | 商を別レジスタに保存した剰余。定義・商のStore・使用の順序と、同一ブロック内の入力・商への上書きを再照合 |
