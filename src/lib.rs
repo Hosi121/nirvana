@@ -59,6 +59,7 @@ pub mod postdom;
 pub mod presentation;
 pub mod provenance;
 pub mod readable;
+pub mod record_shapes;
 pub mod reduce;
 pub mod remainder_expr;
 pub mod remainder_graph;

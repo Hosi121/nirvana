@@ -154,4 +154,19 @@ impl TypeAnalysis {
     pub fn to_json(&self) -> Option<String> {
         report::render(self)
     }
+
+    /// Add independent record-compatibility metadata, preserving the existing
+    /// exact value aliases and access/layout sections of the report.
+    pub fn to_json_with_records(
+        &self,
+        records: &Result<crate::record_shapes::Analysis, String>,
+    ) -> Option<String> {
+        let mut out = self.to_json()?;
+        let end = out.rfind("\n}")?;
+        out.truncate(end);
+        out.push_str(",\n  \"record_shapes\":");
+        out.push_str(&crate::record_shapes::report_result(records).ok()?);
+        out.push_str("\n}\n");
+        (out.len() <= 32 * 1024 * 1024).then_some(out)
+    }
 }
