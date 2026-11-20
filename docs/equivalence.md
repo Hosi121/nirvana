@@ -140,3 +140,11 @@ socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを
 破壊レジスタにはSysV ABIで許される固定値を選び、callee-savedレジスタとRSPを保持します。
 sockaddrは128 byte、pollは65536要素、setsockoptは送受信timeoutのtimevalを扱います。
 HTTP比較の観測はstatus・headers・body・接続終了・プロセス終了です。各実行のportとfdはOSが割り当てます。
+
+`module-readable-c`も同じmoduleモデルを使います。
+構造ASTの全Stepから始めた次命令・条件・代入を独立検査します。
+描画後のCは、途中PCへの再入を含む具体状態で比較します。
+Cの呼出しから戻った後は、実stackから読み出したPCと継続先を照合します。
+一致すれば関数内を進め、別の戻り先ならCのframeを離れてゲストPCから再開します。
+`NV_HOST_DEPTH_LIMIT`は1〜256、既定は64です。上限ではゲストの命令・RAM・レジスタを変更せずにframeを離れます。
+この経路も、全レジスタ・RAM・PC・fault・予算・命令開始数を維持します。

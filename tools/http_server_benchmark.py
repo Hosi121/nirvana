@@ -280,12 +280,13 @@ def probe_banner(nirvana, binary, timeout=10):
     return row
 
 
-def probe_module(nirvana, binary, out, cc, probe_timeout, compile_timeout, native_timeout):
+def probe_module(nirvana, binary, out, cc, probe_timeout, compile_timeout, native_timeout,
+                 emission="module-c"):
     """Compile emitted whole-module C, then exercise real network behavior."""
     out.mkdir(exist_ok=True)
     emitted = out / "server.c"
-    result = command([nirvana, binary, "--emit", "module-c"], probe_timeout)
-    row = {"emission": "module-c", "status": classify_probe(result), "emit": result,
+    result = command([nirvana, binary, "--emit", emission], probe_timeout)
+    row = {"emission": emission, "status": classify_probe(result), "emit": result,
            "generated": []}
     if row["status"] != "accepted":
         return row
@@ -322,7 +323,9 @@ def main():
     parser.add_argument("--timeout", type=float, default=5.0, help="native operation timeout, seconds")
     parser.add_argument("--probe-timeout", type=float, default=10.0)
     parser.add_argument("--whole-module", action="store_true",
-                        help="compile module-c and run all socket cases on its generated executables")
+                        help="compile the selected module emission and run all socket cases")
+    parser.add_argument("--module-emission", choices=["module-c", "module-readable-c"],
+                        default="module-c", help="whole-module C backend; requires --whole-module")
     parser.add_argument("--compile-timeout", type=float, default=60.0,
                         help="whole-module C compilation timeout, seconds")
     parser.add_argument("--function", action="append", dest="functions",
@@ -332,6 +335,8 @@ def main():
         parser.error("timeouts must be positive")
     if args.whole_module and not args.nirvana:
         parser.error("--whole-module requires --nirvana")
+    if args.module_emission != "module-c" and not args.whole_module:
+        parser.error("--module-emission requires --whole-module")
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     nirvana = args.nirvana.resolve() if args.nirvana else None
@@ -345,6 +350,7 @@ def main():
                    "server_io_timeout_seconds": 3, "native_timeout_seconds": args.timeout,
                    "probe_timeout_seconds": args.probe_timeout, "lto": False,
                    "whole_module": args.whole_module,
+                   "module_emission": args.module_emission,
                    "compile_timeout_seconds": args.compile_timeout},
         "compiler": command([args.cc, "--version"]),
         "sources": [{"path": str(path.relative_to(ROOT)), "sha256": sha256(path)}
@@ -371,7 +377,8 @@ def main():
                 row["probes"].append(probe_banner(nirvana, binary, args.probe_timeout))
                 if args.whole_module:
                     row["module"] = probe_module(nirvana, binary, binary.parent / "module", args.cc,
-                                                 args.probe_timeout, args.compile_timeout, args.timeout)
+                                                 args.probe_timeout, args.compile_timeout, args.timeout,
+                                                 args.module_emission)
             # Persist after each configuration so interrupted evaluations leave evidence.
             (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     native = [case for row in report["configurations"] for case in row.get("native", [])]

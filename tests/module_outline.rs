@@ -533,18 +533,41 @@ fn whole_http_server_modules_have_checked_function_bodies() {
     let scratch = native::Scratch::new();
     let fixtures = native::fixture_root().join("http-server");
     for id in ["exec-O0", "exec-O2", "pie-O0", "pie-O2"] {
-        let pie=id.starts_with("pie");
-        let binary=scratch.0.join(id);
-        let mut cc=Command::new("cc");
-        cc.args(["-std=c11","-Wall","-Wextra","-Werror","-pedantic","-fno-lto","-fno-stack-protector"])
-            .arg(if id.ends_with("O0") {"-O0"}else{"-O2"})
-            .args(if pie {["-fPIE","-pie"]}else{["-fno-pie","-no-pie"]});
-        for name in ["main.c","parser.c","response.c","routes.c","routes_table.c","transport.c"] {
+        let pie = id.starts_with("pie");
+        let binary = scratch.0.join(id);
+        let mut cc = Command::new("cc");
+        cc.args([
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-fno-lto",
+            "-fno-stack-protector",
+        ])
+        .arg(if id.ends_with("O0") { "-O0" } else { "-O2" })
+        .args(if pie {
+            ["-fPIE", "-pie"]
+        } else {
+            ["-fno-pie", "-no-pie"]
+        });
+        for name in [
+            "main.c",
+            "parser.c",
+            "response.c",
+            "routes.c",
+            "routes_table.c",
+            "transport.c",
+        ] {
             cc.arg(fixtures.join(name));
         }
-        let output=cc.arg("-o").arg(&binary).output().unwrap();
-        assert!(output.status.success(),"{cc:?}: {}",String::from_utf8_lossy(&output.stderr));
-        let module = lift(&binary,pie);
+        let output = cc.arg("-o").arg(&binary).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{cc:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let module = lift(&binary, pie);
         let plan = module_outline::recover(&module.program).unwrap();
         check_plan(&module, &plan);
         let structured = plan

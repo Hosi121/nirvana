@@ -27,6 +27,12 @@ PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式�
 `module_emit`は同じ制御をCへ展開し、POSIXアダプタがゲスト構造体とホストABIの変換を担います。
 ゲストのstackとPCを実行状態として保持し、再帰の深さもゲストRAMと命令予算で制限します。
 
+`module_outline`は関数ごとの制御shapeを作り、全命令位置からの再入を検査します。
+複製したStepにも同じ検査を適用し、全体のStep数を元命令数の2倍までに制限します。
+`module_readable`は名前付きC関数と構造ASTを描画します。
+通常CALLはCの関数呼出しで進み、深い再帰や想定外の戻り先では、外側のdispatcherが現在のゲストPCから再開します。
+各Stepの一時値はそのStep内、複雑な条件式の一時値は式helper内に置きます。
+
 ## パイプライン
 
 ```text
