@@ -13,6 +13,8 @@
 | [`algorithms/*.c`](algorithms/README.md) | BFS・DFS・リングキュー・連結リスト・二分探索木 |
 | [`input-breadth/*.c`](input-breadth/README.md) | 密なswitch、負の下限、入れ子のジャンプテーブルを含むリンク済みELF |
 | [`dispatch-programs/*.c`](dispatch-programs/README.md) | 分類表、状態機械、stack再利用によるdispatchと実行境界の比較 |
+| [`stripped-modules/*.c`](stripped-modules/README.md) | 別翻訳単位・関数ポインタ・strip後の関数範囲と呼出し |
+| `division-runtime.c` | 32/64-bit・符号あり／なしの実行時の商と剰余 |
 | `inputs.tsv` | IDと4個の入力状態ワード |
 | `golden.tsv` | 手計算した返り値と最終状態の期待値 |
 | `fixture.h` | 共通の関数宣言 |
@@ -34,12 +36,16 @@ cargo test --test native_c
 cargo test --test machine_pipeline -- --nocapture
 cargo test --test recovery_fixture -- --nocapture
 cargo test --test algorithm_fixtures -- --nocapture
+cargo test --test divide_compiler -- --nocapture
+NIRVANA_CLANG=clang-18 cargo test --test divide_compiler clang_ -- --ignored --nocapture
 ```
 
 `native_c`は元CのO0/O2と手計算の期待値、対応する手書きIRを比較します。
 `machine_pipeline`はELFから得た機械語を入口にし、`recovery_fixture`は追加の回復例を検査します。
 返り値と状態に加え、readable CとIRではゲストメモリ全体のdigestも照合します。
 固定seedによる追加ソースの生成は[generated_recovery.rs](../generated_recovery.rs)にあります。
+`divide_compiler`は`NV_BITS`・`NV_SIGNED`で4形式をビルドし、ゼロ除算・signed overflowをC側で分岐します。
+命令自身の#DEとRAM faultの順序は[命令単位の比較](../module_divide.rs)で検査します。
 
 ## オブジェクトと参照結果を保存する
 
