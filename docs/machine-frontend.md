@@ -76,6 +76,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit effects-readable-c` | 命令ごとの予算・fault・CALLを保った構造化C |
 | `--emit module-c` / `module-ir` | 複数関数の実行用C／CALL・動的RETを持つIR。既定の入口は`main` |
 | `--emit module-readable-c` | 名前付きC関数・構造化した制御・検査付きの途中再開を持つ複数関数C |
+| `--emit module-locals-c` | 生存範囲を共有する局所変数・φコピー・途中再開用の値復元を加えた複数関数C |
 | `--run-effects RESULTS` | 指定したint返り値列でモデルを実行し、出力byte列を標準出力へ送る |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |
@@ -92,6 +93,9 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 `module-readable-c`では通常の直接CALLを名前付きC関数へ接続します。
 途中のPCからは各関数のresume用ラベルへ入り、構造化の資源上限に達した関数にはgotoを使います。
 ゲストのレジスタ・RAM・stackを保持し、引数型や局所変数名の回復は後続の表示処理として扱います。
+`module-locals-c`は、値の保存先を`v_N`として宣言し、元の各レジスタ書込みも保持します。
+関数入口・途中再開・成功したCALLの後に局所値をゲスト状態から復元します。
+検査や資源上限による関数単位のfallbackはCのコメントに、変数数・復元数は標準エラーに出力します。
 
 アドレスとrunの入力値は10進数または`0x`付き16進数です。
 `--no-coalesce-locals`と`--verify-reduction`はreadable-c出力時の設定で、`--run`は実行用の別モードです。

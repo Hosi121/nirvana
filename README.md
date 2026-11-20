@@ -43,6 +43,7 @@ return value;
 `--emit module-c`は`main`から複数関数を扱う実行用Cを生成します。
 内部・間接呼出しとゲストスタックを保持し、Linux x86-64のPOSIXアダプタを通してHTTPサーバfixtureを実行できます。
 `--emit module-readable-c`は同じ実行状態を保ち、名前付き関数と`if/while`を使って出力します。
+`--emit module-locals-c`は、値の生存範囲からまとめた局所変数とφの辺上コピーを加え、呼出し・途中再開時にはゲスト状態から値を復元します。
 `--emit module-values`では、関数ごとの値ID・使用箇所・生存集合と、呼出し前後の値をJSONで確認できます。
 `--emit ssa-c`は単一関数を名前付きの局所変数で描画し、元の全レジスタへ書込みを反映します。
 参照幅が揃う局所アドレスには型名を付け、動的な配列参照を`element(base, index, stride)`で表示します。

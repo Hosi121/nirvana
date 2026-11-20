@@ -324,7 +324,7 @@ def main():
     parser.add_argument("--probe-timeout", type=float, default=10.0)
     parser.add_argument("--whole-module", action="store_true",
                         help="compile the selected module emission and run all socket cases")
-    parser.add_argument("--module-emission", choices=["module-c", "module-readable-c"],
+    parser.add_argument("--module-emission", choices=["module-c", "module-readable-c", "module-locals-c"],
                         default="module-c", help="whole-module C backend; requires --whole-module")
     parser.add_argument("--compile-timeout", type=float, default=60.0,
                         help="whole-module C compilation timeout, seconds")

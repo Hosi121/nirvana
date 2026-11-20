@@ -21,6 +21,7 @@ python3 tools/http_server_benchmark.py --out target/http-server-native
 python3 tools/http_server_benchmark.py --out target/http-server-probes --nirvana target/debug/nirvana
 python3 tools/http_server_benchmark.py --out target/http-server-module --nirvana target/debug/nirvana --whole-module
 python3 tools/http_server_benchmark.py --out target/http-server-structured --nirvana target/debug/nirvana --whole-module --module-emission module-readable-c
+python3 tools/http_server_benchmark.py --out target/http-server-locals --nirvana target/debug/nirvana --whole-module --module-emission module-locals-c
 python3 -m unittest tools/tests/test_http_server_benchmark.py
 ```
 
@@ -54,6 +55,11 @@ The original six C modules and native test cases are shared by both paths.
 functions and structured bodies. The CLI reports structured/goto function counts
 and direct/dynamic/import transfers. Each function retains resume labels for
 altered return slots, deep recursion and entry at an existing guest PC.
+
+`--module-emission module-locals-c` also uses named value storage and checked phi
+copies. Each instruction PC has a live-value resume map, and successful calls
+reload the locals from the actual guest registers. Resource-limited functions
+retain the register-based body with a reason in the generated C.
 
 The server implements one bounded GET request per connection and fixed in-memory
 responses. Header names accept alphanumerics/hyphens; request/path/output limits
