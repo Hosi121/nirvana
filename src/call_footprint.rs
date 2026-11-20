@@ -277,6 +277,9 @@ fn preflight(source: &[Instruction], registers: usize, work: &mut Work) -> Resul
     }
     for instruction in source {
         let assignments = match instruction {
+            Instruction::Divide { .. } => {
+                return Err("call footprint division effect requires a checked summary".into());
+            }
             Instruction::Core(i) => &i.assignments[..],
             Instruction::Vector(i) => {
                 if let Some(memory) = &i.memory {
@@ -327,6 +330,9 @@ fn project(
         };
         work.charge(point_count, "projection")?;
         let (assignments, control) = match instruction {
+            Instruction::Divide { .. } => {
+                return Err("call footprint division effect requires a checked summary".into());
+            }
             Instruction::Core(i) => (i.assignments.clone(), i.control.clone()),
             Instruction::Vector(i) => (i.assignments.clone(), Control::Next),
             Instruction::Transfer {
@@ -406,6 +412,9 @@ fn local_source(
             let instruction = &source[index];
             let address = instruction.address();
             let assignments = match instruction {
+                Instruction::Divide { .. } => {
+                    return Err("call footprint division effect requires a checked summary".into());
+                }
                 Instruction::Core(i) => {
                     match &i.control {
                         Control::Branch { condition, .. } => local.reads |= reads(condition),

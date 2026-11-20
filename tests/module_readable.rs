@@ -291,6 +291,7 @@ fn expected(module: &Module, case: &Case) -> Vec<u8> {
         Status::UnsupportedImport(_) => 3,
         Status::Suspended(module_ir::Limit::Instructions) => 4,
         Status::Suspended(module_ir::Limit::Imports) => 5,
+        Status::DivideError => 10,
         Status::Environment(message) => panic!("unexpected environment error: {message}"),
     };
     let started = (prior_started + report.state.trace.len()) as u64;

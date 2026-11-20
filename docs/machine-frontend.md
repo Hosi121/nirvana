@@ -44,7 +44,7 @@ JSONの`read_sites`には、表の値を読み込む命令位置とアドレス�
 
 | 命令群 | 対応形式 |
 | --- | --- |
-| 移動とアドレス | 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、CBW/CWDE/CDQE、LEA、XCHG |
+| 移動とアドレス | 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、CBW/CWDE/CDQE、CWD/CDQ/CQO、LEA、XCHG |
 | 整数演算 | 算術・bit演算・シフト・ROL/ROR、即値SHLD/SHRD、暗黙オペランドのunsigned MUL、明示オペランドのIMUL |
 | 条件と分岐 | 直接JMP/Jcc、SETcc、CMOVcc |
 | スタックと境界 | 64-bit PUSH/POP/LEAVE、RET |
@@ -56,6 +56,8 @@ JSONの`read_sites`には、表の値を読み込む命令位置とアドレス�
 条件式で使うフラグは、全到達経路で定義されたものを受理します。
 即値SHLD/SHRDは、mask後のcountがオペランド幅以下の形式を扱います。
 `module-*`ではNOTRACK付きの近距離間接CALL/JMPも扱います。CETの追跡状態は実行モデルの追加対象です。
+`module-*`は8/16/32/64-bitのDIV/IDIVを、sourceのLoadとdivide error（#DE）を持つ命令として実行します。
+商・剰余・部分レジスタと停止位置の規則は[実行モデル](equivalence.md)にあります。
 仕様は[Intel SDM Vol.1 §18.3.1](https://cdrdv2-public.intel.com/843827/253665-sdm-vol-1-dec-24.pdf)と、[命令リファレンス](https://cdrdv2-public.intel.com/782156/325383-sdm-vol-2abcd.pdf)を参照してください。
 CMOVのメモリsourceは、条件の真偽にかかわらず読み込みます。
 RETではRSPを進め、RAXを対象関数の返り値として実行を終えます。
@@ -66,7 +68,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 | --- | --- |
 | コード画像 | PE、関数境界の推定、汎用的なリンク・import解決 |
 | 関数間制御 | 関数境界の推定、呼出し規約・プロトタイプの回復、追加の外部効果 |
-| 命令と環境 | SIMD、DIV/IDIV、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base |
+| 命令と環境 | SIMD、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base、追加のCPU例外 |
 
 ## CLI
 

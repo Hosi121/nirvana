@@ -12,7 +12,7 @@ pub use run::{Environment, ExternalContext, RejectImports};
 
 pub const REGISTER_COUNT: usize = 80;
 pub const ROOT_RETURN: u64 = u64::MAX;
-pub const MODEL_ID: &str = "module-normal-ram-calls-v1";
+pub const MODEL_ID: &str = "module-normal-ram-calls-v2";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Target {
@@ -24,6 +24,13 @@ pub enum Target {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Instruction {
     Core(IrInstruction),
+    Divide {
+        address: u64,
+        size: u32,
+        source: Expr,
+        width: crate::ir::Width,
+        signed: bool,
+    },
     Transfer {
         address: u64,
         size: u32,
@@ -41,14 +48,18 @@ impl Instruction {
     pub fn address(&self) -> u64 {
         match self {
             Self::Core(i) => i.address,
-            Self::Transfer { address, .. } | Self::Return { address, .. } => *address,
+            Self::Transfer { address, .. }
+            | Self::Return { address, .. }
+            | Self::Divide { address, .. } => *address,
             Self::Vector(i) => i.address,
         }
     }
     pub fn size(&self) -> u32 {
         match self {
             Self::Core(i) => i.size,
-            Self::Transfer { size, .. } | Self::Return { size, .. } => *size,
+            Self::Transfer { size, .. } | Self::Return { size, .. } | Self::Divide { size, .. } => {
+                *size
+            }
             Self::Vector(i) => i.size,
         }
     }
@@ -158,6 +169,8 @@ pub enum Status {
     UnsupportedImport(String),
     Suspended(Limit),
     Alignment(Fault),
+    /// x86 #DE: zero divisor or quotient outside the destination width.
+    DivideError,
     Environment(String),
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

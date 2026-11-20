@@ -23,8 +23,13 @@ pub(crate) struct Case {
 pub(crate) fn state_address(module: &Module) -> u64 {
     module.image.stack_pointer - 512
 }
-fn prepare(module: &Module, case: &Case) -> (Vec<u64>, Vec<u8>) {
-    let mut registers = module.initial_registers();
+pub(crate) fn prepare_with_state(
+    module: &Module,
+    case: &Case,
+    initial: Option<&[u64]>,
+) -> (Vec<u64>, Vec<u8>) {
+    let mut registers = initial.map_or_else(|| module.initial_registers(), |r| r.to_vec());
+    assert_eq!(registers.len(), 80);
     registers[7] = state_address(module);
     let mut memory = module.image.memory.clone();
     let offset = (state_address(module) - module.image.memory_base) as usize;
@@ -38,7 +43,14 @@ fn prepare(module: &Module, case: &Case) -> (Vec<u64>, Vec<u8>) {
     (registers, memory)
 }
 pub(crate) fn expected(module: &Module, case: &Case) -> (Vec<u64>, Status) {
-    let (registers, memory) = prepare(module, case);
+    expected_with_state(module, case, None)
+}
+pub(crate) fn expected_with_state(
+    module: &Module,
+    case: &Case,
+    initial: Option<&[u64]>,
+) -> (Vec<u64>, Status) {
+    let (registers, memory) = prepare_with_state(module, case, initial);
     let report = module
         .program
         .run_from(
@@ -76,6 +88,7 @@ pub(crate) fn expected(module: &Module, case: &Case) -> (Vec<u64>, Status) {
         ),
         Status::Suspended(module_ir::Limit::Instructions) => (4, [0; 3]),
         Status::Suspended(module_ir::Limit::Imports) => (5, [0; 3]),
+        Status::DivideError => (10, [0; 3]),
         other => panic!("unexpected {other:?}"),
     };
     result.extend([
@@ -95,7 +108,14 @@ pub(crate) fn expected(module: &Module, case: &Case) -> (Vec<u64>, Status) {
     assert_eq!(result.len(), 94);
     (result, report.status)
 }
-fn harness(code: &str, module: &Module) -> String {
+fn harness(code: &str, module: &Module, initial: Option<&[u64]>) -> String {
+    let mut initialization = String::new();
+    if let Some(registers) = initial {
+        assert_eq!(registers.len(), 80);
+        for (i, value) in registers.iter().enumerate() {
+            writeln!(initialization, "s->r[{i}]=UINT64_C({value});").unwrap();
+        }
+    }
     format!(
         r#"
 #define main nv_generated_entry
@@ -108,6 +128,7 @@ int main(void) {{
     while(scanf("%" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64,
                 &in[0],&in[1],&in[2],&in[3],&budget,&pc,&patch,&value,&width)==9) {{
         struct nv_module *s=nv_create();assert(s);
+        {initialization}
         s->r[7]=UINT64_C({state});s->pc=pc;s->instructions_left=budget;s->imports_left=0;
         uint64_t offset=UINT64_C({offset});
         for(unsigned i=0;i<4;++i)for(unsigned j=0;j<8;++j)s->memory[offset+i*8+j]=(uint8_t)(in[i]>>(j*8));
@@ -173,6 +194,26 @@ pub(crate) fn check_generated_at_depths(
     sanitize: bool,
     depths: &[u32],
 ) -> usize {
+    check_generated_with_state(
+        module,
+        cases,
+        expected_rows,
+        directory,
+        sanitize,
+        depths,
+        None,
+    )
+}
+
+pub(crate) fn check_generated_with_state(
+    module: &Module,
+    cases: &[Case],
+    expected_rows: &[Vec<u64>],
+    directory: &Path,
+    sanitize: bool,
+    depths: &[u32],
+    initial: Option<&[u64]>,
+) -> usize {
     assert!(!depths.is_empty());
     let mut generated_cases = 0;
     let mut text = String::new();
@@ -208,7 +249,7 @@ pub(crate) fn check_generated_at_depths(
     ];
     for (mode, code) in modes {
         let source = directory.join(format!("{mode}.c"));
-        std::fs::write(&source, harness(&code, module)).unwrap();
+        std::fs::write(&source, harness(&code, module, initial)).unwrap();
         for generated_opt in ["-O0", "-O2"] {
             for &depth in if mode == "core" { &depths[..1] } else { depths } {
                 let binary = directory.join(format!("{mode}{generated_opt}-{depth}"));

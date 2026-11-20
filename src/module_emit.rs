@@ -30,6 +30,13 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
     // Keep this helper unconditional: all expressions, including transfer and
     // vector guard expressions, can use the ordinary IR multiply operation.
     code.push_str(MULTIPLY_HELPER);
+    if program
+        .instructions()
+        .iter()
+        .any(|i| matches!(i, Instruction::Divide { .. }))
+    {
+        code.push_str(crate::x86::divide::C_HELPER);
+    }
     code.push_str(posix_header());
     code.push_str("\nstatic unsigned nv_run(struct nv_module *s) {\n    uint64_t *r=s->r;\n    struct nirvana_memory m={s};\n    (void)r; (void)m;\n    if(setjmp(s->jump)!=0) return s->status;\n    for(;;) {\n");
     writeln!(
@@ -56,6 +63,10 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
             .checked_add(u64::from(instruction.size()))
             .ok_or("instruction end address overflows")?;
         match instruction {
+            Instruction::Divide { .. } => {
+                divide_statement(&mut code, &expressions, instruction, 3, "return s->status;")?;
+                set_pc(&mut code, next);
+            }
             Instruction::Core(instruction) => {
                 expressions
                     .assignments(&mut code, 3, &instruction.assignments)
@@ -154,6 +165,37 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
 
 pub(crate) fn runtime_header() -> &'static str {
     RUNTIME
+}
+
+pub(crate) fn divide_statement(
+    code: &mut String,
+    expressions: &Expressions,
+    instruction: &Instruction,
+    indent: usize,
+    failure: &str,
+) -> Result<(), String> {
+    let Instruction::Divide {
+        source,
+        width,
+        signed,
+        ..
+    } = instruction
+    else {
+        return Err("expected module division".into());
+    };
+    let pad = "    ".repeat(indent);
+    writeln!(code, "{pad}uint64_t nv_divisor;").unwrap();
+    expressions
+        .statement(code, indent, source, "nv_divisor = ", ";")
+        .map_err(|e| e.to_string())?;
+    writeln!(
+        code,
+        "{pad}if(!nv_divide({},{},r[0],r[2],nv_divisor,&r[0],&r[2])) {{ s->status=10; {failure} }}",
+        width.bits(),
+        u8::from(*signed)
+    )
+    .unwrap();
+    Ok(())
 }
 pub(crate) fn posix_header() -> &'static str {
     POSIX

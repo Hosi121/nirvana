@@ -729,6 +729,7 @@ fn discover_path(
             Operation::BitTest { base, index } => register(base) && operand(index),
             Operation::Exchange { left, right } => operand(left) && register(right),
             Operation::Mul { source }
+            | Operation::Divide { source, .. }
             | Operation::Push(source)
             | Operation::IndirectCall(source)
             | Operation::IndirectJump(source) => operand(source),
@@ -742,6 +743,7 @@ fn discover_path(
                 source,
             } => condition < 16 && register(destination) && operand(source),
             Operation::Branch { condition, .. } => condition < 16,
+            Operation::SignDividend { width } => width != Width::U8,
             Operation::Nop
             | Operation::Leave
             | Operation::Call(_)

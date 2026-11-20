@@ -122,17 +122,28 @@ RAXの上位32bitも結果入力として保持します。`Output::All`は全�
 
 ## 複数関数とPOSIX
 
-`module_ir::MODEL_ID`は`module-normal-ram-calls-v1`です。
+`module_ir::MODEL_ID`は`module-normal-ram-calls-v2`です。
+v2は既存の通常RAM・呼出し規則へ、DIV/IDIVのdivide error（#DE）を加えます。
 通常CALLはtargetを評価してから戻り先をStoreし、直接PLTではStore後にGOTを読みます。
 RETとimportからの復帰は実際のゲストstackから戻り先をLoadします。
 再帰・末尾呼出し・間接呼出し・戻り先の書換えも、このPC dispatchで扱います。
 16-byteのベクトルアクセスは全範囲とalignmentを検査した後、レーンの値を反映します。
 未登録のtarget、予算到達、range／alignment違反は、部分状態付きの停止結果を返します。
 
-入口は指定したsized functionです。初期画像にはrootの戻り先markerとerrno用領域を置きます。
+入口は、シンボルまたはunwind情報から範囲を検査したコード領域です。初期画像にはrootの戻り先markerとerrno用領域を置きます。
 生成Cの入口はRSP以外をゼロとし、プロセス起動処理・argv・constructor・TLSの復元は追加の実行環境の対象です。
 単一関数と同じ通常RAMの規則を使います。
 IR/Cの比較では、全レジスタ・全RAM・fault・PC・命令開始数を照合します。
+
+DIV/IDIVは8/16/32/64-bitのレジスタ／メモリsourceを扱います。
+命令予算を消費し、sourceを一度評価してから、二倍幅の被除数を割ります。
+領域外のメモリsourceは通常のRAM faultで停止します。
+sourceが0、または商が出力幅に収まらない場合は`Status::DivideError`（生成Cのstatus 10）で停止します。
+この時点のPCは元のDIV/IDIVで、レジスタとRAMはその命令の開始時の値を保ちます。
+成功時は商と剰余を反映し、8/16-bitの部分書込みと32-bitのゼロ拡張を適用します。
+符号付きの商は0方向へ丸め、剰余の符号は被除数に従います。
+未定義の5つのflagには従前値を選ぶ決定的なモデルを使い、flag検査は再定義までそれらへの依存を拒否します。
+`CWD/CDQ/CQO`は被除数を符号拡張し、flagを保持します。
 
 CのPOSIXアダプタはLinux x86-64の、有効なbufferを持つ呼出しを対象とします。
 socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを型に合わせて変換します。

@@ -131,6 +131,15 @@ pub enum Operation {
     Mul {
         source: Operand,
     },
+    /// Reference/module decoding: DIV/IDIV has a checked #DE outcome.
+    Divide {
+        source: Operand,
+        signed: bool,
+    },
+    /// CWD/CDQ/CQO: sign of AX/EAX/RAX into DX/EDX/RDX.
+    SignDividend {
+        width: Width,
+    },
     Exchange {
         left: Operand,
         right: Register,
@@ -440,6 +449,7 @@ impl Decoder<'_> {
                 }),
                 signed: true,
             },
+            0x99 => Operation::SignDividend { width },
             0x90 if self.rex & 1 == 0 => Operation::Nop,
             0x90 => Operation::Exchange {
                 left: Operand::Register(self.register(0, width)),
@@ -681,6 +691,12 @@ impl Decoder<'_> {
                     4 => Operation::Mul {
                         source: destination,
                     },
+                    6 | 7 if self.policy == DecodePolicy::ReferenceInspection => {
+                        Operation::Divide {
+                            source: destination,
+                            signed: group == 7,
+                        }
+                    }
                     _ => return Err(self.error("implicit multiply/divide is unsupported")),
                 }
             }

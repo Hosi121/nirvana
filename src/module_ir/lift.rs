@@ -198,6 +198,17 @@ fn shape(instruction: &Instruction) -> IrInstruction {
     };
     match instruction {
         Instruction::Core(i) => i.clone(),
+        Instruction::Divide {
+            address,
+            size,
+            source,
+            ..
+        } => IrInstruction {
+            address: *address,
+            size: *size,
+            assignments: vec![marker(source.clone())],
+            control: Control::Next,
+        },
         Instruction::Transfer {
             address,
             size,
@@ -343,6 +354,16 @@ fn lift_function_inner(
                             target,
                             link,
                         }
+                    } else if let Operation::Divide { source, signed } = original.operation {
+                        Instruction::Divide {
+                            address,
+                            size: u32::from(original.size),
+                            source: operand_value(source, next)?,
+                            width: source
+                                .width()
+                                .ok_or_else(|| error("division operand width missing"))?,
+                            signed,
+                        }
                     } else if let Operation::Return { extra_pop } = original.operation {
                         Instruction::Return {
                             address,
@@ -392,7 +413,7 @@ fn lift_function_inner(
                 Instruction::Transfer {
                     link: Some(next), ..
                 } => pending.push(*next),
-                Instruction::Vector(_) => pending.push(next),
+                Instruction::Vector(_) | Instruction::Divide { .. } => pending.push(next),
                 _ => {}
             }
             charge(&instruction, nodes)?;
@@ -513,6 +534,22 @@ fn operand_target(operand: Operand, next: u64) -> Result<Target, ModuleError> {
         } => Expr::load(address_expr(address, next), crate::ir::Width::U64),
         _ => return Err(error("module transfer requires a near 64-bit target")),
     }))
+}
+
+fn operand_value(operand: Operand, next: u64) -> Result<Expr, ModuleError> {
+    Ok(match operand {
+        Operand::Register(reg) => {
+            let value = Expr::Register(Reg(reg.index as usize));
+            let value = if reg.shift == 0 {
+                value
+            } else {
+                Expr::binary(BinaryOp::Shr, value, Expr::Const(u64::from(reg.shift)))
+            };
+            Expr::binary(BinaryOp::And, value, Expr::Const(reg.width.mask()))
+        }
+        Operand::Memory { address, width } => Expr::load(address_expr(address, next), width),
+        _ => return Err(error("division requires a register or memory operand")),
+    })
 }
 fn address_expr(address: Addressing, next: u64) -> Expr {
     let mut value = Expr::Const(address.displacement as u64);

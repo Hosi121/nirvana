@@ -20,9 +20,9 @@ each build at O0/O2 × ET_EXEC/PIE per compiler. Independent Rust oracles cover
 144 inputs/profile. Three C backends at O0/O2 run with UBSan and compare all80
 registers, PC, budgets, first fault and the whole guest RAM digest. Additional
 cases cover region entries, jump-table cases and writable call targets.
-Clang O0's pipeline emits an unsupported DIV. Its two ELF profiles remain in
-the denominator as explicit refusals; GCC and the other Clang profiles execute
-the IR/C comparison. The exact diagnostic is a regression gate for this gap.
+Clang O0's pipeline emits DIV for `% 3`, exercising the module's checked
+divide-error instruction in both ELF profiles. The optimized profiles use
+the compiler's multiplication and shift lowering.
 
 The FDE layout follows [LSB Core 4.1 §10.6](https://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic.html)
 and [AMD64 ABI §4.2.4](https://refspecs.linuxfoundation.org/elf/x86_64-abi-0.99.pdf).

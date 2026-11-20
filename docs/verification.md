@@ -61,6 +61,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [load_mask](../src/load_mask.rs) | 表示用のLoadとmaskの対。変更形・全read・単一定義・同一ブロックの順序と、元のLoadの位置を検査 |
 | [division_expr](../src/division_expr.rs) | 上位乗算とシフトによる定数割算。丸め誤差の上限をu128で再計算し、全u64入力に対する十分条件を照合 |
 | [x86 divide arithmetic](../src/x86/divide.rs) | 8/16/32/64-bitのDIV/IDIV計算を、独立した実機assemblyとRustの倍幅整数で比較。レジスタ・メモリ・AL/AH/DX別名、商overflowとゼロ除算の#DE、部分書込みを照合。unsigned演算で組んだC helperはO0/O2・UBSanで比較し、算術lemmaは別のSMTで検査 |
+| [module divide](../tests/module_divide.rs) / [compiler division](../tests/divide_compiler.rs) | 非ゼロの全80レジスタを初期値にして、sourceと宛先の別名、RAM faultと#DEの順序、例外前の全状態、予算と途中PC、CALL中の例外を3種のCで比較。CWD/CDQ/CQOをnativeと照合し、GCC/Clangの実行時の商・剰余をstripしたELFから比較 |
 | [add_division_expr](../src/add_division_expr.rs) | `/7`などの補正付き上位乗算。65bitの逆数と丸め誤差の上限から、全u64入力に対する十分条件を再計算 |
 | [remainder_expr](../src/remainder_expr.rs) | 同じ入力の証明済み商から `X - (X / d) * d` を `% d` と表示。積・差の非overflowと、各マスクが数値上限の全ビットを覆うことを再照合 |
 | [context_remainder](../src/context_remainder.rs) | 商を別レジスタに保存した剰余。定義・商のStore・使用の順序と、同一ブロック内の入力・商への上書きを再照合 |

@@ -25,6 +25,9 @@ PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式�
 `module_ir`は複数の関数とimportをまとめ、CALLの戻り先StoreとRETのLoadを明示します。
 動的な呼出し先・戻り先は、共通のゲストRAMと登録した命令位置を使ってdispatchします。
 スカラー命令は既存の実行器とlifterを共有し、ベクトル命令にはアクセス全幅とalignmentの事前検査を付けます。
+DIV/IDIVはsource・幅・符号を持つ独立した命令で、予算、sourceの評価、#DE判定、結果の反映を順に実行します。
+Rustは倍幅整数、Cはunsignedの二語演算を使い、Cバックエンド間で同じ検査付きloweringを共有します。
+除算を含む関数のSSA・局所変数と呼出し要約は、数値事実を作らず既存のゲスト状態を使う経路へ戻します。
 `Program::run`の外部効果は`Environment`へ渡します。
 `module_emit`は同じ制御をCへ展開し、POSIXアダプタがゲスト構造体とホストABIの変換を担います。
 ゲストのstackとPCを実行状態として保持し、再帰の深さもゲストRAMと命令予算で制限します。

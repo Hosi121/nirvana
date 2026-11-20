@@ -113,6 +113,27 @@ impl Program {
                     .binary_search_by_key(&pc, Instruction::address)
                     .map_err(|_| Status::UnknownTarget(pc))?;
                 match &self.instructions()[index] {
+                    Instruction::Divide {
+                        source,
+                        width,
+                        signed,
+                        size,
+                        ..
+                    } => {
+                        machine.step(pc, &[]).map_err(stop)?;
+                        let divisor = source.evaluate(&machine).map_err(fault)?;
+                        let (a, d) = crate::x86::divide::evaluate(
+                            *width,
+                            *signed,
+                            machine.registers[crate::x86::RAX],
+                            machine.registers[crate::x86::RDX],
+                            divisor,
+                        )
+                        .ok_or(Status::DivideError)?;
+                        machine.registers[crate::x86::RAX] = a;
+                        machine.registers[crate::x86::RDX] = d;
+                        pc += u64::from(*size);
+                    }
                     Instruction::Core(instruction) => {
                         machine.step(pc, &instruction.assignments).map_err(stop)?;
                         pc = match &instruction.control {

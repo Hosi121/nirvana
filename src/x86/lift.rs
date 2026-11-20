@@ -155,6 +155,7 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
             kind: Unary::Neg, ..
         } => (0, ALL, 0),
         Operation::Imul { .. } | Operation::Mul { .. } => (0, F_CF | F_OF, F_ZF | F_SF | F_PF),
+        Operation::Divide { .. } => (0, 0, ALL),
         // BT defines CF, preserves ZF, and leaves OF/SF/PF undefined.
         Operation::BitTest { .. } => (0, F_CF, F_OF | F_SF | F_PF),
         Operation::Rotate {
@@ -777,6 +778,16 @@ impl Lifter {
                 source,
             } => self.movbe(destination, source),
             Operation::BitTest { base, index } => self.bit_test(base, index),
+            Operation::SignDividend { width } => {
+                self.write_register(
+                    Register {
+                        index: RDX as u8,
+                        width,
+                        shift: 0,
+                    },
+                    sub(k(0), bit(r(RAX), width.bits() - 1)),
+                );
+            }
             Operation::Mul { source } => {
                 let width = source.width().unwrap();
                 // Read both original operands before changing AX or DX. A
@@ -883,6 +894,12 @@ impl Lifter {
                     width: Width::U64,
                     shift: 0,
                 });
+            }
+            Operation::Divide { .. } => {
+                return Err(LiftError::Decode(DecodeError {
+                    address: decoded.address,
+                    reason: "DIV/IDIV requires the module divide-error model".into(),
+                }));
             }
             Operation::Call(_) | Operation::IndirectCall(_) | Operation::IndirectJump(_) => {
                 return Err(LiftError::Decode(DecodeError {

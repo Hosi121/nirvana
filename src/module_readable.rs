@@ -190,6 +190,14 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
     let mut code = String::from("#define _POSIX_C_SOURCE 200809L\n");
     code.push_str(runtime_header());
     code.push_str(MULTIPLY_HELPER);
+    if module
+        .program
+        .instructions()
+        .iter()
+        .any(|i| matches!(i, Instruction::Divide { .. }))
+    {
+        code.push_str(crate::x86::divide::C_HELPER);
+    }
     code.push_str(posix_header());
     code.push_str(
         "\n#ifndef NV_HOST_DEPTH_LIMIT\n#define NV_HOST_DEPTH_LIMIT 64\n#endif\n#if NV_HOST_DEPTH_LIMIT < 1 || NV_HOST_DEPTH_LIMIT > 256\n#error NV_HOST_DEPTH_LIMIT_must_be_between_1_and_256\n#endif\n\n\
@@ -612,6 +620,13 @@ impl Renderer<'_> {
             }
         }
         match instruction {
+            Instruction::Divide { .. } => crate::module_emit::divide_statement(
+                code,
+                expressions,
+                instruction,
+                inner,
+                "goto nv_exit;",
+            )?,
             Instruction::Core(instruction) => body_expressions
                 .assignments(
                     code,
@@ -869,9 +884,9 @@ impl Renderer<'_> {
                 }
                 Control::Return(_) => return Err("module Core cannot contain Return".to_owned()),
             },
-            Instruction::Vector(_) | Instruction::Transfer { link: Some(_), .. } => {
-                line(code, indent, &destination(next))
-            }
+            Instruction::Vector(_)
+            | Instruction::Divide { .. }
+            | Instruction::Transfer { link: Some(_), .. } => line(code, indent, &destination(next)),
             Instruction::Return { .. } | Instruction::Transfer { link: None, .. } => {
                 line(code, indent, "goto nv_exit;")
             }

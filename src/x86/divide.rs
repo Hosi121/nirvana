@@ -48,3 +48,5 @@ pub fn evaluate(width: Width, signed: bool, rax: u64, rdx: u64, source: u64) -> 
         Width::U32 | Width::U64 => (quotient, remainder),
     })
 }
+
+pub(crate) const C_HELPER: &str = include_str!("divide.h");

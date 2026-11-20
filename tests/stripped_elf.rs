@@ -80,7 +80,6 @@ fn matrix(compiler: &str, label: &str) {
         .collect();
     let mut native_count = 0;
     let mut generated_count = 0;
-    let mut unsupported_count = 0;
     for name in [
         "mapped-switch",
         "state-machine",
@@ -142,20 +141,6 @@ fn matrix(compiler: &str, label: &str) {
                 assert!(matches!(root.origin, FunctionOrigin::Unwind { .. }));
                 assert_eq!(image.image.function.bytes, named.image.function.bytes);
                 let result = module_ir::lift_elf_at(&bytes, entry, options);
-                if label == "Clang" && name == "modular-pipeline" && opt == "-O0" {
-                    let error = result.expect_err("update the coverage gate when DIV is supported");
-                    assert!(
-                        error
-                            .to_string()
-                            .contains("implicit multiply/divide is unsupported"),
-                        "{error}"
-                    );
-                    unsupported_count += 1;
-                    println!(
-                        "{label} stripped {name} {opt} PIE={pie}: explicit unsupported DIV; retained in20-profile denominator"
-                    );
-                    continue;
-                }
                 let module =
                     result.unwrap_or_else(|e| panic!("{label} {name} {opt} PIE={pie}: {e}"));
                 assert!(
@@ -274,6 +259,6 @@ fn matrix(compiler: &str, label: &str) {
         }
     }
     println!(
-        "stripped {label}:20 profiles ({unsupported_count} explicit unsupported), {native_count} native/oracle/IR cases, {generated_count} generated state comparisons with UBSan"
+        "stripped {label}:20 profiles, {native_count} native/oracle/IR cases, {generated_count} generated state comparisons with UBSan"
     );
 }

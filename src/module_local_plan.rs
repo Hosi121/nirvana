@@ -192,6 +192,9 @@ fn function_plan(
             budget.scan(&assignment.value)?;
         }
         let control = match instruction {
+            Instruction::Divide { .. } => {
+                return Err("module locals retain the division effect in canonical state".into());
+            }
             Instruction::Core(i) => match &i.control {
                 Control::Branch { condition, target } => {
                     budget.scan(condition)?;
@@ -867,6 +870,9 @@ fn append_edges(
             Control::Return(_) => {}
         },
         Instruction::Vector(_) => append(next, None)?,
+        Instruction::Divide { .. } => {
+            return Err("module locals retain the division effect in canonical state".into());
+        }
         Instruction::Transfer {
             link: Some(link), ..
         } => append(*link, None)?,

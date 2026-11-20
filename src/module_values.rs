@@ -335,6 +335,9 @@ impl Projection<'_> {
         let address = instruction.address();
         let mut assignments = Vec::new();
         let control = match instruction {
+            Instruction::Divide { .. } => {
+                return Err("module values retain division as an opaque instruction effect".into());
+            }
             Instruction::Core(i) => {
                 self.copy_assignments(address, &mut assignments, &i.assignments, false)?;
                 if let Control::Branch { condition, .. } | Control::Return(condition) = &i.control {
