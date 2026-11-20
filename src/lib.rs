@@ -46,6 +46,7 @@ pub mod loop_recover;
 pub mod loop_shape;
 pub mod module_emit;
 pub mod module_ir;
+pub mod module_local_plan;
 pub mod module_outline;
 pub mod module_readable;
 pub mod module_values;
