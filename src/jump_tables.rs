@@ -147,7 +147,39 @@ struct Values {
     bounds: BTreeMap<u32, u64>,
     entry_limits: BTreeMap<(u64, u32), usize>,
     comparison: Option<(Word, u64)>,
+    spills: Vec<Spill>,
 }
+
+#[derive(Clone, Copy)]
+struct Spill {
+    address: Word,
+    width: Width,
+    value: Word,
+}
+
+const MAX_SPILLS: usize = 32;
+
+// Equal affine terms cancel modulo 2^64. Both forward and reverse distances
+// must leave room for the other byte interval. Different bases may alias.
+fn disjoint(a: Word, a_width: Width, b: Word, b_width: Width) -> bool {
+    match (a, b) {
+        (
+            Word::Linear {
+                constant: a,
+                term: x,
+            },
+            Word::Linear {
+                constant: b,
+                term: y,
+            },
+        ) if x == y => {
+            b.wrapping_sub(a) >= a_width.bytes() as u64
+                && a.wrapping_sub(b) >= b_width.bytes() as u64
+        }
+        _ => false,
+    }
+}
+
 impl Values {
     fn new() -> Self {
         let mut values = Self {
@@ -160,6 +192,7 @@ impl Values {
             bounds: BTreeMap::new(),
             entry_limits: BTreeMap::new(),
             comparison: None,
+            spills: Vec::new(),
         };
         for r in 0..16 {
             values.low32[r] = values.bounded_unknown(u64::from(u32::MAX));
@@ -207,8 +240,20 @@ impl Values {
         self.unknown()
     }
     fn fits_u32(&self, value: Word) -> bool {
-        matches!(value,Word::Linear {constant:0,term:Some((id,1))}
-            if self.bounds.get(&id).is_some_and(|n|*n<=u64::from(u32::MAX)))
+        self.maximum(value).is_some_and(|n| n <= Width::U32.mask())
+    }
+    fn maximum(&self, value: Word) -> Option<u64> {
+        match value {
+            Word::Linear {
+                constant,
+                term: None,
+            } => Some(constant),
+            Word::Linear {
+                constant: 0,
+                term: Some((id, 1)),
+            } => self.bounds.get(&id).copied(),
+            _ => None,
+        }
     }
     fn bounded_unknown(&mut self, maximum: u64) -> Word {
         let value = self.unknown();
@@ -234,10 +279,19 @@ impl Values {
             Operand::Immediate(n) => Word::constant(n),
             Operand::Register(r) => self.register(r),
             Operand::Memory { address, width } => {
+                let effective = self.address(address, next);
+                if let Some(effective) = effective
+                    && let Some(spill) = self
+                        .spills
+                        .iter()
+                        .find(|s| s.address == effective && s.width == width)
+                {
+                    return spill.value;
+                }
                 if let Some(Word::Linear {
                     constant: table,
                     term: Some((id, stride)),
-                }) = self.address(address, next)
+                }) = effective
                     && stride == width.bytes() as u64
                 {
                     let key = (table, width.bits());
@@ -262,6 +316,34 @@ impl Values {
                 }
             }
         }
+    }
+
+    fn store(&mut self, address: Addressing, width: Width, value: Word, next: u64) {
+        let Some(effective @ Word::Linear { .. }) = self.address(address, next) else {
+            self.spills.clear();
+            return;
+        };
+        self.spills
+            .retain(|s| disjoint(s.address, s.width, effective, width));
+        // Narrow stores share identity when the value fits. Otherwise record
+        // a fresh value with the stored width's range.
+        let value = if width == Width::U64 {
+            value
+        } else if let Some(n) = value.number() {
+            Word::constant(n & width.mask())
+        } else if self.maximum(value).is_some_and(|n| n <= width.mask()) {
+            value
+        } else {
+            self.bounded_unknown(width.mask())
+        };
+        if self.spills.len() == MAX_SPILLS {
+            self.spills.remove(0);
+        }
+        self.spills.push(Spill {
+            address: effective,
+            width,
+            value,
+        });
     }
     fn write(&mut self, r: Register, value: Word, raw_load: bool) {
         let value = if r.shift == 0 && r.width == Width::U64 {
@@ -356,6 +438,14 @@ impl Values {
                 self.write(r, value, true);
                 self.comparison = previous_comparison;
             }
+            Operation::Mov {
+                destination: Operand::Memory { address, width },
+                source,
+            } => {
+                let value = self.operand(source, next);
+                self.store(address, width, value, next);
+                self.comparison = previous_comparison;
+            }
             Operation::Extend {
                 destination,
                 source,
@@ -364,12 +454,18 @@ impl Values {
                 let mut value = self.operand(source, next);
                 if let Word::Entry { signed: s, .. } = &mut value {
                     *s = signed;
-                } else if signed
-                    && let Some(n) = value.number()
-                    && let Some(width) = source.width()
-                {
-                    let shift = 64 - width.bits();
-                    value = Word::constant(((n << shift) as i64 >> shift) as u64);
+                } else if signed && let Some(width) = source.width() {
+                    if let Some(n) = value.number() {
+                        let shift = 64 - width.bits();
+                        value = Word::constant(((n << shift) as i64 >> shift) as u64);
+                    } else if self
+                        .maximum(value)
+                        .is_none_or(|n| n >= (1u64 << (width.bits() - 1)))
+                    {
+                        // Sign extension may change a zero-extended pointer or
+                        // index. Share its identity only when its sign bit is clear.
+                        value = self.unknown();
+                    }
                 }
                 self.write(destination, value, true);
                 self.comparison = previous_comparison;
@@ -391,6 +487,14 @@ impl Values {
             } => {
                 let a = self.register(r);
                 let b = self.operand(source, next);
+                // SUB defines the same comparison flags as CMP on its inputs.
+                // A saved copy/reload of the pre-subtraction value can carry
+                // the unsigned guard even though the destination is changed.
+                if kind == Alu::Sub
+                    && let Some(n) = b.number()
+                {
+                    self.comparison = Some((a, n & r.width.mask()));
+                }
                 let value = match kind {
                     Alu::And if a.number().is_none() && b.number().is_some() => {
                         Some(self.bounded_unknown(b.number().unwrap() & r.width.mask()))
@@ -423,6 +527,7 @@ impl Values {
             }
             // Unmodeled writes invalidate the whole local interpretation.
             _ => {
+                self.spills.clear();
                 for r in 0..16 {
                     let unknown = self.unknown();
                     self.write(

@@ -114,6 +114,86 @@ fn a_32_bit_left_shift_masks_the_count_before_scaling_an_index() {
     assert_eq!(c.entries.len(), 2);
 }
 
+fn spill_guard(noise: &[u8], reload: &[u8]) -> Vec<u8> {
+    let mut code = vec![0x48, 0x89, 0xe5, 0x48, 0x89, 0x7d, 0xf0];
+    code.extend(noise);
+    // SUB/JA checks the pre-subtraction index saved at [RBP-16].
+    code.extend([0x48, 0x83, 0xef, 1, 0x77, 0x30]);
+    code.extend(reload);
+    code.extend(absolute());
+    code
+}
+
+#[test]
+fn saved_indices_carry_subtraction_guards_and_stores_invalidate_aliases() {
+    let memory: Vec<_> = [0x1050u64, 0x1060, 0x1070, 0x1080]
+        .into_iter()
+        .flat_map(u64::to_le_bytes)
+        .collect();
+    for (noise, hint, entries) in [
+        (vec![], Some(2), 2),
+        // Same affine base, disjoint byte intervals.
+        (vec![0x48, 0xc7, 0x45, 0xf8, 9, 0, 0, 0], Some(2), 2),
+        // Partial overlap destroys the earlier eight-byte value.
+        (vec![0xc7, 0x45, 0xf4, 9, 0, 0, 0], None, 4),
+        // RSP aliases the copied RBP; different register names are insufficient.
+        (vec![0xc7, 0x44, 0x24, 0xf4, 9, 0, 0, 0], None, 4),
+        // A different unknown base may alias any saved value.
+        (vec![0x48, 0x89, 0x06], None, 4),
+        // Calls have unknown memory effects as well as register effects.
+        (vec![0xe8, 0, 0, 0, 0], None, 4),
+    ] {
+        let code = spill_guard(&noise, &[0x48, 0x8b, 0x7d, 0xf0]);
+        let c = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).unwrap();
+        assert_eq!(c.entry_limit_hint, hint, "{noise:x?}");
+        assert_eq!(c.entries.len(), entries, "{noise:x?}");
+    }
+    // A narrower reload gets its own truncated value, not the old 64-bit bound.
+    let code = spill_guard(&[], &[0x8b, 0x7d, 0xf0]);
+    let c = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).unwrap();
+    assert_ne!(c.entry_limit_hint, Some(2));
+    assert_eq!(c.entries.len(), 4);
+}
+
+#[test]
+fn exact_spill_cache_has_a_bounded_lifetime() {
+    let mut noise = Vec::new();
+    for n in 0..33i32 {
+        noise.extend([0x48, 0xc7, 0x85]);
+        noise.extend((32 + n * 8).to_le_bytes());
+        noise.extend(9u32.to_le_bytes());
+    }
+    let code = window(&spill_guard(&noise, &[0x48, 0x8b, 0x7d, 0xf0]));
+    let memory = 0x1080u64.to_le_bytes().repeat(4);
+    let result = jump_tables::discover_cfg(
+        &code,
+        code.last().unwrap().address,
+        0x2000,
+        &memory,
+        0x1000..0x1200,
+    );
+    assert_eq!(result.candidates.len(), 1);
+    assert_eq!(result.candidates[0].entry_limit_hint, None);
+}
+
+#[test]
+fn sign_extension_preserves_address_identity_only_with_a_clear_sign_bit() {
+    let memory = 0x1050u64.to_le_bytes().repeat(2);
+    for bounded in [false, true] {
+        let mut code = vec![0x89, 0xfe]; // ESI is a zero-extended copy of EDI.
+        if bounded {
+            code.extend([0x83, 0xe6, 1]);
+        }
+        code.extend([0x48, 0x63, 0xfe]); // RDI = sign_extend(ESI).
+        rip_lea(&mut code, 0);
+        code.extend([0x48, 0x89, 0x06]); // Store a pointer at [RSI].
+        code.extend([0x48, 0x8b, 0x17]); // [RDI] need not be that same address.
+        code.extend([0xff, 0x24, 0xca]); // JMP [RDX + RCX*8].
+        let found = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100);
+        assert_eq!(found.is_some(), bounded);
+    }
+}
+
 #[test]
 fn repeated_targets_are_retained_as_distinct_entries_and_coverage_stays_open_at_the_cap() {
     let memory = 0x1050u64.to_le_bytes().repeat(MAX_ENTRIES + 1);
