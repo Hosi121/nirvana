@@ -169,12 +169,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 );
             }
             eprintln!(
-                "module structure: {} structured, {} goto; {} direct calls, {} dynamic calls, {} import calls",
+                "module structure: {} structured, {} goto; {} direct calls, {} dynamic calls, {} import calls; {} guarded tails, {} key switches",
                 output.report.structured_functions,
                 output.report.goto_functions,
                 output.report.direct_calls,
                 output.report.indirect_calls,
-                output.report.import_calls
+                output.report.import_calls,
+                output.report.guarded_tail_transfers,
+                output.report.selector_switches
             );
             print!("{}", output.code);
         } else if format == "module-c" {

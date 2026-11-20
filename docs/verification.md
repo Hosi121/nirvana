@@ -27,10 +27,13 @@ cargo fmt --check
 ```sh
 uv venv target/verification-venv
 uv pip install --python target/verification-venv/bin/python -r tools/verification-requirements.txt
-NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --all-targets -- --include-ignored --test-threads=1
+NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --all-targets -- --ignored --skip clang_ --test-threads=1
 ```
 
 既存のZ3は`NIRVANA_Z3=/path/to/z3`で指定できます。上例は任意テストを資源上限付きで直列実行します。
+Clang比較は各fixtureのREADMEにあるコマンドで別途実行します。
+[guarded dispatchのモデル](../tests/models/guarded_dispatch.smt2)は、独立した初期／現在の表・添字・biasに対する分岐先選択を検査します。
+実targetを照合する形はUNSAT、照合を除いた負例は表の書換えでSATとなります。適用範囲は分岐選択と停止済みprefixで、C全体とISAの検証は別に扱います。
 問い合わせと採否を保存する例:
 
 ```sh
@@ -71,6 +74,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [jump_tables](../src/jump_tables.rs) | 経路合流・taken側の範囲・幅と別名・stack退避・部分上書き・CALL破壊・循環と探索上限を検査。追加入口のflag検査、重なる命令列の退避、表の書換えと未知targetも照合。GCC/ClangのO0/O2・通常ELF/PIEでnative/oracle/IRと3種類の生成Cを比較。Clang cohortの生成CにはUBSanを適用 |
 | [dispatch programs](../tests/dispatch_programs.rs) | 分類表・状態機械・stack再利用・BSWAPを含むループで、IR書込み集合による表ベースの保持と不透明結果の無効化を比較。全生成CへUBSanを適用し、予算境界・途中PC・表の書換え・未知targetも照合 |
 | [module_tail_dispatch](../src/module_tail_dispatch.rs) | 元のtail移転・関数の所有範囲・命令PC・最初の再入ラベルを照合。壊した候補とラベルを拒否し、表を書き換えた局所／候補外／別関数／未知の飛び先、途中PC、予算、host深さ1/2/64を全状態で比較 |
+| [module_switch_keys](../src/module_switch_keys.rs) | 添字保存の純粋性・命令位置・所有関数・caseのラベルを検査。Loadが添字レジスタを上書きする場合と、古い対応表、途中再入、表の書換えを比較 |
 | [module_outline](../src/module_outline.rs) / [module_readable](../src/module_readable.rs) | 全Stepから構造ASTを再入検査。分岐・ループ途中のPC、戻り先の書換え、host深さ1/2/64、GOT・stackの重なりで、Rust／新旧Cの完全状態を比較 |
 | [arithmetic_graph](../src/arithmetic_graph.rs) | 分子・上位乗算・商の定義と剰余の値対応を再構築し、除算証明と積の係数を照合 |
 | [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |

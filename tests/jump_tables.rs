@@ -292,6 +292,33 @@ fn malformed_opaque_effect_operands_decline_before_lifting() {
 }
 
 #[test]
+fn read_provenance_tracks_the_table_load_through_target_spills() {
+    let mut bytes = Vec::new();
+    rip_lea(&mut bytes, 2);
+    let producer = 0x1000 + bytes.len() as u64;
+    bytes.extend([0x48, 0x63, 0x04, 0xba]);
+    bytes.extend([0x48, 0x89, 0x44, 0x24, 0xf8, 0x48, 0x8b, 0x44, 0x24, 0xf8]);
+    bytes.extend([0x48, 0x01, 0xd0, 0x3e, 0xff, 0xe0]);
+    let memory: Vec<_> = [0x1050i32, 0x1060]
+        .into_iter()
+        .flat_map(|t| (t - 0x2000).to_le_bytes())
+        .collect();
+    let table = jump_tables::discover(&window(&bytes), 0x2000, &memory, 0x1000..0x1100).unwrap();
+    assert_eq!(table.read_sites.len(), 1);
+    assert_eq!(table.read_sites[0].instruction, producer);
+    assert_eq!(table.read_sites[0].next, producer + 4);
+    assert!(table.read_sites[0].address_expr().is_some());
+    assert!(
+        jump_tables::to_json(std::slice::from_ref(&table), &[])
+            .unwrap()
+            .contains("\"read_sites\":[")
+    );
+    let mut invalid = table.clone();
+    invalid.read_sites = vec![invalid.read_sites[0]; jump_tables::MAX_READ_SITES + 1];
+    assert!(jump_tables::to_json(&[invalid], &[]).is_err());
+}
+
+#[test]
 fn repeated_targets_are_retained_as_distinct_entries_and_coverage_stays_open_at_the_cap() {
     let memory = 0x1050u64.to_le_bytes().repeat(MAX_ENTRIES + 1);
     let c = jump_tables::discover(&window(&absolute()), 0x2000, &memory, 0x1000..0x1100).unwrap();

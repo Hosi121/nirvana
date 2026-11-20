@@ -1,7 +1,7 @@
 //! Initial-image jump-table candidates for instruction discovery. Candidates
 //! retain an open residual and never replace executable target expressions.
 
-use crate::ir::{Place, Width};
+use crate::ir::{BinaryOp, Expr, Place, Reg, Width};
 use crate::x86::{self, Addressing, Alu, DecodedInstruction, Operand, Operation, Register, Shift};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
@@ -14,6 +14,47 @@ pub use context::{
 
 pub const MAX_WINDOW: usize = 24;
 pub const MAX_ENTRIES: usize = 256;
+pub const MAX_READ_SITES: usize = 64;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadSite {
+    pub instruction: u64,
+    pub next: u64,
+    pub address: Addressing,
+    pub width: Width,
+}
+impl ReadSite {
+    /// Pure pre-instruction guest address. Rendering a snapshot adds no RAM read.
+    pub fn address_expr(&self) -> Option<Expr> {
+        let a = self.address;
+        if a.base.is_some_and(|r| r >= 16)
+            || a.index.is_some_and(|r| r >= 16)
+            || !matches!(a.scale, 1 | 2 | 4 | 8)
+        {
+            return None;
+        }
+        let mut e = Expr::Const((a.displacement as u64).wrapping_add(if a.rip_relative {
+            self.next
+        } else {
+            0
+        }));
+        if let Some(base) = a.base {
+            e = Expr::binary(BinaryOp::Add, e, Expr::Register(Reg(base as usize)));
+        }
+        if let Some(index) = a.index {
+            e = Expr::binary(
+                BinaryOp::Add,
+                e,
+                Expr::binary(
+                    BinaryOp::Mul,
+                    Expr::Register(Reg(index as usize)),
+                    Expr::Const(u64::from(a.scale)),
+                ),
+            );
+        }
+        Some(e)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Entry {
@@ -32,6 +73,8 @@ pub struct Candidate {
     pub reached_entry_limit: bool,
     /// Local unsigned-guard/mask hint for table extent, not CFG completeness.
     pub entry_limit_hint: Option<usize>,
+    /// Bounded provenance of the table value, retained across copies/spills.
+    pub read_sites: Vec<ReadSite>,
 }
 impl Candidate {
     pub fn targets(&self) -> BTreeSet<u64> {
@@ -50,6 +93,7 @@ enum Word {
         width: Width,
         signed: bool,
         bias: u64,
+        read: ReadSite,
     },
 }
 impl Word {
@@ -112,6 +156,7 @@ impl Word {
                     width,
                     signed,
                     bias,
+                    read,
                 },
                 Self::Linear {
                     constant,
@@ -128,12 +173,14 @@ impl Word {
                     width,
                     signed,
                     bias,
+                    read,
                 },
             ) => Some(Self::Entry {
                 table,
                 width,
                 signed,
                 bias: bias.wrapping_add(constant),
+                read,
             }),
             _ => None,
         }
@@ -148,6 +195,7 @@ struct Values {
     entry_limits: BTreeMap<(u64, u32), usize>,
     comparison: Option<(Word, u64)>,
     spills: Vec<Spill>,
+    current_pc: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -193,6 +241,7 @@ impl Values {
             entry_limits: BTreeMap::new(),
             comparison: None,
             spills: Vec::new(),
+            current_pc: 0,
         };
         for r in 0..16 {
             values.low32[r] = values.bounded_unknown(u64::from(u32::MAX));
@@ -224,6 +273,7 @@ impl Values {
                 width,
                 signed: _,
                 bias: 0,
+                read,
             } = value
             && r.width == width
         {
@@ -232,6 +282,7 @@ impl Values {
                 width,
                 signed: false,
                 bias: 0,
+                read,
             };
         }
         if r.width == Width::U32 && r.shift == 0 {
@@ -310,6 +361,12 @@ impl Values {
                         width,
                         signed: false,
                         bias: 0,
+                        read: ReadSite {
+                            instruction: self.current_pc,
+                            next,
+                            address,
+                            width,
+                        },
                     }
                 } else {
                     self.unknown()
@@ -378,6 +435,7 @@ impl Values {
             table,
             width: Width::U32,
             bias: 0,
+            read,
             ..
         } = value
         {
@@ -386,6 +444,7 @@ impl Values {
                 width: Width::U32,
                 signed: false,
                 bias: 0,
+                read,
             }
         } else {
             self.bounded_unknown(u64::from(u32::MAX))
@@ -435,6 +494,7 @@ impl Values {
         self.comparison = if flags_written { None } else { comparison };
     }
     fn observe(&mut self, i: DecodedInstruction, successor: u64) {
+        self.current_pc = i.address;
         let next = i.address + u64::from(i.size);
         let previous_comparison = self.comparison.take();
         match i.operation {
@@ -715,11 +775,13 @@ fn discover_path(
         values.observe(*i, successor.address);
     }
     let next = branch.address.checked_add(u64::from(branch.size))?;
+    values.current_pc = branch.address;
     let Word::Entry {
         table,
         width,
         signed,
         bias,
+        read,
     } = values.operand(operand, next)
     else {
         return None;
@@ -766,6 +828,7 @@ fn discover_path(
         bias,
         reached_entry_limit: entries.len() == MAX_ENTRIES,
         entry_limit_hint,
+        read_sites: vec![read],
         entries,
     })
 }
@@ -782,7 +845,9 @@ pub fn to_json_with_context_limits(
     if tables.len() > 8192
         || diagnostics.len() > 512
         || context_limits.len() > 65_536
-        || tables.iter().any(|t| t.entries.len() > MAX_ENTRIES)
+        || tables
+            .iter()
+            .any(|t| t.entries.len() > MAX_ENTRIES || t.read_sites.len() > MAX_READ_SITES)
     {
         return Err("jump table report collection limit".into());
     }
@@ -802,6 +867,14 @@ pub fn to_json_with_context_limits(
             if out.len() > 16 * 1024 * 1024 {
                 return Err("jump table report output limit".into());
             }
+        }
+        out.push_str("],\"read_sites\":[");
+        for (j, site) in t.read_sites.iter().enumerate() {
+            if j > 0 {
+                out.push(',');
+            }
+            let a = site.address;
+            write!(out,"{{\"instruction\":{},\"next\":{},\"width\":{},\"base\":{},\"index\":{},\"scale\":{},\"displacement\":{},\"rip_relative\":{}}}",site.instruction,site.next,site.width.bytes(),a.base.map_or_else(||"null".into(),|n|n.to_string()),a.index.map_or_else(||"null".into(),|n|n.to_string()),a.scale,a.displacement,a.rip_relative).unwrap();
         }
         out.push_str("]}");
         if out.len() > 16 * 1024 * 1024 {

@@ -240,6 +240,39 @@ fn call_effects_and_redefined_flags_do_not_inherit_earlier_facts() {
 }
 
 #[test]
+fn one_table_retains_alternative_read_sites_at_a_join() {
+    let read = Operation::Mov {
+        destination: Operand::Register(reg(0)),
+        source: match jump(None, 0x2000) {
+            Operation::IndirectJump(source) => source,
+            _ => unreachable!(),
+        },
+    };
+    let graph = [
+        i(
+            0x1000,
+            Operation::Branch {
+                condition: 5,
+                target: 0x1020,
+            },
+        ),
+        i(0x1001, read),
+        i(0x1002, Operation::Jump(0x1040)),
+        i(0x1020, read),
+        i(0x1021, Operation::Jump(0x1040)),
+        i(0x1040, Operation::IndirectJump(Operand::Register(reg(0)))),
+    ];
+    let found = search(&graph, 0x1040);
+    assert_eq!(found.candidates.len(), 1);
+    let sites: std::collections::BTreeSet<_> = found.candidates[0]
+        .read_sites
+        .iter()
+        .map(|s| s.instruction)
+        .collect();
+    assert_eq!(sites, std::collections::BTreeSet::from([0x1001, 0x1020]));
+}
+
+#[test]
 fn depth_path_and_graph_limits_bound_adversarial_contexts() {
     let mut graph: Vec<_> = (0..MAX_CONTEXT_INSTRUCTIONS + 1)
         .map(|n| i(0x1000 + n as u64, Operation::Nop))

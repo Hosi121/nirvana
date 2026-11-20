@@ -19,6 +19,7 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 `module-*`は複数の関数を読み、内部CALL・間接CALL・RETとPOSIX importを扱います。
 ジャンプテーブルの初期値から追加の命令を発見し、実行時の分岐先は現在のゲストRAMから評価します。
 候補と残る未知の分岐先は`module-jumps`で確認できます。
+JSONの`read_sites`には、表の値を読み込む命令位置とアドレス成分を含めます。
 直接CFGの先行経路から、離れた定義や合流する別の表も探索します。
 循環や、探索の深さ・経路数・work・表数・照会回数の上限に達した分岐はJSONの`context_limited_branches`に含まれます。
 初期状態はロード直後のモデル画像です。プロセス起動処理・constructor・実libcの内部状態は別の実行環境として扱います。

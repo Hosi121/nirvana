@@ -134,6 +134,11 @@ pub(crate) fn merge(tables: &mut Vec<Candidate>, mut candidate: Candidate) {
         old.entries.append(&mut candidate.entries);
         old.entries.sort_by_key(|e| e.address);
         old.entries.dedup();
+        for read in candidate.read_sites {
+            if old.read_sites.len() < super::MAX_READ_SITES && !old.read_sites.contains(&read) {
+                old.read_sites.push(read);
+            }
+        }
     } else {
         tables.push(candidate);
     }

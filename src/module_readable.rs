@@ -41,6 +41,8 @@ pub struct Report {
     /// Runtime-guarded same-function tail transfers; residual dispatch remains.
     pub guarded_tail_transfers: usize,
     pub guarded_tail_cases: usize,
+    pub selector_snapshots: usize,
+    pub selector_switches: usize,
 }
 
 /// Lower the original ordered guest effects; metadata and shape assignments
@@ -75,6 +77,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
     validate_program(module.program.shape()).map_err(|error| error.to_string())?;
     let plan = crate::module_outline::recover(&module.program)?;
     let tails = crate::module_tail_dispatch::recover(module, &plan)?;
+    let keys = crate::module_switch_keys::recover(module, &plan, &tails)?;
     let instructions = module
         .program
         .instructions()
@@ -89,6 +92,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
         next_helper: 0,
         locals,
         tails: &tails,
+        keys: &keys,
     };
     let mut bodies = String::new();
     let mut report = Report {
@@ -105,6 +109,17 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
             })
             .is_some_and(|f| f.result.is_ok());
         if !active_locals {
+            report.selector_snapshots += keys
+                .snapshots
+                .iter()
+                .filter(|s| s.function == function.function.address)
+                .count();
+            report.selector_switches += keys
+                .branches
+                .iter()
+                .filter(|(pc, _)| tails.transfers[*pc].function == function.function.address)
+                .map(|(_, uses)| uses.len())
+                .sum::<usize>();
             for transfer in tails
                 .transfers
                 .values()
@@ -271,6 +286,7 @@ struct Renderer<'a> {
     next_helper: usize,
     locals: Option<&'a module_local_plan::Plan>,
     tails: &'a crate::module_tail_dispatch::Plan,
+    keys: &'a crate::module_switch_keys::Plan,
 }
 
 impl Renderer<'_> {
@@ -286,6 +302,17 @@ impl Renderer<'_> {
             .map(|f| &f.result);
         let local = local_result.and_then(|result| result.as_ref().ok());
         let mut declarations = String::new();
+        if local.is_none() {
+            for (id, _) in self
+                .keys
+                .snapshots
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.function == function.function.address)
+            {
+                writeln!(declarations,"    uint64_t nv_key_{id}=UINT64_C(0); unsigned nv_key_valid_{id}=0; (void)nv_key_{id}; (void)nv_key_valid_{id};").unwrap();
+            }
+        }
         let depth_limit = if self.locals.is_some() {
             "NV_EFFECTIVE_HOST_DEPTH"
         } else {
@@ -547,6 +574,43 @@ impl Renderer<'_> {
         let named_expressions =
             local.map(|local| Expressions::with_locals(REGISTER_COUNT, local.local_count));
         let body_expressions = named_expressions.as_ref().unwrap_or(expressions);
+        if local.is_none() {
+            for (id, snapshot) in self.keys.at(address) {
+                line(code, inner, "{");
+                line(code, inner + 1, &format!("uint64_t nv_key_delta_{id};"));
+                let delta = Expr::binary(
+                    crate::ir::BinaryOp::Sub,
+                    snapshot.address.clone(),
+                    Expr::Const(snapshot.table),
+                );
+                expressions
+                    .statement(
+                        code,
+                        inner + 1,
+                        &delta,
+                        &format!("nv_key_delta_{id} = "),
+                        ";",
+                    )
+                    .map_err(|e| e.to_string())?;
+                line(
+                    code,
+                    inner + 1,
+                    &format!(
+                        "nv_key_{id}=nv_key_delta_{id}>>{};",
+                        snapshot.width.bytes().trailing_zeros()
+                    ),
+                );
+                line(
+                    code,
+                    inner + 1,
+                    &format!(
+                        "nv_key_valid_{id}=((nv_key_delta_{id}&UINT64_C({}))==0);",
+                        snapshot.width.bytes() - 1
+                    ),
+                );
+                line(code, inner, "}");
+            }
+        }
         match instruction {
             Instruction::Core(instruction) => body_expressions
                 .assignments(
@@ -586,6 +650,9 @@ impl Renderer<'_> {
                 } else {
                     None
                 };
+                if local.is_none() {
+                    self.selector_cases(address, guarded, inner, code)?;
+                }
                 if let Some(guarded) = guarded {
                     line(code, inner, "switch (nv_target) {");
                     for (target, label) in &guarded.cases {
@@ -706,6 +773,62 @@ impl Renderer<'_> {
                 .map_err(|e| e.to_string())?;
         }
         line(code, indent, "}");
+        Ok(())
+    }
+
+    fn selector_cases(
+        &self,
+        address: u64,
+        guarded: Option<&crate::module_tail_dispatch::Transfer>,
+        indent: usize,
+        code: &mut String,
+    ) -> Result<(), String> {
+        let function = self
+            .plan
+            .functions
+            .iter()
+            .find(|f| f.resumes.contains_key(&address))
+            .ok_or("selector transfer owner missing")?;
+        let uses = guarded.and_then(|_| self.keys.branches.get(&address));
+        for (id, _) in self
+            .keys
+            .snapshots
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.function == function.function.address)
+        {
+            if uses.is_some_and(|uses| uses.iter().any(|u| u.snapshot == id)) {
+                line(
+                    code,
+                    indent,
+                    &format!("unsigned nv_had_key_{id}=nv_key_valid_{id};"),
+                );
+            }
+            line(code, indent, &format!("nv_key_valid_{id}=0;"));
+        }
+        for use_ in uses.into_iter().flatten() {
+            let id = use_.snapshot;
+            line(code, indent, &format!("if(nv_had_key_{id}) {{"));
+            line(code, indent + 1, &format!("switch (nv_key_{id}) {{"));
+            let mut groups = BTreeMap::<u64, Vec<(u64, usize)>>::new();
+            for (&(value, target), &label) in &use_.cases {
+                groups.entry(value).or_default().push((target, label));
+            }
+            for (value, targets) in groups {
+                line(code, indent + 2, &format!("case UINT64_C({value}):"));
+                for (target, label) in targets {
+                    line(
+                        code,
+                        indent + 3,
+                        &format!("if(nv_target==UINT64_C({target})) goto nv_step_{label};"),
+                    );
+                }
+                line(code, indent + 3, "break;");
+            }
+            line(code, indent + 2, "default: break;");
+            line(code, indent + 1, "}");
+            line(code, indent, "}");
+        }
         Ok(())
     }
 

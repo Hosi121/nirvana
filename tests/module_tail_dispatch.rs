@@ -10,6 +10,36 @@ use nirvana::linked_elf::LinkedOptions;
 use nirvana::module_ir::{self, Instruction, Module, Status};
 use nirvana::{module_outline, module_tail_dispatch as tails};
 
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3 and run with --include-ignored"]
+fn guarded_dispatch_choice_covers_mutable_tables_and_has_negative_controls() {
+    let solver = std::env::var_os("NIRVANA_Z3").unwrap_or_else(|| "z3".into());
+    let model =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/models/guarded_dispatch.smt2");
+    let output = std::process::Command::new(solver)
+        .args(["-T:10", "-smt2"])
+        .arg(model)
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        output.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!text.contains("error"), "{text}");
+    let results: Vec<_> = text
+        .lines()
+        .filter(|line| matches!(*line, "sat" | "unsat" | "unknown"))
+        .collect();
+    assert_eq!(
+        results,
+        ["unsat", "sat", "sat", "unsat", "sat", "sat"],
+        "{text}"
+    );
+    println!("{text}");
+}
+
 fn module(scratch: &native::Scratch, pie: bool) -> Module {
     module_variant(scratch, pie, false)
 }
@@ -64,6 +94,14 @@ table:
         )
     } else {
         assembly.to_owned()
+    };
+    let assembly = if pie {
+        assembly.replace(
+            "    notrack jmp *(%rdx,%rax,8)",
+            "    mov (%rdx,%rax,8),%rax\n    notrack jmp *%rax",
+        )
+    } else {
+        assembly
     };
     std::fs::write(&source, assembly).unwrap();
     build("cc", &source, &binary, "-O2", pie);
@@ -219,6 +257,7 @@ fn guarded_and_residual_tail_paths_match_full_state_at_host_depth_boundaries() {
             table.branch,
         );
         assert!(!table.targets().contains(&bridge));
+        assert_eq!(table.read_sites[0].instruction == branch, !pie);
         let mut cases = Vec::new();
         for input in [
             [0, 17, 23, 0],
@@ -313,6 +352,9 @@ fn guarded_and_residual_tail_paths_match_full_state_at_host_depth_boundaries() {
             assert_eq!(output.report.guarded_tail_transfers, 1);
             assert_eq!(output.report.guarded_tail_cases, 3);
             assert!(output.code.contains("switch (nv_target)"));
+            assert_eq!(output.report.selector_snapshots, 1);
+            assert_eq!(output.report.selector_switches, 1);
+            assert!(output.code.contains("switch (nv_key_"));
         }
         let rows: Vec<_> = cases.iter().map(|c| expected(&m, c).0).collect();
         let count = check_generated_at_depths(&m, &cases, &rows, &scratch.0, true, &[1, 2, 64]);
@@ -375,4 +417,43 @@ fn recovered_local_bindings_retain_the_original_dispatch_path() {
     }
     let rows: Vec<_> = cases.iter().map(|c| expected(&m, c).0).collect();
     check_generated_at_depths(&m, &cases, &rows, &scratch.0, true, &[1, 2, 64]);
+}
+
+#[test]
+fn selector_witnesses_require_purity_owned_producers_and_checked_case_labels() {
+    let scratch = native::Scratch::new();
+    let m = module(&scratch, true);
+    let outline = module_outline::recover(&m.program).unwrap();
+    let tail = tails::recover(&m, &outline).unwrap();
+    let plan = nirvana::module_switch_keys::recover(&m, &outline, &tail).unwrap();
+    assert_eq!(plan.snapshots.len(), 1);
+    nirvana::module_switch_keys::validate(&m.program, &outline, &tail, &plan).unwrap();
+    for expression in [
+        nirvana::ir::Expr::load(nirvana::ir::Expr::Const(0), nirvana::ir::Width::U64),
+        nirvana::ir::Expr::Register(nirvana::ir::Reg(80)),
+    ] {
+        let mut bad = plan.clone();
+        bad.snapshots[0].address = expression;
+        assert!(nirvana::module_switch_keys::validate(&m.program, &outline, &tail, &bad).is_err());
+    }
+    let mut bad = plan.clone();
+    bad.snapshots[0].producer += 1;
+    assert!(nirvana::module_switch_keys::validate(&m.program, &outline, &tail, &bad).is_err());
+    let branch = *plan.branches.keys().next().unwrap();
+    let mut bad = plan.clone();
+    bad.branches.get_mut(&branch).unwrap()[0].snapshot = usize::MAX;
+    assert!(nirvana::module_switch_keys::validate(&m.program, &outline, &tail, &bad).is_err());
+    let mut bad = plan.clone();
+    let use_ = &mut bad.branches.get_mut(&branch).unwrap()[0];
+    let key = *use_.cases.keys().next().unwrap();
+    *use_.cases.get_mut(&key).unwrap() += 1;
+    assert!(nirvana::module_switch_keys::validate(&m.program, &outline, &tail, &bad).is_err());
+    // A false case-value association remains safe because a selected case
+    // must additionally match the actual target PC.
+    let mut stale = plan.clone();
+    let use_ = &mut stale.branches.get_mut(&branch).unwrap()[0];
+    let key = *use_.cases.keys().next().unwrap();
+    let label = use_.cases.remove(&key).unwrap();
+    use_.cases.insert((99, key.1), label);
+    nirvana::module_switch_keys::validate(&m.program, &outline, &tail, &stale).unwrap();
 }
