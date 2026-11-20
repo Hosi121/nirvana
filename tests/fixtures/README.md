@@ -10,6 +10,7 @@
 | `cases/*.c` | 基本の分岐・ループ・演算・メモリアクセス |
 | `cases.tsv` | fixture ID、手書きIRとの対応、特徴 |
 | `recovery/*.c` | 幅、alias、添字、複数入口、途中脱出、変数の再利用 |
+| [`algorithms/*.c`](algorithms/README.md) | BFS・DFS・リングキュー・連結リスト・二分探索木 |
 | `inputs.tsv` | IDと4個の入力状態ワード |
 | `golden.tsv` | 手計算した返り値と最終状態の期待値 |
 | `fixture.h` | 共通の関数宣言 |
@@ -30,6 +31,7 @@ Rustと`cc`で呼べるC11コンパイラを使います。
 cargo test --test native_c
 cargo test --test machine_pipeline -- --nocapture
 cargo test --test recovery_fixture -- --nocapture
+cargo test --test algorithm_fixtures -- --nocapture
 ```
 
 `native_c`は元CのO0/O2と手計算の期待値、対応する手書きIRを比較します。
