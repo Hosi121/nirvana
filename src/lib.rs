@@ -15,6 +15,7 @@ pub mod arithmetic_graph;
 pub mod bit_expr;
 pub mod block_verify;
 pub mod branch_tail;
+pub mod call_footprint;
 pub mod cfg;
 pub mod context_remainder;
 pub mod display_dce;
