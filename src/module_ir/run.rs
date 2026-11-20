@@ -66,6 +66,19 @@ impl Program {
         limits: Limits,
         environment: &mut impl Environment,
     ) -> Result<Report, ExecutionError> {
+        self.run_from(self.entry(), registers, base, memory, limits, environment)
+    }
+
+    /// Resume at a guest PC using the same instruction/import semantics.
+    pub fn run_from(
+        &self,
+        pc: u64,
+        registers: &[u64],
+        base: u64,
+        memory: &[u8],
+        limits: Limits,
+        environment: &mut impl Environment,
+    ) -> Result<Report, ExecutionError> {
         let mut machine = Machine::with_memory(
             self.register_count(),
             registers,
@@ -73,7 +86,7 @@ impl Program {
             memory,
             limits.instructions,
         )?;
-        let mut pc = self.entry();
+        let mut pc = pc;
         let mut imports = 0usize;
         let result = (|| -> Result<u64, Status> {
             loop {

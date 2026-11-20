@@ -21,33 +21,16 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
         return Err("module C requires exactly 80 guest registers".to_owned());
     }
     validate_program(program.shape()).map_err(|error| error.to_string())?;
-    let size = u64::try_from(module.image.memory.len())
-        .map_err(|_| "guest image length does not fit u64")?;
-    let base = module.image.memory_base;
-    base.checked_add(size)
-        .ok_or("guest image address range overflows")?;
-    let root_sp = module
-        .image
-        .stack_pointer
-        .checked_sub(16)
-        .ok_or("guest root stack pointer underflows")?;
-    for (name, address) in [
-        ("root return slot", root_sp),
-        ("errno slot", program.errno_address()),
-    ] {
-        if address < base || size < 8 || address - base > size - 8 {
-            return Err(format!("{name} lies outside the guest image"));
-        }
-    }
+    image_layout(module)?;
     // A fixed shape describes expression metadata; it never rewrites the
     // module's call/return dispatch or ordered lifted assignments.
     let expressions = Expressions::new(program.shape());
     let mut code = String::from("#define _POSIX_C_SOURCE 200809L\n");
-    code.push_str(RUNTIME);
+    code.push_str(runtime_header());
     // Keep this helper unconditional: all expressions, including transfer and
     // vector guard expressions, can use the ordinary IR multiply operation.
     code.push_str(MULTIPLY_HELPER);
-    code.push_str(POSIX);
+    code.push_str(posix_header());
     code.push_str("\nstatic unsigned nv_run(struct nv_module *s) {\n    uint64_t *r=s->r;\n    struct nirvana_memory m={s};\n    (void)r; (void)m;\n    if(setjmp(s->jump)!=0) return s->status;\n    for(;;) {\n");
     writeln!(
         code,
@@ -165,6 +148,21 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
         code.push_str("            s->pc=nv_read(s,r[4],8);\n            r[4]+=UINT64_C(8);\n            break;\n        }\n");
     }
     code.push_str("        default: return s->status=2;\n        }\n    }\n}\n");
+    code.push_str(&image_initialization(module)?);
+    Ok(code)
+}
+
+pub(crate) fn runtime_header() -> &'static str {
+    RUNTIME
+}
+pub(crate) fn posix_header() -> &'static str {
+    POSIX
+}
+
+pub(crate) fn image_initialization(module: &Module) -> Result<String, String> {
+    let (size, base, root_sp) = image_layout(module)?;
+    let program = &module.program;
+    let mut code = String::new();
     writeln!(code, "\nstatic const uint8_t nv_initial_image[{}]={{", size).unwrap();
     let mut any = false;
     for (index, byte) in module.image.memory.iter().enumerate() {
@@ -185,11 +183,34 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
     Ok(code)
 }
 
+fn image_layout(module: &Module) -> Result<(u64, u64, u64), String> {
+    let program = &module.program;
+    let size = u64::try_from(module.image.memory.len())
+        .map_err(|_| "guest image length does not fit u64")?;
+    let base = module.image.memory_base;
+    base.checked_add(size)
+        .ok_or("guest image address range overflows")?;
+    let root_sp = module
+        .image
+        .stack_pointer
+        .checked_sub(16)
+        .ok_or("guest root stack pointer underflows")?;
+    for (name, address) in [
+        ("root return slot", root_sp),
+        ("errno slot", program.errno_address()),
+    ] {
+        if address < base || size < 8 || address - base > size - 8 {
+            return Err(format!("{name} lies outside the guest image"));
+        }
+    }
+    Ok((size, base, root_sp))
+}
+
 fn set_pc(code: &mut String, address: u64) {
     writeln!(code, "            s->pc=UINT64_C({address});").unwrap();
 }
 
-fn c_string(value: &str) -> String {
+pub(crate) fn c_string(value: &str) -> String {
     let mut result = String::from("\"");
     for byte in value.bytes() {
         if (b' '..=b'~').contains(&byte) && !matches!(byte, b'"' | b'\\' | b'?') {
@@ -202,7 +223,7 @@ fn c_string(value: &str) -> String {
     result
 }
 
-fn comment(value: &str) -> String {
+pub(crate) fn comment(value: &str) -> String {
     let mut result = String::new();
     for byte in value.bytes() {
         if (b' '..=b'~').contains(&byte) && !matches!(byte, b'*' | b'/' | b'\\') {
