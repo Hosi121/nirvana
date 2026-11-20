@@ -13,6 +13,7 @@ use crate::ir::{AccessKind, Control, Expr};
 use crate::loop_labels::LoopLabels;
 use crate::module_emit::{c_string, comment, image_initialization, posix_header, runtime_header};
 use crate::module_ir::{Instruction, Module, REGISTER_COUNT, ROOT_RETURN, Target};
+use crate::module_local_plan::{self, Locals};
 use crate::module_outline::{FunctionPlan, Plan};
 use crate::structure::Node;
 
@@ -32,11 +33,39 @@ pub struct Report {
     pub indirect_calls: usize,
     /// Transfers specialized to an import, guarded for mutable PLT slots.
     pub import_calls: usize,
+    pub local_functions: usize,
+    pub local_fallback_functions: usize,
+    pub local_variables: usize,
+    pub resume_bindings: usize,
+    pub call_reloads: usize,
 }
 
 /// Lower the original ordered guest effects; metadata and shape assignments
 /// never execute. The flat `module_emit` backend remains an independent oracle.
 pub fn emit_c(module: &Module) -> Result<COutput, String> {
+    render(module, None)
+}
+
+/// Execute original module effects with local storage reconstructed from the
+/// authoritative guest registers at every function entry, reentry and call.
+pub fn emit_c_with_locals(module: &Module) -> Result<COutput, String> {
+    let locals = crate::module_values::analyze(&module.program)
+        .and_then(|values| module_local_plan::recover(&module.program, &values))
+        .unwrap_or_else(|reason| module_local_plan::Plan {
+            functions: module
+                .program
+                .functions()
+                .iter()
+                .map(|function| module_local_plan::FunctionLocals {
+                    address: function.address,
+                    result: Err(reason.clone()),
+                })
+                .collect(),
+        });
+    render(module, Some(&locals))
+}
+
+fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<COutput, String> {
     if module.program.register_count() != REGISTER_COUNT || REGISTER_COUNT != 80 {
         return Err("module readable C requires exactly 80 guest registers".to_owned());
     }
@@ -54,6 +83,7 @@ pub fn emit_c(module: &Module) -> Result<COutput, String> {
         instructions,
         helpers: String::new(),
         next_helper: 0,
+        locals,
     };
     let mut bodies = String::new();
     let mut report = Report {
@@ -62,6 +92,35 @@ pub fn emit_c(module: &Module) -> Result<COutput, String> {
     };
     for function in &plan.functions {
         renderer.function(function, &mut bodies)?;
+        if locals.is_some() && bodies.len() > 64 * 1024 * 1024 {
+            return Err("module local C body limit".into());
+        }
+        if let Some(locals) = locals {
+            match locals
+                .functions
+                .iter()
+                .find(|f| f.address == function.function.address)
+                .map(|f| &f.result)
+            {
+                Some(Ok(local)) => {
+                    report.local_functions += 1;
+                    report.local_variables += local.used_locals.len();
+                    report.resume_bindings +=
+                        local.steps.values().map(|s| s.resume.len()).sum::<usize>();
+                    for (address, step) in &local.steps {
+                        if matches!(
+                            renderer.instructions[address],
+                            Instruction::Transfer { link: Some(_), .. }
+                        ) {
+                            report.call_reloads += step.after.iter().filter(|a| {
+                                matches!(a.value, Expr::Register(r) if r.0 < REGISTER_COUNT)
+                            }).count();
+                        }
+                    }
+                }
+                _ => report.local_fallback_functions += 1,
+            }
+        }
         if function.structured.is_some() {
             report.structured_functions += 1;
         } else {
@@ -105,6 +164,22 @@ pub fn emit_c(module: &Module) -> Result<COutput, String> {
     }
     for import in &plan.imports {
         writeln!(code, "static void {}(struct nv_frame *f);", import.c_name).unwrap();
+    }
+    if let Some(locals) = locals {
+        let largest = locals
+            .functions
+            .iter()
+            .filter_map(|f| f.result.as_ref().ok())
+            .map(|l| l.used_locals.len())
+            .max()
+            .unwrap_or(0);
+        // Bound the additional named storage in a host call chain. Yielding
+        // earlier leaves the guest state untouched and uses the same reentry.
+        let cap = 32_768usize
+            .checked_div(largest)
+            .unwrap_or(256)
+            .clamp(1, 256);
+        writeln!(code, "\n#define NV_LOCAL_FRAME_DEPTH_CAP {cap}\n#define NV_EFFECTIVE_HOST_DEPTH ((NV_HOST_DEPTH_LIMIT < NV_LOCAL_FRAME_DEPTH_CAP) ? NV_HOST_DEPTH_LIMIT : NV_LOCAL_FRAME_DEPTH_CAP)").unwrap();
     }
     code.push_str(&renderer.helpers);
     code.push_str(&bodies);
@@ -160,6 +235,9 @@ pub fn emit_c(module: &Module) -> Result<COutput, String> {
     );
     code.push_str("        frame.yielded=0;\n        nv_dispatch(&frame);\n        if(s->status) return s->status;\n    }\n}\n");
     code.push_str(&image_initialization(module)?);
+    if locals.is_some() && code.len() > 64 * 1024 * 1024 {
+        return Err("module local C output limit".into());
+    }
     Ok(COutput { code, report })
 }
 
@@ -169,14 +247,40 @@ struct Renderer<'a> {
     instructions: BTreeMap<u64, &'a Instruction>,
     helpers: String,
     next_helper: usize,
+    locals: Option<&'a module_local_plan::Plan>,
 }
 
 impl Renderer<'_> {
     fn function(&mut self, function: &FunctionPlan, code: &mut String) -> Result<(), String> {
         let expressions = Expressions::new(&function.shape);
+        let local_result = self
+            .locals
+            .and_then(|plan| {
+                plan.functions
+                    .iter()
+                    .find(|f| f.address == function.function.address)
+            })
+            .map(|f| &f.result);
+        let local = local_result.and_then(|result| result.as_ref().ok());
+        let mut declarations = String::new();
+        let depth_limit = if self.locals.is_some() {
+            "NV_EFFECTIVE_HOST_DEPTH"
+        } else {
+            "NV_HOST_DEPTH_LIMIT"
+        };
+        if let Some(local) = local {
+            for &index in &local.used_locals {
+                let name = local_name(index, local.local_count);
+                writeln!(
+                    declarations,
+                    "    uint64_t {name} = UINT64_C(0); (void){name};"
+                )
+                .unwrap();
+            }
+        }
         writeln!(
             code,
-            "\n/* function {} at {:#x}, size {} */\nstatic void {}(struct nv_frame *f) {{\n    struct nv_module *s=f->state;\n    uint64_t *r=s->r;\n    struct nirvana_memory m={{s}};\n    (void)r; (void)m;\n    if(f->depth>=NV_HOST_DEPTH_LIMIT) {{ f->yielded=1; return; }}\n    ++f->depth;\n    if(s->pc!=UINT64_C({})) goto nv_resume;",
+            "\n/* function {} at {:#x}, size {} */\nstatic void {}(struct nv_frame *f) {{\n    struct nv_module *s=f->state;\n    uint64_t *r=s->r;\n    struct nirvana_memory m={{s}};\n    (void)r; (void)m;\n{declarations}    if(f->depth>={depth_limit}) {{ f->yielded=1; return; }}\n    ++f->depth;\n    if(s->pc!=UINT64_C({})) goto nv_resume;",
             comment(&function.function.name),
             function.function.address,
             function.function.size,
@@ -184,6 +288,16 @@ impl Renderer<'_> {
             function.function.address
         )
         .unwrap();
+        if local.is_some() {
+            line(code, 1, "goto nv_resume;");
+        }
+        if let Some(Err(reason)) = local_result {
+            line(
+                code,
+                1,
+                &format!("/* locals fallback: {} */", comment(reason)),
+            );
+        }
         // Structured recovery may duplicate a tail. All occurrences need a
         // source label, even though the resume map intentionally picks one.
         for site in &function.sites {
@@ -198,6 +312,7 @@ impl Renderer<'_> {
             self.nodes(
                 structured.body(),
                 function,
+                local,
                 &expressions,
                 &labels,
                 &mut site,
@@ -216,13 +331,33 @@ impl Renderer<'_> {
                 );
             }
             for site in &function.sites {
-                self.step(site.address, site.label, &expressions, 1, code)?;
+                self.step(site.address, site.label, &expressions, local, 1, code)?;
                 self.goto_control(site.address, function, &expressions, 1, code)?;
             }
         }
         code.push_str("    goto nv_exit;\n\nnv_resume: ;\n    switch(s->pc) {\n");
         for (address, label) in &function.resumes {
-            writeln!(code, "    case UINT64_C({address}): goto nv_step_{label};").unwrap();
+            if let Some(local) = local {
+                let step = local
+                    .steps
+                    .get(address)
+                    .ok_or("missing local resume site")?;
+                writeln!(code, "    case UINT64_C({address}):").unwrap();
+                for binding in &step.resume {
+                    line(
+                        code,
+                        2,
+                        &format!(
+                            "{} = r[{}];",
+                            local_name(binding.local, local.local_count),
+                            binding.register.0
+                        ),
+                    );
+                }
+                line(code, 2, &format!("goto nv_step_{label};"));
+            } else {
+                writeln!(code, "    case UINT64_C({address}): goto nv_step_{label};").unwrap();
+            }
         }
         code.push_str(
             "    default: s->status=2; goto nv_exit;\n    }\n\nnv_exit: ;\n    --f->depth;\n}\n",
@@ -235,6 +370,7 @@ impl Renderer<'_> {
         &mut self,
         nodes: &[Node],
         function: &FunctionPlan,
+        local: Option<&Locals>,
         expressions: &Expressions,
         labels: &LoopLabels<'_>,
         site: &mut usize,
@@ -257,7 +393,7 @@ impl Renderer<'_> {
                         );
                     }
                     *site += 1;
-                    self.step(*address, planned.label, expressions, indent, code)?;
+                    self.step(*address, planned.label, expressions, local, indent, code)?;
                 }
                 Node::If {
                     condition,
@@ -266,12 +402,22 @@ impl Renderer<'_> {
                 } => {
                     let condition = self.condition(condition, expressions)?;
                     line(code, indent, &format!("if ({condition}) {{"));
-                    self.nodes(taken, function, expressions, labels, site, indent + 1, code)?;
+                    self.nodes(
+                        taken,
+                        function,
+                        local,
+                        expressions,
+                        labels,
+                        site,
+                        indent + 1,
+                        code,
+                    )?;
                     if !not_taken.is_empty() {
                         line(code, indent, "} else {");
                         self.nodes(
                             not_taken,
                             function,
+                            local,
                             expressions,
                             labels,
                             site,
@@ -287,7 +433,16 @@ impl Renderer<'_> {
                         line(code, indent, &format!("{label}: ;"));
                     }
                     line(code, indent, "while (1) {");
-                    self.nodes(body, function, expressions, labels, site, indent + 1, code)?;
+                    self.nodes(
+                        body,
+                        function,
+                        local,
+                        expressions,
+                        labels,
+                        site,
+                        indent + 1,
+                        code,
+                    )?;
                     line(code, indent, "}");
                     if let Some(label) = labels.break_label(node) {
                         line(code, indent, &format!("{label}: ;"));
@@ -338,6 +493,7 @@ impl Renderer<'_> {
         address: u64,
         label: usize,
         expressions: &Expressions,
+        local: Option<&Locals>,
         indent: usize,
         code: &mut String,
     ) -> Result<(), String> {
@@ -354,9 +510,19 @@ impl Renderer<'_> {
         line(code, indent, "if(!nv_step(s)) goto nv_exit;");
         line(code, indent, "{");
         let inner = indent + 1;
+        let local_step = local
+            .map(|local| local.steps.get(&address).ok_or("missing local step"))
+            .transpose()?;
+        let named_expressions =
+            local.map(|local| Expressions::with_locals(REGISTER_COUNT, local.local_count));
+        let body_expressions = named_expressions.as_ref().unwrap_or(expressions);
         match instruction {
-            Instruction::Core(instruction) => expressions
-                .assignments(code, inner, &instruction.assignments)
+            Instruction::Core(instruction) => body_expressions
+                .assignments(
+                    code,
+                    inner,
+                    local_step.map_or(&instruction.assignments, |step| &step.assignments),
+                )
                 .map_err(|error| error.to_string())?,
             Instruction::Transfer { target, link, .. } => {
                 line(code, inner, "uint64_t nv_target;");
@@ -470,10 +636,19 @@ impl Renderer<'_> {
                         line(code, inner, "}");
                     }
                 }
-                expressions
-                    .assignments(code, inner, &instruction.assignments)
+                body_expressions
+                    .assignments(
+                        code,
+                        inner,
+                        local_step.map_or(&instruction.assignments, |step| &step.assignments),
+                    )
                     .map_err(|e| e.to_string())?;
             }
+        }
+        if let Some(step) = local_step {
+            body_expressions
+                .assignments(code, inner, &step.after)
+                .map_err(|e| e.to_string())?;
         }
         line(code, indent, "}");
         Ok(())
@@ -545,4 +720,14 @@ impl Renderer<'_> {
 
 fn line(code: &mut String, indent: usize, text: &str) {
     writeln!(code, "{}{text}", "    ".repeat(indent)).unwrap();
+}
+
+fn local_name(index: usize, count: usize) -> String {
+    if index < count {
+        format!("v_{index}")
+    } else if index == count {
+        "phi_tmp".into()
+    } else {
+        "phi_condition".into()
+    }
 }

@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|ssa-c|readable-c|effects-c|effects-readable-c|effects-ir|module-c|module-readable-c|module-ir|module-values|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--emit module-c/module-ir lifts sized linked functions with internal/indirect calls; default symbol main.\nmodule-c emits a standalone Linux x86-64 C program with checked POSIX imports.\nmodule-readable-c recovers named calls and structured function bodies with checked PC resumption.\n--emit module-values reports per-function SSA values, uses, live sets and opaque call boundaries as JSON.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\n--emit ssa-c adds checked SSA local groups and phi edge copies with canonical register mirrors.\nExecutable modes require supported instructions and fully resolved code references.\n";
+const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|ssa-c|readable-c|effects-c|effects-readable-c|effects-ir|module-c|module-readable-c|module-locals-c|module-ir|module-values|types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints and candidate memory layouts as JSON.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--emit module-c/module-ir lifts sized linked functions with internal/indirect calls; default symbol main.\nmodule-c emits a standalone Linux x86-64 C program with checked POSIX imports.\nmodule-readable-c recovers named calls and structured function bodies with checked PC resumption.\nmodule-locals-c adds checked named locals, phi transfers and canonical state reconstruction.\n--emit module-values reports per-function SSA values, uses, live sets and opaque call boundaries as JSON.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\n--emit ssa-c adds checked SSA local groups and phi edge copies with canonical register mirrors.\nExecutable modes require supported instructions and fully resolved code references.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -96,7 +96,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let bytes = std::fs::read(path)?;
     if matches!(
         format.as_str(),
-        "module-c" | "module-readable-c" | "module-ir" | "module-values"
+        "module-c" | "module-readable-c" | "module-locals-c" | "module-ir" | "module-values"
     ) {
         if raw
             || input.is_some()
@@ -138,8 +138,22 @@ fn run() -> Result<(), Box<dyn Error>> {
                 analysis.functions.len()
             );
             print!("{}", analysis.to_json()?);
-        } else if format == "module-readable-c" {
-            let output = nirvana::module_readable::emit_c(&module)?;
+        } else if matches!(format.as_str(), "module-readable-c" | "module-locals-c") {
+            let output = if format == "module-locals-c" {
+                nirvana::module_readable::emit_c_with_locals(&module)?
+            } else {
+                nirvana::module_readable::emit_c(&module)?
+            };
+            if format == "module-locals-c" {
+                eprintln!(
+                    "module locals: {} functions, {} fallback; {} variables, {} resume bindings, {} call reloads",
+                    output.report.local_functions,
+                    output.report.local_fallback_functions,
+                    output.report.local_variables,
+                    output.report.resume_bindings,
+                    output.report.call_reloads
+                );
+            }
             eprintln!(
                 "module structure: {} structured, {} goto; {} direct calls, {} dynamic calls, {} import calls",
                 output.report.structured_functions,

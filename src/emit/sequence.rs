@@ -79,17 +79,36 @@ pub(crate) fn validate_program(program: &Program) -> Result<(), SequenceError> {
 
 pub(crate) struct Expressions {
     first_temporary: usize,
+    local_range: Option<(usize, usize)>,
 }
 
 impl Expressions {
     pub(crate) fn new(program: &Program) -> Self {
         Self {
             first_temporary: program.register_count(),
+            local_range: None,
+        }
+    }
+
+    /// Additional local storage remains separate from the canonical registers.
+    pub(crate) fn with_locals(first_local: usize, local_count: usize) -> Self {
+        Self {
+            first_temporary: first_local + local_count + 2,
+            local_range: Some((first_local, local_count)),
         }
     }
 
     fn register(&self, reg: Reg) -> String {
         if reg.0 < self.first_temporary {
+            if let Some((first, count)) = self.local_range
+                && reg.0 >= first
+            {
+                return match reg.0 - first {
+                    index if index < count => format!("v_{index}"),
+                    index if index == count => "phi_tmp".into(),
+                    _ => "phi_condition".into(),
+                };
+            }
             format!("r[{}]", reg.0)
         } else {
             format!("nirvana_t{}", reg.0 - self.first_temporary)
@@ -213,7 +232,7 @@ impl Expressions {
                     code,
                     indent,
                     &assignment.value,
-                    &format!("r[{}] = ", reg.0),
+                    &format!("{} = ", self.register(*reg)),
                     ";",
                 )?,
                 Place::Memory { address, width } => {

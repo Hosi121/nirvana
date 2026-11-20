@@ -314,9 +314,16 @@ fn depth_yield_has_no_guest_effects_and_new_runs_clear_stale_status() {
     let scratch = native::Scratch::new();
     let module = module(
         &scratch,
-        ".text\n.globl main\n.type main,@function\nmain: mov $19,%eax\nret\n.size main,.-main",
+        &format!(
+            ".text\n.globl main\n.type main,@function\nmain:\n{}mov $19,%eax\nret\n.size main,.-main",
+            "mov $7,%eax\n".repeat(600)
+        ),
     );
-    let output = nirvana::module_readable::emit_c(&module).unwrap();
+    let plain = nirvana::module_readable::emit_c(&module).unwrap();
+    let locals = nirvana::module_readable::emit_c_with_locals(&module).unwrap();
+    assert_eq!(locals.report.local_functions, locals.report.functions);
+    assert_eq!(locals.report.local_fallback_functions, 0);
+    assert!(locals.report.local_variables > 512);
     let plan = nirvana::module_outline::recover(&module.program).unwrap();
     let name = &plan
         .functions
@@ -324,53 +331,58 @@ fn depth_yield_has_no_guest_effects_and_new_runs_clear_stale_status() {
         .find(|f| f.function.address == module.program.entry())
         .unwrap()
         .c_name;
-    let code = harness(
-        &output.code,
-        &format!(
-            r#"
+    for (output, limit) in [
+        (&plain, "NV_HOST_DEPTH_LIMIT"),
+        (&locals, "NV_EFFECTIVE_HOST_DEPTH"),
+    ] {
+        let code = harness(
+            &output.code,
+            &format!(
+                r#"
     struct nv_module *s=nv_create(); assert(s);
-    struct nv_frame frame={{s,NV_HOST_DEPTH_LIMIT,0}};
+    struct nv_frame frame={{s,{limit},0}};
     uint64_t before_registers[80]; memcpy(before_registers,s->r,sizeof(before_registers));
     uint8_t *before_memory=malloc((size_t)s->size); assert(before_memory);
     memcpy(before_memory,s->memory,(size_t)s->size);
     uint64_t before_pc=s->pc,before_instructions=s->instructions_left,before_imports=s->imports_left;
     {name}(&frame);
-    assert(frame.depth==NV_HOST_DEPTH_LIMIT && frame.yielded==1);
+    assert(frame.depth=={limit} && frame.yielded==1);
     assert(s->pc==before_pc && s->instructions_left==before_instructions && s->imports_left==before_imports);
     assert(s->started==0 && s->status==0);
     assert(memcmp(before_registers,s->r,sizeof(before_registers))==0);
     assert(memcmp(before_memory,s->memory,(size_t)s->size)==0);
-    s->status=4; assert(nv_run(s)==0 && s->r[0]==19 && s->started==2);
+    s->status=4; assert(nv_run(s)==0 && s->r[0]==19 && s->started==602);
     free(before_memory); free(s->memory); free(s);
 "#
-        ),
-    );
-    for opt in ["-O0", "-O2"] {
-        for depth in [1, 2, 64] {
-            let actual = run(&compile(&scratch, &code, opt, depth));
+            ),
+        );
+        for opt in ["-O0", "-O2"] {
+            for depth in [1, 2, 64, 256] {
+                let actual = run(&compile(&scratch, &code, opt, depth));
+                assert!(
+                    actual.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&actual.stderr)
+                );
+            }
+        }
+        for depth in [0, 257] {
+            let source = scratch.0.join("invalid-depth.c");
+            std::fs::write(&source, &output.code).unwrap();
+            let compiled = Command::new("cc")
+                .args(["-std=c11", "-c"])
+                .arg(format!("-DNV_HOST_DEPTH_LIMIT={depth}"))
+                .arg(source)
+                .arg("-o")
+                .arg(scratch.0.join("invalid-depth.o"))
+                .output()
+                .unwrap();
+            assert!(!compiled.status.success());
             assert!(
-                actual.status.success(),
-                "{}",
-                String::from_utf8_lossy(&actual.stderr)
+                String::from_utf8_lossy(&compiled.stderr)
+                    .contains("NV_HOST_DEPTH_LIMIT_must_be_between_1_and_256")
             );
         }
-    }
-    for depth in [0, 257] {
-        let source = scratch.0.join("invalid-depth.c");
-        std::fs::write(&source, &output.code).unwrap();
-        let compiled = Command::new("cc")
-            .args(["-std=c11", "-c"])
-            .arg(format!("-DNV_HOST_DEPTH_LIMIT={depth}"))
-            .arg(source)
-            .arg("-o")
-            .arg(scratch.0.join("invalid-depth.o"))
-            .output()
-            .unwrap();
-        assert!(!compiled.status.success());
-        assert!(
-            String::from_utf8_lossy(&compiled.stderr)
-                .contains("NV_HOST_DEPTH_LIMIT_must_be_between_1_and_256")
-        );
     }
 }
 

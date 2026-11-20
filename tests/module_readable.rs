@@ -242,14 +242,21 @@ fn expected(module: &Module, case: &Case) -> Vec<u8> {
             &mut Deterministic,
         )
         .unwrap();
+    // nv_run clears status but retains the last fault's metadata in the same
+    // allocation. A resumed fault may replace it; a later stop does not.
+    let fault_fields = |status: &Status| match status {
+        Status::Fault(f) | Status::Alignment(f) => Some([
+            f.address,
+            f.width,
+            if f.access == AccessKind::Read { 1 } else { 2 },
+        ]),
+        _ => None,
+    };
+    let mut fault = fault_fields(&report.status).unwrap_or([0; 3]);
     let mut prior_started = 0;
     let mut prior_imports = 0;
     let mut instruction_limit = case.instructions;
     if let Some(budget) = case.resume_instructions {
-        assert!(!matches!(
-            report.status,
-            Status::Fault(_) | Status::Alignment(_)
-        ));
         prior_started = report.state.trace.len();
         prior_imports = report.imports;
         instruction_limit = budget;
@@ -268,15 +275,12 @@ fn expected(module: &Module, case: &Case) -> Vec<u8> {
             )
             .unwrap();
     }
-    let mut fault = [0; 3];
+    if let Some(fields) = fault_fields(&report.status) {
+        fault = fields;
+    }
     let status = match &report.status {
         Status::Returned(_) => 0,
-        Status::Fault(f) | Status::Alignment(f) => {
-            fault = [
-                f.address,
-                f.width,
-                if f.access == AccessKind::Read { 1 } else { 2 },
-            ];
+        Status::Fault(_) | Status::Alignment(_) => {
             if matches!(report.status, Status::Alignment(_)) {
                 9
             } else {
@@ -343,16 +347,27 @@ fn compare(module: &Module, cases: &[Case], scratch: &native::Scratch) {
         .collect::<Vec<_>>();
     let old = nirvana::module_emit::emit_c(module).unwrap();
     let new = nirvana::module_readable::emit_c(module).unwrap();
+    let locals = nirvana::module_readable::emit_c_with_locals(module).unwrap();
     assert!(
         new.report.structured_functions > 0,
         "fixture must exercise structured emission"
     );
+    assert!(
+        locals.report.local_functions > 0,
+        "fixture must exercise local-value emission"
+    );
+    assert!(
+        locals.code.contains("uint64_t v_"),
+        "locals output must declare named uint64_t values"
+    );
     eprintln!(
-        "{} states, {} instructions, {} structured / {} goto functions, {} direct / {} indirect / {} import call sites",
+        "{} states x 14 variants = {} comparisons, {} instructions, {} structured / {} goto / {} local functions, {} direct / {} indirect / {} import call sites",
         cases.len(),
+        cases.len() * 14,
         module.program.instructions().len(),
         new.report.structured_functions,
         new.report.goto_functions,
+        locals.report.local_functions,
         new.report.direct_calls,
         new.report.indirect_calls,
         new.report.import_calls
@@ -361,6 +376,7 @@ fn compare(module: &Module, cases: &[Case], scratch: &native::Scratch) {
         for (name, code, depths) in [
             ("flat", old.as_str(), &[64][..]),
             ("structured", new.code.as_str(), &[1, 2, 64][..]),
+            ("locals", locals.code.as_str(), &[1, 2, 64][..]),
         ] {
             for depth in depths {
                 let binary = compile(scratch, code, name, optimization, *depth);
@@ -825,6 +841,97 @@ leaf:
         case.name = format!("same-state import suspension/resume budget={budget}");
         case.resume_instructions = Some(67);
         cases.push(case);
+    }
+    compare(&module, &cases, &scratch);
+}
+
+#[test]
+fn restored_caller_value_and_partial_instruction_reentry_match_full_state() {
+    let scratch = native::Scratch::new();
+    let module = module(
+        &scratch,
+        r#"
+.text
+.globl main
+.type main,@function
+main:
+    mov $17,%r12
+    lea -16(%rsp),%rdi
+    call saves_r12
+    add %r12,%rax
+    ret
+.size main,.-main
+.type saves_r12,@function
+saves_r12:
+    push %r12
+    call overwrite_saved
+    pop %r12
+    ret
+.size saves_r12,.-saves_r12
+.type overwrite_saved,@function
+overwrite_saved:
+    movabs $0x1122334455667788,%rax
+    mov %rax,(%rdi)
+    ret
+.size overwrite_saved,.-overwrite_saved
+.type partial_push,@function
+partial_push:
+    push %rbp
+    ret
+.size partial_push,.-partial_push
+"#,
+    );
+    let mut cases = every_pc(&module);
+    let value = 0x1122_3344_5566_7788_u64;
+    for seed in [0, 1, 0x1234_5678, u64::MAX] {
+        let mut case = Case::new(&module, module.program.entry(), seed, 127);
+        case.name = format!("callee restores aliased saved R12/seed={seed}");
+        let result = expected(&module, &case);
+        let word =
+            |index: usize| u64::from_le_bytes(result[index * 8..index * 8 + 8].try_into().unwrap());
+        assert_eq!(word(0), 0, "fixture must return normally");
+        assert_eq!(word(8 + 12), value, "callee must restore the changed slot");
+        assert_eq!(word(8), value.wrapping_add(value));
+        cases.push(case);
+    }
+    // Stop before and after every effect on the normal nested-call path. In
+    // particular, the saved R12 slot is overwritten before the pop restores it.
+    for budget in 0..=13 {
+        let mut case = Case::new(&module, module.program.entry(), 3, budget);
+        case.name = format!("saved-register alias suspension/resume budget={budget}");
+        case.resume_instructions = Some(127);
+        cases.push(case);
+    }
+    let push = func_address(&module, "partial_push");
+    for pointer in [
+        module.image.memory_base,
+        module.image.memory_base + 7,
+        u64::MAX - 3,
+    ] {
+        for budget in [0, 1] {
+            for resume_budget in [0, 1, 2, 7] {
+                let mut case = Case::new(&module, push, 4, budget);
+                case.registers[4] = pointer;
+                case.resume_instructions = Some(resume_budget);
+                case.name = format!(
+                    "push fault retains partial RSP before reentry/sp={pointer:#x}/budget={budget}/{resume_budget}"
+                );
+                let result = expected(&module, &case);
+                let word = |index: usize| {
+                    u64::from_le_bytes(result[index * 8..index * 8 + 8].try_into().unwrap())
+                };
+                let pushes = u64::from(budget != 0) + u64::from(resume_budget != 0);
+                let sp = pointer.wrapping_sub(8 * pushes);
+                assert_eq!(word(8 + 4), sp, "fault must retain prior RSP writes");
+                if pushes != 0 {
+                    assert_eq!(word(5), sp, "last fault must use the current RSP");
+                    assert_eq!(word(6), 8);
+                    assert_eq!(word(7), 2);
+                }
+                assert_eq!(word(1), push, "a failed push must retain its PC");
+                cases.push(case);
+            }
+        }
     }
     compare(&module, &cases, &scratch);
 }
