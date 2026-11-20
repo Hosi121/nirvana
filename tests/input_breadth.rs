@@ -84,7 +84,14 @@ fn reference(name: &str, mut r: [u64; 4]) -> Vec<u64> {
             4 => (a >> 5) | (d << 59),
             _ => a ^ r[0],
         },
-        _ => match r[0] & 7 {
+        "shared-dispatch" => match (r[0] & 3, d & 1) {
+            (0, 0) => a.wrapping_add(b),
+            (1, 0) => a.wrapping_mul(3),
+            (0, 1) => a ^ d,
+            (1, 1) => a.wrapping_sub(b),
+            _ => a ^ r[0],
+        },
+        "nested-switch" => match r[0] & 7 {
             0 => a.wrapping_add(b),
             1 => a ^ d,
             2 => a.wrapping_mul(5),
@@ -101,6 +108,7 @@ fn reference(name: &str, mut r: [u64; 4]) -> Vec<u64> {
             5 => a.wrapping_sub(d),
             _ => a.wrapping_add(d & 255),
         },
+        _ => panic!("unknown fixture {name}"),
     };
     let value = match name {
         "dense-switch" => r[1] ^ r[0] ^ r[2],
@@ -264,15 +272,21 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
     let mut generated_cases = 0;
     let mut native_cases = 0;
     let mut mutation_cases = 0;
-    for name in ["dense-switch", "biased-switch", "nested-switch"] {
+    let mut profiles = 0;
+    for (name, extension, opts) in [
+        ("dense-switch", "c", &["-O0", "-O2"][..]),
+        ("biased-switch", "c", &["-O0", "-O2"][..]),
+        ("nested-switch", "c", &["-O0", "-O2"][..]),
+        ("shared-dispatch", "S", &["-O2"][..]),
+    ] {
         let oracle: Vec<_> = inputs.iter().map(|r| reference(name, *r)).collect();
-        for opt in ["-O0", "-O2"] {
+        for &opt in opts {
             for pie in [false, true] {
                 let directory = scratch.0.join(format!("{name}{opt}-{pie}"));
                 std::fs::create_dir(&directory).unwrap();
                 let original = directory.join("original");
                 build(
-                    &native::fixture_root().join(format!("input-breadth/{name}.c")),
+                    &native::fixture_root().join(format!("input-breadth/{name}.{extension}")),
                     &original,
                     opt,
                     pie,
@@ -280,6 +294,7 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
                 let actual = native::run(&original, &native_text);
                 assert_eq!(actual, oracle, "{name} {opt} PIE={pie}: native oracle");
                 native_cases += inputs.len();
+                profiles += 1;
                 let bytes = std::fs::read(&original).unwrap();
                 let module = module_ir::lift_elf(
                     &bytes,
@@ -292,11 +307,25 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
                 .unwrap();
                 assert_eq!(
                     module.jump_tables.len(),
-                    if name == "nested-switch" { 2 } else { 1 },
+                    if matches!(name, "nested-switch" | "shared-dispatch") {
+                        2
+                    } else {
+                        1
+                    },
                     "{name} {opt} PIE={pie}: {:?}",
                     module.jump_table_diagnostics
                 );
                 assert!(module.jump_table_diagnostics.is_empty());
+                if name == "shared-dispatch" {
+                    assert_eq!(module.jump_tables[0].branch, module.jump_tables[1].branch);
+                    assert!(module.jump_table_context_limits.is_empty());
+                    assert!(
+                        module
+                            .jump_tables
+                            .iter()
+                            .all(|t| t.entry_limit_hint == Some(2) && t.entries.len() == 2)
+                    );
+                }
                 for table in &module.jump_tables {
                     for target in table.targets() {
                         assert!(
@@ -390,6 +419,44 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
                     cases.push(unknown);
                     mutation_cases += 1;
                 }
+                if name == "shared-dispatch" {
+                    for (which, table) in module.jump_tables.iter().enumerate() {
+                        let patched = Case {
+                            input: [0, 17, 23, which as u64],
+                            pc: module.program.entry(),
+                            budget: 1000,
+                            patch: Some((
+                                table.entries[0].address,
+                                table.entries[1].target.wrapping_sub(table.bias),
+                                table.width.bytes(),
+                            )),
+                        };
+                        let (row, status) = expected(&module, &patched);
+                        assert!(matches!(status, Status::Returned(_)));
+                        assert_eq!(
+                            row[2],
+                            if which == 0 {
+                                51
+                            } else {
+                                17u64.wrapping_sub(23)
+                            }
+                        );
+                        cases.push(patched.clone());
+                        let unknown = Case {
+                            patch: Some((
+                                table.entries[0].address,
+                                state_address(&module).wrapping_sub(table.bias),
+                                table.width.bytes(),
+                            )),
+                            ..patched
+                        };
+                        assert!(
+                            matches!(expected(&module, &unknown).1, Status::UnknownTarget(pc) if pc == state_address(&module))
+                        );
+                        cases.push(unknown);
+                        mutation_cases += 2;
+                    }
+                }
                 for case in &cases[inputs.len()..] {
                     expected_rows.push(expected(&module, case).0);
                 }
@@ -460,6 +527,6 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
         }
     }
     println!(
-        "input breadth: 12 binary profiles, {native_cases} native/oracle/module cases, {generated_cases} generated full-state cases, {mutation_cases} table mutations"
+        "input breadth: {profiles} binary profiles, {native_cases} native/oracle/module cases, {generated_cases} generated full-state cases, {mutation_cases} table mutations"
     );
 }
