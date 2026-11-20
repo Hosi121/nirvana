@@ -206,7 +206,6 @@ fn reference_control_transfers_reject_legacy_and_ambiguous_prefixes() {
         &[0x26],
         &[0x2e],
         &[0x36],
-        &[0x3e],
         &[0x64],
         &[0x65],
         &[0x67],
@@ -218,6 +217,9 @@ fn reference_control_transfers_reject_legacy_and_ambiguous_prefixes() {
         &[0x40, 0x40],
         &[0x48, 0x41],
         &[0x41, 0x48],
+        &[0x3e, 0x3e],
+        &[0x3e, 0x2e],
+        &[0x2e, 0x3e],
     ] {
         for body in [
             &[0xe8, 0, 0, 0, 0][..],
@@ -230,6 +232,26 @@ fn reference_control_transfers_reject_legacy_and_ambiguous_prefixes() {
             assert!(x86::decode_reference_at(&bytes, 0).is_err(), "{bytes:02x?}");
         }
     }
+}
+
+#[test]
+fn notrack_near_indirect_transfers_preserve_operands_and_scalar_policy() {
+    for bytes in [
+        &[0xff, 0xe0][..],
+        &[0x41, 0xff, 0xe3],
+        &[0xff, 0xd0],
+        &[0xff, 0x25, 0xfc, 0xff, 0xff, 0xff],
+        &[0x49, 0xff, 0x24, 0xc0],
+    ] {
+        let expected = x86::decode_reference_at(bytes, 0x1000).unwrap();
+        let prefixed = [&[0x3e][..], bytes].concat();
+        let actual = x86::decode_reference_at(&prefixed, 0x1000).unwrap();
+        assert_eq!(actual.operation, expected.operation);
+        assert_eq!(actual.size, expected.size + 1);
+        assert!(x86::decode_at(&prefixed, 0x1000).is_err());
+    }
+    assert!(x86::decode_reference_at(&[0x3e, 0xe8, 0, 0, 0, 0], 0).is_err());
+    assert!(x86::decode_reference_at(&[0x48, 0x3e, 0xff, 0xe0], 0).is_err());
 }
 
 #[test]

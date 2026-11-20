@@ -336,10 +336,11 @@ impl Decoder<'_> {
     fn operation(&mut self) -> Result<Operation, DecodeError> {
         let mut repeat = false;
         // Keep executable prefix handling unchanged. Reference-only control
-        // transfers accept one optional REX and no legacy prefixes: operand
-        // overrides, NOTRACK/BND and redundant prefix combinations are outside
-        // the supported near-64 forms.
+        // transfers accept one optional REX. Near indirect transfers also
+        // accept one 3E NOTRACK prefix; the execution model has no CET tracker.
+        // Operand overrides, BND and ambiguous prefix combinations stay out.
         let mut reference_prefixes_supported = true;
+        let mut notrack = false;
         let opcode = loop {
             let byte = self.byte()?;
             match byte {
@@ -362,7 +363,14 @@ impl Decoder<'_> {
                     repeat = true;
                     reference_prefixes_supported = false;
                 }
-                0x26 | 0x2e | 0x36 | 0x3e => {
+                0x3e => {
+                    if self.rex_seen {
+                        return Err(self.error("legacy prefix after REX is unsupported"));
+                    }
+                    reference_prefixes_supported &= !notrack;
+                    notrack = true;
+                }
+                0x26 | 0x2e | 0x36 => {
                     if self.rex_seen {
                         return Err(self.error("legacy prefix after REX is unsupported"));
                     }
@@ -624,7 +632,7 @@ impl Decoder<'_> {
                 Operation::Leave
             }
             0xe8 if self.policy == DecodePolicy::ReferenceInspection => {
-                if !reference_prefixes_supported {
+                if !reference_prefixes_supported || notrack {
                     return Err(self.error("unsupported prefixes on reference control transfer"));
                 }
                 Operation::Call(self.relative(4)?)
