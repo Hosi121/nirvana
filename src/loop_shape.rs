@@ -1,8 +1,8 @@
 //! Borrow conservative loop headers without rewriting the structured tree.
 //!
 //! Setup assignments must still execute on every header visit, including the
-//! final visit and visits reached by `continue`. A C renderer can join them with
-//! comma operators before the condition, preserving their original order.
+//! final visit and visits reached by `continue`. A C renderer can emit them at
+//! the top of an unconditional loop, followed by an explicit exit guard.
 
 use crate::ir::{BinaryOp, Expr, Place};
 use crate::structure::Node;

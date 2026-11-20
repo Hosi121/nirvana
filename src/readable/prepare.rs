@@ -168,7 +168,7 @@ pub(super) fn is_break(nodes: &[Node]) -> bool {
 pub(super) fn is_continue(nodes: &[Node]) -> bool {
     matches!(nodes, [Node::Continue])
 }
-fn invert(condition: &Expr) -> Expr {
+pub(super) fn invert(condition: &Expr) -> Expr {
     // Preserve operand dependencies and all load evaluation. Algebraic folds
     // belong to presentation_program, before rendered_reads is computed.
     match condition {

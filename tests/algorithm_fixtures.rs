@@ -4,6 +4,8 @@
 #[path = "support/checked_c.rs"]
 #[allow(dead_code)]
 mod checked_c;
+#[path = "support/loop_headers.rs"]
+mod loop_headers;
 #[path = "support/native.rs"]
 mod native;
 
@@ -421,6 +423,7 @@ fn bounded_algorithms_match_native_binary_ir_and_checked_generated_c() {
             )];
             match readable::emit_readable_c(program) {
                 Ok(output) => {
+                    loop_headers::assert_pure_conditions(&output.code);
                     let mut arguments: Vec<_> = output
                         .parameters
                         .iter()

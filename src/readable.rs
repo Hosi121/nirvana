@@ -219,6 +219,15 @@ struct Printer<'a> {
     declarations: Rc<DeclarationPlan>,
 }
 
+/// Borrow the original setup sites. A setup-bearing test runs as statements at
+/// the top of the body, including the final visit and every local continue.
+struct LoopHeader<'a> {
+    text: String,
+    setup: &'a [Node],
+    test: Option<Expr>,
+    body: &'a [Node],
+}
+
 impl Printer<'_> {
     fn context_remainder(
         &self,
@@ -930,37 +939,73 @@ impl Printer<'_> {
         Some(clauses)
     }
 
-    fn loop_condition(&self, setup: &[Node], condition: &Expr) -> Option<String> {
-        let mut clauses = self.loop_clauses(setup, false)?;
-        clauses.push(self.expression(condition).text);
-        Some(if clauses.len() == 1 {
-            clauses.pop()?
-        } else {
-            format!("({})", clauses.join(", "))
-        })
-    }
-
-    fn loop_header<'a>(&self, body: &'a [Node]) -> Option<(String, &'a [Node])> {
+    fn loop_header<'a>(&self, body: &'a [Node]) -> Option<LoopHeader<'a>> {
+        let mut for_shape = false;
         if let Some(header) = crate::for_loop::recover(body, |reg| self.slots.get(&reg.0).copied())
         {
-            let condition = self.loop_condition(header.setup, &header.condition)?;
             let updates = self.loop_clauses(header.update, true)?;
-            if !updates.is_empty() && (!header.body.is_empty() || updates.len() == 1) {
-                let header_text = format!("for (; {condition}; {}) {{", updates.join(", "));
-                let header_text = if header_text.len() > 100 {
-                    format!(
-                        "for (;\n     {condition};\n     {}) {{",
-                        updates.join(",\n     ")
-                    )
+            let update = updates.join(", ");
+            for_shape = !updates.is_empty();
+            // Small recurrence updates remain idiomatic for clauses. Larger
+            // bundles stay in their original body positions via while_header.
+            if !updates.is_empty()
+                && updates.len() <= 2
+                && update.len() <= 80
+                && (!header.body.is_empty() || updates.len() == 1)
+            {
+                let has_setup = !self.loop_clauses(header.setup, false)?.is_empty();
+                let condition = if has_setup {
+                    String::new()
                 } else {
-                    header_text
+                    self.expression(&header.condition).text
                 };
-                return Some((header_text, header.body));
+                return Some(LoopHeader {
+                    text: format!("for (; {condition}; {update}) {{"),
+                    setup: if has_setup { header.setup } else { &[] },
+                    test: has_setup.then_some(header.condition),
+                    body: header.body,
+                });
             }
         }
         let header = crate::loop_shape::while_header(body)?;
-        let condition = self.loop_condition(header.setup, &header.condition)?;
-        Some((format!("while ({condition}) {{"), header.body))
+        let has_setup = !self.loop_clauses(header.setup, false)?.is_empty();
+        Some(LoopHeader {
+            text: if for_shape && has_setup {
+                "for (;;) {".into()
+            } else if has_setup {
+                "while (1) {".into()
+            } else if for_shape {
+                format!("for (; {}; ) {{", self.expression(&header.condition).text)
+            } else {
+                format!("while ({}) {{", self.expression(&header.condition).text)
+            },
+            setup: if has_setup { header.setup } else { &[] },
+            test: has_setup.then_some(header.condition),
+            body: header.body,
+        })
+    }
+
+    fn loop_setup(
+        &self,
+        code: &mut String,
+        header: &LoopHeader<'_>,
+        indent: usize,
+        nonlocal: bool,
+        facts: &crate::guarded_loop::Facts,
+        labels: &LoopLabels<'_>,
+    ) -> Result<(), ReadableError> {
+        self.nodes_with_facts(code, header.setup, indent, nonlocal, facts, labels)?;
+        if let Some(condition) = &header.test {
+            self.value_statement(
+                code,
+                indent,
+                &prepare::invert(condition),
+                None,
+                "if (",
+                ") break;",
+            )?;
+        }
+        Ok(())
     }
 
     fn nodes(
@@ -1021,8 +1066,17 @@ impl Printer<'_> {
                         pretest.push(Node::Continue);
                         let loop_facts =
                             facts.enter_loop(loop_view.body, |reg| self.slots.get(&reg.0).copied());
-                        if let Some((header, middle)) = self.loop_header(&pretest) {
-                            line(code, indent, &header);
+                        if let Some(header) = self.loop_header(&pretest) {
+                            line(code, indent, &header.text);
+                            self.loop_setup(
+                                code,
+                                &header,
+                                indent + 1,
+                                nonlocal,
+                                &loop_facts,
+                                labels,
+                            )?;
+                            let middle = header.body;
                             let middle = if matches!(middle.last(), Some(Node::Continue)) {
                                 &middle[..middle.len() - 1]
                             } else {
@@ -1093,10 +1147,15 @@ impl Printer<'_> {
                         continue;
                     }
                     let continue_label = labels.continue_label(node);
+                    let recovered_header = if continue_label.is_none() {
+                        self.loop_header(body)
+                    } else {
+                        None
+                    };
                     let (header, middle, footer) = if continue_label.is_some() {
                         ("for (;;) {".into(), body.as_slice(), "}".into())
-                    } else if let Some((header, middle)) = self.loop_header(body) {
-                        (header, middle, String::from("}"))
+                    } else if let Some(header) = &recovered_header {
+                        (header.text.clone(), header.body, String::from("}"))
                     } else if !nonlocal && let Some(view) = crate::loop_shape::post_test(body) {
                         let condition = self.expression(view.condition).text;
                         let condition = if view.continue_when {
@@ -1138,6 +1197,9 @@ impl Printer<'_> {
                         middle
                     };
                     let loop_facts = facts.enter_loop(body, |reg| self.slots.get(&reg.0).copied());
+                    if let Some(header) = &recovered_header {
+                        self.loop_setup(code, header, indent + 1, nonlocal, &loop_facts, labels)?;
+                    }
                     self.nodes_with_facts(code, middle, indent + 1, nonlocal, &loop_facts, labels)?;
                     line(code, indent, &footer);
                     if let Some(label) = labels.break_label(node) {
