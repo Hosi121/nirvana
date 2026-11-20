@@ -53,6 +53,7 @@ pub mod narrow_division_expr;
 pub mod narrow_rotate;
 pub mod object_refs;
 pub mod observe;
+pub mod parallel_copy;
 pub mod postdom;
 pub mod presentation;
 pub mod provenance;
