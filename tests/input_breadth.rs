@@ -236,9 +236,9 @@ int main(void) {{
     )
 }
 
-fn build(source: &Path, output: &Path, opt: &str, pie: bool) {
+fn build(compiler: &str, source: &Path, output: &Path, opt: &str, pie: bool) {
     compile(
-        Command::new("cc")
+        Command::new(compiler)
             .args([
                 "-std=c11",
                 "-Wall",
@@ -263,6 +263,17 @@ fn build(source: &Path, output: &Path, opt: &str, pie: bool) {
 
 #[test]
 fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
+    switch_matrix("cc", "GCC", true);
+}
+
+#[test]
+#[ignore = "requires Clang; set NIRVANA_CLANG and run with --include-ignored"]
+fn clang_switch_binaries_match_native_oracles_and_three_module_backends() {
+    let compiler = std::env::var("NIRVANA_CLANG").unwrap_or_else(|_| "clang".into());
+    switch_matrix(&compiler, "Clang", false);
+}
+
+fn switch_matrix(compiler: &str, label: &str, include_assembly: bool) {
     let scratch = native::Scratch::new();
     let inputs = inputs();
     let native_text: String = inputs
@@ -279,6 +290,9 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
         ("nested-switch", "c", &["-O0", "-O2"][..]),
         ("shared-dispatch", "S", &["-O2"][..]),
     ] {
+        if extension == "S" && !include_assembly {
+            continue;
+        }
         let oracle: Vec<_> = inputs.iter().map(|r| reference(name, *r)).collect();
         for &opt in opts {
             for pie in [false, true] {
@@ -286,6 +300,7 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
                 std::fs::create_dir(&directory).unwrap();
                 let original = directory.join("original");
                 build(
+                    compiler,
                     &native::fixture_root().join(format!("input-breadth/{name}.{extension}")),
                     &original,
                     opt,
@@ -496,20 +511,20 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
                     std::fs::write(&source, harness(&code, &module)).unwrap();
                     for generated_opt in ["-O0", "-O2"] {
                         let binary = directory.join(format!("{mode}{generated_opt}"));
-                        compile(
-                            Command::new("cc")
-                                .args([
-                                    "-std=c11",
-                                    "-Wall",
-                                    "-Wextra",
-                                    "-Werror",
-                                    "-pedantic",
-                                    generated_opt,
-                                ])
-                                .arg(&source)
-                                .arg("-o")
-                                .arg(&binary),
-                        );
+                        let mut command = Command::new("cc");
+                        command.args([
+                            "-std=c11",
+                            "-Wall",
+                            "-Wextra",
+                            "-Werror",
+                            "-pedantic",
+                            generated_opt,
+                        ]);
+                        if label == "Clang" {
+                            command
+                                .args(["-fsanitize=undefined", "-fno-sanitize-recover=undefined"]);
+                        }
+                        compile(command.arg(&source).arg("-o").arg(&binary));
                         assert_eq!(
                             native::run_fields(&binary, &text, 94),
                             expected_rows,
@@ -519,7 +534,7 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
                     }
                 }
                 println!(
-                    "{name} {opt} PIE={pie}: {} native/oracle/module inputs; {} boundary/resume/mutation inputs; three generated backends passed",
+                    "{label} {name} {opt} PIE={pie}: {} native/oracle/module inputs; {} boundary/resume/mutation inputs; three generated backends passed",
                     inputs.len(),
                     cases.len() - inputs.len()
                 );
@@ -527,6 +542,6 @@ fn ordinary_switch_binaries_match_native_oracles_and_three_module_backends() {
         }
     }
     println!(
-        "input breadth: {profiles} binary profiles, {native_cases} native/oracle/module cases, {generated_cases} generated full-state cases, {mutation_cases} table mutations"
+        "input breadth {label}: {profiles} binary profiles, {native_cases} native/oracle/module cases, {generated_cases} generated full-state cases, {mutation_cases} table mutations"
     );
 }
