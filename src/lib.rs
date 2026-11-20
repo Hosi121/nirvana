@@ -71,6 +71,7 @@ pub mod ssa;
 pub mod ssa_constants;
 pub mod ssa_destroy;
 pub mod ssa_locals;
+pub mod ssa_storage;
 pub mod stack;
 pub mod stack_cells;
 pub mod stack_role;
