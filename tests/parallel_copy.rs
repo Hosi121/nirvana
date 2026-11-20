@@ -158,12 +158,12 @@ fn exhaustive_candidate_sequences_match_independent_dense_execution() {
     for mut parallel_encoding in 0..9 {
         let mut parallel = Vec::new();
         let mut expected = [41, 93];
-        for destination in 0..2 {
+        for (destination, expected_value) in expected.iter_mut().enumerate() {
             let source = parallel_encoding % 3;
             parallel_encoding /= 3;
             if source < 2 {
                 parallel.push(copy(destination, source));
-                expected[destination] = [41, 93][source];
+                *expected_value = [41, 93][source];
             }
         }
         for length in 0..=4 {

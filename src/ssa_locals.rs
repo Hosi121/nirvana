@@ -118,16 +118,13 @@ impl Groups {
         {
             std::mem::swap(&mut a, &mut b);
         }
-        let search_work = self.events[b]
-            .len()
-            .checked_mul(tree_work(self.events[a].len()))
-            .ok_or(SsaError::Unavailable("local grouping work"))?;
-        budget.spend(search_work)?;
-        if self.events[b]
-            .iter()
-            .any(|token| self.events[a].contains(token))
-        {
-            return Ok(());
+        // A collision often ends the read-only search immediately. Charge
+        // each actual lookup; reserve mutation work separately below.
+        for token in &self.events[b] {
+            budget.spend(tree_work(self.events[a].len()))?;
+            if self.events[a].contains(token) {
+                return Ok(());
+            }
         }
         // Charge all insertion work before moving any memberships.
         budget.spend(
