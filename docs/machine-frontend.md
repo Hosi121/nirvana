@@ -17,6 +17,11 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
 単一関数の`effects-*`は整数処理と`puts`モデルを扱い、追加の呼出しは位置付きで報告します。
 `module-*`は複数の関数を読み、内部CALL・間接CALL・RETとPOSIX importを扱います。
+入口は既定の`main`、`--symbol NAME`、または`--entry ADDRESS`で指定します。
+`--entry`はリンク時の仮想アドレスで、PIEのbiasはローダが加算します。
+正のサイズを持つ関数シンボルを優先し、strip後のELFにはマッピングを照合した`.eh_frame`のFDE範囲を使います。
+FDEは関数の一部分を表す場合もあり、合成名`sub_ADDRESS`を持つ連続コード領域として扱います。
+APIは`linked_elf::load_at`と`module_ir::lift_elf_at`です。範囲の根拠とFDEのファイル位置は`FunctionOrigin`に保持します。
 ジャンプテーブルの初期値から追加の命令を発見し、実行時の分岐先は現在のゲストRAMから評価します。
 候補と残る未知の分岐先は`module-jumps`で確認できます。
 JSONの`read_sites`には、表の値を読み込む命令位置とアドレス成分を含めます。
@@ -68,6 +73,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 ```sh
 cargo run -- FILE.o --symbol fixture --emit readable-c
 cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
+cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 ```
 
 | オプション | 内容 |
@@ -75,7 +81,8 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--help` / `-h` | 引数一覧 |
 | `--symbol NAME` | ELFの関数名。既定は`fixture` |
 | `--raw` | コードのbyte列を入力 |
-| `--base ADDRESS` / `--entry ADDRESS` | rawの先頭／入口。既定は0／base |
+| `--base ADDRESS` | raw領域の先頭。既定は0 |
+| `--entry ADDRESS` | raw領域の入口、または`module-*`でのリンク時の領域入口 |
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
@@ -107,6 +114,12 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 寿命の重ならない値は保存先を再利用し、名前を関数内で`v_0`から割り当てます。
 関数入口・途中再開・成功したCALLの後に局所値をゲスト状態から復元します。
 検査や資源上限による関数単位のfallbackはCのコメントに、変数数・復元数は標準エラーに出力します。
+
+strip入力の範囲読取りはCIE v1/v3、32-bitレコード長、絶対／PC相対の対応ポインタ表現を扱います。
+範囲の重なり、実行可能なファイルbyteとの対応、逆参照と整数overflowを検査し、位置付きのエラーを返します。
+CFIは領域発見のメタデータとして読み、命令の復号・フラグ・実行状態には既存の検査を適用します。
+extended長、追加のCIE形式、`.eh_frame`内の動的再配置、section tableを持たないstrip入力の範囲発見は今後の対象です。
+関数名や型、プロセス起動時の`main`の発見は、それぞれ独立した解析として扱います。
 
 アドレスとrunの入力値は10進数または`0x`付き16進数です。
 `--no-coalesce-locals`と`--verify-reduction`はreadable-c出力時の設定で、`--run`は実行用の別モードです。

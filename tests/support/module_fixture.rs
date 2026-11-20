@@ -75,6 +75,7 @@ pub(crate) fn expected(module: &Module, case: &Case) -> (Vec<u64>, Status) {
             ],
         ),
         Status::Suspended(module_ir::Limit::Instructions) => (4, [0; 3]),
+        Status::Suspended(module_ir::Limit::Imports) => (5, [0; 3]),
         other => panic!("unexpected {other:?}"),
     };
     result.extend([

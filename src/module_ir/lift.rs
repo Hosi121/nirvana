@@ -24,7 +24,24 @@ pub fn lift_elf(
     if options.stack_size < 32 {
         return Err(error("module stack requires at least 32 bytes"));
     }
-    let mut binary = linked_elf::load(object, symbol, options).map_err(|e| error(e.to_string()))?;
+    let binary = linked_elf::load(object, symbol, options).map_err(|e| error(e.to_string()))?;
+    lift_binary(binary)
+}
+
+/// Lift an exact link-time region entry, using sized symbols and unwind bounds.
+pub fn lift_elf_at(
+    object: &[u8],
+    entry: u64,
+    options: LinkedOptions,
+) -> Result<Module, ModuleError> {
+    if options.stack_size < 32 {
+        return Err(error("module stack requires at least 32 bytes"));
+    }
+    let binary = linked_elf::load_at(object, entry, options).map_err(|e| error(e.to_string()))?;
+    lift_binary(binary)
+}
+
+fn lift_binary(mut binary: BinaryImage) -> Result<Module, ModuleError> {
     if binary.functions.len() > MAX_FUNCTIONS {
         return Err(error("module function catalog exceeds 512 entries"));
     }
@@ -65,7 +82,7 @@ pub fn lift_elf(
                 error(format!("module function {name:?}: {reason}"))
             } else {
                 error(format!(
-                    "module direct target {address:#x} lacks a sized function"
+                    "module direct target {address:#x} lacks a bounded code region"
                 ))
             }
         })?;
@@ -97,7 +114,7 @@ pub fn lift_elf(
             .checked_add(u64::from(pair[0].size()))
             .is_none_or(|end| end > pair[1].address())
         {
-            return Err(error("module function symbols overlap instruction streams"));
+            return Err(error("module code regions overlap instruction streams"));
         }
     }
     let shape = crate::ir::Program::new(
@@ -278,7 +295,7 @@ fn lift_function_inner(
             }
             if !(base..end).contains(&address) {
                 return Err(error(format!(
-                    "control leaves sized function at {address:#x}"
+                    "control leaves bounded code region at {address:#x}"
                 )));
             }
             if decoded.len() >= 16_384 {
@@ -314,7 +331,7 @@ fn lift_function_inner(
                                     .any(|function| function.address == *value)
                                 {
                                     return Err(error(format!(
-                                        "unsupported direct target {value:#x}: requires a sized function or proven PLT"
+                                        "unsupported direct target {value:#x}: requires a bounded code region or proven PLT"
                                     )));
                                 }
                                 direct.insert(*value);
@@ -352,7 +369,7 @@ fn lift_function_inner(
             };
             let next = address + u64::from(instruction.size());
             if next > end {
-                return Err(error("instruction exceeds sized function"));
+                return Err(error("instruction exceeds bounded code region"));
             }
             if let Some((_, (previous, _))) = decoded.range(..address).next_back()
                 && previous.address() + u64::from(previous.size()) > address

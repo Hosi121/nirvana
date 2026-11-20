@@ -7,7 +7,7 @@ use std::fmt;
 
 mod lift;
 mod run;
-pub use lift::lift_elf;
+pub use lift::{lift_elf, lift_elf_at};
 pub use run::{Environment, ExternalContext, RejectImports};
 
 pub const REGISTER_COUNT: usize = 80;

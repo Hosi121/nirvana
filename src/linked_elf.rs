@@ -9,6 +9,8 @@ use crate::loader::{LinkedImage, LoadedSection};
 use std::collections::BTreeMap;
 use std::fmt;
 
+mod unwind;
+
 const MAX_MEMORY: u64 = 16 * 1024 * 1024;
 const MAX_FUNCTION: u64 = 1024 * 1024;
 const MAX_TABLE: u64 = 262_144;
@@ -41,10 +43,20 @@ pub struct ImportSlot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FunctionOrigin {
+    Symbol,
+    /// File offset of an FDE; its contiguous region can be a function fragment.
+    Unwind {
+        record_offset: u64,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSymbol {
     pub name: String,
     pub address: u64,
     pub size: u64,
+    pub origin: FunctionOrigin,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,6 +114,9 @@ pub enum BinaryError {
     MissingFunction(String),
     AmbiguousFunction(String),
     ZeroSizedFunction(String),
+    MissingFunctionAddress(u64),
+    AmbiguousFunctionAddress(u64),
+    Unwind(crate::eh_frame::Error),
     Relocation {
         address: u64,
         kind: u32,
@@ -117,6 +132,9 @@ impl fmt::Display for BinaryError {
             Self::MissingFunction(s) => write!(f, "no defined STT_FUNC symbol named {s:?}"),
             Self::AmbiguousFunction(s) => write!(f, "ambiguous STT_FUNC symbol named {s:?}"),
             Self::ZeroSizedFunction(s) => write!(f, "function {s:?} has no declared size"),
+            Self::MissingFunctionAddress(a) => write!(f, "no bounded code region starts at {a:#x}"),
+            Self::AmbiguousFunctionAddress(a) => write!(f, "conflicting code regions at {a:#x}"),
+            Self::Unwind(e) => write!(f, "linked ELF {e}"),
             Self::Relocation {
                 address,
                 kind,
@@ -237,6 +255,7 @@ impl<'a> Mapping<'a> {
 }
 #[derive(Clone, Copy)]
 struct Section {
+    name: u32,
     kind: u32,
     flags: u64,
     address: u64,
@@ -295,6 +314,7 @@ fn sections(data: &[u8]) -> Result<Vec<Section>> {
     for index in 0..count {
         let header = range(data, offset + index * 64, 64)?;
         let section = Section {
+            name: u32_at(header, 0)?,
             kind: u32_at(header, 4)?,
             flags: u64_at(header, 8)?,
             address: u64_at(header, 16)?,
@@ -493,9 +513,9 @@ fn select_function(
     mapping: &Mapping<'_>,
     sections: &[Section],
     dynamic: &Dynamic,
-    name: &str,
+    name: Option<&str>,
     work: &mut Work,
-) -> Result<(Symbol, Vec<FunctionSymbol>)> {
+) -> Result<(Option<Symbol>, Vec<FunctionSymbol>)> {
     let mut selected: Option<Symbol> = None;
     let mut functions = BTreeMap::<u64, FunctionSymbol>::new();
     let mut accept =
@@ -504,7 +524,7 @@ fn select_function(
                 return Ok(());
             }
             let symbol_name = work.name(names, symbol.name)?;
-            let wanted = symbol_name == name;
+            let wanted = name == Some(symbol_name);
             if !wanted
                 && (symbol.kind() != 2
                     || symbol.size == 0
@@ -521,7 +541,7 @@ fn select_function(
                 return Ok(());
             }
             if symbol.size == 0 {
-                return Err(BinaryError::ZeroSizedFunction(name.to_owned()));
+                return Err(BinaryError::ZeroSizedFunction(symbol_name.to_owned()));
             }
             if symbol.size > MAX_FUNCTION {
                 return Err(BinaryError::Limit("selected function exceeds 1 MiB"));
@@ -563,7 +583,7 @@ fn select_function(
                         || old.section != symbol.section
                 })
             {
-                return Err(BinaryError::AmbiguousFunction(name.to_owned()));
+                return Err(BinaryError::AmbiguousFunction(symbol_name.to_owned()));
             }
             if let Some(old) = functions.get(&symbol.value)
                 && old.size != symbol.size
@@ -576,6 +596,7 @@ fn select_function(
                     name: symbol_name.to_owned(),
                     address: symbol.value,
                     size: symbol.size,
+                    origin: FunctionOrigin::Symbol,
                 });
             if functions.len() > 4096 {
                 return Err(BinaryError::Limit("function catalog exceeds 4096 entries"));
@@ -618,9 +639,7 @@ fn select_function(
             accept(symbol, names, !sections.is_empty(), work)?;
         }
     }
-    selected
-        .map(|symbol| (symbol, functions.into_values().collect()))
-        .ok_or_else(|| BinaryError::MissingFunction(name.to_owned()))
+    Ok((selected, functions.into_values().collect()))
 }
 
 #[derive(Clone, Copy)]
@@ -708,6 +727,28 @@ fn relocations(
 /// Undefined STT_NOTYPE is permitted only for puts or weak CRT imports. Data
 /// imports, COPY, TLS, IFUNC, REL/RELR and unknown relocation types are rejected.
 pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<BinaryImage> {
+    load_selected(object, Selection::Name(symbol), options)
+}
+
+/// Select an exact link-time virtual address. Positive-size function symbols
+/// supply preferred bounds; mapped `.eh_frame` FDEs add contiguous code regions
+/// and synthetic names. PIE load bias is added after metadata interpretation.
+/// An interior PC requires a known region entry rather than a guessed boundary.
+pub fn load_at(object: &[u8], entry: u64, options: LinkedOptions) -> Result<BinaryImage> {
+    load_selected(object, Selection::Address(entry), options)
+}
+
+#[derive(Clone, Copy)]
+enum Selection<'a> {
+    Name(&'a str),
+    Address(u64),
+}
+
+fn load_selected(
+    object: &[u8],
+    selection: Selection<'_>,
+    options: LinkedOptions,
+) -> Result<BinaryImage> {
     if object.len() > 64 * 1024 * 1024 {
         return Err(BinaryError::Limit("input file exceeds 64 MiB"));
     }
@@ -817,12 +858,36 @@ pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<Binar
     let sections = sections(object)?;
     let mut work = Work(MAX_WORK);
     let dynamic = dynamic(&mapping, &sections, dyn_segment, &mut work)?;
-    let (selected, mut functions) =
-        select_function(&mapping, &sections, &dynamic, symbol, &mut work)?;
+    let name = match selection {
+        Selection::Name(name) => Some(name),
+        _ => None,
+    };
+    let (selected_symbol, mut functions) =
+        select_function(&mapping, &sections, &dynamic, name, &mut work)?;
+    let relocations = relocations(&mapping, &dynamic, &mut work)?;
+    let selected = match selection {
+        Selection::Name(name) => {
+            let symbol =
+                selected_symbol.ok_or_else(|| BinaryError::MissingFunction(name.to_owned()))?;
+            FunctionSymbol {
+                name: name.to_owned(),
+                address: symbol.value,
+                size: symbol.size,
+                origin: FunctionOrigin::Symbol,
+            }
+        }
+        Selection::Address(address) => {
+            functions = unwind::catalog(&mapping, &sections, &relocations, functions, &mut work)?;
+            functions
+                .iter()
+                .find(|f| f.address == address)
+                .cloned()
+                .ok_or(BinaryError::MissingFunctionAddress(address))?
+        }
+    };
     for function in &mut functions {
         function.address = end(function.address, options.load_bias)?;
     }
-    let relocations = relocations(&mapping, &dynamic, &mut work)?;
     let mut imports = Vec::new();
     let mut patches = Vec::new();
     let mut unmodeled = BTreeMap::new();
@@ -934,10 +999,10 @@ pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<Binar
     for (offset, value) in patches {
         memory[offset as usize..offset as usize + 8].copy_from_slice(&value.to_le_bytes());
     }
-    let function_start = (selected.value - original_base) as usize;
+    let function_start = (selected.address - original_base) as usize;
     let function = FunctionImage {
-        name: symbol.to_owned(),
-        address: end(selected.value, options.load_bias)?,
+        name: selected.name,
+        address: end(selected.address, options.load_bias)?,
         bytes: memory[function_start..function_start + selected.size as usize].to_vec(),
         relocations: Vec::new(),
     };

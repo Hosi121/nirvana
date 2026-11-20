@@ -70,6 +70,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [object_refs](../src/object_refs.rs) | 再配置を実opcodeとフィールド幅・位置へ照合し、CFG全流入とSysV破壊規則から静的な引数参照を導出。文字列byte列を実リンカによる異なる配置の実行とも比較 |
 | [effects](../src/effects.rs) / [effects_emit](../src/effects_emit.rs) | 同じ外部結果入力で、全レジスタ・全RAM・出力・fault・停止位置を具体比較。結果を制御する独立したputs oracleを用いて、元の機械語とのABI・出力・返り値も照合 |
 | [linked_elf](../src/linked_elf.rs) / [effects_readable](../src/effects_readable.rs) | ET_EXEC/PIE、PLT/GOT、再配置baseを変えてRustと生成Cを比較。構造化CALL・分岐・ループで命令予算、全状態、最初のfaultを照合 |
+| [eh_frame](../src/eh_frame.rs) / [linked_unwind](../tests/linked_unwind.rs) / [stripped ELF](../tests/stripped_elf.rs) | CIE/FDEの符号・相対位置・逆参照・長さ・資源上限、実行可能なfile範囲と重なりを検査。stripした同じELFをnative/oracle/IRとUBSan付き3種のCで比較し、内部・間接CALL、予算、途中PC、表の書換えも照合 |
 | [module_ir](../src/module_ir.rs) / [module_emit](../src/module_emit.rs) | 内部・再帰・間接CALL、実stackのRET、ベクトル全幅のfault、全状態を照合。HTTPサーバの生成Cを起動し、元のサーバと同じsocketケースを実行 |
 | [jump_tables](../src/jump_tables.rs) | 経路合流・taken側の範囲・幅と別名・stack退避・部分上書き・CALL破壊・循環と探索上限を検査。追加入口のflag検査、重なる命令列の退避、表の書換えと未知targetも照合。GCC/ClangのO0/O2・通常ELF/PIEでnative/oracle/IRと3種類の生成Cを比較。Clang cohortの生成CにはUBSanを適用 |
 | [dispatch programs](../tests/dispatch_programs.rs) | 分類表・状態機械・stack再利用・BSWAPを含むループで、IR書込み集合による表ベースの保持と不透明結果の無効化を比較。全生成CへUBSanを適用し、予算境界・途中PC・表の書換え・未知targetも照合 |

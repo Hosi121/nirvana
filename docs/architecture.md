@@ -13,6 +13,8 @@ ELFの`read_function_context`は、セクションの識別と再配置のシン
 `loader`はELFの全割当てセクションを配置し、コード・データ・GOTの再配置を適用します。
 `frontend::lift_elf_effects`は元オブジェクトの`puts`参照を照合してから、配置済み命令をliftします。
 `linked_elf`は実行ファイルのsegmentと動的再配置を読み、`frontend::lift_linked_elf_effects`がimportの同一性を照合します。
+数値入口の経路は、独立した`eh_frame` readerでFDEの連続領域を読み、実行可能なファイル範囲と所有関係を照合します。
+サイズ付きシンボルを優先し、残る領域には合成名と元FDEのファイル位置を付けます。命令の検査と実行器は名前指定と共有します。
 PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式を持ちます。
 `effects::Program`は通常命令とCALLを明示的に分け、整数・メモリ操作には既存の実行器を使います。
 外部結果入力が出力prefix・返り値・破壊レジスタを定め、Cバックエンドも同じ入力で実行します。
