@@ -20,38 +20,22 @@ fn instruction(address: u64, assignments: Vec<Assignment>, control: Control) -> 
 fn examples_preserve_registers_returns_and_instruction_traces() {
     for &name in programs::NAMES {
         let program = programs::named(name).unwrap();
-        let recovered = StructuredFunction::recover(&program);
-        let expected_fallback = name == "irreducible";
-        assert_eq!(
-            recovered.is_err(),
-            expected_fallback,
-            "{name}: {recovered:?}"
-        );
+        let recovered = StructuredFunction::recover(&program).unwrap();
         for input in [
             [0, 0, 0, 0],
             [1, 2, 3, 4],
             [12, 9, 8, 7],
             [u64::MAX, 65, 64, 63],
         ] {
-            if let Ok(function) = &recovered {
-                assert_eq!(
-                    program.execute(&input, 1000),
-                    function.execute(&input, 1000),
-                    "{name}: {input:?}"
-                );
-            }
+            assert_eq!(
+                program.execute(&input, 1000),
+                recovered.execute(&input, 1000),
+                "{name}: {input:?}"
+            );
         }
         let output = emit_c(&program).unwrap();
-        assert_eq!(
-            output.fallback_reason.is_some(),
-            expected_fallback,
-            "{name}"
-        );
-        if expected_fallback {
-            assert!(output.code.contains("goto bb"));
-        } else {
-            assert!(!output.code.contains("goto bb"));
-        }
+        assert!(output.fallback_reason.is_none(), "{name}");
+        assert!(!output.code.contains("goto bb"));
     }
 }
 

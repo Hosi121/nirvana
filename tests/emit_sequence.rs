@@ -515,7 +515,7 @@ fn native_irreducible_goto_conditions_are_also_sequenced() {
                     target: 3,
                 },
             ),
-            ins(2, vec![], Control::Return(r(2))),
+            ins(2, vec![], Control::Jump(5)),
             ins(
                 3,
                 vec![set(2, b(BinaryOp::Add, r(2), c(1)))],
@@ -524,7 +524,30 @@ fn native_irreducible_goto_conditions_are_also_sequenced() {
                     target: 1,
                 },
             ),
-            ins(4, vec![], Control::Return(r(2))),
+            ins(4, vec![], Control::Jump(5)),
+            // Two independent cycles retain the goto path under one split.
+            ins(
+                5,
+                vec![set(2, c(0))],
+                Control::Branch {
+                    condition: r(3),
+                    target: 7,
+                },
+            ),
+            ins(
+                6,
+                vec![set(2, b(BinaryOp::Add, r(2), c(1)))],
+                Control::Jump(7),
+            ),
+            ins(
+                7,
+                vec![set(2, b(BinaryOp::Add, r(2), c(1)))],
+                Control::Branch {
+                    condition: b(BinaryOp::Ult, r(2), c(2)),
+                    target: 6,
+                },
+            ),
+            ins(8, vec![], Control::Return(r(2))),
         ],
     )
     .unwrap();

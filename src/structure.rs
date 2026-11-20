@@ -14,6 +14,8 @@ use crate::join::ForwardDag;
 use crate::postdom::{PostDomNode, PostDominators};
 use crate::structure_verify::{self, StructureEvidence, ValidationError};
 
+mod split;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Node {
     Evaluate(Expr),
@@ -47,6 +49,17 @@ pub struct StructuredFunction {
     body: Vec<Node>,
     stats: StructureStats,
     evidence: StructureEvidence,
+    split_evidence: Option<SplitEvidence>,
+}
+
+/// Provenance for bounded node splitting. The final AST uses original PCs and
+/// is independently checked against the untouched source program.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SplitEvidence {
+    pub redirected_from: Address,
+    pub copied_entry: Address,
+    pub copied_steps: usize,
+    pub attempted_candidates: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -137,7 +150,8 @@ impl StructuredFunction {
     ) -> Result<Self, StructureError> {
         let analysis = ControlFlowAnalysis::compute(program.cfg()).expect("validated program CFG");
         if !analysis.is_reducible() {
-            return Err(StructureError::Irreducible);
+            return split::recover(program, &analysis, copy_limit, step_limit)
+                .ok_or(StructureError::Irreducible);
         }
         let postdom = PostDominators::compute(program.cfg()).ok();
         let baseline = Self::recover_using(
@@ -216,6 +230,7 @@ impl StructuredFunction {
             body,
             stats,
             evidence,
+            split_evidence: None,
         })
     }
 
@@ -231,6 +246,10 @@ impl StructuredFunction {
     /// the builder. This does not certify subsequent C rendering transforms.
     pub fn evidence(&self) -> StructureEvidence {
         self.evidence
+    }
+
+    pub fn split_evidence(&self) -> Option<SplitEvidence> {
+        self.split_evidence
     }
 
     pub fn execute(&self, input: &[u64], step_limit: usize) -> Result<Execution, ExecutionError> {

@@ -73,6 +73,7 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [expression_ir](../src/expression_ir.rs) | 明示的な値の保存と除算・剰余のlowering。元の定義、追加レジスタ、全命令・代入と数式の証拠を照合 |
 | [display_dce](../src/display_dce.rs) | 候補が元の代入列の部分列であることと、削除した純粋代入の死活性をCFG上で検査。全Storeと構文上の全Loadを保持 |
 | [finite_region](../src/finite_region.rs) | 前段から導出した有限入力の全組合せについて、純粋領域を抜ける時点の全write先を照合 |
+| [structure/split](../src/structure/split.rs) | 複製候補を元PCのASTへ戻して元IRと独立に照合。全状態・trace・fault・命令予算と、全Stepからの再開対応を検査 |
 | [affine_region](../src/affine_region.rs) | 有限制御値の全組合せと任意のu64入力Aについて、`a*A+b mod 2^64`の対応を検査 |
 
 純粋式の文法はSelectの両枝を含む式全体に適用します。メモリ操作はブロック検査のモデルで扱います。

@@ -140,7 +140,7 @@ fn check_plan(module: &Module, plan: &Plan) {
 }
 
 #[test]
-fn source_effects_calls_vectors_imports_names_and_irreducible_fallback_are_preserved() {
+fn source_effects_calls_vectors_imports_names_and_split_provenance_are_preserved() {
     let scratch = native::Scratch::new();
     let module = module(
         &scratch,
@@ -261,16 +261,20 @@ growth:
             .iter()
             .any(|f| f.function.name == "bad*/name")
     );
-    let fallback = plan
+    let split = plan
         .functions
         .iter()
         .find(|f| f.function.name == "irreducible")
         .unwrap();
-    assert!(fallback.structured.is_none());
-    assert_eq!(
-        fallback.fallback_reason.as_deref(),
-        Some("irreducible control flow")
+    assert!(
+        split
+            .structured
+            .as_ref()
+            .unwrap()
+            .split_evidence()
+            .is_some()
     );
+    assert!(split.fallback_reason.is_none());
     assert!(
         plan.functions
             .iter()

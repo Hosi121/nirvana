@@ -482,7 +482,26 @@ fn irreducible_goto_fallback_keeps_every_local_in_the_prolog() {
                     target: 1,
                 },
             ),
-            instruction(3, vec![], Control::Return(r(2))),
+            // A second independent cycle keeps this a genuine fallback case:
+            // the optional proposal splits at most one incoming edge.
+            instruction(
+                3,
+                vec![set(2, c(0))],
+                Control::Branch {
+                    condition: r(0),
+                    target: 5,
+                },
+            ),
+            instruction(4, vec![increment()], Control::Jump(5)),
+            instruction(
+                5,
+                vec![increment()],
+                Control::Branch {
+                    condition: b(BinaryOp::Ult, r(2), c(3)),
+                    target: 4,
+                },
+            ),
+            instruction(6, vec![], Control::Return(r(2))),
         ],
     )
     .unwrap();

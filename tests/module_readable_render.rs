@@ -293,6 +293,21 @@ join:
     jnz left
     jmp right
 done:
+    mov $3,%ecx
+    test %edi,%edi
+    jz second_right
+second_left:
+    add $1,%eax
+    jmp second_join
+second_right:
+    add $2,%eax
+second_join:
+    sub $1,%ecx
+    jz all_done
+    test %eax,%eax
+    jnz second_left
+    jmp second_right
+all_done:
     jmp "function*/??/name"
 .size main,.-main
 .type "function*/??/name",@function

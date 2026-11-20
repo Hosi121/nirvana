@@ -647,8 +647,11 @@ fn full_state_at_every_pc_in_branch_loop_call_and_fault_fixtures() {
     assert!(
         plan.functions
             .iter()
-            .any(|f| f.function.name == "irreducible" && f.structured.is_none()),
-        "fixture must exercise per-function goto fallback"
+            .any(|f| f.function.name == "irreducible"
+                && f.structured
+                    .as_ref()
+                    .is_some_and(|s| s.split_evidence().is_some())),
+        "fixture must exercise split copies and their independent reentry checks"
     );
     let mut cases = every_pc(&module);
     let sp = module.initial_registers()[4];

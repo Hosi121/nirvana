@@ -115,6 +115,6 @@ fn structured_loops_have_conventional_c_syntax_and_goto_fallback_survives() {
         sum.code
     );
     let irreducible = emit_readable_c(&programs::named("irreducible").unwrap()).unwrap();
-    assert!(irreducible.fallback_reason.is_some());
-    assert!(irreducible.code.contains("goto bb"));
+    assert!(irreducible.fallback_reason.is_none());
+    assert!(!irreducible.code.contains("goto bb"));
 }
