@@ -280,16 +280,24 @@ impl Renderer<'_> {
         }
         writeln!(
             code,
-            "\n/* function {} at {:#x}, size {} */\nstatic void {}(struct nv_frame *f) {{\n    struct nv_module *s=f->state;\n    uint64_t *r=s->r;\n    struct nirvana_memory m={{s}};\n    (void)r; (void)m;\n{declarations}    if(f->depth>={depth_limit}) {{ f->yielded=1; return; }}\n    ++f->depth;\n    if(s->pc!=UINT64_C({})) goto nv_resume;",
+            "\n/* function {} at {:#x}, size {} */\nstatic void {}(struct nv_frame *f) {{\n    struct nv_module *s=f->state;\n    uint64_t *r=s->r;\n    struct nirvana_memory m={{s}};\n    (void)r; (void)m;\n{declarations}    if(f->depth>={depth_limit}) {{ f->yielded=1; return; }}\n    ++f->depth;",
             comment(&function.function.name),
             function.function.address,
             function.function.size,
-            function.c_name,
-            function.function.address
+            function.c_name
         )
         .unwrap();
         if local.is_some() {
             line(code, 1, "goto nv_resume;");
+        } else {
+            line(
+                code,
+                1,
+                &format!(
+                    "if(s->pc!=UINT64_C({})) goto nv_resume;",
+                    function.function.address
+                ),
+            );
         }
         if let Some(Err(reason)) = local_result {
             line(

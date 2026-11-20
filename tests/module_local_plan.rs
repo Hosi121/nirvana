@@ -46,6 +46,19 @@ fn fixture(body: &str) -> (module_ir::Module, module_values::Analysis, Plan) {
     let plan = module_local_plan::recover(&module.program, &values).unwrap();
     assert_eq!(original_source, module.program.instructions());
     assert_eq!(original_values, format!("{values:?}"));
+    for function in &plan.functions {
+        if let Ok(local) = &function.result {
+            assert_eq!(
+                local
+                    .used_locals
+                    .iter()
+                    .copied()
+                    .filter(|&id| id < local.local_count)
+                    .collect::<Vec<_>>(),
+                (0..local.local_count).collect::<Vec<_>>()
+            );
+        }
+    }
     (module, values, plan)
 }
 
@@ -84,6 +97,39 @@ fn run_assignment_step(
     )
     .unwrap();
     program.run_with_memory(state, 0x1000, memory, 1).unwrap()
+}
+
+fn canonical_mirrors(source: &[Assignment], planned: &[Assignment]) {
+    let writes = |assignments: &[Assignment]| {
+        assignments
+            .iter()
+            .filter_map(|a| match a.destination {
+                Place::Register(r) if r.0 < 80 => Some(r),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(writes(source), writes(planned));
+    assert_eq!(
+        source
+            .iter()
+            .filter(|a| matches!(a.destination, Place::Memory { .. }))
+            .count(),
+        planned
+            .iter()
+            .filter(|a| matches!(a.destination, Place::Memory { .. }))
+            .count()
+    );
+    for (index, assignment) in planned.iter().enumerate() {
+        if let Place::Register(local) = assignment.destination
+            && local.0 >= 80
+        {
+            let mirror = &planned[index + 1];
+            assert!(matches!(mirror.destination, Place::Register(r) if r.0 < 80));
+            assert_eq!(mirror.value, Expr::Register(local));
+            assert_ne!(assignment.value, Expr::Register(local));
+        }
+    }
 }
 
 #[test]
@@ -133,32 +179,7 @@ main:
     for instruction in source {
         let step = &local.steps[&instruction.address()];
         if let Instruction::Core(core) = instruction {
-            let expected = core.assignments.len()
-                + core
-                    .assignments
-                    .iter()
-                    .filter(|a| matches!(a.destination, Place::Register(_)))
-                    .count();
-            assert_eq!(step.assignments.len(), expected);
-            let mut at = 0;
-            for original in &core.assignments {
-                if let Place::Register(raw) = original.destination {
-                    let Place::Register(named) = step.assignments[at].destination else {
-                        panic!("named definition");
-                    };
-                    assert!(named.0 >= 80);
-                    assert_eq!(
-                        step.assignments[at + 1],
-                        Assignment {
-                            destination: raw.into(),
-                            value: Expr::Register(named)
-                        }
-                    );
-                    at += 2;
-                } else {
-                    at += 1;
-                }
-            }
+            canonical_mirrors(&core.assignments, &step.assignments);
             // Arbitrary-PC execution starts from fresh canonical state; local
             // garbage must be irrelevant after this instruction's resume map.
             for seed in 0..5 {
@@ -430,12 +451,7 @@ main:
     for instruction in module.program.instructions() {
         if let Instruction::Vector(v) = instruction {
             let step = &local.steps[&v.address];
-            let expected = v.assignments.len()
-                + v.assignments
-                    .iter()
-                    .filter(|a| matches!(a.destination, Place::Register(_)))
-                    .count();
-            assert_eq!(step.assignments.len(), expected);
+            canonical_mirrors(&v.assignments, &step.assignments);
             assert_eq!(
                 analysis.roles()[&nirvana::ssa::Site {
                     instruction: v.address,

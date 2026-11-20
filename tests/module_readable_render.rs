@@ -323,7 +323,10 @@ fn depth_yield_has_no_guest_effects_and_new_runs_clear_stale_status() {
     let locals = nirvana::module_readable::emit_c_with_locals(&module).unwrap();
     assert_eq!(locals.report.local_functions, locals.report.functions);
     assert_eq!(locals.report.local_fallback_functions, 0);
-    assert!(locals.report.local_variables > 512);
+    assert!(
+        locals.report.local_variables < 8,
+        "600 unrelated dead writes should reuse a small set of locals"
+    );
     let plan = nirvana::module_outline::recover(&module.program).unwrap();
     let name = &plan
         .functions

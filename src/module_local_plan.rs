@@ -475,16 +475,18 @@ fn function_plan(
                             }
                             let local = Reg(RAW + plan.by_value[id.0]);
                             let value = reads.expression(&a.value)?;
-                            vec![
-                                Assignment {
+                            let mut assignments = Vec::with_capacity(2);
+                            if value != Expr::Register(local) {
+                                assignments.push(Assignment {
                                     destination: local.into(),
                                     value,
-                                },
-                                Assignment {
-                                    destination: (*register).into(),
-                                    value: Expr::Register(local),
-                                },
-                            ]
+                                });
+                            }
+                            assignments.push(Assignment {
+                                destination: (*register).into(),
+                                value: Expr::Register(local),
+                            });
+                            assignments
                         }
                         Place::Memory { address, width } => {
                             if point.definition.is_some() {
@@ -557,11 +559,72 @@ fn function_plan(
         return Err("module local incomplete source coverage".into());
     }
     budget.reserve(used.len())?;
-    Ok(Locals {
+    let mut locals = Locals {
         local_count: plan.local_count,
         used_locals: used.into_iter().collect(),
         steps,
-    })
+    };
+    dense_names(&mut locals, budget)?;
+    Ok(locals)
+}
+
+// Analysis-only slots and private initial values can leave gaps in the used
+// colors. Give displayed locals dense IDs while retaining the two special temps.
+fn dense_names(locals: &mut Locals, budget: &mut Budget) -> Result<(), String> {
+    let old_count = locals.local_count;
+    budget.reserve(old_count + 2)?;
+    let mut names = vec![usize::MAX; old_count + 2];
+    let mut count = 0;
+    for &old in &locals.used_locals {
+        if old < old_count {
+            names[old] = count;
+            count += 1;
+        }
+    }
+    names[old_count] = count;
+    names[old_count + 1] = count + 1;
+    let rename = |register: &mut Reg| -> Result<(), String> {
+        if register.0 >= RAW {
+            let name = names
+                .get(register.0 - RAW)
+                .filter(|&&n| n != usize::MAX)
+                .ok_or("module local missing display name")?;
+            register.0 = RAW + name;
+        }
+        Ok(())
+    };
+    for step in locals.steps.values_mut() {
+        for binding in &mut step.resume {
+            budget.spend(1)?;
+            binding.local = names[binding.local];
+        }
+        for assignment in step.assignments.iter_mut().chain(&mut step.after) {
+            let mut pending = vec![&mut assignment.value];
+            match &mut assignment.destination {
+                Place::Register(r) => rename(r)?,
+                Place::Memory { address, .. } => pending.push(address),
+            }
+            while let Some(expression) = pending.pop() {
+                budget.spend(1)?;
+                match expression {
+                    Expr::Register(r) => rename(r)?,
+                    Expr::Binary(_, a, b) => pending.extend([&mut **a, &mut **b]),
+                    Expr::Load { address, .. } => pending.push(address),
+                    Expr::Select {
+                        condition,
+                        taken,
+                        not_taken,
+                    } => pending.extend([&mut **condition, &mut **taken, &mut **not_taken]),
+                    Expr::Const(_) => {}
+                }
+            }
+        }
+    }
+    for name in &mut locals.used_locals {
+        *name = names[*name];
+    }
+    locals.local_count = count;
+    Ok(())
 }
 
 fn assignments(instruction: &Instruction) -> &[Assignment] {

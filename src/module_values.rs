@@ -503,8 +503,13 @@ fn analyze_function(
         .collect();
     // This remains analysis metadata: opaque module outputs have no executable
     // numeric interpretation. Only real source copies introduce affinities.
-    let locals = crate::ssa_destroy::lower(&event_program, &graph, &excluded_copies)
-        .map(|f| f.into_recovery());
+    let locals = crate::ssa_locals::analyze(&event_program, &graph, &excluded_copies)
+        .map_err(|e| e.to_string())
+        .and_then(|groups| {
+            let plan = crate::ssa_storage::reuse(&event_program, &graph, &groups).unwrap_or(groups);
+            crate::ssa_destroy::lower_with_plan(&event_program, &graph, plan)
+                .map(|f| f.into_recovery())
+        });
     let mut boundaries: BTreeMap<_, _> = projection
         .boundaries
         .into_iter()
