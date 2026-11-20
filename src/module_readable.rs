@@ -38,6 +38,9 @@ pub struct Report {
     pub local_variables: usize,
     pub resume_bindings: usize,
     pub call_reloads: usize,
+    /// Runtime-guarded same-function tail transfers; residual dispatch remains.
+    pub guarded_tail_transfers: usize,
+    pub guarded_tail_cases: usize,
 }
 
 /// Lower the original ordered guest effects; metadata and shape assignments
@@ -71,6 +74,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
     }
     validate_program(module.program.shape()).map_err(|error| error.to_string())?;
     let plan = crate::module_outline::recover(&module.program)?;
+    let tails = crate::module_tail_dispatch::recover(module, &plan)?;
     let instructions = module
         .program
         .instructions()
@@ -84,6 +88,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
         helpers: String::new(),
         next_helper: 0,
         locals,
+        tails: &tails,
     };
     let mut bodies = String::new();
     let mut report = Report {
@@ -92,6 +97,23 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
     };
     for function in &plan.functions {
         renderer.function(function, &mut bodies)?;
+        let active_locals = locals
+            .and_then(|p| {
+                p.functions
+                    .iter()
+                    .find(|f| f.address == function.function.address)
+            })
+            .is_some_and(|f| f.result.is_ok());
+        if !active_locals {
+            for transfer in tails
+                .transfers
+                .values()
+                .filter(|t| t.function == function.function.address)
+            {
+                report.guarded_tail_transfers += 1;
+                report.guarded_tail_cases += transfer.cases.len();
+            }
+        }
         if locals.is_some() && bodies.len() > 64 * 1024 * 1024 {
             return Err("module local C body limit".into());
         }
@@ -248,6 +270,7 @@ struct Renderer<'a> {
     helpers: String,
     next_helper: usize,
     locals: Option<&'a module_local_plan::Plan>,
+    tails: &'a crate::module_tail_dispatch::Plan,
 }
 
 impl Renderer<'_> {
@@ -555,6 +578,26 @@ impl Renderer<'_> {
                     );
                 }
                 line(code, inner, "s->pc=nv_target;");
+                // Case labels are the same independently checked reentries as
+                // the PC footer. Bindings with recovered locals retain the
+                // existing dispatch path until their repair is planned here.
+                let guarded = if local.is_none() && link.is_none() {
+                    self.tails.transfers.get(&address)
+                } else {
+                    None
+                };
+                if let Some(guarded) = guarded {
+                    line(code, inner, "switch (nv_target) {");
+                    for (target, label) in &guarded.cases {
+                        line(
+                            code,
+                            inner + 1,
+                            &format!("case UINT64_C({target}): goto nv_step_{label};"),
+                        );
+                    }
+                    line(code, inner + 1, "default:");
+                }
+                let dispatch_indent = inner + usize::from(guarded.is_some());
                 match target {
                     Target::Value(Expr::Const(address)) => {
                         if let Some(function) = self
@@ -563,31 +606,35 @@ impl Renderer<'_> {
                             .iter()
                             .find(|f| f.function.address == *address)
                         {
-                            line(code, inner, &format!("{}(f);", function.c_name));
+                            line(code, dispatch_indent, &format!("{}(f);", function.c_name));
                         } else if let Some(import) = self
                             .plan
                             .imports
                             .iter()
                             .find(|i| i.import.address == *address)
                         {
-                            line(code, inner, &format!("{}(f);", import.c_name));
+                            line(code, dispatch_indent, &format!("{}(f);", import.c_name));
                         } else {
-                            line(code, inner, "nv_dispatch(f);");
+                            line(code, dispatch_indent, "nv_dispatch(f);");
                         }
                     }
                     Target::Plt(slot) if self.plt_import(*slot).is_some() => {
                         let import = self.plt_import(*slot).unwrap();
                         line(
                             code,
-                            inner,
+                            dispatch_indent,
                             &format!(
                                 "if(nv_target==UINT64_C({})) {}(f);",
                                 import.import.address, import.c_name
                             ),
                         );
-                        line(code, inner, "else nv_dispatch(f);");
+                        line(code, dispatch_indent, "else nv_dispatch(f);");
                     }
-                    _ => line(code, inner, "nv_dispatch(f);"),
+                    _ => line(code, dispatch_indent, "nv_dispatch(f);"),
+                }
+                if guarded.is_some() {
+                    line(code, dispatch_indent, "break;");
+                    line(code, inner, "}");
                 }
                 if let Some(link) = link {
                     line(

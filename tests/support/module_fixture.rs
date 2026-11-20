@@ -161,6 +161,18 @@ pub(crate) fn check_generated(
     directory: &Path,
     sanitize: bool,
 ) -> usize {
+    check_generated_at_depths(module, cases, expected_rows, directory, sanitize, &[64])
+}
+
+pub(crate) fn check_generated_at_depths(
+    module: &Module,
+    cases: &[Case],
+    expected_rows: &[Vec<u64>],
+    directory: &Path,
+    sanitize: bool,
+    depths: &[u32],
+) -> usize {
+    assert!(!depths.is_empty());
     let mut generated_cases = 0;
     let mut text = String::new();
     for case in cases {
@@ -197,26 +209,29 @@ pub(crate) fn check_generated(
         let source = directory.join(format!("{mode}.c"));
         std::fs::write(&source, harness(&code, module)).unwrap();
         for generated_opt in ["-O0", "-O2"] {
-            let binary = directory.join(format!("{mode}{generated_opt}"));
-            let mut command = Command::new("cc");
-            command.args([
-                "-std=c11",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-pedantic",
-                generated_opt,
-            ]);
-            if sanitize {
-                command.args(["-fsanitize=undefined", "-fno-sanitize-recover=undefined"]);
+            for &depth in if mode == "core" { &depths[..1] } else { depths } {
+                let binary = directory.join(format!("{mode}{generated_opt}-{depth}"));
+                let mut command = Command::new("cc");
+                command.args([
+                    "-std=c11",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-pedantic",
+                    generated_opt,
+                ]);
+                if sanitize {
+                    command.args(["-fsanitize=undefined", "-fno-sanitize-recover=undefined"]);
+                }
+                command.arg(format!("-DNV_HOST_DEPTH_LIMIT={depth}"));
+                compile(command.arg(&source).arg("-o").arg(&binary));
+                assert_eq!(
+                    native::run_fields(&binary, &text, 94),
+                    expected_rows,
+                    "{mode} {generated_opt} depth{depth}: all registers,PC,budgets,fault,RAM digest"
+                );
+                generated_cases += cases.len();
             }
-            compile(command.arg(&source).arg("-o").arg(&binary));
-            assert_eq!(
-                native::run_fields(&binary, &text, 94),
-                expected_rows,
-                "{mode} {generated_opt}: all registers,PC,budgets,fault,RAM digest"
-            );
-            generated_cases += cases.len();
         }
     }
     generated_cases
