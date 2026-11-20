@@ -37,6 +37,7 @@ return value;
 制御フローに応じて`if/else`、`for`、`while`、`do/while`、`goto`を出力します。
 変数名は値の使われ方から生成し、整数型は保存する値の幅から選びます。
 `--emit types`では、SSA値の使用制約とフィールド・配列の候補をJSONで確認できます。
+`--emit record-types`では、ポインタの受渡しとフィールド参照から推定した構造体候補をCの宣言として確認できます。
 `--emit references`では、ELFの文字列・シンボル・外部呼出しの引数の対応を確認できます。
 `--emit effects-readable-c`は、`puts`の外部結果入力と境界検査を保ち、制御構造を復元したCを出力します。
 `--run-effects 7`で出力と返り値を試せます。

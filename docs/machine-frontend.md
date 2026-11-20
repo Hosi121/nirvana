@@ -71,6 +71,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
+| `--emit record-types` | フィールド配置・ポインタの型互換性から構造体候補をC11の宣言で出力 |
 | `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |
 | `--emit effects-c` / `effects-ir` | `puts`モデル付きの実行可能C／明示的なCALLを持つIR |
 | `--emit effects-readable-c` | 命令ごとの予算・fault・CALLを保った構造化C |
