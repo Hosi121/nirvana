@@ -68,6 +68,7 @@ pub mod simplify;
 pub mod source_locals;
 pub mod ssa;
 pub mod ssa_constants;
+pub mod ssa_locals;
 pub mod stack;
 pub mod stack_cells;
 pub mod stack_role;
