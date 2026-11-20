@@ -11,6 +11,7 @@
 | `cases.tsv` | fixture ID、手書きIRとの対応、特徴 |
 | `recovery/*.c` | 幅、alias、添字、複数入口、途中脱出、変数の再利用 |
 | [`algorithms/*.c`](algorithms/README.md) | BFS・DFS・リングキュー・連結リスト・二分探索木 |
+| [`input-breadth/*.c`](input-breadth/README.md) | 密なswitch、負の下限、入れ子のジャンプテーブルを含むリンク済みELF |
 | `inputs.tsv` | IDと4個の入力状態ワード |
 | `golden.tsv` | 手計算した返り値と最終状態の期待値 |
 | `fixture.h` | 共通の関数宣言 |
