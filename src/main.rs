@@ -128,7 +128,11 @@ fn run() -> Result<(), Box<dyn Error>> {
         if format == "module-jumps" {
             print!(
                 "{}",
-                nirvana::jump_tables::to_json(&module.jump_tables, &module.jump_table_diagnostics)?
+                nirvana::jump_tables::to_json_with_context_limits(
+                    &module.jump_tables,
+                    &module.jump_table_diagnostics,
+                    &module.jump_table_context_limits,
+                )?
             );
         } else if format == "module-values" {
             let analysis = nirvana::module_values::analyze(&module.program)?;

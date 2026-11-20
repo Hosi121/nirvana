@@ -110,6 +110,8 @@ pub struct Module {
     /// Open initial-image hints used only to discover additional instructions.
     pub jump_tables: Vec<crate::jump_tables::Candidate>,
     pub jump_table_diagnostics: Vec<(u64, String)>,
+    /// Branches whose bounded predecessor-context search was truncated.
+    pub jump_table_context_limits: Vec<u64>,
 }
 impl Module {
     pub fn initial_registers(&self) -> Vec<u64> {

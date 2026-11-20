@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_FUNCTIONS: usize = 512;
 const MAX_INSTRUCTIONS: usize = 65_536;
 const MAX_NODES: usize = 1_048_576;
+const MAX_TABLE_CONTEXT_SEARCHES: usize = 64;
 fn error(message: impl Into<String>) -> ModuleError {
     ModuleError(message.into())
 }
@@ -74,6 +75,7 @@ pub fn lift_elf(
     let mut functions = Vec::new();
     let mut jump_tables = Vec::new();
     let mut jump_table_diagnostics = Vec::new();
+    let mut jump_table_context_limits = Vec::new();
     for (address, body) in built {
         let symbol = catalog[&address];
         functions.push(Function {
@@ -83,6 +85,7 @@ pub fn lift_elf(
         });
         instructions.extend(body.instructions);
         jump_tables.extend(body.jump_tables);
+        jump_table_context_limits.extend(body.context_limits);
         if let Some(reason) = body.discovery_declined {
             jump_table_diagnostics.push((address, reason));
         }
@@ -132,6 +135,7 @@ pub fn lift_elf(
         rejected_functions: rejected.into_values().collect(),
         jump_tables,
         jump_table_diagnostics,
+        jump_table_context_limits,
     })
 }
 
@@ -222,6 +226,7 @@ struct Body {
     direct: BTreeSet<u64>,
     jump_tables: Vec<crate::jump_tables::Candidate>,
     discovery_declined: Option<String>,
+    context_limits: BTreeSet<u64>,
 }
 fn lift_function(
     binary: &BinaryImage,
@@ -264,166 +269,177 @@ fn lift_function_inner(
     let mut direct = BTreeSet::new();
     let mut jump_tables = Vec::new();
     let mut roots = BTreeSet::from([base]);
-    while let Some(address) = pending.pop() {
-        if decoded.contains_key(&address) {
-            continue;
-        }
-        if !(base..end).contains(&address) {
-            return Err(error(format!(
-                "control leaves sized function at {address:#x}"
-            )));
-        }
-        if decoded.len() >= 16_384 {
-            return Err(error("function instruction limit exceeded"));
-        }
-        let source = &bytes[(address - base) as usize..];
-        let (instruction, original) = match x86::decode_reference_at(source, address) {
-            Ok(original) => {
-                let next = address + u64::from(original.size);
-                let transfer = match original.operation {
-                    Operation::Call(target) => {
-                        Some((Target::Value(Expr::Const(target)), Some(next)))
-                    }
-                    Operation::Jump(target) if !(base..end).contains(&target) => {
-                        Some((Target::Value(Expr::Const(target)), None))
-                    }
-                    Operation::IndirectCall(operand) => {
-                        Some((operand_target(operand, next)?, Some(next)))
-                    }
-                    Operation::IndirectJump(operand) => {
-                        Some((operand_target(operand, next)?, None))
-                    }
-                    _ => None,
-                };
-                let instruction = if let Some((mut target, link)) = transfer {
-                    if let Target::Value(Expr::Const(value)) = &target {
-                        if let Some(slot) = binary.plt_slot(*value) {
-                            target = Target::Plt(slot.address);
-                        } else {
-                            if !binary
-                                .functions
-                                .iter()
-                                .any(|function| function.address == *value)
-                            {
-                                return Err(error(format!(
-                                    "unsupported direct target {value:#x}: requires a sized function or proven PLT"
-                                )));
-                            }
-                            direct.insert(*value);
+    let mut context_limits = BTreeSet::new();
+    let mut searches_left = MAX_TABLE_CONTEXT_SEARCHES;
+    loop {
+        while let Some(address) = pending.pop() {
+            if decoded.contains_key(&address) {
+                continue;
+            }
+            if !(base..end).contains(&address) {
+                return Err(error(format!(
+                    "control leaves sized function at {address:#x}"
+                )));
+            }
+            if decoded.len() >= 16_384 {
+                return Err(error("function instruction limit exceeded"));
+            }
+            let source = &bytes[(address - base) as usize..];
+            let (instruction, original) = match x86::decode_reference_at(source, address) {
+                Ok(original) => {
+                    let next = address + u64::from(original.size);
+                    let transfer = match original.operation {
+                        Operation::Call(target) => {
+                            Some((Target::Value(Expr::Const(target)), Some(next)))
                         }
-                    }
-                    Instruction::Transfer {
-                        address,
-                        size: u32::from(original.size),
-                        target,
-                        link,
-                    }
-                } else if let Operation::Return { extra_pop } = original.operation {
-                    Instruction::Return {
-                        address,
-                        size: u32::from(original.size),
-                        extra_pop,
-                    }
-                } else {
-                    Instruction::Core(
-                        x86::lift_instruction(original).map_err(|e| error(e.to_string()))?,
-                    )
-                };
-                (instruction, original)
-            }
-            Err(scalar) => {
-                let vector = x86::decode_vector_at(source, address)
-                    .map_err(|vector| error(format!("{scalar}; vector fallback: {vector}")))?;
-                let original = DecodedInstruction {
-                    address,
-                    size: vector.size as u8,
-                    operation: Operation::Nop,
-                };
-                (Instruction::Vector(vector), original)
-            }
-        };
-        let next = address + u64::from(instruction.size());
-        if next > end {
-            return Err(error("instruction exceeds sized function"));
-        }
-        if let Some((_, (previous, _))) = decoded.range(..address).next_back()
-            && previous.address() + u64::from(previous.size()) > address
-        {
-            return Err(error("branch enters an instruction"));
-        }
-        if decoded.range(address..next).next().is_some() {
-            return Err(error("overlapping instruction streams"));
-        }
-        if discovery
-            && matches!(original.operation, Operation::IndirectJump(_))
-            && jump_tables.len() < 16
-        {
-            let mut window = vec![original];
-            let mut cursor = address;
-            let mut branches = 0;
-            while window.len() < crate::jump_tables::MAX_WINDOW {
-                let Some((_, (_, previous))) = decoded.range(..cursor).next_back() else {
-                    break;
-                };
-                if previous.address + u64::from(previous.size) != cursor
-                    || matches!(
-                        previous.operation,
-                        Operation::Jump(_)
-                            | Operation::Call(_)
-                            | Operation::IndirectCall(_)
-                            | Operation::IndirectJump(_)
-                            | Operation::Return { .. }
-                    )
-                {
-                    break;
+                        Operation::Jump(target) if !(base..end).contains(&target) => {
+                            Some((Target::Value(Expr::Const(target)), None))
+                        }
+                        Operation::IndirectCall(operand) => {
+                            Some((operand_target(operand, next)?, Some(next)))
+                        }
+                        Operation::IndirectJump(operand) => {
+                            Some((operand_target(operand, next)?, None))
+                        }
+                        _ => None,
+                    };
+                    let instruction = if let Some((mut target, link)) = transfer {
+                        if let Target::Value(Expr::Const(value)) = &target {
+                            if let Some(slot) = binary.plt_slot(*value) {
+                                target = Target::Plt(slot.address);
+                            } else {
+                                if !binary
+                                    .functions
+                                    .iter()
+                                    .any(|function| function.address == *value)
+                                {
+                                    return Err(error(format!(
+                                        "unsupported direct target {value:#x}: requires a sized function or proven PLT"
+                                    )));
+                                }
+                                direct.insert(*value);
+                            }
+                        }
+                        Instruction::Transfer {
+                            address,
+                            size: u32::from(original.size),
+                            target,
+                            link,
+                        }
+                    } else if let Operation::Return { extra_pop } = original.operation {
+                        Instruction::Return {
+                            address,
+                            size: u32::from(original.size),
+                            extra_pop,
+                        }
+                    } else {
+                        Instruction::Core(
+                            x86::lift_instruction(original).map_err(|e| error(e.to_string()))?,
+                        )
+                    };
+                    (instruction, original)
                 }
-                if matches!(previous.operation, Operation::Branch { .. }) {
-                    branches += 1;
-                    if branches > 1 {
-                        break;
-                    }
+                Err(scalar) => {
+                    let vector = x86::decode_vector_at(source, address)
+                        .map_err(|vector| error(format!("{scalar}; vector fallback: {vector}")))?;
+                    let original = DecodedInstruction {
+                        address,
+                        size: vector.size as u8,
+                        operation: Operation::Nop,
+                    };
+                    (Instruction::Vector(vector), original)
                 }
-                window.push(*previous);
-                cursor = previous.address;
+            };
+            let next = address + u64::from(instruction.size());
+            if next > end {
+                return Err(error("instruction exceeds sized function"));
             }
-            window.reverse();
-            if let Some(table) = crate::jump_tables::discover(
-                &window,
+            if let Some((_, (previous, _))) = decoded.range(..address).next_back()
+                && previous.address() + u64::from(previous.size()) > address
+            {
+                return Err(error("branch enters an instruction"));
+            }
+            if decoded.range(address..next).next().is_some() {
+                return Err(error("overlapping instruction streams"));
+            }
+            match &instruction {
+                Instruction::Core(i) => match &i.control {
+                    Control::Next => pending.push(next),
+                    Control::Jump(target) => pending.push(*target),
+                    Control::Branch { target, .. } => {
+                        pending.push(next);
+                        pending.push(*target);
+                    }
+                    Control::Return(_) => return Err(error("unexpected scalar return")),
+                },
+                Instruction::Transfer {
+                    link: Some(next), ..
+                } => pending.push(*next),
+                Instruction::Vector(_) => pending.push(next),
+                _ => {}
+            }
+            charge(&instruction, nodes)?;
+            decoded.insert(address, (instruction, original));
+        }
+        if !discovery {
+            break;
+        }
+        // Drain direct flow before inspecting predecessors, so physical layout
+        // and worklist ordering cannot select just one incoming table base.
+        // Vector placeholders carry flag metadata only; they are context barriers.
+        let originals: Vec<_> = decoded
+            .values()
+            .filter_map(|(i, original)| (!matches!(i, Instruction::Vector(_))).then_some(*original))
+            .collect();
+        for branch in originals
+            .iter()
+            .filter(|i| matches!(i.operation, Operation::IndirectJump(_)))
+        {
+            if searches_left == 0 {
+                context_limits.insert(branch.address);
+                continue;
+            }
+            searches_left -= 1;
+            let search = crate::jump_tables::discover_cfg(
+                &originals,
+                branch.address,
                 binary.image.memory_base,
                 &binary.image.memory,
                 base..end,
-            ) {
+            );
+            if search.reached_limit {
+                context_limits.insert(branch.address);
+            }
+            for table in search.candidates {
+                let before: usize = jump_tables
+                    .iter()
+                    .map(|t: &crate::jump_tables::Candidate| t.entries.len())
+                    .sum();
+                let mut combined = jump_tables.clone();
+                crate::jump_tables::merge_candidate(&mut combined, table.clone());
+                if combined.len() > 16 {
+                    context_limits.insert(branch.address);
+                    continue;
+                }
+                let after: usize = combined.iter().map(|t| t.entries.len()).sum();
                 *nodes = nodes
-                    .checked_sub(table.entries.len() * 2)
+                    .checked_sub((after - before) * 2)
                     .ok_or_else(|| error("jump table metadata limit exceeded"))?;
                 for target in table.targets() {
                     roots.insert(target);
-                    pending.push(target);
+                    if !decoded.contains_key(&target) {
+                        pending.push(target);
+                    }
                 }
                 if roots.len() > 1024 {
                     return Err(error("jump table entry-root limit exceeded"));
                 }
-                jump_tables.push(table);
+                jump_tables = combined;
             }
         }
-        match &instruction {
-            Instruction::Core(i) => match &i.control {
-                Control::Next => pending.push(next),
-                Control::Jump(target) => pending.push(*target),
-                Control::Branch { target, .. } => {
-                    pending.push(next);
-                    pending.push(*target);
-                }
-                Control::Return(_) => return Err(error("unexpected scalar return")),
-            },
-            Instruction::Transfer {
-                link: Some(next), ..
-            } => pending.push(*next),
-            Instruction::Vector(_) => pending.push(next),
-            _ => {}
+        if pending.is_empty() {
+            break;
         }
-        charge(&instruction, nodes)?;
-        decoded.insert(address, (instruction, original));
     }
     let mut locations = Vec::new();
     let mut originals = Vec::new();
@@ -465,6 +481,7 @@ fn lift_function_inner(
         direct,
         jump_tables,
         discovery_declined: None,
+        context_limits,
     })
 }
 

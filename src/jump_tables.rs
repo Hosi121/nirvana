@@ -6,6 +6,12 @@ use crate::x86::{Addressing, Alu, DecodedInstruction, Operand, Operation, Regist
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
+mod context;
+pub(crate) use context::merge as merge_candidate;
+pub use context::{
+    ContextSearch, MAX_CONTEXT_INSTRUCTIONS, MAX_CONTEXT_PATHS, MAX_CONTEXT_WORK, discover_cfg,
+};
+
 pub const MAX_WINDOW: usize = 24;
 pub const MAX_ENTRIES: usize = 256;
 
@@ -445,6 +451,20 @@ pub fn discover(
     if window.is_empty() || window.len() > MAX_WINDOW || function.start >= function.end {
         return None;
     }
+    for pair in window.windows(2) {
+        if pair[0].address.checked_add(u64::from(pair[0].size))? != pair[1].address {
+            return None;
+        }
+    }
+    discover_path(window, memory_base, memory, function)
+}
+
+fn discover_path(
+    path: &[DecodedInstruction],
+    memory_base: u64,
+    memory: &[u8],
+    function: std::ops::Range<u64>,
+) -> Option<Candidate> {
     let register = |r: Register| r.index < 16 && r.shift < 64;
     let address = |a: Addressing| {
         a.base.is_none_or(|r| r < 16)
@@ -456,7 +476,7 @@ pub fn discover(
         Operand::Memory { address: a, .. } => address(a),
         _ => true,
     };
-    for i in window {
+    for i in path {
         if i.size == 0
             || i.size > 15
             || i.address < function.start
@@ -495,18 +515,27 @@ pub fn discover(
             return None;
         }
     }
-    for pair in window.windows(2) {
-        if pair[0].address.checked_add(u64::from(pair[0].size))? != pair[1].address {
+    for pair in path.windows(2) {
+        let next = pair[0].address.checked_add(u64::from(pair[0].size))?;
+        let follows = match pair[0].operation {
+            Operation::Jump(target) => pair[1].address == target,
+            Operation::Branch { target, .. } => {
+                pair[1].address == next || pair[1].address == target
+            }
+            Operation::Return { .. } | Operation::IndirectJump(_) => false,
+            _ => pair[1].address == next,
+        };
+        if !follows {
             return None;
         }
     }
-    let (branch, prefix) = window.split_last()?;
+    let (branch, prefix) = path.split_last()?;
     let Operation::IndirectJump(operand) = branch.operation else {
         return None;
     };
     let mut values = Values::new();
-    for &i in prefix {
-        values.observe(i, i.address + u64::from(i.size));
+    for (i, successor) in prefix.iter().zip(&path[1..]) {
+        values.observe(*i, successor.address);
     }
     let next = branch.address.checked_add(u64::from(branch.size))?;
     let Word::Entry {
@@ -565,8 +594,17 @@ pub fn discover(
 }
 
 pub fn to_json(tables: &[Candidate], diagnostics: &[(u64, String)]) -> Result<String, String> {
+    to_json_with_context_limits(tables, diagnostics, &[])
+}
+
+pub fn to_json_with_context_limits(
+    tables: &[Candidate],
+    diagnostics: &[(u64, String)],
+    context_limits: &[u64],
+) -> Result<String, String> {
     if tables.len() > 8192
         || diagnostics.len() > 512
+        || context_limits.len() > 65_536
         || tables.iter().any(|t| t.entries.len() > MAX_ENTRIES)
     {
         return Err("jump table report collection limit".into());
@@ -595,6 +633,13 @@ pub fn to_json(tables: &[Candidate], diagnostics: &[(u64, String)]) -> Result<St
     }
     out.push_str("],\"declined_functions\":[");
     for (i, (address, _)) in diagnostics.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        write!(out, "{address}").unwrap();
+    }
+    out.push_str("],\"context_limited_branches\":[");
+    for (i, address) in context_limits.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
