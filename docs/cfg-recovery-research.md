@@ -104,6 +104,16 @@ GCC/Clang × O2/O3の16構成を予定し、コンパイラ版・全フラグ・
 少なくとも一つの従来退避例で外側の構造を保てるかを確かめ、全構成で意味の回帰を検査して次の拡張を判断する。
 その後、ジャンプテーブル、誘導変数の対応、複製経路の集約の順に比較対象を広げる。
 
+## 入口の複製の初回比較（2026-11-21）
+
+最初の実装では短い入口ブロックを1個複製する候補を追加した。
+元PCへ戻したASTを既存の独立検査器で照合できるため、この方式から始めた。
+GCCの上記4形状×O2/O3では、既存のC/readable C出力がbyte単位で一致した。
+追加のO0比較では、複数入口ループのreadable Cでgotoが2個から0個となり、文字数は4,659から4,878へ増えた。
+全12バイナリの変更前後・2出力・2再コンパイル構成で6,048入力を照合し、返り値・状態ワード・全RAMのdigestが一致した。UBSanも通過した。
+Clangは環境に未導入のため、対応する比較は今後の対象とする。
+複数箇所の分割と領域内gotoは、引き続き拡張対象である。元ソースへの近さは上記の構造指標で別途評価する。
+
 [sailr]: https://www.usenix.org/system/files/usenixsecurity24-basque.pdf
 [crossjump]: https://github.com/angr/angr/blob/80c962c99a8d487e75acdfba7a2bcf01a5abfb93/angr/analyses/decompiler/optimization_passes/cross_jump_reverter.py
 [rotation]: https://llvm.org/docs/LoopTerminology.html#rotated-loops

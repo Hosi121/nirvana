@@ -431,6 +431,138 @@ fn cli_runs_a_real_object_and_reports_unsupported_input() {
 }
 
 #[test]
+fn machine_two_entry_cycle_keeps_native_results_full_ram_and_every_budget_cutoff() {
+    let scratch = Scratch::new();
+    let source = scratch.0.join("two-entry.S");
+    std::fs::write(
+        &source,
+        r#"
+.text
+.globl fixture
+.type fixture,@function
+fixture:
+    xor %eax,%eax
+    xor %ecx,%ecx
+    testq $1,(%rdi)
+    jnz right
+left:
+    add $1,%rax
+right:
+    add $1,%rcx
+    cmp $3,%rcx
+    jb left
+    mov %rax,8(%rdi)
+    ret
+.size fixture,.-fixture
+.section .note.GNU-stack,"",@progbits
+"#,
+    )
+    .unwrap();
+    let original = scratch.0.join("original.o");
+    let result = std::process::Command::new("cc")
+        .arg("-c")
+        .arg(&source)
+        .arg("-o")
+        .arg(&original)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let bytes = std::fs::read(&original).unwrap();
+    let lifted = frontend::lift_elf(&bytes, "fixture").unwrap();
+    let program = &lifted.program;
+    assert!(
+        !nirvana::analysis::ControlFlowAnalysis::compute(program.cfg())
+            .unwrap()
+            .is_reducible()
+    );
+    let tree = StructuredFunction::recover(program).unwrap();
+    assert!(tree.split_evidence().is_some());
+    structure_verify::validate_reentries(program, tree.body()).unwrap();
+    let inputs: Vec<[u64; 4]> = (0..8).map(|n| [n, u64::MAX - n, 0x1234, n << 63]).collect();
+    let text: String = inputs
+        .iter()
+        .map(|r| format!("{} {} {} {}\n", r[0], r[1], r[2], r[3]))
+        .collect();
+    let harness = scratch.0.join("native.o");
+    object(
+        &fixture_root().join("harness.c"),
+        &harness,
+        "-O2",
+        "fixture",
+    );
+    let binary = scratch.0.join("native");
+    link(&[&original, &harness], &binary);
+    let native = run(&binary, &text);
+    let mut complete = Vec::new();
+    let mut budget_comparisons = 0;
+    for (input, expected) in inputs.iter().zip(&native) {
+        let (registers, memory) = prepare(input);
+        let execution = program
+            .execute_with_memory(&registers, BASE, &memory, 1000)
+            .unwrap();
+        assert_eq!(&visible_result(&execution), expected);
+        let mut row = expected.clone();
+        row.push(memory_digest(&execution.memory));
+        complete.push(row);
+        for budget in 0..=execution.trace.len() + 1 {
+            budget_comparisons += 1;
+            assert_eq!(
+                program
+                    .run_with_memory(&registers, BASE, &memory, budget)
+                    .unwrap(),
+                tree.run_with_memory(&registers, BASE, &memory, budget)
+                    .unwrap(),
+                "input={input:?}, budget={budget}"
+            );
+        }
+    }
+    let core = emit::emit_c(program).unwrap();
+    let readable = readable::emit_readable_c(program).unwrap();
+    assert!(core.fallback_reason.is_none());
+    assert!(readable.fallback_reason.is_none());
+    assert!(!core.code.contains("goto bb"));
+    assert!(!readable.code.contains("goto bb"));
+    let sources = [
+        (
+            "core",
+            core.code
+                + &harness_for(
+                    "nirvana_fn(r, memory, UINT64_C(4096), sizeof(memory))",
+                    true,
+                ),
+        ),
+        (
+            "readable",
+            readable.code.clone() + &readable_harness(&readable),
+        ),
+    ];
+    for (mode, source) in sources {
+        let path = scratch.0.join(format!("{mode}.c"));
+        std::fs::write(&path, source).unwrap();
+        for opt in ["-O0", "-O2"] {
+            let obj = scratch.0.join(format!("{mode}{opt}.o"));
+            object(&path, &obj, opt, "fixture");
+            let binary = scratch.0.join(format!("{mode}{opt}"));
+            link(&[&obj], &binary);
+            assert_eq!(
+                run_fields(&binary, &text, 6),
+                complete,
+                "{mode} {opt}: return/state/full-RAM digest"
+            );
+        }
+    }
+    println!(
+        "two-entry binary: {} native/IR cases, {budget_comparisons} full-state budget comparisons, {} generated-C/full-RAM cases",
+        inputs.len(),
+        inputs.len() * 4
+    );
+}
+
+#[test]
 fn machine_multiply_overflow_affects_recompiled_c_like_the_native_compiler() {
     // mov rax,[rdi]; imul rax,[rdi+8]; seto al; movzx eax,al; ret.
     // This makes the high product and signed-overflow flag externally visible.

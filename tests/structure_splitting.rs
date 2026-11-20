@@ -230,6 +230,62 @@ fn original_copy_and_step_limits_remain_acceptance_conditions() {
 }
 
 #[test]
+fn copied_multistep_block_keeps_internal_fallthroughs_and_partial_fault_state() {
+    let source = Program::new(
+        0,
+        4,
+        vec![
+            ins(
+                0,
+                vec![],
+                Control::Branch {
+                    condition: r(0),
+                    target: 4,
+                },
+            ),
+            ins(1, vec![increment(1)], Control::Next),
+            ins(2, vec![set(3, Expr::load(r(2), Width::U8))], Control::Next),
+            ins(
+                3,
+                vec![Assignment {
+                    destination: Place::Memory {
+                        address: b(B::Add, r(2), c(1)),
+                        width: Width::U8,
+                    },
+                    value: r(1),
+                }],
+                Control::Jump(4),
+            ),
+            ins(4, vec![set(0, b(B::Sub, r(0), c(1)))], Control::Next),
+            ins(5, vec![set(3, b(B::Xor, r(3), r(0)))], Control::Next),
+            ins(6, vec![set(3, b(B::Add, r(3), r(1)))], Control::Next),
+            ins(
+                7,
+                vec![],
+                Control::Branch {
+                    condition: b(B::Ult, r(1), c(4)),
+                    target: 1,
+                },
+            ),
+            ins(8, vec![], Control::Return(r(3))),
+        ],
+    )
+    .unwrap();
+    let recovered = StructuredFunction::recover(&source).unwrap();
+    assert_eq!(recovered.split_evidence().unwrap().copied_steps, 3);
+    check(
+        &source,
+        &recovered,
+        &[
+            [0, 0, 4096, 0],
+            [1, 0, 4096, 0],
+            [0, 0, 4127, 0],
+            [1, 0, 4095, 0],
+        ],
+    );
+}
+
+#[test]
 fn two_independent_multiple_entry_cycles_retain_the_original_fallback() {
     let first = cycle(0, false);
     let second = cycle(4, false);
