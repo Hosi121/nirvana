@@ -1,12 +1,14 @@
 //! Per-function register value tracking with explicit opaque transfer boundaries.
 //!
 //! The private projection supplies events to SSA, not executable instructions.
-//! Calls consume all guest registers and produce fresh unknown values. Analysis
+//! Closed internal calls retain unchanged identities; other calls consume all
+//! guest registers and produce fresh unknown values. Analysis
 //! follows function entry and normal call continuations; arbitrary PC reentry
 //! still uses the full checked module state. Memory remains an ordered byte store.
 
 use std::collections::BTreeMap;
 
+use crate::call_footprint;
 use crate::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width};
 use crate::module_ir::{self, Instruction, Target};
 use crate::ssa::{self, Definition, RegisterValue, Site, SsaFunction};
@@ -36,14 +38,23 @@ pub enum BoundaryKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallContract {
+    Closed { callee: u64 },
+    Opaque { reason: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Boundary {
     pub address: u64,
     pub kind: BoundaryKind,
     pub target_reads: Vec<RegisterValue>,
-    /// Conservative register observations before entering the opaque transfer.
+    /// Conservative register observations before entering the call or exit.
     pub inputs: Vec<RegisterValue>,
     /// Fresh identities on a normal call continuation; values are unknown.
     pub outputs: Vec<RegisterValue>,
+    /// Live identities forwarded unchanged to a normal call continuation.
+    pub preserved: Vec<RegisterValue>,
+    pub call_contract: Option<CallContract>,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +100,7 @@ pub struct FunctionAnalysis {
 #[derive(Clone, Debug)]
 pub struct Analysis {
     pub functions: Vec<FunctionAnalysis>,
+    pub call_summaries: call_footprint::Analysis,
 }
 
 impl Analysis {
@@ -106,8 +118,9 @@ pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
     let mut functions = Vec::new();
     let mut total_values = 0usize;
     let mut total_members = 0usize;
+    let call_summaries = call_footprint::analyze(program)?;
     for function in program.functions() {
-        let result = analyze_function(program, function);
+        let result = analyze_function(program, function, &call_summaries);
         if let Ok(values) = &result {
             total_values = total_values
                 .checked_add(values.graph.values.len())
@@ -123,7 +136,10 @@ pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
             result,
         });
     }
-    Ok(Analysis { functions })
+    Ok(Analysis {
+        functions,
+        call_summaries,
+    })
 }
 
 fn members(values: &FunctionValues) -> usize {
@@ -178,20 +194,22 @@ fn members(values: &FunctionValues) -> usize {
         + values
             .boundaries
             .iter()
-            .map(|b| b.inputs.len() + b.outputs.len() + b.target_reads.len())
+            .map(|b| b.inputs.len() + b.outputs.len() + b.target_reads.len() + b.preserved.len())
             .sum::<usize>()
 }
 
-struct Projection {
+struct Projection<'a> {
     instructions: Vec<IrInstruction>,
     roles: BTreeMap<Site, PointRole>,
     boundaries: Vec<(u64, BoundaryKind)>,
     assignments: usize,
     nodes: usize,
     guest_registers: usize,
+    summaries: &'a call_footprint::Analysis,
+    call_contracts: BTreeMap<u64, CallContract>,
 }
 
-impl Projection {
+impl Projection<'_> {
     fn expression(&mut self, expression: &Expr) -> Result<(), String> {
         let mut pending = vec![(expression, 1usize)];
         while let Some((e, depth)) = pending.pop() {
@@ -286,9 +304,13 @@ impl Projection {
         Ok(())
     }
 
-    fn observe(&mut self, address: u64, out: &mut Vec<Assignment>) -> Result<(), String> {
-        for index in 0..self.guest_registers {
-            let register = Reg(index);
+    fn observe(
+        &mut self,
+        address: u64,
+        out: &mut Vec<Assignment>,
+        registers: &[Reg],
+    ) -> Result<(), String> {
+        for &register in registers {
             self.read(
                 address,
                 out,
@@ -324,20 +346,50 @@ impl Projection {
                 Control::Next
             }
             Instruction::Transfer { target, link, .. } => {
-                let target = match target {
+                let summary = match target {
+                    Target::Value(Expr::Const(callee)) => self.summaries.at(*callee),
+                    _ => None,
+                };
+                let (reads, clobbers, contract) = if let Some(summary) =
+                    summary.filter(|s| s.closed)
+                {
+                    (
+                        summary.reads.clone(),
+                        summary.clobbers.clone(),
+                        CallContract::Closed {
+                            callee: summary.address,
+                        },
+                    )
+                } else {
+                    let reason = match target {
+                        Target::Plt(_) => "mutable PLT target".into(),
+                        Target::Value(Expr::Const(_)) => summary
+                            .and_then(|s| s.reason.clone())
+                            .unwrap_or_else(|| "target lacks a closed function contract".into()),
+                        Target::Value(_) => "dynamic target".into(),
+                    };
+                    let all: Vec<_> = (0..self.guest_registers).map(Reg).collect();
+                    (all.clone(), all, CallContract::Opaque { reason })
+                };
+                let target_expression = match target {
                     Target::Value(e) => {
                         self.expression(e)?;
                         e.clone()
                     }
                     Target::Plt(address) => Expr::load(Expr::Const(*address), Width::U64),
                 };
-                self.read(address, &mut assignments, target, PointRole::Target)?;
-                self.observe(address, &mut assignments)?;
+                self.read(
+                    address,
+                    &mut assignments,
+                    target_expression,
+                    PointRole::Target,
+                )?;
                 if let Some(continuation) = link {
+                    self.observe(address, &mut assignments, &reads)?;
+                    self.call_contracts.insert(address, contract);
                     // These are fresh opaque definitions. The placeholder RHS
                     // only allows SSA numbering; it supplies no constant fact.
-                    for index in 0..self.guest_registers {
-                        let register = Reg(index);
+                    for register in clobbers {
                         self.push(
                             address,
                             &mut assignments,
@@ -356,6 +408,10 @@ impl Projection {
                     ));
                     Control::Jump(*continuation)
                 } else {
+                    // Tail exits expose the entire guest register state, even
+                    // when the target itself has a closed call contract.
+                    let all: Vec<_> = (0..self.guest_registers).map(Reg).collect();
+                    self.observe(address, &mut assignments, &all)?;
                     self.boundaries.push((address, BoundaryKind::Tail));
                     Control::Return(Expr::Const(0))
                 }
@@ -367,7 +423,8 @@ impl Projection {
                     Expr::load(Expr::Register(Reg(crate::x86::RSP)), Width::U64),
                     PointRole::Target,
                 )?;
-                self.observe(address, &mut assignments)?;
+                let all: Vec<_> = (0..self.guest_registers).map(Reg).collect();
+                self.observe(address, &mut assignments, &all)?;
                 self.boundaries.push((address, BoundaryKind::Return));
                 Control::Return(Expr::Const(0))
             }
@@ -385,6 +442,7 @@ impl Projection {
 fn analyze_function(
     program: &module_ir::Program,
     function: &module_ir::Function,
+    summaries: &call_footprint::Analysis,
 ) -> Result<FunctionValues, String> {
     let end = function
         .address
@@ -407,6 +465,8 @@ fn analyze_function(
         assignments: 0,
         nodes: 0,
         guest_registers: program.register_count(),
+        summaries,
+        call_contracts: BTreeMap::new(),
     };
     for instruction in source {
         projection.instruction(instruction)?;
@@ -432,6 +492,8 @@ fn analyze_function(
                     target_reads: Vec::new(),
                     inputs: Vec::new(),
                     outputs: Vec::new(),
+                    preserved: Vec::new(),
+                    call_contract: projection.call_contracts.remove(&address),
                 },
             )
         })
@@ -451,6 +513,30 @@ fn analyze_function(
                 }
                 _ => {}
             }
+        }
+    }
+    // Calls terminate their projection block. Exit values already name the
+    // identities needed on continuation edges, including unchanged registers.
+    for block in &graph.blocks {
+        if let Some(boundary) = block
+            .points
+            .last()
+            .and_then(|p| boundaries.get_mut(&p.site.instruction))
+            && let Some(CallContract::Closed { callee }) = boundary.call_contract
+        {
+            let summary = summaries.at(callee).ok_or("missing closed call summary")?;
+            boundary.preserved.extend(
+                block
+                    .exit_values
+                    .iter()
+                    .filter(|v| {
+                        summary
+                            .preserved
+                            .binary_search_by_key(&v.register.0, |r| r.0)
+                            .is_ok()
+                    })
+                    .copied(),
+            );
         }
     }
     let boundaries = boundaries

@@ -5,7 +5,7 @@ mod native;
 use nirvana::ir::Reg;
 use nirvana::linked_elf::LinkedOptions;
 use nirvana::module_ir::{self, Module};
-use nirvana::module_values::{self, BoundaryKind, FunctionValues, PointRole};
+use nirvana::module_values::{self, BoundaryKind, CallContract, FunctionValues, PointRole};
 use nirvana::ssa::{Definition, ValueId};
 use nirvana::value_liveness::Use;
 use std::collections::BTreeSet;
@@ -163,8 +163,22 @@ indirect:
         .iter()
         .find(|b| matches!(b.kind, BoundaryKind::Call { .. }))
         .unwrap();
-    assert_eq!(call.inputs.len(), 80);
-    assert_eq!(call.outputs.len(), 80);
+    assert!(matches!(
+        call.call_contract,
+        Some(CallContract::Closed { .. })
+    ));
+    assert!(call.inputs.len() < 80);
+    assert!(call.outputs.len() < 80);
+    // Preserved identities are retained only when live after this call; flags
+    // overwritten by the following ADD need no continuation mapping.
+    assert!(call.outputs.len() + call.preserved.len() <= 80);
+    let Some(CallContract::Closed { callee }) = call.call_contract else {
+        panic!()
+    };
+    let contract = analysis.call_summaries.at(callee).unwrap();
+    assert_eq!(contract.clobbers.len() + contract.preserved.len(), 80);
+    assert!(call.preserved.iter().any(|v| v.register == Reg(4)));
+    assert!(call.preserved.iter().any(|v| v.register == Reg(7)));
     assert_eq!(
         call.inputs
             .iter()
@@ -200,7 +214,9 @@ indirect:
     assert_eq!(roots(values, rbx), BTreeSet::from([output_rbx]));
     assert!(!roots(values, rbx).contains(&copy));
     for boundary in values.boundaries() {
-        assert_eq!(boundary.inputs.len(), module.program.register_count());
+        if !matches!(boundary.call_contract, Some(CallContract::Closed { .. })) {
+            assert_eq!(boundary.inputs.len(), module.program.register_count());
+        }
         for output in &boundary.outputs {
             let Definition::Assignment { site, register } = values.graph().values[output.value.0]
             else {
@@ -228,6 +244,13 @@ indirect:
         .as_ref()
         .unwrap();
     assert_eq!(indirect.boundaries()[0].target_reads[0].register, Reg(7));
+    assert!(matches!(
+        indirect.boundaries()[0].call_contract,
+        Some(CallContract::Opaque { .. })
+    ));
+    assert_eq!(indirect.boundaries()[0].inputs.len(), 80);
+    assert_eq!(indirect.boundaries()[0].outputs.len(), 80);
+    assert!(indirect.boundaries()[0].preserved.is_empty());
     assert_eq!(module.program.instructions(), before);
     assert_eq!(
         nirvana::module_readable::emit_c(&module).unwrap().code,
@@ -324,8 +347,8 @@ fn optimized_c_loops_expose_phi_edges_and_json_reports_definition_use_consistenc
                 .write_all(&output.stdout)
                 .unwrap();
             assert!(python.wait().unwrap().success());
-            // ABI register inputs and all unknown call outputs are visibly
-            // distinct from real arithmetic definitions and observation events.
+            // Checked call footprints and remaining unknown outputs are visibly
+            // distinct from arithmetic definitions and observation events.
             assert_eq!(analysis.to_json().unwrap().as_bytes(), output.stdout);
         }
     }
@@ -334,8 +357,9 @@ fn optimized_c_loops_expose_phi_edges_and_json_reports_definition_use_consistenc
 const JSON_CHECK: &str = r#"
 import json,sys
 r=json.load(sys.stdin)
-assert r['schema']=='nirvana-module-values-v1'
+assert r['schema']=='nirvana-module-values-v2'
 assert r['scope']=='function-entry-and-normal-call-continuations'
+summaries={f['address']:f['call_summary'] for f in r['functions']}
 for f in r['functions']:
     if f['status']!='analyzed': continue
     v=f['values']; assert [x['id'] for x in v]==list(range(len(v)))
@@ -356,10 +380,21 @@ for f in r['functions']:
             assert read['value'] in point['before']
         for key in ('before','after'): assert point[key]==sorted(set(point[key]))
     for b in f['boundaries']:
-        assert [x['register'] for x in b['inputs']]==list(range(f['guest_registers']))
-        assert len(b['outputs'])==(f['guest_registers'] if b['kind']=='call' else 0)
+        contract=b['call_contract']
+        if contract and contract['kind']=='closed':
+            summary=summaries[contract['callee']]; assert summary['closed']
+            assert [x['register'] for x in b['inputs']]==summary['reads']
+            assert [x['register'] for x in b['outputs']]==summary['clobbers']
+            assert all(x['register'] in summary['preserved'] for x in b['preserved'])
+            block=next(block for block in f['blocks'] if any(p['site']['instruction']==b['address'] for p in block['points']))
+            assert all(x['value'] in block['live_out'] for x in b['preserved'])
+        else:
+            assert [x['register'] for x in b['inputs']]==list(range(f['guest_registers']))
+            assert len(b['outputs'])==(f['guest_registers'] if b['kind']=='call' else 0)
+            assert not b['preserved']
         assert all(v[x['value']]['definition']['kind']=='opaque-output' for x in b['outputs'])
         assert not ({x['value'] for x in b['inputs']} & {x['value'] for x in b['outputs']})
+        assert not ({x['register'] for x in b['preserved']} & {x['register'] for x in b['outputs']})
 "#;
 
 #[test]

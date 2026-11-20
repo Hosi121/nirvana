@@ -1,4 +1,5 @@
-use super::{Analysis, BoundaryKind, FunctionValues, MAX_FUNCTIONS, PointRole};
+use super::{Analysis, BoundaryKind, CallContract, FunctionValues, MAX_FUNCTIONS, PointRole};
+use crate::ir::Reg;
 use crate::ssa::{Definition, RegisterValue, Site, ValueId};
 use crate::value_liveness::Use;
 
@@ -70,6 +71,39 @@ impl Json {
             self.raw("}")?;
         }
         self.raw("]")
+    }
+    fn raw_registers(&mut self, registers: &[Reg]) -> Option<()> {
+        self.raw("[")?;
+        for (i, register) in registers.iter().enumerate() {
+            if i > 0 {
+                self.raw(",")?;
+            }
+            self.number(register.0)?;
+        }
+        self.raw("]")
+    }
+    fn summary(&mut self, summary: &crate::call_footprint::FunctionSummary) -> Option<()> {
+        self.raw("{\"closed\":")?;
+        self.raw(if summary.closed { "true" } else { "false" })?;
+        self.raw(",\"reason\":")?;
+        match &summary.reason {
+            Some(reason) => self.string(reason)?,
+            None => self.raw("null")?,
+        }
+        self.raw(",\"reads\":")?;
+        self.raw_registers(&summary.reads)?;
+        self.raw(",\"clobbers\":")?;
+        self.raw_registers(&summary.clobbers)?;
+        self.raw(",\"preserved\":")?;
+        self.raw_registers(&summary.preserved)?;
+        self.raw(",\"callees\":[")?;
+        for (i, callee) in summary.callees.iter().enumerate() {
+            if i > 0 {
+                self.raw(",")?;
+            }
+            self.number(callee)?;
+        }
+        self.raw("]}")
     }
     fn role(&mut self, role: Option<&PointRole>) -> Option<()> {
         let (name, original, register) = match role {
@@ -280,6 +314,22 @@ impl Json {
             self.registers(&boundary.inputs)?;
             self.raw(",\"outputs\":")?;
             self.registers(&boundary.outputs)?;
+            self.raw(",\"preserved\":")?;
+            self.registers(&boundary.preserved)?;
+            self.raw(",\"call_contract\":")?;
+            match &boundary.call_contract {
+                Some(CallContract::Closed { callee }) => {
+                    self.raw("{\"kind\":\"closed\",\"callee\":")?;
+                    self.number(callee)?;
+                    self.raw("}")?;
+                }
+                Some(CallContract::Opaque { reason }) => {
+                    self.raw("{\"kind\":\"opaque\",\"reason\":")?;
+                    self.string(reason)?;
+                    self.raw("}")?;
+                }
+                None => self.raw("null")?,
+            }
             self.raw("}")?;
         }
         self.raw("]")
@@ -291,7 +341,7 @@ pub(super) fn render(analysis: &Analysis) -> Option<String> {
         return None;
     }
     let mut out = Json(String::new());
-    out.raw("{\"schema\":\"nirvana-module-values-v1\",\"identity\":\"per-function-ssa\",\"scope\":\"function-entry-and-normal-call-continuations\",\"liveness\":\"syntactic-possible-uses\",\"calls\":\"all-register-inputs-and-fresh-unknown-outputs\",\"memory\":\"ordered-accesses-and-opaque-call-effects\",\"sites\":\"analysis-event-indices\",\"functions\":[")?;
+    out.raw("{\"schema\":\"nirvana-module-values-v2\",\"identity\":\"per-function-ssa\",\"scope\":\"function-entry-and-normal-call-continuations\",\"liveness\":\"syntactic-possible-uses\",\"calls\":\"closed-internal-footprints-with-opaque-fallback\",\"memory\":\"ordered-accesses-and-opaque-call-effects\",\"sites\":\"analysis-event-indices\",\"functions\":[")?;
     for (i, function) in analysis.functions.iter().enumerate() {
         if i > 0 {
             out.raw(",")?;
@@ -302,6 +352,8 @@ pub(super) fn render(analysis: &Analysis) -> Option<String> {
         out.number(function.function.address)?;
         out.raw(",\"size\":")?;
         out.number(function.function.size)?;
+        out.raw(",\"call_summary\":")?;
+        out.summary(analysis.call_summaries.at(function.function.address)?)?;
         match &function.result {
             Ok(values) => {
                 out.raw(",\"status\":\"analyzed\"")?;

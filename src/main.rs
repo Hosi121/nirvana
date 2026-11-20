@@ -127,8 +127,14 @@ fn run() -> Result<(), Box<dyn Error>> {
                 .iter()
                 .filter(|f| f.result.is_ok())
                 .count();
+            let closed = analysis
+                .call_summaries
+                .functions
+                .iter()
+                .filter(|f| f.closed)
+                .count();
             eprintln!(
-                "module values: {analyzed}/{} functions analyzed",
+                "module values: {analyzed}/{} functions analyzed; {closed} closed call summaries",
                 analysis.functions.len()
             );
             print!("{}", analysis.to_json()?);
