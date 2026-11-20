@@ -107,6 +107,9 @@ pub struct Module {
     /// Symbols whose bodies could not be lifted. Directly reachable rejected
     /// functions prevent module construction; dynamic targets stop explicitly.
     pub rejected_functions: Vec<(String, String)>,
+    /// Open initial-image hints used only to discover additional instructions.
+    pub jump_tables: Vec<crate::jump_tables::Candidate>,
+    pub jump_table_diagnostics: Vec<(u64, String)>,
 }
 impl Module {
     pub fn initial_registers(&self) -> Vec<u64> {

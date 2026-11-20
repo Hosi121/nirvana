@@ -36,6 +36,7 @@ pub mod hir;
 pub mod indexed;
 pub mod ir;
 mod join;
+pub mod jump_tables;
 pub mod linked_elf;
 pub mod load_mask;
 pub mod loader;

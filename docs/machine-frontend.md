@@ -17,6 +17,8 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
 単一関数の`effects-*`は整数処理と`puts`モデルを扱い、追加の呼出しは位置付きで報告します。
 `module-*`は複数の関数を読み、内部CALL・間接CALL・RETとPOSIX importを扱います。
+ジャンプテーブルの初期値から追加の命令を発見し、実行時の分岐先は現在のゲストRAMから評価します。
+候補と残る未知の分岐先は`module-jumps`で確認できます。
 初期状態はロード直後のモデル画像です。プロセス起動処理・constructor・実libcの内部状態は別の実行環境として扱います。
 ゲストRAMのアクセス規則は[実行モデル](equivalence.md)に従います。
 
@@ -34,8 +36,8 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 
 | 命令群 | 対応形式 |
 | --- | --- |
-| 移動とアドレス | 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、LEA、XCHG |
-| 整数演算 | 算術・bit演算・シフト・ROL/ROR、暗黙オペランドのunsigned MUL、明示オペランドのIMUL |
+| 移動とアドレス | 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、CBW/CWDE/CDQE、LEA、XCHG |
+| 整数演算 | 算術・bit演算・シフト・ROL/ROR、即値SHLD/SHRD、暗黙オペランドのunsigned MUL、明示オペランドのIMUL |
 | 条件と分岐 | 直接JMP/Jcc、SETcc、CMOVcc |
 | スタックと境界 | 64-bit PUSH/POP/LEAVE、RET |
 | byte/bit操作 | 32/64-bit BSWAP、16/32/64-bitレジスタのBT |
@@ -44,6 +46,9 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 
 部分レジスタとCF/ZF/SF/OF/PFをIRへ展開します。
 条件式で使うフラグは、全到達経路で定義されたものを受理します。
+即値SHLD/SHRDは、mask後のcountがオペランド幅以下の形式を扱います。
+`module-*`ではNOTRACK付きの近距離間接CALL/JMPも扱います。CETの追跡状態は実行モデルの追加対象です。
+仕様は[Intel SDM Vol.1 §18.3.1](https://cdrdv2-public.intel.com/843827/253665-sdm-vol-1-dec-24.pdf)と、[命令リファレンス](https://cdrdv2-public.intel.com/782156/325383-sdm-vol-2abcd.pdf)を参照してください。
 CMOVのメモリsourceは、条件の真偽にかかわらず読み込みます。
 RETではRSPを進め、RAXを対象関数の返り値として実行を終えます。
 
@@ -76,6 +81,7 @@ cargo run -- FILE.bin --raw --base 0x1000 --entry 0x1000 --emit ir
 | `--emit effects-c` / `effects-ir` | `puts`モデル付きの実行可能C／明示的なCALLを持つIR |
 | `--emit effects-readable-c` | 命令ごとの予算・fault・CALLを保った構造化C |
 | `--emit module-c` / `module-ir` | 複数関数の実行用C／CALL・動的RETを持つIR。既定の入口は`main` |
+| `--emit module-jumps` | 初期画像のジャンプテーブル候補、範囲のヒント、残る未知の分岐先をJSONで出力 |
 | `--emit module-readable-c` | 名前付きC関数・構造化した制御・検査付きの途中再開を持つ複数関数C |
 | `--emit module-locals-c` | 生存範囲を共有する局所変数・φコピー・途中再開用の値復元を加えた複数関数C |
 | `--run-effects RESULTS` | 指定したint返り値列でモデルを実行し、出力byte列を標準出力へ送る |

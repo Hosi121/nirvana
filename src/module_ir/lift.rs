@@ -72,6 +72,8 @@ pub fn lift_elf(
     }
     let mut instructions = Vec::new();
     let mut functions = Vec::new();
+    let mut jump_tables = Vec::new();
+    let mut jump_table_diagnostics = Vec::new();
     for (address, body) in built {
         let symbol = catalog[&address];
         functions.push(Function {
@@ -80,6 +82,10 @@ pub fn lift_elf(
             size: symbol.size,
         });
         instructions.extend(body.instructions);
+        jump_tables.extend(body.jump_tables);
+        if let Some(reason) = body.discovery_declined {
+            jump_table_diagnostics.push((address, reason));
+        }
     }
     instructions.sort_by_key(Instruction::address);
     for pair in instructions.windows(2) {
@@ -124,6 +130,8 @@ pub fn lift_elf(
             errno_address,
         },
         rejected_functions: rejected.into_values().collect(),
+        jump_tables,
+        jump_table_diagnostics,
     })
 }
 
@@ -212,11 +220,33 @@ fn shape(instruction: &Instruction) -> IrInstruction {
 struct Body {
     instructions: Vec<Instruction>,
     direct: BTreeSet<u64>,
+    jump_tables: Vec<crate::jump_tables::Candidate>,
+    discovery_declined: Option<String>,
 }
 fn lift_function(
     binary: &BinaryImage,
     function: &FunctionSymbol,
     nodes: &mut usize,
+) -> Result<Body, ModuleError> {
+    let remaining = *nodes;
+    match lift_function_inner(binary, function, nodes, true) {
+        Ok(body) => Ok(body),
+        Err(reason) => {
+            // Discovery is optional. A malformed/unsupported proposed stream
+            // retains the original dynamic transfer and original decode scope.
+            *nodes = remaining;
+            let mut body = lift_function_inner(binary, function, nodes, false)?;
+            body.discovery_declined = Some(reason.to_string());
+            Ok(body)
+        }
+    }
+}
+
+fn lift_function_inner(
+    binary: &BinaryImage,
+    function: &FunctionSymbol,
+    nodes: &mut usize,
+    discovery: bool,
 ) -> Result<Body, ModuleError> {
     let base = function.address;
     let end = base
@@ -232,6 +262,8 @@ fn lift_function(
     let mut pending = vec![base];
     let mut decoded = BTreeMap::<u64, (Instruction, DecodedInstruction)>::new();
     let mut direct = BTreeSet::new();
+    let mut jump_tables = Vec::new();
+    let mut roots = BTreeSet::from([base]);
     while let Some(address) = pending.pop() {
         if decoded.contains_key(&address) {
             continue;
@@ -322,6 +354,58 @@ fn lift_function(
         if decoded.range(address..next).next().is_some() {
             return Err(error("overlapping instruction streams"));
         }
+        if discovery
+            && matches!(original.operation, Operation::IndirectJump(_))
+            && jump_tables.len() < 16
+        {
+            let mut window = vec![original];
+            let mut cursor = address;
+            let mut branches = 0;
+            while window.len() < crate::jump_tables::MAX_WINDOW {
+                let Some((_, (_, previous))) = decoded.range(..cursor).next_back() else {
+                    break;
+                };
+                if previous.address + u64::from(previous.size) != cursor
+                    || matches!(
+                        previous.operation,
+                        Operation::Jump(_)
+                            | Operation::Call(_)
+                            | Operation::IndirectCall(_)
+                            | Operation::IndirectJump(_)
+                            | Operation::Return { .. }
+                    )
+                {
+                    break;
+                }
+                if matches!(previous.operation, Operation::Branch { .. }) {
+                    branches += 1;
+                    if branches > 1 {
+                        break;
+                    }
+                }
+                window.push(*previous);
+                cursor = previous.address;
+            }
+            window.reverse();
+            if let Some(table) = crate::jump_tables::discover(
+                &window,
+                binary.image.memory_base,
+                &binary.image.memory,
+                base..end,
+            ) {
+                *nodes = nodes
+                    .checked_sub(table.entries.len() * 2)
+                    .ok_or_else(|| error("jump table metadata limit exceeded"))?;
+                for target in table.targets() {
+                    roots.insert(target);
+                    pending.push(target);
+                }
+                if roots.len() > 1024 {
+                    return Err(error("jump table entry-root limit exceeded"));
+                }
+                jump_tables.push(table);
+            }
+        }
         match &instruction {
             Instruction::Core(i) => match &i.control {
                 Control::Next => pending.push(next),
@@ -363,11 +447,24 @@ fn lift_function(
         originals.push(original);
         instructions.push(instruction);
     }
-    let cfg = Cfg::build(base, locations).map_err(|e| error(e.to_string()))?;
-    x86::check_effect_flags(&cfg, &originals).map_err(|e| error(e.to_string()))?;
+    if roots
+        .len()
+        .checked_mul(locations.len())
+        .is_none_or(|n| n > 1_048_576)
+    {
+        return Err(error("jump table flag-validation work limit exceeded"));
+    }
+    // A candidate entry is conservatively checked with no inherited flag
+    // facts. This also checks branches reachable only through table entries.
+    for root in roots {
+        let cfg = Cfg::build(root, locations.clone()).map_err(|e| error(e.to_string()))?;
+        x86::check_effect_flags(&cfg, &originals).map_err(|e| error(e.to_string()))?;
+    }
     Ok(Body {
         instructions,
         direct,
+        jump_tables,
+        discovery_declined: None,
     })
 }
 
