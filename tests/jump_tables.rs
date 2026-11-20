@@ -72,6 +72,49 @@ fn mask_and_unsigned_fallthrough_guard_bound_the_initial_table_extent() {
 }
 
 #[test]
+fn guards_follow_compared_values_and_respect_narrow_register_views() {
+    let mut memory = Vec::new();
+    for target in [0x1050u64, 0x1060, 0x1070, 0x1080] {
+        memory.extend(target.to_le_bytes());
+    }
+    for (prefix, hint, entries) in [
+        // A low-32 comparison cannot bound the untouched high half of RDI.
+        (vec![0x83, 0xff, 1, 0x77, 0x30], None, 4),
+        // Writing EDI zero extends the compared low-32 value.
+        (vec![0x83, 0xff, 1, 0x77, 0x30, 0x89, 0xff], Some(2), 2),
+        // CMP facts survive flag-preserving copies and follow the old value,
+        // even when the compared physical register has since been overwritten.
+        (
+            vec![
+                0x83, 0xff, 1, 0x89, 0xf9, 0xbf, 99, 0, 0, 0, 0x77, 0x30, 0x89, 0xcf,
+            ],
+            Some(2),
+            2,
+        ),
+        (vec![0x48, 0x83, 0xff, 1, 0x90, 0x77, 0x30], Some(2), 2),
+    ] {
+        let mut code = prefix;
+        code.extend(absolute());
+        let c = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).unwrap();
+        assert_eq!(c.entry_limit_hint, hint);
+        assert_eq!(c.entries.len(), entries);
+    }
+}
+
+#[test]
+fn a_32_bit_left_shift_masks_the_count_before_scaling_an_index() {
+    let mut code = vec![0x83, 0xe7, 1, 0xc1, 0xe7, 32];
+    code.extend(absolute());
+    let memory: Vec<_> = [0x1050u64, 0x1060]
+        .into_iter()
+        .flat_map(u64::to_le_bytes)
+        .collect();
+    let c = jump_tables::discover(&window(&code), 0x2000, &memory, 0x1000..0x1100).unwrap();
+    assert_eq!(c.entry_limit_hint, Some(2));
+    assert_eq!(c.entries.len(), 2);
+}
+
+#[test]
 fn repeated_targets_are_retained_as_distinct_entries_and_coverage_stays_open_at_the_cap() {
     let memory = 0x1050u64.to_le_bytes().repeat(MAX_ENTRIES + 1);
     let c = jump_tables::discover(&window(&absolute()), 0x2000, &memory, 0x1000..0x1100).unwrap();

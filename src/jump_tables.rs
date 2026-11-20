@@ -136,23 +136,29 @@ impl Word {
 
 struct Values {
     registers: [Word; 16],
+    low32: [Word; 16],
     fresh: u32,
     bounds: BTreeMap<u32, u64>,
     entry_limits: BTreeMap<(u64, u32), usize>,
-    comparison: Option<(Register, u64)>,
+    comparison: Option<(Word, u64)>,
 }
 impl Values {
     fn new() -> Self {
-        Self {
+        let mut values = Self {
             registers: std::array::from_fn(|i| Word::Linear {
                 constant: 0,
                 term: Some((i as u32, 1)),
             }),
+            low32: [Word::constant(0); 16],
             fresh: 16,
             bounds: BTreeMap::new(),
             entry_limits: BTreeMap::new(),
             comparison: None,
+        };
+        for r in 0..16 {
+            values.low32[r] = values.bounded_unknown(u64::from(u32::MAX));
         }
+        values
     }
     fn unknown(&mut self) -> Word {
         let id = self.fresh;
@@ -188,6 +194,9 @@ impl Values {
                 signed: false,
                 bias: 0,
             };
+        }
+        if r.width == Width::U32 && r.shift == 0 {
+            return self.low32[r.index as usize];
         }
         self.unknown()
     }
@@ -249,7 +258,7 @@ impl Values {
         }
     }
     fn write(&mut self, r: Register, value: Word, raw_load: bool) {
-        self.registers[r.index as usize] = if r.shift == 0 && r.width == Width::U64 {
+        let value = if r.shift == 0 && r.width == Width::U64 {
             value
         } else if r.shift == 0 && r.width == Width::U32 {
             if let Some(n) = value.number() {
@@ -267,13 +276,34 @@ impl Values {
             {
                 value
             } else {
-                self.unknown()
+                self.bounded_unknown(u64::from(u32::MAX))
             }
         } else {
             self.unknown()
         };
+        self.registers[r.index as usize] = value;
+        self.low32[r.index as usize] = if let Some(n) = value.number() {
+            Word::constant(n & Width::U32.mask())
+        } else if self.fits_u32(value) {
+            value
+        } else if let Word::Entry {
+            table,
+            width: Width::U32,
+            bias: 0,
+            ..
+        } = value
+        {
+            Word::Entry {
+                table,
+                width: Width::U32,
+                signed: false,
+                bias: 0,
+            }
+        } else {
+            self.bounded_unknown(u64::from(u32::MAX))
+        };
     }
-    fn observe(&mut self, i: DecodedInstruction) {
+    fn observe(&mut self, i: DecodedInstruction, successor: u64) {
         let next = i.address + u64::from(i.size);
         let previous_comparison = self.comparison.take();
         match i.operation {
@@ -282,28 +312,33 @@ impl Values {
                 destination: Operand::Register(r),
                 source: Operand::Immediate(n),
             } => {
-                self.comparison = Some((r, n & r.width.mask()));
+                self.comparison = Some((self.register(r), n & r.width.mask()));
             }
-            Operation::Branch { condition, .. } => {
-                if let Some((r, n)) = previous_comparison {
-                    let bound = match condition {
-                        7 => Some(n),
-                        3 => n.checked_sub(1),
+            Operation::Branch { condition, target } => {
+                if let Some((value, n)) = previous_comparison {
+                    let bound = match (condition, successor == target, target != next) {
+                        (7, false, true) | (6, true, true) => Some(n),
+                        (3, false, true) | (2, true, true) => n.checked_sub(1),
                         _ => None,
                     };
-                    if let Some(bound) = bound {
-                        let old = self.registers[r.index as usize];
-                        let new = self.bounded_unknown(bound);
-                        for value in &mut self.registers {
-                            if *value == old {
-                                *value = new;
-                            }
-                        }
+                    if let (
+                        Some(bound),
+                        Word::Linear {
+                            constant: 0,
+                            term: Some((id, 1)),
+                        },
+                    ) = (bound, value)
+                    {
+                        self.bounds
+                            .entry(id)
+                            .and_modify(|n| *n = (*n).min(bound))
+                            .or_insert(bound);
                     }
+                    self.comparison = previous_comparison;
                 }
             }
-            Operation::Nop
-            | Operation::Alu {
+            Operation::Nop | Operation::Jump(_) => self.comparison = previous_comparison,
+            Operation::Alu {
                 kind: Alu::Cmp | Alu::Test,
                 ..
             } => {}
@@ -313,6 +348,7 @@ impl Values {
             } => {
                 let value = self.operand(source, next);
                 self.write(r, value, true);
+                self.comparison = previous_comparison;
             }
             Operation::Extend {
                 destination,
@@ -330,6 +366,7 @@ impl Values {
                     value = Word::constant(((n << shift) as i64 >> shift) as u64);
                 }
                 self.write(destination, value, true);
+                self.comparison = previous_comparison;
             }
             Operation::Lea {
                 destination,
@@ -339,6 +376,7 @@ impl Values {
                     .address(address, next)
                     .unwrap_or_else(|| self.unknown());
                 self.write(destination, value, false);
+                self.comparison = previous_comparison;
             }
             Operation::Alu {
                 kind,
@@ -349,7 +387,7 @@ impl Values {
                 let b = self.operand(source, next);
                 let value = match kind {
                     Alu::And if a.number().is_none() && b.number().is_some() => {
-                        Some(self.bounded_unknown(b.number().unwrap()))
+                        Some(self.bounded_unknown(b.number().unwrap() & r.width.mask()))
                     }
                     Alu::Add => a.add(b),
                     Alu::Sub => b.scale(u64::MAX).and_then(|b| a.add(b)),
@@ -373,14 +411,23 @@ impl Values {
             } => {
                 let value = self
                     .register(r)
-                    .scale(1u64 << (count & 63))
+                    .scale(1u64 << (count & if r.width == Width::U64 { 63 } else { 31 }))
                     .unwrap_or_else(|| self.unknown());
                 self.write(r, value, false);
             }
             // Unmodeled writes invalidate the whole local interpretation.
             _ => {
                 for r in 0..16 {
-                    self.registers[r] = self.unknown();
+                    let unknown = self.unknown();
+                    self.write(
+                        Register {
+                            index: r as u8,
+                            width: Width::U64,
+                            shift: 0,
+                        },
+                        unknown,
+                        false,
+                    );
                 }
             }
         }
@@ -459,7 +506,7 @@ pub fn discover(
     };
     let mut values = Values::new();
     for &i in prefix {
-        values.observe(i);
+        values.observe(i, i.address + u64::from(i.size));
     }
     let next = branch.address.checked_add(u64::from(branch.size))?;
     let Word::Entry {
