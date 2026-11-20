@@ -13,6 +13,8 @@ use crate::structure::Node;
 pub const MODEL_ID: &str = "structured-flow-v1";
 const NODE_LIMIT: usize = 100_000;
 const DEPTH_LIMIT: usize = 256;
+const EXPRESSION_LIMIT: usize = 100_000;
+const WORK_LIMIT: usize = 1_000_000;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FlowId(usize);
@@ -247,8 +249,13 @@ impl FlowGraph {
         }
         Ok(next)
     }
-    fn resolve(&self, mut id: FlowId) -> Result<FlowId, ValidationError> {
+    fn resolve_with_work(
+        &self,
+        mut id: FlowId,
+        work: &mut Work,
+    ) -> Result<FlowId, ValidationError> {
         for _ in 0..self.nodes.len() {
+            work.spend()?;
             match &self.nodes[id.0] {
                 FlowNode::Jump(target) => id = *target,
                 _ => return Ok(id),
@@ -298,12 +305,150 @@ impl FlowGraph {
 /// changes: even an equivalent rewritten expression is rejected by this model.
 pub fn validate(program: &Program, body: &[Node]) -> Result<StructureEvidence, ValidationError> {
     let graph = FlowGraph::from_nodes(body)?;
-    validate_graph(program, &graph)
+    validate_graph(program, &graph, false)
+}
+
+/// Prove that every syntactic Step is a valid independent resumption point.
+///
+/// This also checks copies hidden after returns or in unreachable AST tails,
+/// and requires every source instruction (including unreachable ones) to have
+/// a checked copy. No source expression, condition, or assignment is executed.
+/// Exhausted syntax, expression, routing, or correspondence budgets fail closed.
+pub fn validate_reentries(
+    program: &Program,
+    body: &[Node],
+) -> Result<StructureEvidence, ValidationError> {
+    bounded_reentry_syntax(program, body)?;
+    let graph = FlowGraph::from_nodes(body)?;
+    validate_graph(program, &graph, true)
+}
+
+struct Work(Option<usize>);
+impl Work {
+    fn spend(&mut self) -> Result<(), ValidationError> {
+        if let Some(remaining) = &mut self.0 {
+            *remaining = remaining
+                .checked_sub(1)
+                .ok_or(ValidationError::ResourceLimit)?;
+        }
+        Ok(())
+    }
+}
+
+fn bounded_reentry_syntax(program: &Program, body: &[Node]) -> Result<(), ValidationError> {
+    if body.len() >= NODE_LIMIT || program.instructions().len() >= NODE_LIMIT {
+        return Err(ValidationError::ResourceLimit);
+    }
+    let mut work = Work(Some(WORK_LIMIT));
+    let mut remaining_nodes = NODE_LIMIT - 1 - body.len();
+    let mut remaining_expressions = EXPRESSION_LIMIT;
+    let mut pending: Vec<_> = body.iter().map(|node| (node, 1usize)).collect();
+    while let Some((node, depth)) = pending.pop() {
+        work.spend()?;
+        if depth > DEPTH_LIMIT {
+            return Err(ValidationError::ResourceLimit);
+        }
+        let mut push = |children: &[Node]| -> Result<(), ValidationError> {
+            remaining_nodes = remaining_nodes
+                .checked_sub(children.len())
+                .ok_or(ValidationError::ResourceLimit)?;
+            Ok(())
+        };
+        match node {
+            Node::Step { assignments, .. } => {
+                bounded_assignments(assignments, &mut remaining_expressions, &mut work)?;
+            }
+            Node::If {
+                condition,
+                taken,
+                not_taken,
+            } => {
+                bounded_expression(condition, &mut remaining_expressions, &mut work)?;
+                push(taken)?;
+                push(not_taken)?;
+                pending.extend(taken.iter().chain(not_taken).map(|node| (node, depth + 1)));
+            }
+            Node::Loop(body) => {
+                push(body)?;
+                pending.extend(body.iter().map(|node| (node, depth + 1)));
+            }
+            Node::Evaluate(value) | Node::Return(value) => {
+                bounded_expression(value, &mut remaining_expressions, &mut work)?;
+            }
+            _ => {}
+        }
+    }
+    for instruction in program.instructions() {
+        work.spend()?;
+        bounded_assignments(
+            &instruction.assignments,
+            &mut remaining_expressions,
+            &mut work,
+        )?;
+        if let Control::Branch { condition, .. } | Control::Return(condition) = &instruction.control
+        {
+            bounded_expression(condition, &mut remaining_expressions, &mut work)?;
+        }
+    }
+    Ok(())
+}
+
+fn bounded_assignments(
+    assignments: &[Assignment],
+    remaining: &mut usize,
+    work: &mut Work,
+) -> Result<(), ValidationError> {
+    use crate::ir::Place;
+    for assignment in assignments {
+        work.spend()?;
+        if let Place::Memory { address, .. } = &assignment.destination {
+            bounded_expression(address, remaining, work)?;
+        }
+        bounded_expression(&assignment.value, remaining, work)?;
+    }
+    Ok(())
+}
+
+fn bounded_expression(
+    expression: &Expr,
+    remaining: &mut usize,
+    work: &mut Work,
+) -> Result<(), ValidationError> {
+    let mut pending = vec![(expression, 1usize)];
+    while let Some((expression, depth)) = pending.pop() {
+        work.spend()?;
+        *remaining = remaining
+            .checked_sub(1)
+            .ok_or(ValidationError::ResourceLimit)?;
+        if depth > DEPTH_LIMIT {
+            return Err(ValidationError::ResourceLimit);
+        }
+        match expression {
+            Expr::Binary(_, left, right) => {
+                pending.extend([(left.as_ref(), depth + 1), (right.as_ref(), depth + 1)]);
+            }
+            Expr::Load { address, .. } => pending.push((address, depth + 1)),
+            Expr::Select {
+                condition,
+                taken,
+                not_taken,
+            } => {
+                pending.extend([
+                    (condition.as_ref(), depth + 1),
+                    (taken.as_ref(), depth + 1),
+                    (not_taken.as_ref(), depth + 1),
+                ]);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn validate_graph(
     program: &Program,
     graph: &FlowGraph,
+    all_reentries: bool,
 ) -> Result<StructureEvidence, ValidationError> {
     let instructions: BTreeMap<_, _> = program
         .instructions()
@@ -312,10 +457,19 @@ fn validate_graph(
         .collect();
     let entry = program.cfg().block(program.cfg().entry()).start;
     let mut pending = VecDeque::from([(entry, graph.entry)]);
+    if all_reentries {
+        for (index, node) in graph.nodes.iter().enumerate() {
+            if let FlowNode::Step { address, .. } = node {
+                pending.push_back((*address, FlowId(index)));
+            }
+        }
+    }
+    let mut work = Work(all_reentries.then_some(WORK_LIMIT));
     let mut checked = BTreeSet::new();
     let mut covered = BTreeSet::new();
     while let Some((address, id)) = pending.pop_front() {
-        let id = graph.resolve(id)?;
+        work.spend()?;
+        let id = graph.resolve_with_work(id, &mut work)?;
         if !checked.insert((address, id)) {
             continue;
         }
@@ -347,7 +501,7 @@ fn validate_graph(
             return Err(ValidationError::Assignments { address, node: id });
         }
         covered.insert(address);
-        let next = graph.resolve(*next)?;
+        let next = graph.resolve_with_work(*next, &mut work)?;
         let fallthrough = instruction.address + u64::from(instruction.size);
         match (&instruction.control, &graph.nodes[next.0]) {
             (Control::Next, _) => pending.push_back((fallthrough, next)),
@@ -374,6 +528,13 @@ fn validate_graph(
                     address,
                     node: next,
                 });
+            }
+        }
+    }
+    if all_reentries {
+        for instruction in program.instructions() {
+            if !covered.contains(&instruction.address) {
+                return Err(ValidationError::MissingInstruction(instruction.address));
             }
         }
     }

@@ -60,6 +60,7 @@ pub struct StructureStats {
 pub enum StructureError {
     Irreducible,
     CopyLimit { block: BlockId, limit: usize },
+    StepLimit { limit: usize },
     MissingLoopFollow(BlockId),
     NonlocalLoopTransfer(BlockId),
     MissingJoin(BlockId),
@@ -75,6 +76,10 @@ impl fmt::Display for StructureError {
             Self::CopyLimit { block, limit } => {
                 write!(f, "{block} exceeds the static copy limit of {limit}")
             }
+            Self::StepLimit { limit } => write!(
+                f,
+                "structured steps exceed the total copy budget of {limit}"
+            ),
             Self::MissingLoopFollow(id) => write!(f, "no supported common follow for loop at {id}"),
             Self::NonlocalLoopTransfer(id) => write!(f, "nonlocal loop transfer to {id}"),
             Self::MissingJoin(id) => write!(f, "no supported post-dominance join for {id}"),
@@ -104,6 +109,8 @@ struct Builder<'a> {
     visited: BTreeSet<BlockId>,
     copies: Vec<usize>,
     copy_limit: usize,
+    step_limit: usize,
+    remaining_steps: usize,
     forward_dag: Option<ForwardDag>,
 }
 
@@ -118,12 +125,29 @@ impl StructuredFunction {
         program: &Program,
         copy_limit: usize,
     ) -> Result<Self, StructureError> {
+        Self::recover_with_step_limit(program, copy_limit, usize::MAX)
+    }
+
+    /// Bound the total original steps before cloning a block's assignments.
+    /// This permits shared return tails while keeping whole-body growth finite.
+    pub fn recover_with_step_limit(
+        program: &Program,
+        copy_limit: usize,
+        step_limit: usize,
+    ) -> Result<Self, StructureError> {
         let analysis = ControlFlowAnalysis::compute(program.cfg()).expect("validated program CFG");
         if !analysis.is_reducible() {
             return Err(StructureError::Irreducible);
         }
         let postdom = PostDominators::compute(program.cfg()).ok();
-        let baseline = Self::recover_using(program, copy_limit, &analysis, postdom.as_ref(), false);
+        let baseline = Self::recover_using(
+            program,
+            copy_limit,
+            step_limit,
+            &analysis,
+            postdom.as_ref(),
+            false,
+        );
         // The existing strategy already minimizes copies in this case. Avoid
         // extra analysis and keep its established layout unchanged.
         if matches!(&baseline, Ok(function) if function.stats.extra_block_copies == 0)
@@ -131,7 +155,14 @@ impl StructuredFunction {
         {
             return baseline;
         }
-        let proposed = Self::recover_using(program, copy_limit, &analysis, postdom.as_ref(), true);
+        let proposed = Self::recover_using(
+            program,
+            copy_limit,
+            step_limit,
+            &analysis,
+            postdom.as_ref(),
+            true,
+        );
         match (baseline, proposed) {
             (Ok(old), Ok(new))
                 if new.stats.emitted_block_copies <= old.stats.emitted_block_copies
@@ -150,6 +181,7 @@ impl StructuredFunction {
     fn recover_using(
         program: &Program,
         copy_limit: usize,
+        step_limit: usize,
         analysis: &ControlFlowAnalysis,
         postdom: Option<&PostDominators>,
         forward_joins: bool,
@@ -163,6 +195,8 @@ impl StructuredFunction {
             visited: BTreeSet::new(),
             copies: vec![0; program.cfg().blocks().len()],
             copy_limit,
+            step_limit,
+            remaining_steps: step_limit,
             forward_dag: forward_joins.then(|| ForwardDag::new(program.cfg(), analysis)),
         };
         let body = builder.region(program.cfg().entry(), None, &[], None)?;
@@ -365,6 +399,12 @@ impl Builder<'_> {
             self.copies[current.index()] += 1;
             self.visited.insert(current);
             let block = self.program.cfg().block(current);
+            self.remaining_steps = self
+                .remaining_steps
+                .checked_sub(block.instructions.len())
+                .ok_or(StructureError::StepLimit {
+                    limit: self.step_limit,
+                })?;
             for instruction in &self.program.instructions()[block.instructions.clone()] {
                 nodes.push(Node::Step {
                     address: instruction.address,
