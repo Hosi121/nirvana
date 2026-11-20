@@ -208,6 +208,17 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
                 _ => (0, 0, F_CF | F_OF),
             }
         }
+        Operation::DoubleShift {
+            destination, count, ..
+        } => {
+            let width = destination.width().unwrap();
+            let count = u64::from(count) & if width == Width::U64 { 63 } else { 31 };
+            match count {
+                0 => (0, 0, 0),
+                1 => (0, ALL, 0),
+                _ => (0, ALL & !F_OF, F_OF),
+            }
+        }
         _ => (0, 0, 0),
     }
 }
@@ -505,6 +516,50 @@ impl Lifter {
         self.set(PF, Expr::select(eq(r(C), k(0)), r(PF), parity));
         self.write(destination, r(RESULT));
     }
+    // Intel SDM vol.2B SHLD/SHRD: defined nonzero counts, a preserved zero
+    // count, and OF available only for a one-bit shift. AF is outside this IR.
+    fn double_shift(&mut self, left: bool, destination: Operand, source: Register, count: u8) {
+        let width = destination.width().unwrap();
+        let count = u64::from(count) & if width == Width::U64 { 63 } else { 31 };
+        let (destination, value) = self.snapshot_destination(destination);
+        self.set(A, value);
+        self.set(V, self.read_register(source));
+        if count == 0 {
+            self.write(destination, r(A));
+            return;
+        }
+        let complement = u64::from(width.bits()) - count;
+        let value = if left {
+            or(b(B::Shl, r(A), k(count)), b(B::Shr, r(V), k(complement)))
+        } else {
+            or(b(B::Shr, r(A), k(count)), b(B::Shl, r(V), k(complement)))
+        };
+        self.set(RESULT, mask(value, width));
+        self.set(
+            CF,
+            bit(
+                r(A),
+                if left {
+                    width.bits() - count as u32
+                } else {
+                    count as u32 - 1
+                },
+            ),
+        );
+        self.set(
+            OF,
+            if count == 1 {
+                xor(
+                    bit(r(A), width.bits() - 1),
+                    bit(r(RESULT), width.bits() - 1),
+                )
+            } else {
+                k(0)
+            },
+        );
+        self.result_flags(width);
+        self.write(destination, r(RESULT));
+    }
     // Intel SDM vol. 2B, RCL/RCR/ROL/ROR operation and flags (4-529/4-530).
     // https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf
     fn rotate(&mut self, kind: Rotate, destination: Operand, count: Operand) {
@@ -705,6 +760,12 @@ impl Lifter {
                 destination,
                 count,
             } => self.shift(kind, destination, count),
+            Operation::DoubleShift {
+                left,
+                destination,
+                source,
+                count,
+            } => self.double_shift(left, destination, source, count),
             Operation::Rotate {
                 kind,
                 destination,

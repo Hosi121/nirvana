@@ -100,6 +100,12 @@ pub enum Operation {
         destination: Operand,
         count: Operand,
     },
+    DoubleShift {
+        left: bool,
+        destination: Operand,
+        source: Register,
+        count: u8,
+    },
     Rotate {
         kind: Rotate,
         destination: Operand,
@@ -417,6 +423,23 @@ impl Decoder<'_> {
             });
         }
         Ok(match opcode {
+            0x98 => Operation::Extend {
+                destination: Register {
+                    index: 0,
+                    width,
+                    shift: 0,
+                },
+                source: Operand::Register(Register {
+                    index: 0,
+                    width: match width {
+                        Width::U64 => Width::U32,
+                        Width::U32 => Width::U16,
+                        _ => Width::U8,
+                    },
+                    shift: 0,
+                }),
+                signed: true,
+            },
             0x90 if self.rex & 1 == 0 => Operation::Nop,
             0x90 => Operation::Exchange {
                 left: Operand::Register(self.register(0, width)),
@@ -710,6 +733,21 @@ impl Decoder<'_> {
             0x0f => {
                 let second = self.byte()?;
                 match second {
+                    0xa4 | 0xac => {
+                        let (source, destination, _) = self.modrm(width)?;
+                        let count = self.byte()?;
+                        let effective =
+                            u64::from(count) & if width == Width::U64 { 63 } else { 31 };
+                        if effective > u64::from(width.bits()) {
+                            return Err(self.error("double shift count exceeds operand width"));
+                        }
+                        Operation::DoubleShift {
+                            left: second == 0xa4,
+                            destination,
+                            source,
+                            count,
+                        }
+                    }
                     0x1f => {
                         let (_, _, group) = self.modrm(width)?;
                         if group != 0 {

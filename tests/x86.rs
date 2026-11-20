@@ -374,3 +374,50 @@ fn arithmetic_flags_match_wide_integer_oracles_at_all_operand_widths() {
         }
     }
 }
+#[test]
+fn implicit_accumulator_sign_extension_preserves_width_rules_and_flags() {
+    use nirvana::ir::Width;
+    for (bytes, from, to) in [
+        (&[0x98][..], Width::U16, Width::U32),
+        (&[0x66, 0x98], Width::U8, Width::U16),
+        (&[0x48, 0x98], Width::U32, Width::U64),
+        (&[0x49, 0x98], Width::U32, Width::U64),
+    ] {
+        let mut code = bytes.to_vec();
+        code.push(0xc3);
+        let program = nirvana::x86::lift(&code, 0, 0).unwrap();
+        for value in [
+            0,
+            0x7f,
+            0x80,
+            0x7fff,
+            0x8000,
+            0x7fff_ffff,
+            0x8000_0000,
+            0x1234_5678_ffff_ffff,
+            u64::MAX,
+        ] {
+            let mut input = vec![0; nirvana::x86::REGISTER_COUNT];
+            input[0] = value;
+            for (i, r) in input.iter_mut().enumerate().skip(16) {
+                *r = i as u64;
+            }
+            let extended = match from {
+                Width::U8 => (value as u8 as i8 as i64) as u64,
+                Width::U16 => (value as u16 as i16 as i64) as u64,
+                _ => (value as u32 as i32 as i64) as u64,
+            };
+            let expected = if to == Width::U16 {
+                (value & !0xffff) | (extended & 0xffff)
+            } else if to == Width::U32 {
+                extended & 0xffff_ffff
+            } else {
+                extended
+            };
+            let report = program.execute(&input, 2).unwrap();
+            assert_eq!(report.value, expected, "{bytes:02x?} {value:#x}");
+            assert_eq!(&report.registers[16..], &input[16..]);
+            assert_eq!(report.registers[8], input[8]);
+        }
+    }
+}
