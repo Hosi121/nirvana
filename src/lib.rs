@@ -47,6 +47,7 @@ pub mod module_emit;
 pub mod module_ir;
 pub mod module_outline;
 pub mod module_readable;
+pub mod module_values;
 pub mod narrow_division_expr;
 pub mod narrow_rotate;
 pub mod object_refs;

@@ -15,6 +15,7 @@
 | `fixture.h` | 共通の関数宣言 |
 | `harness.c` | 標準入力から状態を読み、返り値と最終状態を出力 |
 | `helpers.c` | 外部呼出しを残すfixture用の別翻訳単位 |
+| `value-lifetimes.c` | O0/O2のループ・分岐・関数呼出しを含む値追跡用の独立した実行ファイル |
 
 共通インターフェースは`uint64_t fixture(uint64_t state[4])`です。
 演算はunsigned 64-bitの折返しを許し、添字とループ回数は小さな範囲に制限しています。
