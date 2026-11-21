@@ -45,6 +45,8 @@ fn signed_reciprocal_quotients_and_remainders_have_universal_integer_checks() {
                 encoded.to_string()
             };
             let model = include_str!("../models/signed_reciprocal.smt2.in")
+                .replace("@BASE@", "18446744073709551616")
+                .replace("@HALF@", "9223372036854775808")
                 .replace("@M@", &m.to_string())
                 .replace("@ENCODED@", &encoded)
                 .replace("@ADD@", if m >> 63 != 0 { "true" } else { "false" })

@@ -8,6 +8,7 @@ mod support {
     #[path = "../../examples/programs/mod.rs"]
     pub mod programs;
     pub mod signed_reciprocals;
+    pub mod word_reciprocals;
 }
 
 #[path = "transform/access_expr.rs"]
@@ -58,3 +59,5 @@ mod signed_expr;
 mod simplify;
 #[path = "transform/unary_guards.rs"]
 mod unary_guards;
+#[path = "transform/word_signed_division.rs"]
+mod word_signed_division;

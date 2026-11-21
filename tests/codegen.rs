@@ -69,3 +69,5 @@ mod stack_views;
 mod typed_address_backend;
 #[path = "codegen/typed_locals.rs"]
 mod typed_locals;
+#[path = "codegen/word_signed_backend.rs"]
+mod word_signed_backend;

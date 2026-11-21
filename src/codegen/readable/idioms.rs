@@ -9,8 +9,15 @@ use crate::transform::narrow_rotate::{self, Direction, NarrowRotate, NarrowWidth
 use crate::transform::remainder_expr;
 use crate::transform::signed_division_expr;
 use crate::transform::signed_expr::{self, SignedKind};
+use crate::transform::word_signed_division::{self, Operation};
 
 pub(super) enum View<'a> {
+    WordSigned {
+        name: &'static str,
+        value: &'a Expr,
+        divisor: i64,
+        bits: u32,
+    },
     Signed {
         name: &'static str,
         value: &'a Expr,
@@ -31,6 +38,17 @@ pub(super) enum View<'a> {
 }
 
 pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
+    if let Some(view) = word_signed_division::recognize(expression) {
+        return Some(View::WordSigned {
+            name: match view.operation {
+                Operation::Quotient => "nirvana_sdiv_word",
+                Operation::Remainder => "nirvana_srem_word",
+            },
+            value: view.value,
+            divisor: view.divisor,
+            bits: view.width.bits(),
+        });
+    }
     if let Some(view) = signed_division_expr::recognize_remainder(expression) {
         return Some(View::Signed {
             name: "nirvana_srem64",
@@ -92,10 +110,17 @@ pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
 
 pub(super) fn preserve_mask(expression: &Expr) -> bool {
     narrow_rotate::recognize_masked(expression).is_some()
+        || word_signed_division::recognize(expression).is_some()
 }
 
 pub(super) fn definitions(code: &str) -> String {
     let mut definitions = integer::selected_helpers(code);
+    if code.contains("nirvana_sdiv_word(") || code.contains("nirvana_srem_word(") {
+        definitions.push_str(word_signed_division::DIVIDE_HELPER);
+    }
+    if code.contains("nirvana_srem_word(") {
+        definitions.push_str(word_signed_division::REMAINDER_HELPER);
+    }
     if code.contains("nirvana_sdiv64(") || code.contains("nirvana_srem64(") {
         definitions.push_str(signed_division_expr::DIVIDE_HELPER);
     }

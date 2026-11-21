@@ -39,6 +39,6 @@ pub use transform::{
     access_expr, add_division_expr, affine_region, arithmetic_graph, bit_expr, context_remainder,
     display_dce, division_expr, finite_region, for_loop, guarded_loop, indexed, load_mask,
     narrow_division_expr, narrow_rotate, reduce, remainder_expr, remainder_graph, self_update,
-    sequence, signed_division_expr, signed_expr, simplify,
+    sequence, signed_division_expr, signed_expr, simplify, word_signed_division,
 };
 pub use verification::{block_verify, verify};

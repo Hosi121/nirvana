@@ -4,6 +4,7 @@ mod support {
     pub mod ir;
     pub mod rewrite_cases;
     pub mod signed_reciprocals;
+    pub mod word_reciprocals;
 }
 
 #[path = "verification/block_verification.rs"]
@@ -18,3 +19,6 @@ mod recovery_verification;
 mod unary_ops;
 #[path = "verification/verification.rs"]
 mod verification;
+
+#[path = "verification/word_signed.rs"]
+mod word_signed;

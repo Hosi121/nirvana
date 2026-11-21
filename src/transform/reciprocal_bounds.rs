@@ -11,6 +11,50 @@ pub(crate) struct Reciprocal {
     multiplier: u128,
 }
 
+/// A word-sized signed quotient certificate. The positive endpoint excludes
+/// the sign bit; the negative magnitude domain includes that endpoint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SignedReciprocal {
+    pub divisor: u64,
+    pub excess: u64,
+    pub positive_bound: u128,
+    pub negative_bound: u128,
+}
+
+impl SignedReciprocal {
+    pub fn infer(multiplier: u64, bits: u32, shift: u32) -> Option<Self> {
+        if !(2..=64).contains(&bits) || shift >= bits {
+            return None;
+        }
+        let power = 1u128.checked_shl(bits + shift)?;
+        let divisor = Reciprocal::infer(u128::from(multiplier), power)?.divisor;
+        Self::check(multiplier, bits, shift, divisor)
+    }
+
+    pub fn check(multiplier: u64, bits: u32, shift: u32, divisor: u64) -> Option<Self> {
+        if !(2..=64).contains(&bits) || shift >= bits || u128::from(multiplier) >= (1u128 << bits) {
+            return None;
+        }
+        let negative_maximum = 1u64 << (bits - 1);
+        if divisor >= negative_maximum {
+            return None;
+        }
+        let power = 1u128.checked_shl(bits + shift)?;
+        let reciprocal = Reciprocal::check(u128::from(multiplier), power, divisor)?;
+        let positive_bound = reciprocal.exact_bound(negative_maximum - 1)?;
+        let negative_bound = reciprocal.exact_bound(negative_maximum)?;
+        if reciprocal.excess == 0 || positive_bound >= power || negative_bound > power {
+            return None;
+        }
+        Some(Self {
+            divisor,
+            excess: reciprocal.excess,
+            positive_bound,
+            negative_bound,
+        })
+    }
+}
+
 impl Reciprocal {
     pub fn infer(multiplier: u128, power: u128) -> Option<Self> {
         if multiplier == 0 || power == 0 {
@@ -134,6 +178,11 @@ mod tests {
                 let Some(r) = Reciprocal::check(m, p, divisor) else {
                     continue;
                 };
+                let signed = SignedReciprocal::check(m as u64, 8, shift, divisor);
+                let expected = r.excess != 0
+                    && r.exact_bound(127).unwrap() < p
+                    && r.exact_bound(128).unwrap() <= p;
+                assert_eq!(signed.is_some(), expected);
                 if r.excess == 0
                     || r.exact_bound(127).unwrap() >= p
                     || r.exact_bound(128).unwrap() > p
