@@ -130,3 +130,5 @@ python3 tools/measure_source_recovery.py --help
 ```
 
 [保存式の検査](../tests/verification/memory_values.rs)は、加算・積・XOR・部分挿入・除算・条件式の実際の変換を、RAMと最初のfaultを含むSMTモデルで照合します。捕捉する式を変えた候補では反例を再実行します。別々のStoreの未知bitも区別し、捕捉後に利用する値を取り違えた内部planを検査します。
+
+[lifterの切詰め検査](../src/binary/x86/lift/clipping_proofs.rs)は、実際の構築関数が作る式を従来のmaskとSMTで照合します。幅付きLoadとネストしたアドレス読込みも含め、幅の保持とfaultを確認します。機械語のbyte再読込みはnativeとも照合し、直接liftしたIRから保存値の対応を導けることを検査します。

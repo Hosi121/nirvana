@@ -449,6 +449,32 @@ fn mask_elision_requires_the_entire_atom_bit_hull() {
             set(2, load(and(r(0), 247), Width::U8)),
             set(2, load(and(r(0), 256), Width::U8)),
             set(2, load(and(add(r(0), c(1)), 255), Width::U8)),
+            set(
+                2,
+                load(
+                    Expr::unary(
+                        crate::model::ir::UnaryOp::Extract {
+                            start: 1,
+                            width: Width::U8,
+                        },
+                        r(0),
+                    ),
+                    Width::U8,
+                ),
+            ),
+            set(
+                2,
+                load(
+                    Expr::unary(
+                        crate::model::ir::UnaryOp::Extract {
+                            start: 0,
+                            width: Width::U8,
+                        },
+                        add(r(0), c(1)),
+                    ),
+                    Width::U8,
+                ),
+            ),
         ],
         c(0),
     );
@@ -490,49 +516,59 @@ fn mask_elision_requires_the_entire_atom_bit_hull() {
 }
 #[test]
 fn loaded_u32_proof_links_masked_index_to_loaded_pointer_layout() {
-    let source = program(
-        vec![
-            set(2, load(add(r(0), c(8)), Width::U64)),
-            set(3, load(r(1), Width::U32)),
-            set(
-                4,
-                load(add(r(2), mul(and(r(3), u32::MAX as u64), 4)), Width::U32),
-            ),
-        ],
-        c(0),
-    );
-    let (graph, ids) = graph(&source);
-    let pointer = definition(&graph, 0);
-    let index = definition(&graph, 1);
-    let mut bits = vec![64; graph.values.len()];
-    bits[index.0] = 32;
-    let found = collect_with_bounds(&source, &graph, &ids, &bits).unwrap();
-    assert_eq!(
-        found[2].address,
-        AddressShape::Base {
-            base: pointer,
-            offset: 0,
-            index: Some(ScaledIndex {
-                value: index,
-                stride: 4
-            })
-        }
-    );
-    assert_eq!(
-        layouts(&found)
-            .unwrap()
-            .iter()
-            .find(|l| l.base == pointer)
-            .unwrap()
-            .arrays[0]
-            .stride,
-        4
-    );
-    bits[index.0] = 64;
-    assert_eq!(
-        collect_with_bounds(&source, &graph, &ids, &bits).unwrap()[2].address,
-        AddressShape::Unknown
-    );
+    for projection in [false, true] {
+        let index_value = if projection {
+            Expr::unary(
+                crate::model::ir::UnaryOp::Extract {
+                    start: 0,
+                    width: Width::U32,
+                },
+                r(3),
+            )
+        } else {
+            and(r(3), u32::MAX as u64)
+        };
+        let source = program(
+            vec![
+                set(2, load(add(r(0), c(8)), Width::U64)),
+                set(3, load(r(1), Width::U32)),
+                set(4, load(add(r(2), mul(index_value, 4)), Width::U32)),
+            ],
+            c(0),
+        );
+        let (graph, ids) = graph(&source);
+        let pointer = definition(&graph, 0);
+        let index = definition(&graph, 1);
+        let mut bits = vec![64; graph.values.len()];
+        bits[index.0] = 32;
+        let found = collect_with_bounds(&source, &graph, &ids, &bits).unwrap();
+        assert_eq!(
+            found[2].address,
+            AddressShape::Base {
+                base: pointer,
+                offset: 0,
+                index: Some(ScaledIndex {
+                    value: index,
+                    stride: 4
+                })
+            }
+        );
+        assert_eq!(
+            layouts(&found)
+                .unwrap()
+                .iter()
+                .find(|l| l.base == pointer)
+                .unwrap()
+                .arrays[0]
+                .stride,
+            4
+        );
+        bits[index.0] = 64;
+        assert_eq!(
+            collect_with_bounds(&source, &graph, &ids, &bits).unwrap()[2].address,
+            AddressShape::Unknown
+        );
+    }
 }
 #[test]
 fn mask_identity_and_definition_expansion_are_pure_and_canonical() {

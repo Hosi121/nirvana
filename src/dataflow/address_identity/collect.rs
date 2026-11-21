@@ -334,6 +334,9 @@ impl Collector<'_> {
                     (op, Some(Affine { offset, terms })) if terms.is_empty() => {
                         Some(Affine::constant(op.evaluate(offset)))
                     }
+                    (crate::model::ir::UnaryOp::Extract { start: 0, width }, Some(value)) => {
+                        value.masked(width.mask(), self.bits)
+                    }
                     _ => None,
                 }
             }

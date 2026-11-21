@@ -614,3 +614,82 @@ fn partial_register_inserts_match_native_mov_and_preserve_other_machine_values()
         "{checked} native partial-register writes with full architectural register/flag comparisons"
     );
 }
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn zero_extended_memory_reads_expose_saved_slices_and_keep_all_fault_prefixes() {
+    use nirvana::ir::{Expr, Place, Reg};
+    // mov eax,[rdi]; mov [rdi+8],eax; xor eax,eax; movzx eax,[rdi+9]; ret
+    let program = x86::lift(
+        &[
+            0x8b, 0x07, 0x89, 0x47, 0x08, 0x31, 0xc0, 0x0f, 0xb6, 0x47, 0x09, 0xc3,
+        ],
+        0,
+        0,
+    )
+    .unwrap();
+    let reload = program
+        .instructions()
+        .iter()
+        .find(|i| i.address == 7)
+        .unwrap();
+    assert!(
+        reload
+            .assignments
+            .iter()
+            .any(|a| a.destination == Place::Register(Reg(x86::RAX))
+                && matches!(
+                    a.value,
+                    Expr::Load {
+                        width: Width::U8,
+                        ..
+                    }
+                ))
+    );
+    let plan = nirvana::memory_values::MemoryValuePlan::analyze(&program)
+        .expect("lifting preserves a root narrow Load");
+    assert_eq!(plan.evidence().snapshot_values, 1);
+    assert_eq!(plan.evidence().proved_loads, 1);
+    let candidate = plan.lower(&program).unwrap();
+    let mut checked = 0;
+    for value in [
+        0u64,
+        1,
+        255,
+        256,
+        65535,
+        1 << 31,
+        u64::MAX,
+        0x1234_5678_9abc_def0,
+    ] {
+        let mut ram = [0xa5; 64];
+        ram[..8].copy_from_slice(&value.to_le_bytes());
+        let mut native_ram = ram;
+        let result: u64;
+        unsafe {
+            std::arch::asm!("mov eax,dword ptr [{ptr}]","mov dword ptr [{ptr}+8],eax","xor eax,eax","movzx eax,byte ptr [{ptr}+9]",ptr=in(reg)native_ram.as_mut_ptr(),out("rax")result,options(nostack));
+        }
+        let mut regs = vec![0x9371_cafe_7890_fedc; program.register_count()];
+        regs[x86::RDI] = 4096;
+        let expected = program.execute_with_memory(&regs, 4096, &ram, 5).unwrap();
+        assert_eq!(expected.value, result);
+        assert_eq!(expected.memory, native_ram);
+        for pointer in [4096, 4097, 4148, 4155, 4159, u64::MAX] {
+            regs[x86::RDI] = pointer;
+            let mut extended = regs.clone();
+            extended.resize(candidate.register_count(), u64::MAX);
+            for limit in 0..=6 {
+                let before = program.run_with_memory(&regs, 4096, &ram, limit).unwrap();
+                let mut after = candidate
+                    .run_with_memory(&extended, 4096, &ram, limit)
+                    .unwrap();
+                after.state.registers.truncate(program.register_count());
+                assert_eq!(before, after, "{value}/{pointer}/{limit}");
+                checked += 1;
+            }
+        }
+    }
+    println!(
+        "8 native memory/zero-extension comparisons; {checked} lifted saved-byte full-state/fault/budget observations"
+    );
+}

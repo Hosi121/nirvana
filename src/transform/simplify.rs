@@ -164,12 +164,23 @@ fn rewrite(expression: &Expr) -> Option<Expr> {
                 {
                     return Some(Expr::unary(*op, (**inner).clone()));
                 }
+                // These bounds preserve the operand's evaluation, including
+                // checked reads. They remove only a redundant outer clip.
+                if start == 0
+                    && (boolean(value)
+                        || matches!(&**value,Expr::Load {width:from,..} if *from<=width))
+                {
+                    return Some((**value).clone());
+                }
                 if start == 0
                     && let Expr::Binary(B::And, a, b) = &**value
                 {
                     for (inner, mask) in [(&**a, constant(b)), (&**b, constant(a))] {
                         if mask.is_some_and(|m| m & width.mask() == width.mask()) {
                             return Some(Expr::unary(*op, inner.clone()));
+                        }
+                        if mask.is_some_and(|m| m & !width.mask() == 0) {
+                            return Some((**value).clone());
                         }
                     }
                 }

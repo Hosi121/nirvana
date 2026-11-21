@@ -83,10 +83,26 @@ fn bit(value: Expr, shift: u32) -> Expr {
     and(b(B::Shr, value, k(u64::from(shift))), k(1))
 }
 fn mask(value: Expr, width: Width) -> Expr {
-    if width == Width::U64 {
+    // Preserve existing zero extension. This is a syntactic result bound,
+    // independent of pointer aliases, SSA facts or source-language types.
+    let possible = match &value {
+        Expr::Const(n) => *n,
+        Expr::Load { width, .. }
+        | Expr::Unary(crate::model::ir::UnaryOp::Extract { width, .. }, _) => width.mask(),
+        Expr::Binary(B::And, a, b) => match (&**a, &**b) {
+            (Expr::Const(n), _) | (_, Expr::Const(n)) => *n,
+            _ => u64::MAX,
+        },
+        Expr::Binary(B::Eq | B::Ne | B::Ult | B::Ule, _, _) => 1,
+        _ => u64::MAX,
+    };
+    if possible & !width.mask() == 0 {
         value
     } else {
-        and(value, k(width.mask()))
+        Expr::unary(
+            crate::model::ir::UnaryOp::Extract { start: 0, width },
+            value,
+        )
     }
 }
 fn sext(value: Expr, width: Width) -> Expr {
@@ -967,3 +983,7 @@ pub(crate) fn lift_instruction(
     }
     .instruction(instruction)
 }
+
+#[cfg(test)]
+#[path = "lift/clipping_proofs.rs"]
+mod clipping_proofs;

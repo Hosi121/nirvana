@@ -216,6 +216,17 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 expected.push(memory_digest(&execution.memory));
                 expected_memory.push(expected);
             }
+            if optimization == "-O2"
+                && matches!(
+                    name,
+                    "byte-saved-value" | "byte-serialized-value" | "loop-saved-value"
+                )
+            {
+                let plan = nirvana::memory_values::MemoryValuePlan::analyze(&program)
+                    .expect("direct lifted zero-extended Loads retain their stored-value origin");
+                assert!(plan.evidence().proved_loads >= 2);
+                assert!(plan.lower(&program).is_some());
+            }
             let options = readable::ReadableOptions {
                 stack_register: Some(Reg(x86::RSP)),
                 recover_objects: true,
