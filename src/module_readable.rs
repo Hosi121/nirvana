@@ -54,7 +54,7 @@ pub fn emit_c(module: &Module) -> Result<COutput, String> {
 /// Execute original module effects with local storage reconstructed from the
 /// authoritative guest registers at every function entry, reentry and call.
 pub fn emit_c_with_locals(module: &Module) -> Result<COutput, String> {
-    let locals = crate::module_values::analyze(&module.program)
+    let locals = crate::module_values::analyze_for_locals(&module.program)
         .and_then(|values| module_local_plan::recover(&module.program, &values))
         .unwrap_or_else(|reason| module_local_plan::Plan {
             functions: module

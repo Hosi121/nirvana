@@ -188,6 +188,22 @@ impl Json {
         self.raw("}")
     }
     fn function(&mut self, values: &FunctionValues) -> Option<()> {
+        self.raw(",\"memory_ssa\":")?;
+        let memory = values.memory.as_ref().map(|result| {
+            result
+                .as_ref()
+                .map_err(Clone::clone)
+                .and_then(|analysis| analysis.to_json())
+        });
+        match memory {
+            Some(Ok(json)) => self.raw(&json)?,
+            Some(Err(reason)) => {
+                self.raw("{\"status\":\"unavailable\",\"reason\":")?;
+                self.string(&reason)?;
+                self.raw("}")?;
+            }
+            None => self.raw("{\"status\":\"not-requested\"}")?,
+        }
         self.raw(",\"local_recovery\":{")?;
         match &values.locals {
             Err(reason) => {

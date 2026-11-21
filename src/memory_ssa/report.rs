@@ -6,7 +6,7 @@ const MAX_REPORT_BYTES: usize = 16 * 1024 * 1024;
 
 pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
     let mut out = String::from(
-        "{\"schema\":\"nirvana-memory-ssa-v1\",\"scope\":\"function-entry-normal-continuations\",\"reads\":\"syntactic-possible\",\"definitions\":[",
+        "{\"schema\":\"nirvana-memory-ssa-v1\",\"status\":\"analyzed\",\"scope\":\"function-entry-normal-continuations\",\"reads\":\"syntactic-possible\",\"definitions\":[",
     );
     for (id, definition) in analysis.definitions.iter().enumerate() {
         if id > 0 {

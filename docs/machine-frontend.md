@@ -103,6 +103,7 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--emit module-jumps` | 初期画像のジャンプテーブル候補、範囲のヒント、残る未知の分岐先をJSONで出力 |
 | `--emit module-readable-c` | 名前付きC関数・構造化した制御・検査付きの途中再開を持つ複数関数C |
 | `--emit module-locals-c` | 生存範囲を共有する局所変数・φコピー・途中再開用の値復元を加えた複数関数C |
+| `--emit module-values` | レジスタSSA・生存範囲・MemorySSAの世代とLoadへの書込み候補をJSONで出力 |
 | `--run-effects RESULTS` | 指定したint返り値列でモデルを実行し、出力byte列を標準出力へ送る |
 | `--emit ir` / `decoded` | IR／デコード済み命令のテキスト |
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |

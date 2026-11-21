@@ -80,6 +80,7 @@ pub struct FunctionValues {
     source_instructions: usize,
     guest_registers: usize,
     locals: Result<crate::ssa_destroy::Recovery, String>,
+    memory: Option<Result<crate::memory_ssa::Analysis, String>>,
 }
 
 impl FunctionValues {
@@ -104,6 +105,9 @@ impl FunctionValues {
     }
     pub fn local_recovery(&self) -> &Result<crate::ssa_destroy::Recovery, String> {
         &self.locals
+    }
+    pub fn memory(&self) -> Option<&Result<crate::memory_ssa::Analysis, String>> {
+        self.memory.as_ref()
     }
 }
 
@@ -130,15 +134,37 @@ impl Analysis {
 /// Analyze each lifted function without modifying the original module or code
 /// generators. Individual failures are explicit; aggregate limits fail atomically.
 pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
+    analyze_mode(program, true)
+}
+
+/// C local storage recovery consumes register identities, independently of the
+/// optional memory inspection pass and its separate resource budget.
+pub(crate) fn analyze_for_locals(program: &module_ir::Program) -> Result<Analysis, String> {
+    analyze_mode(program, false)
+}
+
+fn analyze_mode(program: &module_ir::Program, memory: bool) -> Result<Analysis, String> {
     if program.functions().len() > MAX_FUNCTIONS || program.register_count() >= ssa::MAX_REGISTERS {
         return Err("module value analysis source limit".into());
     }
     let mut functions = Vec::new();
     let mut total_values = 0usize;
     let mut total_members = 0usize;
+    let mut memory_members = 0usize;
     let call_summaries = call_footprint::analyze(program)?;
     for function in program.functions() {
-        let result = analyze_function(program, function, &call_summaries);
+        let mut result = analyze_function(program, function, &call_summaries, memory);
+        if let Ok(values) = &mut result
+            && let Some(Ok(analysis)) = &values.memory
+        {
+            match memory_members
+                .checked_add(analysis.members())
+                .filter(|n| *n <= MAX_MODULE_MEMBERS)
+            {
+                Some(n) => memory_members = n,
+                None => values.memory = Some(Err("module memory SSA storage limit".into())),
+            }
+        }
         if let Ok(values) = &result {
             total_values = total_values
                 .checked_add(values.graph.values.len())
@@ -555,6 +581,7 @@ fn analyze_function(
     program: &module_ir::Program,
     function: &module_ir::Function,
     summaries: &call_footprint::Analysis,
+    memory: bool,
 ) -> Result<FunctionValues, String> {
     let end = function
         .address
@@ -591,6 +618,7 @@ fn analyze_function(
     .map_err(|e| e.to_string())?;
     let graph = SsaFunction::build(&event_program)
         .ok_or("module value SSA unavailable: control or resource limit")?;
+    let memory = memory.then(|| memory_values(source, &event_program, &graph, &projection.roles));
     let lifetimes = value_liveness::analyze(&event_program, &graph).map_err(|e| e.to_string())?;
     let excluded_copies = projection
         .roles
@@ -700,5 +728,53 @@ fn analyze_function(
         source_instructions: source.len(),
         guest_registers: program.register_count(),
         locals,
+        memory,
     })
+}
+
+fn memory_values(
+    source: &[Instruction],
+    events: &Program,
+    graph: &SsaFunction,
+    roles: &BTreeMap<Site, PointRole>,
+) -> Result<crate::memory_ssa::Analysis, String> {
+    use crate::memory_ssa::{Effect, EffectKind, Phase};
+    let mut effects = Vec::new();
+    for instruction in source {
+        let address = instruction.address();
+        match instruction {
+            Instruction::Transfer {
+                target,
+                link: Some(_),
+                ..
+            } => {
+                // PLT target reads happen after pushing the guest return slot.
+                // Other target expressions are evaluated before that Store.
+                if matches!(target, Target::Plt(_)) {
+                    effects.push(Effect {
+                        instruction: address,
+                        phase: Phase::Before,
+                        kind: EffectKind::CallStack,
+                    });
+                }
+                // Register footprints establish no separation for callee RAM.
+                effects.push(Effect {
+                    instruction: address,
+                    phase: Phase::After,
+                    kind: EffectKind::Call,
+                });
+            }
+            Instruction::StoreString { .. } => effects.push(Effect {
+                instruction: address,
+                phase: Phase::After,
+                kind: EffectKind::StringStore,
+            }),
+            _ => {}
+        }
+    }
+    let opaque = roles
+        .iter()
+        .filter_map(|(site, role)| matches!(role, PointRole::OpaqueOutput { .. }).then_some(*site))
+        .collect();
+    crate::memory_ssa::analyze_with_effects(events, graph, &effects, &opaque)
 }
