@@ -8,6 +8,16 @@ pub fn unary_value(op: nirvana::ir::UnaryOp, value: u64) -> u64 {
         UnaryOp::SignExtend(Width::U16) => value as u16 as i16 as i64 as u64,
         UnaryOp::SignExtend(Width::U32) => value as u32 as i32 as i64 as u64,
         UnaryOp::SignExtend(Width::U64) => value,
+        UnaryOp::Extract { start, width } => {
+            let mut result = 0u64;
+            for bit in 0..width.bits() {
+                let source = u32::from(start) + bit;
+                if source < 64 && (value >> source) & 1 != 0 {
+                    result |= 1u64 << bit;
+                }
+            }
+            result
+        }
     }
 }
 /// Restoring long division supplies an oracle independent of the executable

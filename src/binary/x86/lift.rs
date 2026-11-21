@@ -328,16 +328,16 @@ impl Lifter {
         value
     }
     fn read_register(&self, register: Register) -> Expr {
-        let value = if register.shift == 0 {
-            r(register.index as usize)
-        } else {
-            b(
-                B::Shr,
+        if register.shift != 0 {
+            return Expr::unary(
+                crate::model::ir::UnaryOp::Extract {
+                    start: register.shift,
+                    width: register.width,
+                },
                 r(register.index as usize),
-                k(u64::from(register.shift)),
-            )
-        };
-        mask(value, register.width)
+            );
+        }
+        mask(r(register.index as usize), register.width)
     }
     fn read(&self, operand: Operand) -> Expr {
         match operand {

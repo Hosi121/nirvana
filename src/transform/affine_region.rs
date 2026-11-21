@@ -480,15 +480,12 @@ impl Machine<'_> {
             Expr::Const(value) => Ok(Value::constant(*value)),
             Expr::Unary(op, value) => {
                 let value = self.expression(value)?;
-                if matches!(
-                    op,
-                    crate::model::ir::UnaryOp::SignExtend(crate::model::ir::Width::U64)
-                ) {
+                if op.is_identity() {
                     Ok(value)
                 } else if value.a == 0 {
                     Ok(Value::constant(op.evaluate(value.b)))
                 } else {
-                    Err(unsupported("symbolic sign extension is not affine"))
+                    Err(unsupported("symbolic bit conversion is not affine"))
                 }
             }
             Expr::Register(reg) => self

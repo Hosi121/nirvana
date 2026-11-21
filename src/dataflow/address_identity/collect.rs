@@ -330,10 +330,7 @@ impl Collector<'_> {
                     depth,
                 )?;
                 match (*op, value) {
-                    (
-                        crate::model::ir::UnaryOp::SignExtend(crate::model::ir::Width::U64),
-                        value,
-                    ) => value,
+                    (op, value) if op.is_identity() => value,
                     (op, Some(Affine { offset, terms })) if terms.is_empty() => {
                         Some(Affine::constant(op.evaluate(offset)))
                     }

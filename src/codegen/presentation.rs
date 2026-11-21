@@ -83,7 +83,24 @@ fn visit(expression: &Expr, width: &impl Fn(Reg) -> Width) -> Value {
             {
                 return Value::constant(op.evaluate(n));
             }
-            let UnaryOp::SignExtend(from) = *op;
+            if let UnaryOp::Extract {
+                start,
+                width: slice_width,
+            } = *op
+            {
+                if start == 0 && value.possible & !slice_width.mask() == 0 {
+                    return value;
+                }
+                let possible = op.evaluate(value.possible);
+                return Value {
+                    expression: Expr::unary(*op, value.expression),
+                    possible,
+                    pure: value.pure,
+                };
+            }
+            let UnaryOp::SignExtend(from) = *op else {
+                unreachable!()
+            };
             if from == Width::U64 {
                 return value;
             }

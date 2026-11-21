@@ -101,14 +101,50 @@ pub enum Width {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum UnaryOp {
     SignExtend(Width),
+    /// Read a static bit slice, zero extending its result to 64 bits. Bits
+    /// beyond the source word are zero; `start` is never reduced modulo 64.
+    Extract {
+        start: u8,
+        width: Width,
+    },
 }
 
 impl UnaryOp {
+    pub(crate) fn is_identity(self) -> bool {
+        matches!(
+            self,
+            Self::SignExtend(Width::U64)
+                | Self::Extract {
+                    start: 0,
+                    width: Width::U64
+                }
+        )
+    }
     pub fn evaluate(self, value: u64) -> u64 {
         match self {
             Self::SignExtend(width) => {
                 let sign = 1u64 << (width.bits() - 1);
                 ((value & width.mask()) ^ sign).wrapping_sub(sign)
+            }
+            Self::Extract { start, width } => {
+                value.checked_shr(u32::from(start)).unwrap_or(0) & width.mask()
+            }
+        }
+    }
+
+    /// Unsigned bit-length bound for every input covered by `input_bits`.
+    pub(crate) fn result_bits(self, input_bits: u8) -> u8 {
+        let input_bits = input_bits.min(64);
+        match self {
+            Self::SignExtend(width) => {
+                if input_bits < width.bits() as u8 {
+                    input_bits
+                } else {
+                    64
+                }
+            }
+            Self::Extract { start, width } => {
+                input_bits.saturating_sub(start).min(width.bits() as u8)
             }
         }
     }

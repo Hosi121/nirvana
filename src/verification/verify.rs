@@ -156,15 +156,34 @@ impl Encoder {
 }
 
 pub(crate) fn unary_term(op: &crate::model::ir::UnaryOp, value: &str) -> String {
-    let crate::model::ir::UnaryOp::SignExtend(width) = op;
-    if *width == crate::model::ir::Width::U64 {
-        value.to_owned()
-    } else {
-        format!(
-            "((_ sign_extend {}) ((_ extract {} 0) {value}))",
-            64 - width.bits(),
-            width.bits() - 1
-        )
+    match *op {
+        crate::model::ir::UnaryOp::SignExtend(width) => {
+            if width == crate::model::ir::Width::U64 {
+                value.to_owned()
+            } else {
+                format!(
+                    "((_ sign_extend {}) ((_ extract {} 0) {value}))",
+                    64 - width.bits(),
+                    width.bits() - 1
+                )
+            }
+        }
+        crate::model::ir::UnaryOp::Extract { start, width } => {
+            if start >= 64 {
+                return "#x0000000000000000".into();
+            }
+            let start = u32::from(start);
+            let bits = width.bits().min(64 - start);
+            if bits == 64 {
+                value.to_owned()
+            } else {
+                format!(
+                    "((_ zero_extend {}) ((_ extract {} {start}) {value}))",
+                    64 - bits,
+                    start + bits - 1
+                )
+            }
+        }
     }
 }
 

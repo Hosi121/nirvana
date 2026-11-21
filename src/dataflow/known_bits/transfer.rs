@@ -27,7 +27,16 @@ pub(super) fn unary(op: UnaryOp, v: KnownBits) -> KnownBits {
     if let Some(n) = v.number() {
         return KnownBits::constant(op.evaluate(n));
     }
-    let UnaryOp::SignExtend(width) = op;
+    if let UnaryOp::Extract { start, width } = op {
+        if start >= 64 {
+            return KnownBits::constant(0);
+        }
+        let shifted = fixed_shift(B::Shr, v, u32::from(start));
+        return binary(B::And, shifted, KnownBits::constant(width.mask()));
+    }
+    let UnaryOp::SignExtend(width) = op else {
+        unreachable!()
+    };
     let mask = width.mask();
     let bit = 1u64 << (width.bits() - 1);
     KnownBits {

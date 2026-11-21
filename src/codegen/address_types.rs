@@ -285,7 +285,7 @@ impl Walker<'_, '_> {
         match expression {
             Expr::Unary(op, value) => self.child(
                 value,
-                if matches!(op, crate::model::ir::UnaryOp::SignExtend(Width::U64)) {
+                if op.is_identity() {
                     demand
                 } else {
                     Demand::Scalar

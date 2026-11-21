@@ -354,7 +354,15 @@ fn with_extensions(expression: &Expr, seed: &mut u64) -> Expr {
     };
     if next(seed) & 3 == 0 {
         let width = [Width::U8, Width::U16, Width::U32, Width::U64][(next(seed) & 3) as usize];
-        Expr::unary(nirvana::ir::UnaryOp::SignExtend(width), expression)
+        let op = if next(seed) & 1 == 0 {
+            nirvana::ir::UnaryOp::SignExtend(width)
+        } else {
+            nirvana::ir::UnaryOp::Extract {
+                start: next(seed) as u8,
+                width,
+            }
+        };
+        Expr::unary(op, expression)
     } else {
         expression
     }

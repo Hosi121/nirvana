@@ -81,6 +81,45 @@ fn byte_registers_distinguish_ah_from_spl_and_movzx_destinations() {
     );
 }
 
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn high_byte_reads_keep_static_slices_and_match_native_movzx_for_all_byte_values() {
+    use nirvana::ir::UnaryOp;
+    let op = UnaryOp::Extract {
+        start: 8,
+        width: Width::U8,
+    };
+    let mut compared = 0;
+    for index in 0..4 {
+        // MOVZX EAX, AH/CH/DH/BH; RET. No REX prefix is present.
+        let program = x86::lift(&[0x0f, 0xb6, 0xc4 + index as u8, 0xc3], 0, 0).unwrap();
+        assert!(program.uses_unary_operator(op));
+        for byte in 0..=255u64 {
+            for surround in [0, 0xabc1_2345_6789_00ef, u64::MAX] {
+                let value = (surround & !0xff00) | (byte << 8);
+                let actual: u64;
+                unsafe {
+                    std::arch::asm!("movzx ecx,ah", in("rax") value, lateout("rcx") actual, options(pure,nomem,nostack,preserves_flags));
+                }
+                let mut registers = vec![0x9371_cafe_7890_fedc; x86::REGISTER_COUNT];
+                registers[index] = value;
+                let result = program.execute(&registers, 2).unwrap();
+                assert_eq!(result.value, actual);
+                for (other, &original) in registers.iter().enumerate().take(16).skip(1) {
+                    let expected = if other == x86::RSP {
+                        original.wrapping_add(8)
+                    } else {
+                        original
+                    };
+                    assert_eq!(result.registers[other], expected);
+                }
+                compared += 1;
+            }
+        }
+    }
+    println!("{compared} native high-byte/IR observations across all four register aliases");
+}
+
 #[test]
 fn rex_b_turns_the_nop_opcode_into_exchange_with_r8() {
     let program = x86::lift(&[0x49, 0x90, 0xc3], 0, 0).unwrap();

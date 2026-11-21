@@ -210,11 +210,9 @@ impl Expressions {
         match expr {
             Expr::Const(value) => format!("UINT64_C({value})"),
             Expr::Register(reg) => self.register(*reg),
-            Expr::Unary(op, value) => format!(
-                "{}({})",
-                super::integer::unary_helper_name(*op),
-                self.expression(value)
-            ),
+            Expr::Unary(op, value) => {
+                super::integer::unary_expression(*op, &self.expression(value))
+            }
             Expr::Load { address, width } => format!(
                 "nirvana_load(&m, {}, {})",
                 self.expression(address),

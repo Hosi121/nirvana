@@ -245,7 +245,7 @@ fn evaluate(
             let value = evaluate(value, state, budget, depth + 1)?;
             let mapped = match (op, value.value) {
                 (_, Value::Constant(n)) => Value::Constant(op.evaluate(n)),
-                (crate::model::ir::UnaryOp::SignExtend(Width::U64), v) => v,
+                (op, v) if op.is_identity() => v,
                 _ => Value::Unknown,
             };
             Evaluated::new(mapped, value.pure)

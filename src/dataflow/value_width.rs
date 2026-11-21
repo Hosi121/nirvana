@@ -171,9 +171,9 @@ fn bits(
     }
     budget.spend(1)?;
     Some(match expression {
-        Expr::Unary(crate::model::ir::UnaryOp::SignExtend(width), value) => {
+        Expr::Unary(op, value) => {
             let bits = bits(value, state, observed, budget, depth + 1)?;
-            if bits < width.bits() as u8 { bits } else { 64 }
+            op.result_bits(bits)
         }
         Expr::Const(value) => (64 - value.leading_zeros()) as u8,
         Expr::Register(reg) => {

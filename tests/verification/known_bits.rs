@@ -92,13 +92,19 @@ fn known_bit_transfer_claims_have_universal_bit_vector_checks_and_replayed_contr
             proved += 1;
         }
     }
+    let mut unary_ops = Vec::new();
     for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        unary_ops.push(UnaryOp::SignExtend(width));
+        for start in [0, 1, 7, 8, 31, 32, 60, 63, 64, 255] {
+            unary_ops.push(UnaryOp::Extract { start, width });
+        }
+    }
+    for op in unary_ops {
         for (name, a) in [
             ("unknown", K::UNKNOWN),
             ("low", K::new(!255, 0).unwrap()),
             ("negative", K::new(0, u64::MAX ^ 127).unwrap()),
         ] {
-            let op = UnaryOp::SignExtend(width);
             let fact = K::unary(op, a);
             if fact == K::UNKNOWN {
                 skipped += 1;
@@ -107,7 +113,7 @@ fn known_bit_transfer_claims_have_universal_bit_vector_checks_and_replayed_contr
             assert_eq!(
                 save(
                     &solver,
-                    &format!("extend-{}-{name}", width.bits()),
+                    &format!("unary-{op:?}-{name}"),
                     &Expr::unary(op, input(0, a)),
                     fact
                 ),

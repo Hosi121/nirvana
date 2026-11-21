@@ -330,7 +330,7 @@ fn evaluate(
             let value = evaluate(value, registers, memory, budget, depth + 1)?;
             let mapped = match (op, value.value) {
                 (_, Some(Value::Constant(n))) => Some(Value::Constant(op.evaluate(n))),
-                (crate::model::ir::UnaryOp::SignExtend(Width::U64), v) => v,
+                (op, v) if op.is_identity() => v,
                 _ => None,
             };
             Evaluated {

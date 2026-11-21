@@ -10,6 +10,15 @@ use nirvana::ir::{
 use std::fmt::Write as _;
 
 const WIDTHS: [Width; 4] = [Width::U8, Width::U16, Width::U32, Width::U64];
+fn conversion_ops() -> Vec<U> {
+    let mut ops = WIDTHS.into_iter().map(U::SignExtend).collect::<Vec<_>>();
+    for width in WIDTHS {
+        for start in [0, 1, 7, 8, 31, 32, 60, 63, 64, 65, 255] {
+            ops.push(U::Extract { start, width });
+        }
+    }
+    ops
+}
 fn b(op: B, a: Expr, z: Expr) -> Expr {
     Expr::binary(op, a, z)
 }
@@ -91,6 +100,111 @@ fn sign_extension_preserves_width_and_matches_independent_integer_conversions() 
     println!("{compared} independent signed integer conversion/IR/folding comparisons");
 }
 
+#[test]
+fn every_static_slice_offset_has_zero_fill_and_matches_an_independent_bit_oracle() {
+    let mut compared = 0;
+    for width in WIDTHS {
+        for start in 0..=255 {
+            let op = U::Extract { start, width };
+            let p = program(Expr::unary(op, r(0)), 1);
+            for value in boundaries() {
+                let expected = unary_value(op, value);
+                assert_eq!(op.evaluate(value), expected, "{op:?}/{value}");
+                assert_eq!(p.execute(&[value], 1).unwrap().value, expected);
+                assert_eq!(
+                    nirvana::simplify::simplify(&Expr::unary(op, c(value))),
+                    c(expected)
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert_ne!(
+        U::Extract {
+            start: 64,
+            width: Width::U64
+        }
+        .evaluate(u64::MAX),
+        B::Shr.evaluate(u64::MAX, 64)
+    );
+    println!("{compared} independent slice/IR/folding observations over all static offsets");
+}
+
+#[test]
+fn unary_widths_and_bit_facts_share_source_bound_ssa_without_confusing_input_widths() {
+    let mut compared = 0;
+    for op in conversion_ops() {
+        for input_bits in 0..=64u8 {
+            let mask = if input_bits == 64 {
+                u64::MAX
+            } else {
+                (1u64 << input_bits) - 1
+            };
+            let p = Program::new(
+                0,
+                3,
+                vec![IrInstruction {
+                    address: 0,
+                    size: 1,
+                    assignments: vec![
+                        Assignment {
+                            destination: Reg(1).into(),
+                            value: b(B::And, r(0), c(mask)),
+                        },
+                        Assignment {
+                            destination: Reg(2).into(),
+                            value: Expr::unary(op, r(1)),
+                        },
+                    ],
+                    control: Control::Return(r(2)),
+                }],
+            )
+            .unwrap();
+            let types = nirvana::type_infer::TypeAnalysis::analyze(&p).unwrap();
+            let id = types
+                .graph()
+                .point(nirvana::ssa::Site {
+                    instruction: 0,
+                    assignment: Some(1),
+                })
+                .unwrap()
+                .definition
+                .unwrap()
+                .0;
+            let expected = match op {
+                U::SignExtend(w) => {
+                    if u32::from(input_bits) < w.bits() {
+                        input_bits
+                    } else {
+                        64
+                    }
+                }
+                U::Extract { start, width } => {
+                    input_bits.saturating_sub(start).min(width.bits() as u8)
+                }
+            };
+            assert_eq!(
+                types.values()[id].maximum_bits,
+                expected,
+                "{op:?}/{input_bits}"
+            );
+            let facts = nirvana::known_bits::analyze_values(&p, types.graph()).unwrap();
+            assert_eq!(
+                64 - facts[id].maximum().leading_zeros(),
+                u32::from(expected)
+            );
+            let width = nirvana::value_width::ValueWidths::analyze(&p).width(Reg(2));
+            let storage = WIDTHS
+                .into_iter()
+                .find(|w| w.bits() >= u32::from(expected))
+                .unwrap();
+            assert_eq!(width, storage, "{op:?}/{input_bits}");
+            compared += 1;
+        }
+    }
+    println!("{compared} unsigned-bound/known-bit/storage correspondences on shared SSA IDs");
+}
+
 #[cfg(target_arch = "x86_64")]
 #[test]
 fn explicit_extension_matches_native_movsx_and_movsxd() {
@@ -127,10 +241,17 @@ fn raw_ssa_and_readable_c_keep_unsigned_bit_patterns_without_undefined_conversio
     let scratch = native::Scratch::new();
     let mut code = String::from("#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n");
     let mut names = Vec::new();
-    for width in WIDTHS {
-        let p = program(u(width, r(0)), 1);
+    let ops = conversion_ops();
+    for &op in &ops {
+        let p = program(Expr::unary(op, r(0)), 1);
         let graph = nirvana::ssa::SsaFunction::build(&p).unwrap();
         let lowered = nirvana::ssa_destroy::lower(&p, &graph, &Default::default()).unwrap();
+        let readable = nirvana::readable::emit_readable_c(&p).unwrap();
+        let argument = if readable.parameters.is_empty() {
+            ""
+        } else {
+            "value"
+        };
         for (mode, text, count) in [
             (
                 "raw",
@@ -142,11 +263,7 @@ fn raw_ssa_and_readable_c_keep_unsigned_bit_patterns_without_undefined_conversio
                 lowered.emit_c().unwrap().code,
                 lowered.program().register_count(),
             ),
-            (
-                "readable",
-                nirvana::readable::emit_readable_c(&p).unwrap().code,
-                1,
-            ),
+            ("readable", readable.code, 1),
         ] {
             let index = names.len();
             let name = format!("probe{index}");
@@ -155,7 +272,7 @@ fn raw_ssa_and_readable_c_keep_unsigned_bit_patterns_without_undefined_conversio
             if mode == "readable" {
                 writeln!(
                     code,
-                    "uint64_t {name}(uint64_t value) {{ return {prefix}readable(value); }}"
+                    "uint64_t {name}(uint64_t value) {{ (void)value; return {prefix}readable({argument}); }}"
                 )
                 .unwrap();
             } else {
@@ -174,9 +291,8 @@ fn raw_ssa_and_readable_c_keep_unsigned_bit_patterns_without_undefined_conversio
     for value in boundaries() {
         writeln!(input, "{value}").unwrap();
         expected.push(
-            WIDTHS
-                .into_iter()
-                .flat_map(|w| [unary_value(U::SignExtend(w), value); 3])
+            ops.iter()
+                .flat_map(|op| [unary_value(*op, value); 3])
                 .collect::<Vec<_>>(),
         );
     }
@@ -195,6 +311,10 @@ fn raw_ssa_and_readable_c_keep_unsigned_bit_patterns_without_undefined_conversio
         );
         assert_eq!(native::run_fields(&binary, &input, names.len()), expected);
     }
+    println!(
+        "{} total unary C/native-oracle observations across raw, SSA, readable and two optimization levels",
+        boundaries().len() * names.len() * 2
+    );
 }
 
 fn expand(e: &Expr) -> Expr {
@@ -211,6 +331,18 @@ fn expand(e: &Expr) -> Expr {
                 sign,
             )
         }
+        Expr::Unary(U::Extract { start, width }, value) => {
+            let value = expand(value);
+            if *start >= 64 {
+                b(B::And, value, c(0))
+            } else {
+                b(
+                    B::And,
+                    b(B::Shr, value, c(u64::from(*start))),
+                    c(width.mask()),
+                )
+            }
+        }
         Expr::Binary(op, a, z) => b(*op, expand(a), expand(z)),
         Expr::Load { address, width } => Expr::load(expand(address), *width),
         Expr::Select {
@@ -221,7 +353,8 @@ fn expand(e: &Expr) -> Expr {
         value => value.clone(),
     }
 }
-fn memory_program(width: Width) -> Program {
+fn memory_program(op: U) -> Program {
+    let u = |value| Expr::unary(op, value);
     let load = |offset| Expr::load(b(B::Add, r(7), c(offset)), Width::U64);
     Program::new(
         0,
@@ -232,17 +365,17 @@ fn memory_program(width: Width) -> Program {
             assignments: vec![
                 Assignment {
                     destination: Reg(0).into(),
-                    value: u(width, b(B::Add, load(0), load(8))),
+                    value: u(b(B::Add, load(0), load(8))),
                 },
                 Assignment {
                     destination: Place::Memory {
                         address: b(B::Add, r(7), c(16)),
                         width: Width::U64,
                     },
-                    value: u(width, Expr::select(load(24), r(0), load(32))),
+                    value: u(Expr::select(load(24), r(0), load(32))),
                 },
             ],
-            control: Control::Return(b(B::Xor, u(width, load(40)), r(0))),
+            control: Control::Return(b(B::Xor, u(load(40)), r(0))),
         }],
     )
     .unwrap()
@@ -252,8 +385,26 @@ fn memory_program(width: Width) -> Program {
 fn nested_loads_lazy_arms_and_pre_rhs_store_faults_match_the_expanded_ir_and_c() {
     let scratch = native::Scratch::new();
     let mut comparisons = 0;
-    for width in WIDTHS {
-        let p = memory_program(width);
+    let ops = WIDTHS.into_iter().map(U::SignExtend).chain([
+        U::Extract {
+            start: 0,
+            width: Width::U32,
+        },
+        U::Extract {
+            start: 8,
+            width: Width::U8,
+        },
+        U::Extract {
+            start: 60,
+            width: Width::U16,
+        },
+        U::Extract {
+            start: 64,
+            width: Width::U64,
+        },
+    ]);
+    for (index, op) in ops.enumerate() {
+        let p = memory_program(op);
         let mut instructions = p.instructions().to_vec();
         for i in &mut instructions {
             for a in &mut i.assignments {
@@ -350,7 +501,7 @@ fn nested_loads_lazy_arms_and_pre_rhs_store_faults_match_the_expanded_ir_and_c()
                 .unwrap();
                 let source = scratch
                     .0
-                    .join(format!("memory-{}-{coalesce}-{objects}.c", width.bits()));
+                    .join(format!("memory-{index}-{coalesce}-{objects}.c"));
                 std::fs::write(&source, checked_c::source(&output, 32, 4)).unwrap();
                 for opt in ["-O0", "-O2"] {
                     let binary = source.with_extension(format!("{opt}.bin"));
@@ -369,5 +520,7 @@ fn nested_loads_lazy_arms_and_pre_rhs_store_faults_match_the_expanded_ir_and_c()
             }
         }
     }
-    println!("{comparisons} sanitized C return/fault/full-RAM comparisons for explicit extensions");
+    println!(
+        "{comparisons} sanitized C return/fault/full-RAM comparisons for explicit conversions"
+    );
 }

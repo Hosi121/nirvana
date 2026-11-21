@@ -150,11 +150,45 @@ impl Printer<'_> {
             };
         }
         match expr {
+            Expr::Unary(crate::model::ir::UnaryOp::Extract { start, width }, value) => {
+                let value = self.expression_at(value, point);
+                if *start >= 64 {
+                    return Render {
+                        text: format!("{} & 0", value.u64()),
+                        unsigned: true,
+                        precedence: 6,
+                    };
+                }
+                let shifted = if *start == 0 {
+                    Render {
+                        text: value.u64(),
+                        unsigned: true,
+                        precedence: 13,
+                    }
+                } else {
+                    Render {
+                        text: format!("{} >> {start}", value.u64()),
+                        unsigned: true,
+                        precedence: 9,
+                    }
+                };
+                if *width == Width::U64 {
+                    return shifted;
+                }
+                Render {
+                    text: format!(
+                        "{} & {}",
+                        shifted.child(12),
+                        self.expression(&Expr::Const(width.mask())).text
+                    ),
+                    unsigned: true,
+                    precedence: 6,
+                }
+            }
             Expr::Unary(op, value) => atom(
-                format!(
-                    "{}({})",
-                    crate::codegen::emit::integer::unary_helper_name(*op),
-                    self.expression_at(value, point).text
+                crate::codegen::emit::integer::unary_expression(
+                    *op,
+                    &self.expression_at(value, point).text,
                 ),
                 true,
             ),

@@ -157,11 +157,17 @@ fn sparse_full_word_facts_cover_sign_wrap_division_zero_and_dynamic_shift_bounda
             }
         }
         for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
-            let op = UnaryOp::SignExtend(width);
-            let output = K::unary(op, a);
-            for x in [a.minimum(), a.maximum(), oa | (next() & ua)] {
-                assert!(output.contains(op.evaluate(x)));
-                observations += 1;
+            let ops = [UnaryOp::SignExtend(width)].into_iter().chain(
+                [0, 1, 7, 8, 31, 32, 60, 63, 64, 65, 255]
+                    .into_iter()
+                    .map(|start| UnaryOp::Extract { start, width }),
+            );
+            for op in ops {
+                let output = K::unary(op, a);
+                for x in [a.minimum(), a.maximum(), oa | (next() & ua)] {
+                    assert!(output.contains(crate::support::ir::unary_value(op, x)));
+                    observations += 1;
+                }
             }
         }
     }

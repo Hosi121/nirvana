@@ -123,7 +123,18 @@ fn rewrite(expression: &Expr) -> Option<Expr> {
             if let Expr::Const(n) = **value {
                 return Some(Expr::Const(op.evaluate(n)));
             }
-            let crate::model::ir::UnaryOp::SignExtend(width) = *op;
+            if let crate::model::ir::UnaryOp::Extract { start, width } = *op {
+                if start == 0 && width == crate::model::ir::Width::U64 {
+                    return Some((**value).clone());
+                }
+                if start >= 64 && pure(value) {
+                    return Some(Expr::Const(0));
+                }
+                return None;
+            }
+            let crate::model::ir::UnaryOp::SignExtend(width) = *op else {
+                unreachable!()
+            };
             if width == crate::model::ir::Width::U64 {
                 return Some((**value).clone());
             }

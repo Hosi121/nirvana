@@ -24,13 +24,29 @@ const EXTEND_HELPERS: [(Width, &str, &str); 4] = [
     ),
 ];
 
-pub(crate) fn unary_helper_name(op: UnaryOp) -> &'static str {
-    let UnaryOp::SignExtend(width) = op;
-    EXTEND_HELPERS
-        .iter()
-        .find(|(w, _, _)| *w == width)
-        .unwrap()
-        .1
+pub(crate) fn unary_expression(op: UnaryOp, value: &str) -> String {
+    match op {
+        UnaryOp::SignExtend(width) => {
+            let name = EXTEND_HELPERS
+                .iter()
+                .find(|(w, _, _)| *w == width)
+                .unwrap()
+                .1;
+            format!("{name}({value})")
+        }
+        UnaryOp::Extract { start, .. } if start >= 64 => {
+            // Evaluate the operand once, including checked memory effects.
+            format!("(({value}) & UINT64_C(0))")
+        }
+        UnaryOp::Extract { start, width } => {
+            let value = if start == 0 {
+                value.to_owned()
+            } else {
+                format!("((uint64_t)({value}) >> {start})")
+            };
+            format!("((uint64_t)(uint{}_t)({value}))", width.bits())
+        }
+    }
 }
 
 pub(crate) const MULTIPLY_HELPER: &str = r#"
