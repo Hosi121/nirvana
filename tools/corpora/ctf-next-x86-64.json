@@ -1,0 +1,188 @@
+{
+  "schema": "nirvana-ctf-corpus-v1",
+  "nirvana_commit": "550d46d",
+  "selection": "Three additional official C/x86-64 rev challenges: optimized grid checker, mutable function-pointer maze, and concurrent interpreter. Original corpus remains fixed; sources inspected for classification, so these are development inputs.",
+  "cases": [
+    {
+      "id": "ductf2024-dungeon",
+      "repo": "DownUnderCTF/Challenges_2024_Public",
+      "revision": "f2797a33d8f5851508f37e854afceedf85eee8a3",
+      "binary": "rev/dungeon/src/dungeon",
+      "files": [
+        {
+          "path": "rev/dungeon/publish/dungeon",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon/publish/dungeon",
+          "git_blob": "771fc781bcfa7cf090f2b806cb2d7647a6d551f6",
+          "sha256": "984bab4131b251e1c7195e872d9612b3cf27174e2bc1afadb87bdbbd1e28a5f2",
+          "bytes": 14
+        },
+        {
+          "path": "rev/dungeon/src/dungeon",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon/src/dungeon",
+          "git_blob": "922e7d86041b4228b9debb3adf74b948b07e9915",
+          "sha256": "60c3b1cfec0bf9205c64b8116b383466327079e4752ed86614fa08dab8b035ea",
+          "bytes": 257304
+        },
+        {
+          "path": "rev/dungeon/src/dungeon.c",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon/src/dungeon.c",
+          "git_blob": "21d167b58a42230664440672b83d9ec37443e558",
+          "sha256": "83e38e5400c95e7374baf80eb92a565f5531c4d9e9568dfe020996faae84b901",
+          "bytes": 5811
+        },
+        {
+          "path": "rev/dungeon/src/Dockerfile",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon/src/Dockerfile",
+          "git_blob": "572bc82a792fcdc92188ea1e40f3792b76eb28d5",
+          "sha256": "1f1a5a906cdd3dd98a9f3612a8ab2f9bc120b01016d7b3978b4b9c2c5907302e",
+          "bytes": 530
+        },
+        {
+          "path": "rev/dungeon/src/gen.py",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon/src/gen.py",
+          "git_blob": "4b63a49d0748ddda420cd2b68ef303cfcb12a5da",
+          "sha256": "118180244eac555f8b740e2a90e26fb58881fca234375b165acc8520b0cb562c",
+          "bytes": 11105
+        }
+      ],
+      "entry": "0x41ddb2",
+      "entry_evidence": "SysV _start argument to __libc_start_main, checked against executable FDE bounds",
+      "event": "DownUnderCTF 2024",
+      "category": "rev",
+      "challenge_dir": "rev/dungeon",
+      "challenge_url": "https://github.com/DownUnderCTF/Challenges_2024_Public/tree/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon",
+      "sources": [
+        "rev/dungeon/src/dungeon.c"
+      ],
+      "extra": [
+        "rev/dungeon/publish/dungeon",
+        "rev/dungeon/src/Dockerfile",
+        "rev/dungeon/src/gen.py"
+      ],
+      "raw_symbols": [],
+      "module_probes": [],
+      "model_runs": [],
+      "source_note": "Public dungeon.c is a template; gen.py constructs the maze and action functions. The handout path is a symlink to src/dungeon."
+    },
+    {
+      "id": "uiuctf2024-timetravel",
+      "repo": "sigpwny/UIUCTF-2024-Public",
+      "revision": "073cb80f1f42669252e88020fdb5b281f031c693",
+      "binary": "challenges/rev/timetravel/challenge/timetravel",
+      "files": [
+        {
+          "path": "challenges/rev/timetravel/challenge/timetravel",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel/challenge/timetravel",
+          "git_blob": "8586135a3d2ea9ec30d8443345aaa1e83fa5f2a6",
+          "sha256": "860030c0f5197e32704a37522d99db47fd41ca88884bc570b808ae366a38b317",
+          "bytes": 76088
+        },
+        {
+          "path": "challenges/rev/timetravel/challenge/chal.c",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel/challenge/chal.c",
+          "git_blob": "f40e576b7283494dc8598be278a73f501d459bc7",
+          "sha256": "5def1f4f6af4c6fa21223e76513d6a2c84083e4e6d4d6bf07cfab5fd71ba990b",
+          "bytes": 13384
+        },
+        {
+          "path": "challenges/rev/timetravel/challenge/Makefile",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel/challenge/Makefile",
+          "git_blob": "2c5291ed5ebc280127bade4709e0d05c64e27c12",
+          "sha256": "dd70cc82da5550cf4492b2d3a5b18b5c12bf87f04ca12260c6b7c7f0801044f7",
+          "bytes": 98
+        },
+        {
+          "path": "challenges/rev/timetravel/challenge/chal.h",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel/challenge/chal.h",
+          "git_blob": "0a9a8de44d47830f7d567020448c33a892a05eb3",
+          "sha256": "ff2d06650d10520286c1f8b6930063fbd606c2ec741e168fef5e9f0aad7ba22e",
+          "bytes": 220649
+        },
+        {
+          "path": "challenges/rev/timetravel/challenge/program.5dbfwmvtt",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel/challenge/program.5dbfwmvtt",
+          "git_blob": "5f1083c168e4a4c0d955784686e6b33b0ca57879",
+          "sha256": "9a4cbb1f47d90f87ddacfc432c0cf4948a3d8fd56bf40300352bcbcc4542e357",
+          "bytes": 69531
+        },
+        {
+          "path": "challenges/rev/timetravel/challenge/convert.py",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel/challenge/convert.py",
+          "git_blob": "97330fc2d3dd1c1d7d34f0f1f52da652f22098e9",
+          "sha256": "436e065c8ca4c3afbabd046f36427178cf4779dc8e62cae5a7a0cc811f889647",
+          "bytes": 1109
+        }
+      ],
+      "entry": "0x2675",
+      "entry_evidence": "SysV _start argument to __libc_start_main, checked against executable FDE bounds",
+      "event": "UIUCTF 2024",
+      "category": "rev",
+      "challenge_dir": "challenges/rev/timetravel",
+      "challenge_url": "https://github.com/sigpwny/UIUCTF-2024-Public/tree/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel",
+      "sources": [
+        "challenges/rev/timetravel/challenge/chal.c",
+        "challenges/rev/timetravel/challenge/chal.h"
+      ],
+      "extra": [
+        "challenges/rev/timetravel/challenge/Makefile",
+        "challenges/rev/timetravel/challenge/program.5dbfwmvtt",
+        "challenges/rev/timetravel/challenge/convert.py"
+      ],
+      "raw_symbols": [],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "dicectf2024-three",
+      "repo": "dicegang/dicectf-quals-2024-challenges",
+      "revision": "d7f5441edb95f3a98cb49e61b1a608938dacb2a0",
+      "binary": "rev/three/challenge",
+      "files": [
+        {
+          "path": "rev/three/challenge",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/rev/three/challenge",
+          "git_blob": "c7e4e32c3d53dcb491ae0ce55aca8b38815f524e",
+          "sha256": "64e44dda2a62748631d7efb2021ce2947e056ce4762387ba0e62b2d783030716",
+          "bytes": 14632
+        },
+        {
+          "path": "rev/three/challenge.c",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/rev/three/challenge.c",
+          "git_blob": "871ab67fcc82c803227749ac92cd81c466909fdf",
+          "sha256": "595aa3a8eb7d0963a0da6586d14604689615e941425bf8814160f91682f3560d",
+          "bytes": 3809
+        },
+        {
+          "path": "rev/three/flake.nix",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/rev/three/flake.nix",
+          "git_blob": "1b0f91823066ea239cd6d70ad8cbaf529786458a",
+          "sha256": "3b719da0de150e92d2e1decfb07e108c92a71f78feb9ceaf6569b4f09ad99f6a",
+          "bytes": 414
+        },
+        {
+          "path": "rev/three/flake.lock",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/rev/three/flake.lock",
+          "git_blob": "bb5d383aa9cbc08f9b7e090e95d6fab9b266687c",
+          "sha256": "660cd91a08ec2bc08a4178e814e5a167e68b1b067957105e5151f4cdeb2a4243",
+          "bytes": 534
+        }
+      ],
+      "entry": "0x401090",
+      "entry_evidence": "SysV _start argument to __libc_start_main, checked against executable FDE bounds",
+      "event": "DiceCTF Quals 2024",
+      "category": "rev",
+      "challenge_dir": "rev/three",
+      "challenge_url": "https://github.com/dicegang/dicectf-quals-2024-challenges/tree/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/rev/three",
+      "sources": [
+        "rev/three/challenge.c"
+      ],
+      "extra": [
+        "rev/three/flake.nix",
+        "rev/three/flake.lock"
+      ],
+      "raw_symbols": [],
+      "module_probes": [],
+      "model_runs": []
+    }
+  ]
+}

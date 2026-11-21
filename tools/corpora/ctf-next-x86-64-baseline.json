@@ -1,0 +1,126 @@
+{
+  "schema": "nirvana-ctf-next-baseline-v1",
+  "nirvana_commit": "550d46d661966b009776f12a6a4aea4653d6b906",
+  "nirvana_sha256": "c50368936e041534db46c70a667a6051c4b8d7807e02872d2f7a33362e79db5d",
+  "manifest_sha256": "3dc4064cf98bf48e29cf0a7d3254340c8e9ea82ffe666888b0e93d47f79f84f8",
+  "scope": "Static original ELFs and generation/compilation only; instruction counts cover each main region; no original binaries executed, no solvers run",
+  "summary": {
+    "challenges": 3,
+    "main_c_generated": 1,
+    "main_c_compiled": 1,
+    "input_files": 15,
+    "input_bytes": 675012
+  },
+  "recommendation": "dicectf2024-three",
+  "reason": "A self-contained optimized grid checker with a local REP STOSQ input blocker; useful next end-to-end solver/acceptance target before mutable callback mazes and threads",
+  "cases": [
+    {
+      "id": "ductf2024-dungeon",
+      "source_url": "https://github.com/DownUnderCTF/Challenges_2024_Public/tree/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/dungeon",
+      "binary_sha256": "60c3b1cfec0bf9205c64b8116b383466327079e4752ed86614fa08dab8b035ea",
+      "entry": "0x41ddb2",
+      "main_bounds": [
+        "0x41ddb2",
+        "0x41df9b"
+      ],
+      "fde_regions": 877,
+      "main_generation_exit_code": 1,
+      "diagnostic": "module function catalog exceeds 512 entries",
+      "instruction_decode_counts": {
+        "scalar": 131,
+        "fs-guard": 1
+      },
+      "imports": [
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "exit",
+        "fopen",
+        "fread",
+        "getchar",
+        "printf",
+        "putchar",
+        "puts"
+      ]
+    },
+    {
+      "id": "uiuctf2024-timetravel",
+      "source_url": "https://github.com/sigpwny/UIUCTF-2024-Public/tree/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/timetravel",
+      "binary_sha256": "860030c0f5197e32704a37522d99db47fd41ca88884bc570b808ae366a38b317",
+      "entry": "0x2675",
+      "main_bounds": [
+        "0x2675",
+        "0x2742"
+      ],
+      "fde_regions": 34,
+      "main_generation_exit_code": 0,
+      "diagnostic": "module locals: 0 functions, 30 fallback; 0 variables, 0 resume bindings, 0 call reloads\nmodule structure: 30 structured, 0 goto; 20 direct calls, 1 dynamic calls, 70 import calls; 0 guarded tails, 0 key switches",
+      "instruction_decode_counts": {
+        "scalar": 46
+      },
+      "imports": [
+        "__cxa_finalize",
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "fflush",
+        "free",
+        "malloc",
+        "memcpy",
+        "memset",
+        "pthread_create",
+        "pthread_detach",
+        "pthread_mutex_destroy",
+        "pthread_mutex_init",
+        "pthread_mutex_lock",
+        "pthread_mutex_unlock",
+        "pthread_self",
+        "pthread_setschedparam",
+        "putchar",
+        "puts",
+        "usleep"
+      ],
+      "main_compile_exit_code": 0,
+      "optimized_compile_exit_code": 0,
+      "c_sha256": "4da5f7c8cd956b3be904bc7d8aafbba9e8315e47f1cd455d926d7ff7533d9447"
+    },
+    {
+      "id": "dicectf2024-three",
+      "source_url": "https://github.com/dicegang/dicectf-quals-2024-challenges/tree/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/rev/three",
+      "binary_sha256": "64e44dda2a62748631d7efb2021ce2947e056ce4762387ba0e62b2d783030716",
+      "entry": "0x401090",
+      "main_bounds": [
+        "0x401090",
+        "0x4011b7"
+      ],
+      "fde_regions": 7,
+      "main_generation_exit_code": 1,
+      "diagnostic": "module function \"sub_401090\": x86 decode at 0x4010d0: unsupported REP-prefixed instruction; vector fallback: x86 decode at 0x4010d0: unsupported vector opcode or prefix sequence",
+      "instruction_decode_counts": {
+        "scalar": 61,
+        "fs-guard": 2,
+        "unsupported": 1,
+        "vector": 3
+      },
+      "imports": [
+        "__isoc99_sscanf",
+        "__libc_start_main",
+        "__printf_chk",
+        "__stack_chk_fail",
+        "fflush",
+        "fgets",
+        "puts"
+      ],
+      "unsupported_instructions": [
+        {
+          "address": 4198608,
+          "hex": "f348ab",
+          "assembly": "rep stos QWORD PTR es:[rdi],rax",
+          "regions": [
+            "main"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 4198608, reason: \"unsupported REP-prefixed instruction\" }); vector=Err(DecodeError { address: 4198608, reason: \"unsupported vector opcode or prefix sequence\" })"
+        }
+      ]
+    }
+  ]
+}
