@@ -20,6 +20,7 @@ pub(super) struct PreparedFunction {
     pub web_recovery: WebRecovery,
     pub load_mask_evidence: Option<crate::transform::load_mask::LoadMaskEvidence>,
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
+    pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
 }
 
@@ -126,8 +127,28 @@ fn prepare_selected(
         }
         None => (program, widths, structure, None),
     };
+    let semantic = crate::model::semantic_ir::SemanticPlan::analyze(&program).and_then(|plan| {
+        let expanded = plan.lower(&program)?;
+        let candidate = crate::transform::display_dce::propose(&expanded)?;
+        if !crate::transform::display_dce::validate(&expanded, &candidate) {
+            return None;
+        }
+        let recovered = StructuredFunction::recover(&candidate);
+        if structure.is_ok() && recovered.is_err() {
+            return None;
+        }
+        let widths = ValueWidths::analyze(&candidate);
+        Some((candidate, widths, recovered, plan.evidence()))
+    });
+    let (program, widths, structure, semantic_evidence) = match semantic {
+        Some((p, w, s, e)) => (p, w, s, Some(e)),
+        None => (program, widths, structure, None),
+    };
     let candidates = structure.as_ref().ok().map(|function| {
-        let nodes = if expression_evidence.is_some() || ssa_constants.is_some() {
+        let nodes = if expression_evidence.is_some()
+            || semantic_evidence.is_some()
+            || ssa_constants.is_some()
+        {
             function.body().to_vec()
         } else {
             let width = |reg| {
@@ -160,6 +181,7 @@ fn prepare_selected(
         web_recovery: selected.recovery,
         load_mask_evidence: masked.map(|(_, evidence)| evidence),
         expression_evidence,
+        semantic_evidence,
         ssa_constants,
     })
 }

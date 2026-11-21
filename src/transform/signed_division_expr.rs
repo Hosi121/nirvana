@@ -126,6 +126,16 @@ fn certificate(multiplier: u64, shift: u32, divisor: i64) -> Option<SignedDivisi
     })
 }
 
+pub(crate) fn infer_evidence(multiplier: u64, shift: u32) -> Option<(i64, SignedDivisionEvidence)> {
+    if shift > 63 {
+        return None;
+    }
+    let power = 1u128.checked_shl(64 + shift)?;
+    let r = Reciprocal::infer(u128::from(multiplier), power)?;
+    let divisor = i64::try_from(r.divisor).ok()?;
+    Some((divisor, certificate(multiplier, shift, divisor)?))
+}
+
 pub fn recognize_remainder(expression: &Expr) -> Option<SignedRemainderView<'_>> {
     if !matches!(expression, Expr::Binary(B::Sub, ..)) {
         return None;

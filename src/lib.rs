@@ -32,7 +32,9 @@ pub use dataflow::{
     stack_values, type_infer, value_graph, value_liveness, value_role, value_width, web,
     web_verify,
 };
-pub use model::{effects, effects_observe, expression_ir, hir, ir, memory, module_ir, observe};
+pub use model::{
+    effects, effects_observe, expression_ir, hir, ir, memory, module_ir, observe, semantic_ir,
+};
 pub use transform::{
     access_expr, add_division_expr, affine_region, arithmetic_graph, bit_expr, context_remainder,
     display_dce, division_expr, finite_region, for_loop, guarded_loop, indexed, load_mask,

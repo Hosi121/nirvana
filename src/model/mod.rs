@@ -8,3 +8,4 @@ pub mod ir;
 pub mod memory;
 pub mod module_ir;
 pub mod observe;
+pub mod semantic_ir;

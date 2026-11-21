@@ -69,6 +69,7 @@ fn emit_prepared_c(
         web_recovery,
         load_mask_evidence,
         expression_evidence,
+        semantic_evidence,
         ssa_constants,
     } = prepared;
     let program = &presented;
@@ -440,6 +441,7 @@ fn emit_prepared_c(
         display_structure_evidence,
         load_mask_evidence,
         expression_evidence,
+        semantic_evidence,
         ssa_constants,
         web_recovery,
         stack_views,

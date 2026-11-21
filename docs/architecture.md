@@ -91,6 +91,7 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 候補ごとの検査を経て、load-mask、SSA定数伝播、算術式選択、純粋な不要代入除去を表示IRへ適用します。
 [arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
 [signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。
+[semantic_ir](../src/model/semantic_ir.rs)はblock内の不変な値IDを使い、別々に保存された上位積・符号補正・商・剰余を結びます。分子を一度保存し、代入・メモリアドレス・分岐・返り値の部分式を、利用可能な意味付きの値へ置き換えます。独立した対応検査が、保存時点、元レジスタへの書込み、Load/Storeの順序、制御辺を照合します。
 Loadのスナップショット、保存位置、全命令の代入順も採用条件です。
 
 [LocalPlan](../src/codegen/readable/locals.rs)は表示IRの幅・生存範囲・copy関係・値の系譜から名前と保存場所を決めます。

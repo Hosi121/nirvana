@@ -90,6 +90,8 @@ pub struct ReadableC {
     pub load_mask_evidence: Option<crate::transform::load_mask::LoadMaskEvidence>,
     /// Source-bound arithmetic selected before reads, widths and C allocation.
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
+    /// Certified semantic values, captured and substituted before allocation.
+    pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
     /// Source-bound constants proved across SSA predecessor and loop phi edges.
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
     pub web_recovery: WebRecovery,

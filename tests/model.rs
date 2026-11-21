@@ -30,5 +30,7 @@ mod memory_ir;
 mod nonlocal_transfers;
 #[path = "model/run_reports.rs"]
 mod run_reports;
+#[path = "model/semantic_ir.rs"]
+mod semantic_ir;
 #[path = "model/sparse_memory.rs"]
 mod sparse_memory;

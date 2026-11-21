@@ -55,6 +55,8 @@ mod object_views;
 mod presentation;
 #[path = "codegen/readable.rs"]
 mod readable;
+#[path = "codegen/signed_division_backend.rs"]
+mod signed_division_backend;
 #[path = "codegen/signed_expr_backend.rs"]
 mod signed_expr_backend;
 #[path = "codegen/source_alias_compare.rs"]

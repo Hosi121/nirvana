@@ -617,6 +617,9 @@ impl Printer<'_> {
         };
         // Arithmetic proof precedes compound extraction, which would otherwise
         // hide the whole subtraction behind `x -= quotient * divisor`.
+        if crate::transform::signed_division_expr::recognize_remainder(value).is_some() {
+            return None;
+        }
         let remainder = self
             .context_remainder(value, point)
             .map(|view| (view.value, view.divisor))
