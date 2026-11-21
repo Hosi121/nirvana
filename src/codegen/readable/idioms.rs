@@ -38,6 +38,9 @@ pub(super) enum View<'a> {
 }
 
 pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
+    if let Some(view) = word_primitive(expression) {
+        return Some(view);
+    }
     if let Expr::Binary(op, value, divisor) = expression
         && let Expr::Const(d) = **divisor
     {
@@ -131,6 +134,44 @@ pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
 pub(super) fn preserve_mask(expression: &Expr) -> bool {
     narrow_rotate::recognize_masked(expression).is_some()
         || word_signed_division::recognize(expression).is_some()
+        || word_primitive(expression).is_some()
+}
+
+fn word_primitive(expression: &Expr) -> Option<View<'_>> {
+    let Expr::Binary(B::And, a, b) = expression else {
+        return None;
+    };
+    for (low, mask) in [(&**a, &**b), (&**b, &**a)] {
+        let Expr::Const(mask) = mask else { continue };
+        let width = [
+            crate::model::ir::Width::U8,
+            crate::model::ir::Width::U16,
+            crate::model::ir::Width::U32,
+        ]
+        .into_iter()
+        .find(|w| w.mask() == *mask)?;
+        let Expr::Binary(op @ (B::SDiv | B::SRem), input, divisor) = low else {
+            continue;
+        };
+        let Expr::Const(d) = **divisor else { continue };
+        let Expr::Unary(crate::model::ir::UnaryOp::SignExtend(w), value) = &**input else {
+            continue;
+        };
+        if *w != width {
+            continue;
+        }
+        return Some(View::WordSigned {
+            name: if *op == B::SDiv {
+                "nirvana_sdiv_word"
+            } else {
+                "nirvana_srem_word"
+            },
+            value,
+            divisor: d as i64,
+            bits: width.bits(),
+        });
+    }
+    None
 }
 
 pub(super) fn definitions(code: &str) -> String {

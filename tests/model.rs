@@ -8,6 +8,7 @@ mod support {
     pub mod native;
     #[path = "../../examples/programs/mod.rs"]
     pub mod programs;
+    pub mod word_reciprocals;
 }
 
 #[path = "model/call_preservation.rs"]

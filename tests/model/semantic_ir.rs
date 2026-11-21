@@ -6,6 +6,8 @@ use nirvana::ir::{
 use nirvana::semantic_ir::{SemanticPlan, validate};
 use nirvana::{display_dce, x86};
 use std::fmt::Write as _;
+#[path = "semantic_ir/word.rs"]
+mod word;
 
 fn b(op: B, a: Expr, z: Expr) -> Expr {
     Expr::binary(op, a, z)

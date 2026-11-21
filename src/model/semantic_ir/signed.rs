@@ -238,15 +238,3 @@ fn linear(
     memo.insert(id, result);
     Some(result)
 }
-
-pub(super) fn lower(equation: Equation, input: Reg) -> Expr {
-    let op = match equation.kind {
-        ArithmeticKind::SignedDivide64 => B::SDiv,
-        ArithmeticKind::SignedRemainder64 => B::SRem,
-    };
-    Expr::binary(
-        op,
-        Expr::Register(input),
-        Expr::Const(equation.divisor as u64),
-    )
-}

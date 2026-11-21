@@ -10,6 +10,9 @@ impl Work {
     pub fn new() -> Self {
         Self(MAX_WORK)
     }
+    pub fn used(&self) -> usize {
+        MAX_WORK - self.0
+    }
     pub fn spend(&mut self) -> Option<()> {
         self.0 = self.0.checked_sub(1)?;
         Some(())

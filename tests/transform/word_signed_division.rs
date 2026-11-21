@@ -135,8 +135,13 @@ fn views_bind_every_field_to_the_original_word_and_complete_source() {
     let e = kernel(Width::U32, 7, 2, true, false);
     let v = signed::recognize(&e).unwrap();
     let copied = v.value.clone();
+    let copied_product = v.product.clone();
     let evidence = v.evidence;
     let wrong = [
+        View {
+            product: &copied_product,
+            ..v
+        },
         View {
             value: &copied,
             ..v

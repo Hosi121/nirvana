@@ -7,18 +7,21 @@
 //! Lowered execution starts at the original CFG entry; full state comparison
 //! projects registers onto the original prefix. Fresh captures are internal.
 use crate::dataflow::value_graph::{self, BlockValues, Point, ValueGraph, ValueId, Work};
-use crate::model::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg};
+use crate::model::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width};
 use crate::transform::signed_division_expr::SignedDivisionEvidence;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod signed;
 mod value;
+mod word;
 const MAX_CAPTURES: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArithmeticKind {
     SignedDivide64,
     SignedRemainder64,
+    SignedDivide(Width),
+    SignedRemainder(Width),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -41,6 +44,32 @@ struct Equation {
     evidence: SignedDivisionEvidence,
 }
 
+impl Equation {
+    fn lower(self, input: Reg) -> Expr {
+        use crate::model::ir::BinaryOp as B;
+        let (op, width) = match self.kind {
+            ArithmeticKind::SignedDivide64 => (B::SDiv, None),
+            ArithmeticKind::SignedRemainder64 => (B::SRem, None),
+            ArithmeticKind::SignedDivide(w) => (B::SDiv, Some(w)),
+            ArithmeticKind::SignedRemainder(w) => (B::SRem, Some(w)),
+        };
+        let value = if let Some(w) = width {
+            Expr::unary(
+                crate::model::ir::UnaryOp::SignExtend(w),
+                Expr::Register(input),
+            )
+        } else {
+            Expr::Register(input)
+        };
+        let result = Expr::binary(op, value, Expr::Const(self.divisor as u64));
+        if let Some(w) = width {
+            Expr::binary(B::And, result, Expr::Const(w.mask()))
+        } else {
+            result
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Proof {
     Input(Expr),
@@ -58,7 +87,7 @@ impl Capture {
     fn expression(&self) -> Expr {
         match &self.proof {
             Proof::Input(expression) => expression.clone(),
-            Proof::Operation { equation, input } => signed::lower(*equation, *input),
+            Proof::Operation { equation, input } => equation.lower(*input),
         }
     }
 }
@@ -73,11 +102,12 @@ impl SemanticPlan {
     pub fn analyze(source: &Program) -> Option<Self> {
         let mut work = Work::new();
         value_graph::preflight(source, &mut work)?;
-        if !source.uses_operator(crate::model::ir::BinaryOp::SMulHigh) {
+        if !source.uses_operator(crate::model::ir::BinaryOp::SMulHigh) && !word::has_kernel(source)
+        {
             return None;
         }
         let graph = ValueGraph::build_with_control(source)?;
-        let equations = signed::collect(&graph, &mut work)?;
+        let equations = equations(source, &graph, &mut work)?;
         if equations.is_empty() {
             return None;
         }
@@ -238,12 +268,26 @@ fn counts(captures: &[Capture]) -> SemanticEvidence {
         match c.proof {
             Proof::Input(_) => evidence.inputs += 1,
             Proof::Operation { equation, .. } => match equation.kind {
-                ArithmeticKind::SignedDivide64 => evidence.divisions += 1,
-                ArithmeticKind::SignedRemainder64 => evidence.remainders += 1,
+                ArithmeticKind::SignedDivide64 | ArithmeticKind::SignedDivide(_) => {
+                    evidence.divisions += 1
+                }
+                ArithmeticKind::SignedRemainder64 | ArithmeticKind::SignedRemainder(_) => {
+                    evidence.remainders += 1
+                }
             },
         }
     }
     evidence
+}
+
+fn equations(source: &Program, graph: &ValueGraph, work: &mut Work) -> Option<Vec<Equation>> {
+    let mut equations = signed::collect(graph, work)?;
+    equations.extend(word::collect(source, graph, work)?);
+    if equations.len() > MAX_CAPTURES {
+        return None;
+    }
+    equations.sort_by_key(|e| (e.block, e.result));
+    Some(equations)
 }
 
 fn block_at<'a>(source: &Program, graph: &'a ValueGraph, address: u64) -> Option<&'a BlockValues> {
@@ -282,7 +326,7 @@ fn validate_plan(
     if evidence != plan.evidence || evidence.replaced_subtrees == 0 {
         return None;
     }
-    let equations = signed::collect(graph, work)?;
+    let equations = equations(source, graph, work)?;
     work.spend(equations.len().checked_add(plan.captures.len())?)?;
     let equations: BTreeMap<_, _> = equations.iter().map(|e| ((e.block, e.result), e)).collect();
     let by_register: BTreeMap<_, _> = plan.captures.iter().map(|c| (c.storage.0, c)).collect();
