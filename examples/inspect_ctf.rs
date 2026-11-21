@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
-        Some("run") if args.len() == 4 => {
+        Some(mode) if (mode == "run" && args.len() == 4) || (mode == "image" && args.len() == 3) => {
             let bytes = std::fs::read(&args[1])?;
             let options = LinkedOptions {
                 load_bias: if bytes.get(16..18) == Some(&[2, 0]) {
@@ -60,6 +60,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..Default::default()
             };
             let module = module_ir::lift_elf_at(&bytes, number(&args[2])?, options)?;
+            if mode == "image" {
+                let layout = module.image.memory_layout.as_ref();
+                let end = layout.map_or(module.image.memory_base + module.image.memory.len() as u64,
+                    |l| { let r=l.regions().last().unwrap(); r.address+r.size });
+                println!("{{\"model\":\"{}\",\"memory_base\":{},\"backing_bytes\":{},\"virtual_span\":{},\"regions\":{}}}",
+                    module.program.model_id(), module.image.memory_base, module.image.memory.len(),
+                    end-module.image.memory_base, layout.map_or(0,|l|l.regions().len()));
+                return Ok(());
+            }
             let mut registers = module.initial_registers();
             let inputs = args[3]
                 .split(',')
@@ -89,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 report.state.trace.len()
             );
         }
-        _ => return Err("usage: inspect_ctf decode | run ELF LINK_TIME_ENTRY ARG[,ARG...]".into()),
+        _ => return Err("usage: inspect_ctf decode | image ELF LINK_TIME_ENTRY | run ELF LINK_TIME_ENTRY ARG[,ARG...]".into()),
     }
     Ok(())
 }

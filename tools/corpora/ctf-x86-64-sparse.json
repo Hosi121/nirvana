@@ -1,0 +1,248 @@
+{
+  "schema": "nirvana-ctf-sparse-v1",
+  "nirvana_commit": "ae32582af6b4e424f8613458d99e033520c67f8c",
+  "baseline_commit": "e6e5b5e9811fa32d1cb6a8de55b512aef395ebd1",
+  "manifest_sha256": "eab33d95b7d15628dc766d51f61f1984433fc2a76aa4c791d045ecb91486071c",
+  "nirvana_sha256": "c50368936e041534db46c70a667a6051c4b8d7807e02872d2f7a33362e79db5d",
+  "summary": {
+    "challenges": 6,
+    "before_main_c_generated": 5,
+    "after_main_c_generated": 6,
+    "after_main_c_compiled": 6,
+    "optimized_c_compiled": 18,
+    "unchanged_modeled_runs": 9,
+    "summarize_stdio": {
+      "defined_inputs": 8,
+      "generated_executables": 6,
+      "comparisons": 48,
+      "matched": 48
+    }
+  },
+  "compile_flags": [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-pedantic",
+    "-O2",
+    "-fsanitize=undefined",
+    "-fno-sanitize-recover=all",
+    "-c"
+  ],
+  "wrong_signal_execution": {
+    "exit_code": 3,
+    "stdout": "",
+    "stderr": "nirvana module: status=3 pc=0x13467068 started=8 fault=0x0 width=0 access=0\n",
+    "first_unmodeled_import": "memset"
+  },
+  "validation": {
+    "sparse_profiles": "EXEC/PIE; all guest PCs and instruction budgets 0/1/2/8/64; all 80 registers, PC, budgets, fault and complete packed RAM digest",
+    "generated": "flat/readable/locals; O0/O2 with UBSan; host depths 1/64 for readable backends",
+    "range_cases": "gaps, permission transitions, adjacent regions, empty ranges, address overflow and malformed metadata"
+  },
+  "limits": [
+    "Sparse profile uses byte extents from PT_LOAD p_memsz and declared R/W flags; page rounding, RELRO and CPU permission implications need a page profile",
+    "wrong-signal native parity requires memset/read/_exit adapters and sigaction, fault-to-handler transfer and signal return",
+    "C generation and compilation are separate from complete libc execution and blind CTF solving"
+  ],
+  "cases": [
+    {
+      "id": "ductf2024-jmp-flag",
+      "binary_sha256": "8e50dac00da0944823f13cac91d725d5aa8a4adaa83884b4e3ba713233206e63",
+      "before_generated": true,
+      "after_generated": true,
+      "after_compile_exit_code": 0,
+      "diagnostic": "module locals: 0 functions, 131 fallback; 0 variables, 0 resume bindings, 0 call reloads\nmodule structure: 131 structured, 0 goto; 2 direct calls, 1 dynamic calls, 4 import calls; 0 guarded tails, 0 key switches",
+      "image": {
+        "id": "ductf2024-jmp-flag",
+        "model": "module-normal-ram-calls-v2",
+        "memory_base": 65536,
+        "backing_bytes": 102496,
+        "virtual_span": 102496,
+        "regions": 0
+      },
+      "optimized_backends": [
+        {
+          "mode": "module-c",
+          "c_sha256": "7eb93609faea261dc1c54c86b1709dd3bd613b8e5388ae5c9e4da0b57f024cf9",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-readable-c",
+          "c_sha256": "9ad4c2a6ae7544a2efcb5431a8f85be9c46af678f7a2236d4dc0cf8e94e44ee7",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-locals-c",
+          "c_sha256": "c00c22e536a56ee46eeee65f78a54c5f32c80044e928ee80be3ccc61f6d03eed",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "ductf2024-sheep-farm",
+      "binary_sha256": "4f220d130793e8b75d1426c4e5868ca5683805c0f23ef3c1059ef386b765ecf3",
+      "before_generated": true,
+      "after_generated": true,
+      "after_compile_exit_code": 0,
+      "diagnostic": "module locals: 13 functions, 0 fallback; 286 variables, 2419 resume bindings, 51 call reloads\nmodule structure: 12 structured, 1 goto; 14 direct calls, 1 dynamic calls, 29 import calls; 0 guarded tails, 0 key switches",
+      "image": {
+        "id": "ductf2024-sheep-farm",
+        "model": "module-normal-ram-calls-v2",
+        "memory_base": 65536,
+        "backing_bytes": 87440,
+        "virtual_span": 87440,
+        "regions": 0
+      },
+      "optimized_backends": [
+        {
+          "mode": "module-c",
+          "c_sha256": "ab1977319f64525151b5a7478140ef082a7b33c680c9af101597764aa92e4256",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-readable-c",
+          "c_sha256": "45d393f0a5b608034bced31901bbb6acabb55683e436ced2fbaac2cc9759fef6",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-locals-c",
+          "c_sha256": "46948b0d4bffcdf2bb907db94642f2a5afd695fcee7f8eb6b910ca0964855908",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "ductf2023-wrong-signal",
+      "binary_sha256": "ad07b154f4f00597d44536b5b7ad048001e1422fcd53c5a0d3bb0b9bef683bcd",
+      "before_generated": false,
+      "after_generated": true,
+      "after_compile_exit_code": 0,
+      "diagnostic": "module locals: 3 functions, 2 fallback; 2 variables, 3 resume bindings, 0 call reloads\nmodule structure: 4 structured, 1 goto; 1 direct calls, 2 dynamic calls, 7 import calls; 1 guarded tails, 1 key switches",
+      "image": {
+        "id": "ductf2023-wrong-signal",
+        "model": "module-sparse-ram-calls-v1",
+        "memory_base": 4194304,
+        "backing_bytes": 1018285,
+        "virtual_span": 319189056,
+        "regions": 48
+      },
+      "optimized_backends": [
+        {
+          "mode": "module-c",
+          "c_sha256": "a1c88fe1a11875c2d9fe4a308dd3ed43cad9a00122268f39395d4c3cdb726de1",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-readable-c",
+          "c_sha256": "d7b7edd65a88788a72134223f19a7ffb42eaf78cd0347e8385ba97d4bb1fb516",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-locals-c",
+          "c_sha256": "f6039c3716813c801576e971142447489e7fb4c9d40225aea4ef2c5af841fc8c",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "uiuctf2024-summarize",
+      "binary_sha256": "66e8392f3eaaf0ee279369f4bbdb61ca7ede335f802339359e67daaa171b4340",
+      "before_generated": true,
+      "after_generated": true,
+      "after_compile_exit_code": 0,
+      "diagnostic": "module locals: 8 functions, 0 fallback; 180 variables, 2398 resume bindings, 66 call reloads\nmodule structure: 8 structured, 0 goto; 16 direct calls, 0 dynamic calls, 19 import calls; 0 guarded tails, 0 key switches",
+      "image": {
+        "id": "uiuctf2024-summarize",
+        "model": "module-normal-ram-calls-v2",
+        "memory_base": 4194304,
+        "backing_bytes": 82080,
+        "virtual_span": 82080,
+        "regions": 0
+      },
+      "optimized_backends": [
+        {
+          "mode": "module-c",
+          "c_sha256": "9bc7bf179b54bbf8afb43711d11011b985135016d27493fe17a10fe889ece3ac",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-readable-c",
+          "c_sha256": "a6a4a7e5405029cbedf6871cf0fe13a9336e1bab663c19a94e1c8d54861cf74f",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-locals-c",
+          "c_sha256": "e8b092047952961b86027394f611cf577899ed229bb4769efd989086ffb3bd76",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "uiuctf2024-pwnymalloc",
+      "binary_sha256": "acd33918be218d536e79850ecb468d1f3a8b13efa3754db7558507cf7982dea2",
+      "before_generated": true,
+      "after_generated": true,
+      "after_compile_exit_code": 0,
+      "diagnostic": "module locals: 21 functions, 1 fallback; 449 variables, 2856 resume bindings, 127 call reloads\nmodule structure: 21 structured, 1 goto; 52 direct calls, 1 dynamic calls, 46 import calls; 1 guarded tails, 1 key switches",
+      "image": {
+        "id": "uiuctf2024-pwnymalloc",
+        "model": "module-normal-ram-calls-v2",
+        "memory_base": 65536,
+        "backing_bytes": 82192,
+        "virtual_span": 82192,
+        "regions": 0
+      },
+      "optimized_backends": [
+        {
+          "mode": "module-c",
+          "c_sha256": "d885a74b3eb923390eadd19214287de742ed4ec30dcf58b0107f37d856feff89",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-readable-c",
+          "c_sha256": "f49843484c7f32131d6b0356d1df690d75bf2afef3a0a00fa75b658b0d7f0c9f",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-locals-c",
+          "c_sha256": "9ad417022c8d903181a78403d0466cdb2794bad838b8a1871b4f9e86dabc4b3a",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "dicectf2024-baby-talk",
+      "binary_sha256": "d12445bc31833d076632bd6d910152fa0dfe21f345095b6dfa8383a457f2ac11",
+      "before_generated": true,
+      "after_generated": true,
+      "after_compile_exit_code": 0,
+      "diagnostic": "module locals: 9 functions, 0 fallback; 190 variables, 768 resume bindings, 35 call reloads\nmodule structure: 9 structured, 0 goto; 9 direct calls, 2 dynamic calls, 27 import calls; 0 guarded tails, 0 key switches",
+      "image": {
+        "id": "dicectf2024-baby-talk",
+        "model": "module-normal-ram-calls-v2",
+        "memory_base": 65536,
+        "backing_bytes": 2171136,
+        "virtual_span": 2171136,
+        "regions": 0
+      },
+      "optimized_backends": [
+        {
+          "mode": "module-c",
+          "c_sha256": "c23beeae43f395a2203b6b5818100caf7b14de5a239aafeed8883d260bcb0b11",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-readable-c",
+          "c_sha256": "7ad55132303718a692355ff3d79095b4ee6d9749ef2041a34ca6d0e7c2c6856e",
+          "exit_code": 0
+        },
+        {
+          "mode": "module-locals-c",
+          "c_sha256": "dd7792cbf7505fb20e3f835b214293d799bc70229dae194e31b3f549e8348146",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}
