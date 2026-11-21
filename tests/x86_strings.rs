@@ -64,6 +64,12 @@ fn repeated_stores_preserve_prefix_faults_budgets_and_all_checked_state() {
     for (name, code, width, repeat) in [
         ("qword", "rep stosq", 8, true),
         ("byte", "std\nstosb\ncld", 1, false),
+        (
+            "loop",
+            "mov %rcx,%r9\ntest %r9,%r9\njz .Ldone\n.Lmore:\nmov $1,%ecx\nrep stosq\nsub $1,%r9\njnz .Lmore\n.Ldone:",
+            8,
+            true,
+        ),
     ] {
         let dir = scratch.0.join(name);
         std::fs::create_dir(&dir).unwrap();
@@ -118,6 +124,70 @@ ret
                 .instructions()
                 .iter()
                 .any(|i| matches!(i, module_ir::Instruction::StoreString { .. }))
+        );
+        let values = nirvana::module_values::analyze(&module.program).unwrap();
+        let function = values
+            .functions
+            .iter()
+            .find(|f| f.function.address == module.program.entry())
+            .unwrap()
+            .result
+            .as_ref()
+            .unwrap();
+        let boundary = function
+            .boundaries()
+            .iter()
+            .find(|b| {
+                matches!(
+                    b.kind,
+                    nirvana::module_values::BoundaryKind::StoreString { .. }
+                )
+            })
+            .unwrap();
+        assert_eq!(boundary.inputs.len(), if repeat { 4 } else { 3 });
+        assert_eq!(
+            boundary
+                .outputs
+                .iter()
+                .map(|v| v.register.0)
+                .collect::<Vec<_>>(),
+            if repeat {
+                vec![x86::RDI, x86::RCX]
+            } else {
+                vec![x86::RDI]
+            }
+        );
+        for &register in if name == "byte" {
+            &[x86::RAX][..]
+        } else {
+            &[x86::RAX, x86::DF][..]
+        } {
+            assert_eq!(
+                boundary
+                    .inputs
+                    .iter()
+                    .find(|v| v.register.0 == register)
+                    .unwrap()
+                    .value,
+                boundary
+                    .preserved
+                    .iter()
+                    .find(|v| v.register.0 == register)
+                    .unwrap()
+                    .value
+            );
+        }
+        let output = nirvana::module_readable::emit_c_with_locals(&module).unwrap();
+        assert_eq!(
+            output.report.local_fallback_functions,
+            0,
+            "{}",
+            output
+                .code
+                .lines()
+                .filter(|s| s.contains("fallback"))
+                .collect::<Vec<_>>()
+                .join("\n")
         );
         let mut registers = module.initial_registers();
         for (i, v) in registers.iter_mut().enumerate() {

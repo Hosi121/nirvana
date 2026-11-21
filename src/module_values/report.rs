@@ -367,11 +367,13 @@ impl Json {
             self.string(match boundary.kind {
                 BoundaryKind::Call { .. } => "call",
                 BoundaryKind::Divide { .. } => "divide",
+                BoundaryKind::StoreString { .. } => "store-string",
                 BoundaryKind::Tail => "tail",
                 BoundaryKind::Return => "return",
             })?;
-            if let BoundaryKind::Call { continuation } | BoundaryKind::Divide { continuation, .. } =
-                boundary.kind
+            if let BoundaryKind::Call { continuation }
+            | BoundaryKind::Divide { continuation, .. }
+            | BoundaryKind::StoreString { continuation, .. } = boundary.kind
             {
                 self.raw(",\"continuation\":")?;
                 self.number(continuation)?;
@@ -381,6 +383,13 @@ impl Json {
                 self.number(width.bits())?;
                 self.raw(",\"signed\":")?;
                 self.raw(if signed { "true" } else { "false" })?;
+            }
+            if let BoundaryKind::StoreString { width, repeat, .. } = boundary.kind {
+                self.raw(",\"width\":")?;
+                self.number(width.bits())?;
+                self.raw(",\"repeat\":")?;
+                self.raw(if repeat { "true" } else { "false" })?;
+                self.raw(",\"memory_effect\":\"ordered-store\"")?;
             }
             self.raw(",\"target_reads\":")?;
             self.registers(&boundary.target_reads)?;

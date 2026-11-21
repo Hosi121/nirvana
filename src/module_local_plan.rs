@@ -192,9 +192,12 @@ fn function_plan(
             budget.scan(&assignment.value)?;
         }
         let control = match instruction {
-            Instruction::StoreString { .. } => {
-                return Err("string stores require explicit repeated memory SSA effects".into());
-            }
+            Instruction::StoreString { .. } => Control::Jump(
+                instruction
+                    .address()
+                    .checked_add(u64::from(instruction.size()))
+                    .ok_or("module local string continuation overflow")?,
+            ),
             Instruction::Divide { source, .. } => {
                 budget.scan(source)?;
                 Control::Jump(
@@ -426,6 +429,61 @@ fn function_plan(
                 after: Vec::new(),
             };
             let mut seen = vec![false; assignments(instruction).len()];
+            if let Instruction::StoreString { width, repeat, .. } = instruction {
+                budget.spend(16)?;
+                let boundary = values
+                    .boundaries()
+                    .binary_search_by_key(&address, |b| b.address)
+                    .ok()
+                    .map(|i| &values.boundaries()[i]);
+                let expected = module_values::BoundaryKind::StoreString {
+                    continuation: address + u64::from(instruction.size()),
+                    width: *width,
+                    repeat: *repeat,
+                };
+                if boundary.is_none_or(|b| b.kind != expected) {
+                    return Err("module local string boundary contract mismatch".into());
+                }
+                let mut inputs = vec![
+                    Reg(crate::x86::RAX),
+                    Reg(crate::x86::RDI),
+                    Reg(crate::x86::DF),
+                ];
+                let mut outputs = vec![Reg(crate::x86::RDI)];
+                if *repeat {
+                    inputs.push(Reg(crate::x86::RCX));
+                    outputs.push(Reg(crate::x86::RCX));
+                }
+                let range = point_ranges[&address].clone();
+                if range.len() != inputs.len() + outputs.len() {
+                    return Err("module local string event coverage mismatch".into());
+                }
+                for (event, p) in range.enumerate() {
+                    budget.spend(1)?;
+                    let point = &ssa_block.points[p];
+                    let (role, register) = if event < inputs.len() {
+                        (
+                            PointRole::Input {
+                                register: inputs[event],
+                            },
+                            Reg(RAW),
+                        )
+                    } else {
+                        let register = outputs[event - inputs.len()];
+                        (PointRole::OpaqueOutput { register }, register)
+                    };
+                    if point.site.assignment != Some(event)
+                        || values.roles().get(&point.site) != Some(&role)
+                        || point.definition.and_then(|id| graph.values.get(id.0))
+                            != Some(&Definition::Assignment {
+                                site: point.site,
+                                register,
+                            })
+                    {
+                        return Err("module local string event role/definition mismatch".into());
+                    }
+                }
+            }
             if let Instruction::Divide { width, .. } = instruction {
                 // Check complete coverage independently of the event producer:
                 // source observation, dividend inputs, then fresh results.
@@ -583,7 +641,9 @@ fn function_plan(
                 }
                 if matches!(
                     instruction,
-                    Instruction::Transfer { link: Some(_), .. } | Instruction::Divide { .. }
+                    Instruction::Transfer { link: Some(_), .. }
+                        | Instruction::Divide { .. }
+                        | Instruction::StoreString { .. }
                 ) {
                     for binding in
                         bindings(&live_block.live_out, &demand, &current, graph, plan, budget)?
@@ -798,11 +858,16 @@ fn validate_observation(
             ir::Width::U64,
         )),
         (
-            Instruction::Transfer { .. } | Instruction::Return { .. } | Instruction::Divide { .. },
+            Instruction::Transfer { .. }
+            | Instruction::Return { .. }
+            | Instruction::Divide { .. }
+            | Instruction::StoreString { .. },
             Some(PointRole::Input { register }),
         ) => Some(Expr::Register(*register)),
         (
-            Instruction::Transfer { link: Some(_), .. } | Instruction::Divide { .. },
+            Instruction::Transfer { link: Some(_), .. }
+            | Instruction::Divide { .. }
+            | Instruction::StoreString { .. },
             Some(PointRole::OpaqueOutput { register }),
         ) => {
             if !point.reads.is_empty() || point.definition.is_none() || register.0 >= RAW {

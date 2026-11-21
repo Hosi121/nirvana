@@ -33,6 +33,11 @@ pub enum PointRole {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BoundaryKind {
+    StoreString {
+        continuation: u64,
+        width: Width,
+        repeat: bool,
+    },
     Call {
         continuation: u64,
     },
@@ -350,8 +355,41 @@ impl Projection<'_> {
         let address = instruction.address();
         let mut assignments = Vec::new();
         let control = match instruction {
-            Instruction::StoreString { .. } => {
-                return Err("string stores require explicit repeated memory SSA effects".into());
+            Instruction::StoreString { width, repeat, .. } => {
+                let mut inputs = vec![
+                    Reg(crate::x86::RAX),
+                    Reg(crate::x86::RDI),
+                    Reg(crate::x86::DF),
+                ];
+                let mut outputs = vec![Reg(crate::x86::RDI)];
+                if *repeat {
+                    inputs.push(Reg(crate::x86::RCX));
+                    outputs.push(Reg(crate::x86::RCX));
+                }
+                self.observe(address, &mut assignments, &inputs)?;
+                for register in outputs {
+                    self.push(
+                        address,
+                        &mut assignments,
+                        Assignment {
+                            destination: register.into(),
+                            value: Expr::Const(0),
+                        },
+                        PointRole::OpaqueOutput { register },
+                    )?;
+                }
+                let continuation = address
+                    .checked_add(u64::from(instruction.size()))
+                    .ok_or("string store continuation overflow")?;
+                self.boundaries.push((
+                    address,
+                    BoundaryKind::StoreString {
+                        continuation,
+                        width: *width,
+                        repeat: *repeat,
+                    },
+                ));
+                Control::Jump(continuation)
             }
             Instruction::Divide {
                 source,
@@ -620,7 +658,7 @@ fn analyze_function(
             .and_then(|p| boundaries.get_mut(&p.site.instruction))
         {
             let preserved = match boundary.kind {
-                BoundaryKind::Divide { .. } => None,
+                BoundaryKind::Divide { .. } | BoundaryKind::StoreString { .. } => None,
                 _ => match boundary.call_contract {
                     Some(CallContract::Closed { callee }) => Some(
                         &summaries

@@ -675,3 +675,35 @@ empty:
     );
     assert!(function(&module, &plan, "empty").used_locals.is_empty());
 }
+
+#[test]
+fn string_store_contract_rejects_stale_width_and_repeat_analysis() {
+    for (old, new) in [
+        ("0xf3,0xaa", "0x40,0xaa"),
+        ("0x66,0xf3,0xab", "0xf3,0x48,0xab"),
+    ] {
+        let body = |bytes| {
+            format!(
+                ".globl main\n.type main,@function\nmain:\n.byte {bytes}\nret\n.size main,.-main"
+            )
+        };
+        let (before, values, original) = fixture(&body(old));
+        assert!(original.functions.iter().all(|f| f.result.is_ok()));
+        let (after, _, fresh) = fixture(&body(new));
+        assert!(fresh.functions.iter().all(|f| f.result.is_ok()));
+        assert_eq!(before.program.entry(), after.program.entry());
+        let stale = module_local_plan::recover(&after.program, &values).unwrap();
+        let changed = stale
+            .functions
+            .iter()
+            .find(|f| f.address == after.program.entry())
+            .unwrap();
+        assert!(
+            changed
+                .result
+                .as_ref()
+                .is_err_and(|e| e.contains("string boundary contract mismatch")),
+            "{stale:?}"
+        );
+    }
+}

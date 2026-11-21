@@ -39,7 +39,9 @@ DIV/IDIVはsource・幅・符号を持つ独立した命令で、予算、source
 Rustは倍幅整数、Cはunsignedの二語演算を使い、Cバックエンド間で同じ検査付きloweringを共有します。
 除算のSSAはsourceと被除数を観測し、成功後のRAXと、16-bit以上ではRDXへ新しい未知の値IDを付けます。
 他のレジスタの値IDを保ち、局所変数は実際の除算が成功した後にゲスト状態から読み戻します。
-呼出し要約では、除算を含むcalleeを現在はopaqueとして扱います。
+STOSは要素ごとのStoreとRDI更新、REP時のRCX更新を持つ命令として扱い、faultまでの部分進捗を残します。
+SSAのordered-store境界は幅・REP・入力レジスタを記録し、更新結果だけに新しい未知の値IDを付けます。局所変数の適用時は、境界と元命令の対応を独立に照合します。
+呼出し要約では、除算・STOSを含むcalleeを現在はopaqueとして扱います。
 `Program::run`の外部効果は`Environment`へ渡します。
 `module_emit`は同じ制御をCへ展開し、POSIXアダプタがゲスト構造体とホストABIの変換を担います。
 ゲストのstackとPCを実行状態として保持し、再帰の深さもゲストRAMと命令予算で制限します。
