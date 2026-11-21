@@ -41,7 +41,11 @@ fn emit_reduced_c(
     let mut best = emit_reduced_choice(&reduced, options, MemoryRecovery::Disabled);
     // Compare complete renders: more proved loads can require more C storage.
     // Keep the baseline on ties and preserve the previous register-only choice.
-    for recovery in [MemoryRecovery::Registers, MemoryRecovery::StoredExpressions] {
+    for recovery in [
+        MemoryRecovery::Registers,
+        MemoryRecovery::StoredExpressions,
+        MemoryRecovery::InvariantExpressions,
+    ] {
         if let Ok(candidate) = emit_reduced_choice(&reduced, options, recovery)
             && best
                 .as_ref()

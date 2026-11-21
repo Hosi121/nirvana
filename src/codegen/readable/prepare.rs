@@ -14,6 +14,7 @@ pub(super) enum MemoryRecovery {
     Disabled,
     Registers,
     StoredExpressions,
+    InvariantExpressions,
 }
 
 pub(super) struct PreparedFunction {
@@ -147,6 +148,9 @@ fn prepare_selected(
             crate::dataflow::memory_values::MemoryValuePlan::analyze_registers(&program)
         }
         MemoryRecovery::StoredExpressions => {
+            crate::dataflow::memory_values::MemoryValuePlan::analyze_once(&program)
+        }
+        MemoryRecovery::InvariantExpressions => {
             crate::dataflow::memory_values::MemoryValuePlan::analyze(&program)
         }
     }

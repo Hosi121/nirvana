@@ -191,6 +191,7 @@ pub fn programs() -> Vec<Program> {
     result.extend(producer_programs());
     result.extend(after_loop_programs());
     result.extend(stored_expression_programs());
+    result.extend(invariant_loop_programs());
     result
 }
 
@@ -307,4 +308,40 @@ pub fn stored_expression_programs() -> Vec<Program> {
         ])
     })
     .collect()
+}
+
+/// Repeated definitions depend only on values read before the loop.
+pub fn invariant_loop_programs() -> Vec<Program> {
+    [false, true]
+        .into_iter()
+        .map(|register| {
+            let value = b(B::Add, r(0), r(1));
+            let mut body = if register {
+                vec![set(6, value), store(32, Width::U64, r(6))]
+            } else {
+                vec![store(32, Width::U64, value)]
+            };
+            body.extend([set(2, load(33, Width::U16)), set(3, b(B::Sub, r(3), c(1)))]);
+            program(vec![
+                ins(
+                    0,
+                    vec![
+                        set(0, load(0, Width::U64)),
+                        set(1, load(8, Width::U64)),
+                        set(3, b(B::Add, b(B::And, load(8, Width::U64), c(3)), c(1))),
+                    ],
+                    Control::Next,
+                ),
+                ins(
+                    1,
+                    body,
+                    Control::Branch {
+                        condition: r(3),
+                        target: 1,
+                    },
+                ),
+                ins(2, vec![], Control::Return(r(2))),
+            ])
+        })
+        .collect()
 }

@@ -696,7 +696,7 @@ fn split_words_follow_actual_ssa_producers_without_erasing_first_faults() {
 }
 
 #[test]
-fn values_created_after_loops_are_captured_once_and_backedges_reject_the_plan() {
+fn values_created_after_loops_and_invariant_reentry_keep_their_actual_value() {
     let mut checked = 0;
     for source in crate::support::byte_values::after_loop_programs() {
         let plan = MemoryValuePlan::analyze(&source).expect("single-visit loop exit producer");
@@ -709,8 +709,17 @@ fn values_created_after_loops_are_captured_once_and_backedges_reject_the_plan() 
             target: 1,
         };
         let cyclic = Program::new(0, 8, rows).unwrap();
-        assert!(MemoryValuePlan::analyze(&cyclic).is_none());
         assert!(plan.lower(&cyclic).is_none());
+        if matches!(
+            source.instructions()[2].assignments[0].value,
+            Expr::Load { .. }
+        ) {
+            assert!(MemoryValuePlan::analyze(&cyclic).is_none());
+        } else {
+            let repeated = MemoryValuePlan::analyze(&cyclic)
+                .expect("pure invariant producer remains stable on reentry");
+            checked += compare(&cyclic, &repeated.lower(&cyclic).unwrap());
+        }
     }
     println!("{checked} post-loop capture full-state/fault/budget observations");
 }
@@ -735,4 +744,27 @@ fn a_pure_store_expression_is_saved_once_after_success_and_faulting_rhs_declines
         assert!(plan.lower(&effectful).is_none());
     }
     println!("{checked} pure-Store capture full-register/RAM/PC/fault/budget observations");
+}
+
+#[test]
+fn repeated_invariant_captures_keep_every_prefix_and_loop_carried_inputs_decline() {
+    let mut checked = 0;
+    for (index, source) in crate::support::byte_values::invariant_loop_programs()
+        .into_iter()
+        .enumerate()
+    {
+        let plan = MemoryValuePlan::analyze(&source).expect("stable inputs on every dynamic visit");
+        assert_eq!(plan.evidence().snapshot_values, 1);
+        let candidate = plan.lower(&source).unwrap();
+        checked += compare(&source, &candidate);
+        let mut rows = source.instructions().to_vec();
+        rows[1].assignments[0].value = b(nirvana::ir::BinaryOp::Add, r(0), r(3));
+        let changing = Program::new(0, 8, rows).unwrap();
+        assert!(
+            MemoryValuePlan::analyze(&changing).is_none(),
+            "family {index} mutable loop input"
+        );
+        assert!(plan.lower(&changing).is_none());
+    }
+    println!("{checked} repeated invariant captures with full registers/RAM/PC/faults/budgets");
 }

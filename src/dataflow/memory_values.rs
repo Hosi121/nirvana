@@ -15,6 +15,7 @@ mod analyze;
 mod projection;
 mod rewrite;
 mod single_visit;
+mod stability;
 mod verify;
 const MAX_CAPTURES: usize = 256;
 
@@ -94,7 +95,14 @@ pub struct MemoryValuePlan {
 }
 impl MemoryValuePlan {
     pub fn analyze(source: &Program) -> Option<Self> {
-        let context = analyze::Context::new(source)?;
+        Self::analyze_mode(source, true)
+    }
+    pub(crate) fn analyze_once(source: &Program) -> Option<Self> {
+        Self::analyze_mode(source, false)
+    }
+    fn analyze_mode(source: &Program, allow_repeated: bool) -> Option<Self> {
+        let mut context = analyze::Context::new(source)?;
+        context.allow_repeated = allow_repeated;
         // Keep coverage first, then share a saved word across the most views.
         // Each complete candidate is checked; equal costs retain source words.
         let mut best: Option<Self> = None;
@@ -115,7 +123,8 @@ impl MemoryValuePlan {
     }
     /// Retain the register-only alternative for final C cost comparison.
     pub(crate) fn analyze_registers(source: &Program) -> Option<Self> {
-        let context = analyze::Context::new(source)?;
+        let mut context = analyze::Context::new(source)?;
+        context.allow_repeated = false;
         [RecoveryPolicy::Source, RecoveryPolicy::Local]
             .into_iter()
             .find_map(|policy| Self::analyze_context(source, &context, policy, false))

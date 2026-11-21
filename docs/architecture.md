@@ -99,7 +99,9 @@ DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認して�
 [メモリ入力](../src/dataflow/ssa_facts/memory.rs)はMemorySSAのbyte対応表を使い、StoreのSSA入力からLoad結果へ依存辺を加えます。幅の違う書込みもbyteごとに組み立て、φでは書込み元byteの候補を合流します。曖昧なアドレスのStoreにも、その値のbyteだけが届くという範囲を使います。初期メモリ・opaque効果が届くbyteは未知とし、Load自体を元の位置に保って固定点を検査します。
 [memory_values](../src/dataflow/memory_values.rs)は、書込み候補が同じ保存値の連続bit範囲を指すLoadの利用先を、その値のスナップショットへ結びます。SSA値の全bitを一度保存し、幅・位置の違うLoadや分割Storeの射影で共有します。シフト・mask・Extract・Insertの定義を遡り、別レジスタ経由のbyteも元のwordへ結びます。純粋なStore右辺は、そのStoreが成功した直後の値も保持できます。循環成分に属さない到達可能ブロックで確保し、ループ終了後の定義も扱います。
 
-[対応検査](../src/dataflow/memory_values/verify.rs)は実際の候補と初期化状態を照合します。候補側の窓をたどる処理とは別に、検査側はSSA定義とStoreの全bitの出所を評価し、未知のbitをSSA結果・Storeごとに区別します。C出力は元の候補、SSA値だけを使う復元、保存式も使う復元を生成し、局所変数数、関数本体長、全体長の順で選びます。
+[不変値の解析](../src/dataflow/memory_values/stability.rs)は、一度だけ定義される値を起点に、純粋な計算のSSA入力を伝播します。反復中も入力が同じ値なら、循環内での捕捉にも使います。循環内のφとLoadを境界とし、Storeでは右辺とアドレスの入力を分けて検査します。初期値の捕捉は一度通る入口に置きます。
+
+[対応検査](../src/dataflow/memory_values/verify.rs)は実際の候補と初期化状態を照合します。候補側の窓をたどる処理とは別に、検査側はSSA定義とStoreの全bitの出所を評価し、未知のbitをSSA結果・Storeごとに区別します。同じSSA IDでも反復で変わるbitは未知として保持し、不変な結果のbitだけを共有します。C出力は元の候補、SSA値だけを使う復元、保存式も使う復元、不変値を使う循環内の復元を生成し、局所変数数、関数本体長、全体長の順で選びます。
 [arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
 [signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。
 [semantic_ir](../src/model/semantic_ir.rs)はblock内の不変な値IDを使い、別々に保存された上位積・符号補正・商・剰余を結びます。分子を一度保存し、代入・メモリアドレス・分岐・返り値の部分式を、利用可能な意味付きの値へ置き換えます。独立した対応検査が、保存時点、元レジスタへの書込み、Load/Storeの順序、制御辺を照合します。

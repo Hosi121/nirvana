@@ -8,6 +8,8 @@ pub(super) struct Context<'a> {
     pub evidence: SsaEvidence,
     points: BTreeMap<Site, (usize, usize)>,
     single_visit: Vec<bool>,
+    pub(super) stable: super::stability::Stability,
+    pub(super) allow_repeated: bool,
 }
 impl<'a> Context<'a> {
     pub fn new(source: &'a Program) -> Option<Self> {
@@ -27,7 +29,7 @@ impl<'a> Context<'a> {
                 points.insert(point.site, (b, p));
             }
         }
-        Some(Self {
+        let mut context = Self {
             source,
             graph,
             aliases,
@@ -35,7 +37,12 @@ impl<'a> Context<'a> {
             evidence,
             points,
             single_visit,
-        })
+            stable: super::stability::Stability::default(),
+            allow_repeated: true,
+        };
+        context.stable = super::stability::analyze(&context).ok()?;
+        super::stability::validate(&context, &context.stable).ok()?;
+        Some(context)
     }
     pub fn point(&self, site: Site) -> Option<&PointValues> {
         let &(b, p) = self.points.get(&site)?;
@@ -68,7 +75,9 @@ impl<'a> Context<'a> {
             }
             let &(block, _) = self.points.get(&site)?;
             let block = self.source.cfg().block_at(self.graph.blocks[block].start)?;
-            return self.single_visit[block.index()].then_some(Capture {
+            return (self.single_visit[block.index()]
+                || self.allow_repeated && self.stable.stored.contains(&site))
+            .then_some(Capture {
                 value,
                 point: CapturePoint {
                     instruction: site.instruction,
@@ -109,11 +118,27 @@ impl<'a> Context<'a> {
             ),
         };
         let id = self.source.cfg().block_at(block)?;
-        self.single_visit[id.index()].then_some(Capture {
+        let repeated = self.allow_repeated
+            && self.stable.values.get(register_value.0) == Some(&true)
+            && matches!(
+                self.graph.values.get(register_value.0),
+                Some(Definition::Assignment { .. })
+            );
+        (self.single_visit[id.index()] || repeated).then_some(Capture {
             value,
             point,
             source: Some(source),
         })
+    }
+    pub(super) fn single_value(&self, value: ValueId) -> Option<bool> {
+        let block = match *self.graph.values.get(value.0)? {
+            Definition::Initial { .. } => return Some(true),
+            Definition::Assignment { site, .. } => {
+                self.graph.blocks[self.points.get(&site)?.0].start
+            }
+            Definition::Phi { block, .. } => block,
+        };
+        Some(self.single_visit[self.source.cfg().block_at(block)?.index()])
     }
     pub fn root_class(&self, site: Site) -> Option<ValueId> {
         self.aliases.get(self.point(site)?.definition?.0).copied()

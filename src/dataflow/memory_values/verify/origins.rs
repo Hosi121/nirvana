@@ -11,8 +11,12 @@ enum Bit {
     Stored(Site, u8),
 }
 type Word = [Bit; 64];
-fn opaque(value: ValueId) -> Word {
-    std::array::from_fn(|bit| Bit::Register(value, bit as u8))
+fn opaque(context: &Context<'_>, value: ValueId) -> Word {
+    if context.stable.values.get(value.0) == Some(&true) {
+        std::array::from_fn(|bit| Bit::Register(value, bit as u8))
+    } else {
+        [Bit::Unknown; 64]
+    }
 }
 #[derive(Default)]
 struct NormalValues {
@@ -32,7 +36,7 @@ impl NormalValues {
             return Ok(*word);
         }
         if depth >= 32 || !self.active.insert(value) {
-            return Ok(opaque(value));
+            return Ok(opaque(context, value));
         }
         let mut word =
             if let Some(Definition::Assignment { site, .. }) = context.graph.values.get(value.0) {
@@ -60,12 +64,13 @@ impl NormalValues {
                 }
                 word
             } else {
-                opaque(value)
+                opaque(context, value)
             };
-        // An unsupported bit still denotes this exact SSA result, rather
-        // than equating unrelated unknown expressions or re-reading memory.
+        // Freeze a sampled unknown only for a value stable across visits.
+        // Dynamic phi/producer bits remain unknown; their SSA ID alone does
+        // not equate values from different iterations.
         for (bit, origin) in word.iter_mut().enumerate() {
-            if *origin == Bit::Unknown {
+            if *origin == Bit::Unknown && context.stable.values.get(value.0) == Some(&true) {
                 *origin = Bit::Register(value, bit as u8);
             }
         }
@@ -317,4 +322,110 @@ fn expression(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod loop_epochs {
+    use super::*;
+    use crate::model::ir::IrInstruction;
+    #[test]
+    fn a_post_loop_sample_does_not_equal_an_earlier_dynamic_phi() {
+        let r = |n| Expr::Register(Reg(n));
+        let c = Expr::Const;
+        let slice = |e| {
+            Expr::unary(
+                UnaryOp::Extract {
+                    start: 0,
+                    width: Width::U8,
+                },
+                e,
+            )
+        };
+        let set = |n, value| Assignment {
+            destination: Reg(n).into(),
+            value,
+        };
+        let ins = |address, assignments, control| IrInstruction {
+            address,
+            size: 1,
+            assignments,
+            control,
+        };
+        let source = Program::new(
+            0,
+            8,
+            vec![
+                ins(0, vec![set(3, c(0))], Control::Jump(1)),
+                ins(
+                    1,
+                    vec![],
+                    Control::Branch {
+                        condition: Expr::binary(B::Eq, r(3), c(3)),
+                        target: 4,
+                    },
+                ),
+                ins(
+                    2,
+                    vec![Assignment {
+                        destination: Place::Memory {
+                            address: r(7),
+                            width: Width::U8,
+                        },
+                        value: slice(r(3)),
+                    }],
+                    Control::Next,
+                ),
+                ins(
+                    3,
+                    vec![set(3, Expr::binary(B::Add, r(3), c(1)))],
+                    Control::Jump(1),
+                ),
+                ins(
+                    4,
+                    vec![set(6, slice(r(3))), set(2, Expr::load(r(7), Width::U8))],
+                    Control::Return(r(2)),
+                ),
+            ],
+        )
+        .unwrap();
+        let context = Context::new(&source).unwrap();
+        let sample = context
+            .point(Site {
+                instruction: 4,
+                assignment: Some(0),
+            })
+            .unwrap()
+            .definition
+            .unwrap();
+        assert!(context.capture(SavedValue::Register(sample)).is_some());
+        let key = Key {
+            value: SavedValue::Register(sample),
+            start: 0,
+            width: Width::U8,
+        };
+        let writers = [ReachingWriter {
+            site: Site {
+                instruction: 2,
+                assignment: Some(0),
+            },
+            width: Width::U8,
+            sources: [1, 0, 0, 0, 0, 0, 0, 0],
+        }];
+        // Check the origin lemma directly, independently of which loads a
+        // separate MemorySSA completeness check would admit for forwarding.
+        let matches = Values::default()
+            .matches(&context, key, &writers, &mut Budget::new())
+            .unwrap();
+        let mut input = vec![0; 8];
+        input[7] = 4096;
+        let result = source
+            .execute_with_memory(&input, 4096, &[0; 32], 32)
+            .unwrap();
+        assert_eq!(result.value, 2);
+        assert_eq!(result.registers[6], 3);
+        assert!(
+            !matches,
+            "a one-shot sample freezes a different iteration's value"
+        );
+    }
 }

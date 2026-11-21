@@ -337,3 +337,84 @@ fn actual_pure_store_expression_captures_have_checked_memory_proofs() {
         "6 universal actual pure-Store expression/RAM/first-fault proofs; 1 IR-replayed wrong-capture SAT control"
     );
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn invariant_loop_capture_unrolls_keep_checked_memory_and_have_replayed_mutants() {
+    use nirvana::block_verify::{self, BlockVerdict};
+    use nirvana::ir::{Control, Place, Program, Reg};
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/invariant-captures");
+    std::fs::create_dir_all(&root).unwrap();
+    let unroll = |p: &Program, count: usize| {
+        let mut rows = vec![p.instructions()[0].clone()];
+        for iteration in 0..count {
+            let mut body = p.instructions()[1].clone();
+            body.address = 1 + iteration as u64;
+            body.control = Control::Next;
+            rows.push(body);
+        }
+        let mut exit = p.instructions()[2].clone();
+        exit.address = count as u64 + 1;
+        rows.push(exit);
+        Program::new(0, p.register_count(), rows).unwrap()
+    };
+    let prefix: Vec<_> = (0..8).map(Reg).collect();
+    let mut proved = 0;
+    for (family, source) in crate::support::byte_values::invariant_loop_programs()
+        .into_iter()
+        .enumerate()
+    {
+        let plan = nirvana::memory_values::MemoryValuePlan::analyze(&source).unwrap();
+        let candidate = plan.lower(&source).unwrap();
+        for count in 1..=4 {
+            let a = unroll(&source, count);
+            let z = unroll(&candidate, count);
+            let query = block_verify::block_query(&a, &z, 0, &prefix, &prefix).unwrap();
+            let name = format!("family-{family}-visits-{count}");
+            std::fs::write(
+                root.join(format!("{name}.smt2")),
+                format!("{}(check-sat)\n", query.smt2()),
+            )
+            .unwrap();
+            let verdict = query.check(&solver);
+            std::fs::write(root.join(format!("{name}.out")), format!("{verdict:?}\n")).unwrap();
+            assert_eq!(verdict, BlockVerdict::EquivalentUnderModel, "{name}");
+            proved += 1;
+        }
+        if family == 0 {
+            let mut rows = candidate.instructions().to_vec();
+            let capture = rows[1]
+                .assignments
+                .iter_mut()
+                .find(|a| matches!(a.destination,Place::Register(r) if r.0>=8))
+                .unwrap();
+            capture.value = b(B::Add, capture.value.clone(), c(256));
+            let bad = Program::new(0, candidate.register_count(), rows).unwrap();
+            assert!(nirvana::memory_values::validate(&source, &plan, &bad).is_err());
+            let query = block_verify::block_query(
+                &unroll(&source, 2),
+                &unroll(&bad, 2),
+                0,
+                &prefix,
+                &prefix,
+            )
+            .unwrap();
+            std::fs::write(
+                root.join("wrong-loop-value.smt2"),
+                format!("{}(check-sat)\n", query.smt2()),
+            )
+            .unwrap();
+            let verdict = query.check(&solver);
+            std::fs::write(root.join("wrong-loop-value.out"), format!("{verdict:?}\n")).unwrap();
+            assert!(
+                matches!(verdict, BlockVerdict::Counterexample(_)),
+                "{verdict:?}"
+            );
+        }
+    }
+    println!(
+        "{proved} universal actual capture unroll/RAM/first-fault checks at 1..4 visits; 1 IR-replayed wrong-value SAT control"
+    );
+}
