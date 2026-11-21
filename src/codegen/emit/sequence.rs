@@ -231,8 +231,8 @@ impl Expressions {
             Expr::Binary(op, left, right) => {
                 let left = self.expression(left);
                 let mut right = self.expression(right);
-                if let Some(name) = super::integer::helper_name(*op) {
-                    return format!("{name}({left}, {right})");
+                if let Some(call) = super::integer::helper_call(*op, &left, &right) {
+                    return call;
                 }
                 let operator = match op {
                     BinaryOp::Add => "+",
@@ -253,7 +253,8 @@ impl Expressions {
                     | BinaryOp::UDiv
                     | BinaryOp::URem
                     | BinaryOp::SDiv
-                    | BinaryOp::SRem => unreachable!(),
+                    | BinaryOp::SRem
+                    | BinaryOp::Insert { .. } => unreachable!(),
                 };
                 if matches!(op, BinaryOp::Shl | BinaryOp::Shr) {
                     right = format!("({right} & UINT64_C(63))");

@@ -347,16 +347,16 @@ impl Lifter {
         }
     }
     fn write_register(&mut self, register: Register, value: Expr) {
-        let value = mask(value, register.width);
         let value = if matches!(register.width, Width::U32 | Width::U64) {
-            value
+            mask(value, register.width)
         } else {
-            or(
-                and(
-                    r(register.index as usize),
-                    k(!(register.width.mask() << register.shift)),
-                ),
-                b(B::Shl, value, k(u64::from(register.shift))),
+            b(
+                B::Insert {
+                    start: register.shift,
+                    width: register.width,
+                },
+                r(register.index as usize),
+                value,
             )
         };
         self.set(register.index as usize, value);

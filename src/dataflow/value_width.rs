@@ -201,6 +201,16 @@ fn bits(
             let left_bits = bits(left, state, observed.as_deref_mut(), budget, depth + 1)?;
             let right_bits = bits(right, state, observed, budget, depth + 1)?;
             match op {
+                BinaryOp::Insert { .. } => {
+                    let maximum = |bits: u8| {
+                        u64::MAX
+                            .checked_shr(64 - u32::from(bits.min(64)))
+                            .unwrap_or(0)
+                    };
+                    (64 - op
+                        .evaluate(maximum(left_bits), maximum(right_bits))
+                        .leading_zeros()) as u8
+                }
                 BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule => 1,
                 BinaryOp::And => left_bits.min(right_bits),
                 BinaryOp::Or | BinaryOp::Xor => left_bits.max(right_bits),

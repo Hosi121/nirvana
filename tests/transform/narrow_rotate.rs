@@ -44,6 +44,24 @@ fn partial(value: Expr, width: NarrowWidth, direction: Direction, count: Expr) -
         width.mask(),
     )
 }
+fn inserted(value: Expr, width: NarrowWidth, direction: Direction, count: Expr) -> Expr {
+    let field = match width {
+        NarrowWidth::U8 => Width::U8,
+        NarrowWidth::U16 => Width::U16,
+        NarrowWidth::U32 => Width::U32,
+    };
+    and(
+        b(
+            B::Insert {
+                start: 0,
+                width: field,
+            },
+            value.clone(),
+            pattern(value, width, direction, count),
+        ),
+        width.mask(),
+    )
+}
 fn eval(expression: &Expr, input: &[u64]) -> u64 {
     Program::new(
         0,
@@ -101,6 +119,7 @@ fn whole_u64_values_match_independent_narrow_rust_rotates_without_width_assumpti
                 for expression in [
                     pattern(r(0), width, direction, count.clone()),
                     partial(r(0), width, direction, count.clone()),
+                    inserted(r(0), width, direction, count.clone()),
                 ] {
                     let original = expression.clone();
                     let view = recognize_masked(&expression).unwrap();
@@ -495,7 +514,8 @@ fn z3_checks_whole_u64_zero_guarded_width_masked_models_and_replays_broken_varia
             let count = and(r(1), u64::from(width.bits() - 1));
             for expression in [
                 pattern(r(0), width, direction, count.clone()),
-                partial(r(0), width, direction, count),
+                partial(r(0), width, direction, count.clone()),
+                inserted(r(0), width, direction, count),
             ] {
                 let view = recognize_masked(&expression).unwrap();
                 assert_eq!(
@@ -542,7 +562,7 @@ fn z3_checks_whole_u64_zero_guarded_width_masked_models_and_replays_broken_varia
             Verdict::Counterexample(_)
         ));
     }
-    assert_eq!(equivalent, 15);
+    assert_eq!(equivalent, 21);
     println!(
         "{equivalent} strict whole-u64 equalities, 2 SAT broken variants replayed by existing Solver; no CFG/memory/C proof"
     );

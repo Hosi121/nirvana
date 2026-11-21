@@ -176,6 +176,24 @@ fn binary(op: B, left: Value, right: Value) -> Value {
     }
     let pure = left.pure && right.pure;
     let possible = possible(op, left.possible, right.possible, b);
+    if let B::Insert { start, width } = op {
+        if start >= 64 && right.pure {
+            return left;
+        }
+        // A low-word overwrite observes no old bits when their possible mask
+        // fits entirely inside the field. Drop only a pure old operand; the
+        // incoming value and any checked loads remain once at the same site.
+        if start == 0 && left.pure && left.possible & !width.mask() == 0 {
+            if right.possible & !width.mask() == 0 {
+                return right;
+            }
+            return Value {
+                expression: Expr::unary(UnaryOp::Extract { start: 0, width }, right.expression),
+                possible: right.possible & width.mask(),
+                pure: right.pure,
+            };
+        }
+    }
     // Width normalization can expose identities which were hidden behind a
     // mask. Fold before dependency collection (and before C can diagnose a
     // tautological self-comparison). Equal loads still execute independently.
@@ -288,6 +306,7 @@ fn low_mask(maximum: u64) -> u64 {
 
 fn possible(op: B, left: u64, right: u64, count: Option<u64>) -> u64 {
     match op {
+        B::Insert { .. } => op.evaluate(left, right),
         B::And => left & right,
         B::Or | B::Xor => left | right,
         B::Eq | B::Ne | B::Ult | B::Ule => 1,

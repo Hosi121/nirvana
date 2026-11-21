@@ -83,12 +83,14 @@ fn render(expr: &Expr, register: &impl Fn(Reg) -> String) -> Rendered {
             precedence: 1,
         },
         Expr::Binary(op, left, right) if super::integer::helper_name(*op).is_some() => {
-            Rendered::atom(format!(
-                "{}({}, {})",
-                super::integer::helper_name(*op).unwrap(),
-                render(left, register).code,
-                render(right, register).code
-            ))
+            Rendered::atom(
+                super::integer::helper_call(
+                    *op,
+                    &render(left, register).code,
+                    &render(right, register).code,
+                )
+                .unwrap(),
+            )
         }
         Expr::Binary(op, left, right) => {
             let (operator, precedence) = match op {
@@ -104,7 +106,14 @@ fn render(expr: &Expr, register: &impl Fn(Reg) -> String) -> Rendered {
                 B::Add => ("+", 9),
                 B::Sub => ("-", 9),
                 B::Mul => ("*", 10),
-                B::UMulHigh | B::SMulHigh | B::AShr | B::UDiv | B::URem | B::SDiv | B::SRem => {
+                B::Insert { .. }
+                | B::UMulHigh
+                | B::SMulHigh
+                | B::AShr
+                | B::UDiv
+                | B::URem
+                | B::SDiv
+                | B::SRem => {
                     unreachable!()
                 }
             };

@@ -75,3 +75,19 @@ pub fn r(index: usize) -> Expr {
 pub fn c(value: u64) -> Expr {
     Expr::Const(value)
 }
+
+/// Independent per-bit selection; avoids the runtime's shifted mask formula.
+#[allow(dead_code)]
+pub fn insert_value(start: u8, width: nirvana::ir::Width, base: u64, value: u64) -> u64 {
+    let mut result = 0;
+    let start = u32::from(start);
+    for bit in 0..64u32 {
+        let selected = if bit >= start && bit - start < width.bits() {
+            (value >> (bit - start)) & 1
+        } else {
+            (base >> bit) & 1
+        };
+        result |= selected << bit;
+    }
+    result
+}

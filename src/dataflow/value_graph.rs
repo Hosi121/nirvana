@@ -64,7 +64,7 @@ pub struct ValueGraph {
 enum Key {
     Constant(u64),
     Unary(UnaryOp, ValueId),
-    Binary(u8, ValueId, ValueId),
+    Binary(BinaryOp, ValueId, ValueId),
     Select(ValueId, ValueId, ValueId),
 }
 pub(crate) struct Work(usize);
@@ -274,7 +274,7 @@ impl BlockValues {
                 let left = self.expression(left, current, intern, remaining, work, point)?;
                 let right = self.expression(right, current, intern, remaining, work, point)?;
                 (
-                    Key::Binary(*op as u8, left, right),
+                    Key::Binary(*op, left, right),
                     ValueNode::Binary(*op, left, right),
                 )
             }
@@ -317,7 +317,7 @@ impl BlockValues {
             Expr::Register(reg) => return Some(self.value_before(*reg, point)),
             Expr::Const(value) => Key::Constant(*value),
             Expr::Binary(op, a, b) => Key::Binary(
-                *op as u8,
+                *op,
                 match self.value_of(a, point, work)? {
                     Some(v) => v,
                     None => return Some(None),

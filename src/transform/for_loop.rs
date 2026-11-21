@@ -166,7 +166,7 @@ pub fn recover(body: &[Node], slot: impl Fn(Reg) -> Option<usize>) -> Option<For
 enum Symbol {
     Constant(u64),
     Register(usize),
-    Binary(u8, usize, usize),
+    Binary(BinaryOp, usize, usize),
     Unary(crate::model::ir::UnaryOp, usize),
     Load(usize, usize),
     Select(usize, usize, usize),
@@ -247,7 +247,7 @@ impl MemoryRecurrence {
                 Symbol::Constant(value) => {
                     return self.intern(Symbol::Constant(value.wrapping_add(offset)));
                 }
-                Symbol::Binary(op, left, right) if op == BinaryOp::Add as u8 => {
+                Symbol::Binary(BinaryOp::Add, left, right) => {
                     if let Symbol::Constant(value) = self.symbols[right] {
                         base = left;
                         offset = offset.wrapping_add(value);
@@ -260,7 +260,7 @@ impl MemoryRecurrence {
                 Some(base)
             } else {
                 let offset = self.intern(Symbol::Constant(offset))?;
-                self.intern(Symbol::Binary(BinaryOp::Add as u8, base, offset))
+                self.intern(Symbol::Binary(BinaryOp::Add, base, offset))
             };
         }
     }
@@ -300,7 +300,7 @@ impl MemoryRecurrence {
                 {
                     return self.add_constant(right, offset);
                 }
-                self.intern(Symbol::Binary(*op as u8, left, right))
+                self.intern(Symbol::Binary(*op, left, right))
             }
             Expr::Select {
                 condition,
@@ -334,7 +334,7 @@ impl MemoryRecurrence {
                     Place::Memory { address, width } => {
                         let address = self.expression(address, &registers)?;
                         if let Symbol::Binary(op, source, offset) = self.symbols[value]
-                            && op == BinaryOp::Add as u8
+                            && op == BinaryOp::Add
                             && matches!(self.symbols[offset], Symbol::Constant(value) if value != 0)
                             && self.symbols[source] == Symbol::Load(address, width.bytes())
                             && self.locations.contains(&(address, width.bytes()))

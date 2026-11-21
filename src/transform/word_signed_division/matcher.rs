@@ -244,6 +244,14 @@ fn project<S: Source>(s: &S, mut e: S::Key, width: Width, work: &mut Work) -> Op
     loop {
         work.spend()?;
         e = match s.node(e)? {
+            Node::Binary(B::Insert { start: 0, width: w }, _, value)
+                if w.bits() >= width.bits() =>
+            {
+                value
+            }
+            Node::Binary(B::Insert { start, .. }, base, _) if u32::from(start) >= width.bits() => {
+                base
+            }
             Node::Unary(U::SignExtend(w), v) if w.bits() >= width.bits() => v,
             Node::Unary(U::Extract { start: 0, width: w }, v) if w.bits() >= width.bits() => v,
             Node::Binary(B::And, a, b)

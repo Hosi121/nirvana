@@ -288,8 +288,10 @@ impl Printer<'_> {
                 }
                 let l = self.expression_at(left, point);
                 let r = self.expression_at(right, point);
-                if let Some(name) = crate::codegen::emit::integer::helper_name(*op) {
-                    return atom(format!("{name}({}, {})", l.text, r.text), true);
+                if let Some(call) =
+                    crate::codegen::emit::integer::helper_call(*op, &l.text, &r.text)
+                {
+                    return atom(call, true);
                 }
                 let (symbol, precedence) = match op {
                     BinaryOp::Or => ("|", 4),
@@ -310,7 +312,8 @@ impl Printer<'_> {
                     | BinaryOp::UDiv
                     | BinaryOp::URem
                     | BinaryOp::SDiv
-                    | BinaryOp::SRem => unreachable!(),
+                    | BinaryOp::SRem
+                    | BinaryOp::Insert { .. } => unreachable!(),
                 };
                 let comparison = matches!(
                     op,

@@ -127,6 +127,9 @@ impl Oracle {
                 let a = self.expr(left)?;
                 let z = self.expr(right)?;
                 match op {
+                    BinaryOp::Insert { start, width } => {
+                        crate::support::ir::insert_value(*start, *width, a, z)
+                    }
                     BinaryOp::Add => a.wrapping_add(z),
                     BinaryOp::Sub => a.wrapping_sub(z),
                     BinaryOp::Mul => a.wrapping_mul(z),

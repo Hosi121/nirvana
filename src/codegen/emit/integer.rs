@@ -74,6 +74,14 @@ static inline uint64_t nirvana_ashr64(uint64_t value, uint64_t count) {
 }
 "#;
 
+const INSERT_HELPER: &str = r#"
+static inline uint64_t nirvana_insert_bits(uint64_t base, uint64_t value, unsigned start, unsigned width) {
+    if (start >= 64) return base;
+    uint64_t mask = (UINT64_MAX >> (64 - width)) << start;
+    return (base & ~mask) | ((value << start) & mask);
+}
+"#;
+
 const UNSIGNED_DIVIDE_HELPER: &str = r#"
 static inline uint64_t nirvana_udiv64(uint64_t value, uint64_t divisor) {
     return divisor == UINT64_C(0) ? UINT64_MAX : value / divisor;
@@ -100,6 +108,7 @@ static inline uint64_t nirvana_srem64(uint64_t value, uint64_t divisor) {
 
 pub(crate) fn helper_name(op: BinaryOp) -> Option<&'static str> {
     match op {
+        BinaryOp::Insert { .. } => Some("nirvana_insert_bits"),
         BinaryOp::UMulHigh => Some("nirvana_umul_high"),
         BinaryOp::SMulHigh => Some("nirvana_smul_high"),
         BinaryOp::AShr => Some("nirvana_ashr64"),
@@ -111,8 +120,24 @@ pub(crate) fn helper_name(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn helper_call(op: BinaryOp, left: &str, right: &str) -> Option<String> {
+    let name = helper_name(op)?;
+    Some(match op {
+        BinaryOp::Insert { start, width } => {
+            format!("{name}({left}, {right}, {start}, {})", width.bits())
+        }
+        _ => format!("{name}({left}, {right})"),
+    })
+}
+
 fn definitions(used: impl Fn(BinaryOp) -> bool) -> String {
     let mut out = String::new();
+    if used(BinaryOp::Insert {
+        start: 0,
+        width: Width::U8,
+    }) {
+        out.push_str(INSERT_HELPER);
+    }
     let signed = used(BinaryOp::SMulHigh);
     if signed || used(BinaryOp::UMulHigh) {
         out.push_str(MULTIPLY_HELPER);
@@ -139,7 +164,12 @@ fn definitions(used: impl Fn(BinaryOp) -> bool) -> String {
 }
 
 pub(crate) fn append_helpers(program: &Program, code: &mut String) {
-    code.push_str(&definitions(|op| program.uses_operator(op)));
+    code.push_str(&definitions(|op| match op {
+        BinaryOp::Insert { .. } => {
+            program.uses_binary_matching(|op| matches!(op, BinaryOp::Insert { .. }))
+        }
+        _ => program.uses_operator(op),
+    }));
     for (width, _, definition) in EXTEND_HELPERS {
         if program.uses_unary_operator(UnaryOp::SignExtend(width)) {
             code.push_str(definition);

@@ -50,6 +50,9 @@ fn observe(expression: &Expr, input: &[u64], reads: &mut Vec<usize>) -> u64 {
             let left = observe(left, input, reads);
             let right = observe(right, input, reads);
             match op {
+                B::Insert { start, width } => {
+                    crate::support::ir::insert_value(*start, *width, left, right)
+                }
                 B::Add => left.wrapping_add(right),
                 B::Sub => left.wrapping_sub(right),
                 B::Mul => left.wrapping_mul(right),

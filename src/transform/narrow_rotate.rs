@@ -128,6 +128,21 @@ pub fn recognize_masked(expression: &Expr) -> Option<NarrowRotate<'_>> {
             if let Some(view) = matcher.rotate(body, width) {
                 return Some(view);
             }
+            if let Expr::Binary(
+                BinaryOp::Insert {
+                    start: 0,
+                    width: field,
+                },
+                base,
+                value,
+            ) = body
+                && field.bits() >= width.bits()
+                && let Some(view) =
+                    matcher.rotate(and_mask(value, width.mask()).unwrap_or(value), width)
+                && matcher.same(base, view.value).is_some()
+            {
+                return Some(view);
+            }
             // x86 partial-register writes may preserve high bits immediately
             // before this outer mask. Require the same raw base, so removing
             // that dead high term cannot drop an unrelated register dependency.

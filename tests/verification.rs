@@ -1,6 +1,7 @@
 //! verification integration suite.
 #[path = "support"]
 mod support {
+    pub mod bit_insert;
     pub mod ir;
     pub mod projections;
     pub mod rewrite_cases;
@@ -8,6 +9,8 @@ mod support {
     pub mod word_reciprocals;
 }
 
+#[path = "verification/bit_insert.rs"]
+mod bit_insert;
 #[path = "verification/block_verification.rs"]
 mod block_verification;
 #[path = "verification/byte_memory.rs"]

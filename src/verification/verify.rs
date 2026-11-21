@@ -189,6 +189,28 @@ pub(crate) fn unary_term(op: &crate::model::ir::UnaryOp, value: &str) -> String 
 
 pub(crate) fn binary_term(op: &BinaryOp, l: &str, r: &str) -> String {
     match op {
+        BinaryOp::Insert { start, .. } if *start >= 64 => l.to_owned(),
+        BinaryOp::Insert { start, width } => {
+            // Independent slice/concat encoding, rather than host shift masks.
+            let start = u32::from(*start);
+            let bits = width.bits().min(64 - start);
+            let value = if bits == 64 {
+                r.to_owned()
+            } else {
+                format!("((_ extract {} 0) {r})", bits - 1)
+            };
+            let low = if start == 0 {
+                value
+            } else {
+                format!("(concat {value} ((_ extract {} 0) {l}))", start - 1)
+            };
+            if start + bits == 64 {
+                low
+            } else {
+                format!("(concat ((_ extract 63 {}) {l}) {low})", start + bits)
+            }
+        }
+
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule => {
             let op = match op {
                 BinaryOp::Eq => "=",

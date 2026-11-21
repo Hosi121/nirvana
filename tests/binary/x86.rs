@@ -524,3 +524,93 @@ fn implicit_accumulator_sign_extension_preserves_width_rules_and_flags() {
         }
     }
 }
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn partial_register_inserts_match_native_mov_and_preserve_other_machine_values() {
+    let values = [
+        0,
+        1,
+        127,
+        128,
+        255,
+        256,
+        65535,
+        65536,
+        u32::MAX as u64,
+        1 << 63,
+        u64::MAX,
+        0x1234_5678_9abc_def0,
+    ];
+    let mut cases = Vec::new();
+    for width in [Width::U8, Width::U16] {
+        for destination in 0..16 {
+            let mut code = Vec::new();
+            if width == Width::U16 {
+                code.push(0x66);
+            }
+            if destination >= 8 || width == Width::U8 && destination >= 4 {
+                code.push(0x40 | u8::from(destination >= 8));
+            }
+            code.extend([
+                if width == Width::U8 { 0x88 } else { 0x89 },
+                0xc8 | (destination as u8 & 7),
+                0xc3,
+            ]);
+            cases.push((width, 0, destination, code));
+        }
+    }
+    for destination in 0..4 {
+        cases.push((
+            Width::U8,
+            8,
+            destination,
+            vec![0x88, 0xcc + destination as u8, 0xc3],
+        ));
+    }
+    let mut checked = 0;
+    for (width, start, destination, code) in cases {
+        let p = x86::lift(&code, 0, 0).unwrap();
+        assert!(p.uses_operator(nirvana::ir::BinaryOp::Insert { start, width }));
+        for base in values {
+            for value in values {
+                let mut regs = vec![0xcafe_9371_1122_7890; x86::REGISTER_COUNT];
+                regs[x86::RCX] = value;
+                regs[destination] = base;
+                let mut actual = base;
+                let rhs = regs[x86::RCX];
+                unsafe {
+                    match (start, width) {
+                        (0, Width::U8) => {
+                            std::arch::asm!("mov al,cl",inout("rax")actual,in("rcx")rhs,options(pure,nomem,nostack,preserves_flags))
+                        }
+                        (0, Width::U16) => {
+                            std::arch::asm!("mov ax,cx",inout("rax")actual,in("rcx")rhs,options(pure,nomem,nostack,preserves_flags))
+                        }
+                        (8, Width::U8) => {
+                            std::arch::asm!("mov ah,cl",inout("rax")actual,in("rcx")rhs,options(pure,nomem,nostack,preserves_flags))
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                let report = p.execute(&regs, 2).unwrap();
+                for (index, &old) in regs.iter().enumerate().take(21) {
+                    let expected = if index == destination { actual } else { old };
+                    let expected = if index == x86::RSP {
+                        expected.wrapping_add(8)
+                    } else {
+                        expected
+                    };
+                    assert_eq!(
+                        report.registers[index], expected,
+                        "{width:?}/{start}/destination {destination}/register {index}"
+                    );
+                }
+                checked += 1;
+            }
+        }
+    }
+    println!(
+        "{checked} native partial-register writes with full architectural register/flag comparisons"
+    );
+}

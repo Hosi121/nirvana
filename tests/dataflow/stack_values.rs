@@ -231,6 +231,9 @@ impl Concrete<'_> {
                 let left = self.eval(left, pc, assignment)?;
                 let right = self.eval(right, pc, assignment)?;
                 match op {
+                    BinaryOp::Insert { start, width } => {
+                        crate::support::ir::insert_value(*start, *width, left, right)
+                    }
                     BinaryOp::Add => left.wrapping_add(right),
                     BinaryOp::Sub => left.wrapping_sub(right),
                     BinaryOp::Mul => left.wrapping_mul(right),

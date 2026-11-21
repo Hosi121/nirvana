@@ -11,7 +11,7 @@ use crate::control_flow::cfg::{Address, BuildError, Cfg, Flow, Instruction};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Reg(pub usize);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -40,6 +40,13 @@ pub enum BinaryOp {
     /// Total signed remainder; its sign follows the dividend. A zero divisor
     /// yields the dividend. Hardware divide faults live in module effects.
     SRem,
+    /// Replace a static bit interval in the left word with low bits from the
+    /// right word. The interval is clipped at bit 64; `start` is not masked.
+    /// Both operands are still evaluated, left first, when the interval is empty.
+    Insert {
+        start: u8,
+        width: Width,
+    },
 }
 
 impl BinaryOp {
@@ -47,6 +54,10 @@ impl BinaryOp {
     /// their operands locally; they do not establish a source-language type.
     pub fn evaluate(self, left: u64, right: u64) -> u64 {
         match self {
+            Self::Insert { start, width } => {
+                let mask = width.mask().checked_shl(u32::from(start)).unwrap_or(0);
+                (left & !mask) | (right.checked_shl(u32::from(start)).unwrap_or(0) & mask)
+            }
             Self::Add => left.wrapping_add(right),
             Self::Sub => left.wrapping_sub(right),
             Self::Mul => left.wrapping_mul(right),
@@ -265,21 +276,23 @@ impl Expr {
         }
     }
 
-    pub(crate) fn uses_operator(&self, operator: BinaryOp) -> bool {
+    pub(crate) fn uses_binary_matching(&self, predicate: &impl Fn(BinaryOp) -> bool) -> bool {
         match self {
-            Self::Unary(_, value) => value.uses_operator(operator),
+            Self::Unary(_, value) => value.uses_binary_matching(predicate),
             Self::Binary(op, left, right) => {
-                *op == operator || left.uses_operator(operator) || right.uses_operator(operator)
+                predicate(*op)
+                    || left.uses_binary_matching(predicate)
+                    || right.uses_binary_matching(predicate)
             }
-            Self::Load { address, .. } => address.uses_operator(operator),
+            Self::Load { address, .. } => address.uses_binary_matching(predicate),
             Self::Select {
                 condition,
                 taken,
                 not_taken,
             } => {
-                condition.uses_operator(operator)
-                    || taken.uses_operator(operator)
-                    || not_taken.uses_operator(operator)
+                condition.uses_binary_matching(predicate)
+                    || taken.uses_binary_matching(predicate)
+                    || not_taken.uses_binary_matching(predicate)
             }
             _ => false,
         }
@@ -818,16 +831,19 @@ impl Program {
     }
 
     pub fn uses_operator(&self, operator: BinaryOp) -> bool {
+        self.uses_binary_matching(|op| op == operator)
+    }
+    pub(crate) fn uses_binary_matching(&self, predicate: impl Fn(BinaryOp) -> bool) -> bool {
         self.instructions.iter().any(|instruction| {
             instruction.assignments.iter().any(|assignment| {
-                assignment.value.uses_operator(operator)
+                assignment.value.uses_binary_matching(&predicate)
                     || match &assignment.destination {
-                        Place::Memory { address, .. } => address.uses_operator(operator),
+                        Place::Memory { address, .. } => address.uses_binary_matching(&predicate),
                         _ => false,
                     }
             }) || match &instruction.control {
-                Control::Branch { condition, .. } => condition.uses_operator(operator),
-                Control::Return(value) => value.uses_operator(operator),
+                Control::Branch { condition, .. } => condition.uses_binary_matching(&predicate),
+                Control::Return(value) => value.uses_binary_matching(&predicate),
                 _ => false,
             }
         })

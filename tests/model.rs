@@ -1,6 +1,7 @@
 //! model integration suite.
 #[path = "support"]
 mod support {
+    pub mod bit_insert;
     #[allow(dead_code)]
     pub mod checked_c;
     pub mod ir;
@@ -11,6 +12,8 @@ mod support {
     pub mod word_reciprocals;
 }
 
+#[path = "model/bit_insert.rs"]
+mod bit_insert;
 #[path = "model/call_preservation.rs"]
 mod call_preservation;
 #[path = "model/division_ops.rs"]

@@ -37,7 +37,7 @@ fn save(solver: &Solver, name: &str, value: &Expr, fact: K) -> Verdict {
 #[ignore = "requires Z3; set NIRVANA_Z3"]
 fn known_bit_transfer_claims_have_universal_bit_vector_checks_and_replayed_controls() {
     let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
-    let ops = [
+    let mut ops = vec![
         B::Add,
         B::Sub,
         B::Mul,
@@ -58,6 +58,11 @@ fn known_bit_transfer_claims_have_universal_bit_vector_checks_and_replayed_contr
         B::SDiv,
         B::SRem,
     ];
+    for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        for start in [0, 1, 7, 8, 31, 32, 60, 63, 64, 255] {
+            ops.push(B::Insert { start, width });
+        }
+    }
     let cases = [
         ("byte", K::new(!255, 0).unwrap(), K::constant(3)),
         ("multiple", K::new(15, 0).unwrap(), K::constant(16)),
@@ -73,7 +78,7 @@ fn known_bit_transfer_claims_have_universal_bit_vector_checks_and_replayed_contr
     let mut proved = 0;
     let mut skipped = 0;
     for (name, a, z) in cases {
-        for op in ops {
+        for &op in &ops {
             let fact = K::binary(op, a, z);
             if fact == K::UNKNOWN {
                 skipped += 1;

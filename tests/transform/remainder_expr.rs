@@ -82,6 +82,9 @@ fn eval(e: &Expr, rs: &[u64]) -> u64 {
             let a = eval(a, rs);
             let z = eval(z, rs);
             match op {
+                B::Insert { start, width } => {
+                    crate::support::ir::insert_value(*start, *width, a, z)
+                }
                 B::Add => a.wrapping_add(z),
                 B::Sub => a.wrapping_sub(z),
                 B::Mul => a.wrapping_mul(z),

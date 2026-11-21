@@ -206,6 +206,14 @@ fn expr_bits(
             let a = expr_bits(left, point, bits, cursor, budget)?;
             let b = expr_bits(right, point, bits, cursor, budget)?;
             match op {
+                B::Insert { .. } => {
+                    let maximum = |bits: u8| {
+                        u64::MAX
+                            .checked_shr(64 - u32::from(bits.min(64)))
+                            .unwrap_or(0)
+                    };
+                    (64 - op.evaluate(maximum(a), maximum(b)).leading_zeros()) as u8
+                }
                 B::Add => {
                     if a == 0 && b == 0 {
                         0

@@ -152,6 +152,9 @@ fn pure_dag_values_agree_with_ir_execution_after_each_write() {
                 let a = eval(block, a, input);
                 let b = eval(block, b, input);
                 match op {
+                    B::Insert { start, width } => {
+                        crate::support::ir::insert_value(start, width, a, b)
+                    }
                     B::Add => a.wrapping_add(b),
                     B::Sub => a.wrapping_sub(b),
                     B::Mul => a.wrapping_mul(b),
@@ -288,4 +291,61 @@ fn control_points_use_final_register_versions_and_keep_load_occurrences_distinct
         b.nodes().take(a.nodes().count()).collect::<Vec<_>>(),
         a.nodes().collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn parameterized_insert_keys_keep_position_and_width_distinct() {
+    let p = one(vec![
+        set(
+            2,
+            Expr::binary(
+                B::Insert {
+                    start: 0,
+                    width: Width::U8,
+                },
+                r(0),
+                r(1),
+            ),
+        ),
+        set(
+            3,
+            Expr::binary(
+                B::Insert {
+                    start: 8,
+                    width: Width::U8,
+                },
+                r(0),
+                r(1),
+            ),
+        ),
+        set(
+            4,
+            Expr::binary(
+                B::Insert {
+                    start: 0,
+                    width: Width::U16,
+                },
+                r(0),
+                r(1),
+            ),
+        ),
+        set(
+            5,
+            Expr::binary(
+                B::Insert {
+                    start: 0,
+                    width: Width::U8,
+                },
+                r(0),
+                r(1),
+            ),
+        ),
+    ]);
+    let graph = ValueGraph::build(&p).unwrap();
+    let block = graph.block(0).unwrap();
+    let ids: Vec<_> = (0..4).map(|i| block.rhs(point(i)).unwrap()).collect();
+    assert_ne!(ids[0], ids[1]);
+    assert_ne!(ids[0], ids[2]);
+    assert_ne!(ids[1], ids[2]);
+    assert_eq!(ids[0], ids[3]);
 }

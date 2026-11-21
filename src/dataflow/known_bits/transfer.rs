@@ -49,6 +49,10 @@ pub(super) fn binary(op: B, a: KnownBits, b: KnownBits) -> KnownBits {
         return KnownBits::constant(op.evaluate(a, b));
     }
     match op {
+        B::Insert { .. } => KnownBits {
+            zero: op.evaluate(a.zero, b.zero),
+            one: op.evaluate(a.one, b.one),
+        },
         B::And => KnownBits {
             zero: a.zero | b.zero,
             one: a.one & b.one,
