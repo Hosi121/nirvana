@@ -2,6 +2,8 @@
 #[path = "support"]
 mod support {
     pub mod bit_insert;
+    #[allow(dead_code)]
+    pub mod byte_values;
     pub mod ir;
     pub mod projections;
     pub mod rewrite_cases;

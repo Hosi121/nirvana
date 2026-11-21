@@ -670,3 +670,21 @@ fn shifted_masked_and_extended_stored_bytes_keep_their_actual_bit_positions() {
     }
     println!("{checked} stored expression/bit-window full-state observations");
 }
+
+#[test]
+fn split_words_follow_actual_ssa_producers_without_erasing_first_faults() {
+    let mut checked = 0;
+    for source in crate::support::byte_values::producer_programs() {
+        let plan = MemoryValuePlan::analyze(&source).expect("split producer source word");
+        assert_eq!(plan.evidence().snapshot_values, 1);
+        assert_eq!(plan.evidence().proved_loads, 1);
+        let candidate = plan.lower(&source).unwrap();
+        checked += compare(&source, &candidate);
+        let mut rows = source.instructions().to_vec();
+        rows[0].assignments[0].value = b(nirvana::ir::BinaryOp::Shr, r(0), c(17));
+        let incompatible = Program::new(0, 8, rows).unwrap();
+        assert!(MemoryValuePlan::analyze(&incompatible).is_none());
+        assert!(plan.lower(&incompatible).is_none());
+    }
+    println!("{checked} SSA-producer split-word full-register/RAM/PC/fault/budget observations");
+}

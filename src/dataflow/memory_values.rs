@@ -77,7 +77,18 @@ pub struct MemoryValuePlan {
 impl MemoryValuePlan {
     pub fn analyze(source: &Program) -> Option<Self> {
         let context = analyze::Context::new(source)?;
-        let (proofs, captures) = analyze::collect(&context)?;
+        // Prefer the original word behind pure SSA producers. A bounded or
+        // unsupported derivation can retain the local, directly stored value.
+        [true, false]
+            .into_iter()
+            .find_map(|expand| Self::analyze_context(source, &context, expand))
+    }
+    fn analyze_context(
+        source: &Program,
+        context: &analyze::Context<'_>,
+        expand: bool,
+    ) -> Option<Self> {
+        let (proofs, captures) = analyze::collect(context, expand)?;
         let mut plan = Self {
             source_registers: source.register_count(),
             evidence: MemoryValueEvidence {
@@ -89,12 +100,12 @@ impl MemoryValuePlan {
             proofs,
             captures,
         };
-        let (candidate, count) = rewrite::construct(source, &plan, &context)?;
+        let (candidate, count) = rewrite::construct(source, &plan, context)?;
         if count == 0 {
             return None;
         }
         plan.evidence.replaced_reads = count;
-        verify::check(source, &plan, &candidate, &context).ok()?;
+        verify::check(source, &plan, &candidate, context).ok()?;
         Some(plan)
     }
     pub fn evidence(&self) -> MemoryValueEvidence {

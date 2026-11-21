@@ -6,6 +6,7 @@ fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
     let scratch = native::Scratch::new();
     let mut checked = 0;
     let mut adopted = 0;
+    let mut all_statuses = [0; 3];
     for (index, source) in byte_values::programs().into_iter().enumerate() {
         assert!(nirvana::memory_values::MemoryValuePlan::analyze(&source).is_some());
         let mut input = String::new();
@@ -87,7 +88,15 @@ fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
                 }
             }
         }
-        assert!(statuses.into_iter().all(|n| n > 0));
+        assert!(statuses[0] > 0, "family {index} returns");
+        assert!(
+            statuses[1] + statuses[2] > 0,
+            "family {index} has a first fault"
+        );
+        // Store-only prefixes fault on the write before any later read.
+        for (all, count) in all_statuses.iter_mut().zip(statuses) {
+            *all += count;
+        }
         for coalesce in [false, true] {
             for objects in [false, true] {
                 let out = nirvana::readable::emit_readable_c_with_options(
@@ -126,6 +135,7 @@ fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
             }
         }
     }
+    assert!(all_statuses.into_iter().all(|n| n > 0));
     assert!(adopted > 0, "source recovery must reach selected C output");
     println!(
         "{checked} partial saved-value C/full-RAM/first-fault observations; {adopted} render configurations adopted value snapshots"

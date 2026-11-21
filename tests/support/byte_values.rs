@@ -170,5 +170,59 @@ pub fn programs() -> Vec<Program> {
             Control::Jump(1),
         ),
     ]);
-    vec![shifted, split, inserted, may, phi, looped]
+    let transformed = program(vec![
+        ins(0, vec![set(0, load(0, Width::U64))], Control::Next),
+        ins(
+            1,
+            vec![
+                set(0, b(B::Xor, r(0), c(1))),
+                store(32, Width::U64, r(0)),
+                set(0, c(0)),
+            ],
+            Control::Next,
+        ),
+        ins(
+            2,
+            vec![set(2, load(32, Width::U8)), set(3, load(33, Width::U8))],
+            Control::Return(b(B::Add, r(2), r(3))),
+        ),
+    ]);
+    let mut result = vec![shifted, split, inserted, may, phi, looped, transformed];
+    result.extend(producer_programs());
+    result
+}
+
+/// Disjoint stores whose contiguous source bits cross SSA producer definitions.
+pub fn producer_programs() -> Vec<Program> {
+    [
+        b(B::Shr, r(0), c(16)),
+        b(B::AShr, r(0), c(16)),
+        b(B::Shr, b(B::And, r(0), c(0xffff_ffff)), c(16)),
+        Expr::unary(
+            U::Extract {
+                start: 16,
+                width: Width::U16,
+            },
+            r(0),
+        ),
+        b(B::Shr, b(B::Shr, r(0), c(65)), c(15)),
+    ]
+    .into_iter()
+    .map(|producer| {
+        program(vec![
+            ins(0, vec![set(6, producer)], Control::Next),
+            ins(
+                1,
+                vec![
+                    store(0, Width::U16, r(0)),
+                    store(2, Width::U16, r(6)),
+                    set(0, c(0)),
+                    set(6, c(0)),
+                ],
+                Control::Next,
+            ),
+            ins(2, vec![set(2, load(0, Width::U32))], Control::Return(r(2))),
+        ])
+    })
+    .collect()
 }

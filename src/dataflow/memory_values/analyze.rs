@@ -100,6 +100,27 @@ impl<'a> Context<'a> {
         site: Site,
         width: Width,
         writers: &[ReachingWriter],
+        prefer_expand: bool,
+        budget: &mut Budget,
+    ) -> Option<Key> {
+        for expand in [true, false]
+            .into_iter()
+            .filter(|expand| prefer_expand || !expand)
+        {
+            if let Some(key) = self.byte_key(width, writers, expand, budget)
+                && self.capture(key.value).is_some()
+                && self.root_class(site).is_some()
+            {
+                return Some(key);
+            }
+        }
+        None
+    }
+    fn byte_key(
+        &self,
+        width: Width,
+        writers: &[ReachingWriter],
+        expand: bool,
         budget: &mut Budget,
     ) -> Option<Key> {
         let mut key = None;
@@ -112,7 +133,7 @@ impl<'a> Context<'a> {
                         continue;
                     }
                     let (value, start) =
-                        super::projection::stored_byte(self, writer.site, source, budget)?;
+                        super::projection::stored_byte(self, writer.site, source, expand, budget)?;
                     let start = start.checked_sub((byte * 8) as u8)?;
                     let candidate = Key {
                         value,
@@ -131,8 +152,6 @@ impl<'a> Context<'a> {
             }
         }
         let key = key?;
-        self.capture(key.value)?;
-        self.root_class(site)?;
         Some(key)
     }
 }
@@ -173,12 +192,15 @@ fn entry_prefix(source: &Program, budget: &mut Budget) -> Option<Vec<bool>> {
     }
     Some(prefix)
 }
-pub(super) fn collect(context: &Context<'_>) -> Option<(Vec<LoadProof>, Vec<Capture>)> {
+pub(super) fn collect(
+    context: &Context<'_>,
+    prefer_expand: bool,
+) -> Option<(Vec<LoadProof>, Vec<Capture>)> {
     let mut budget = Budget::new();
     let mut proofs = Vec::new();
     let mut classes = BTreeMap::new();
     for (site, width, writers) in context.loads.bindings() {
-        let key = context.load_key(site, width, writers, &mut budget);
+        let key = context.load_key(site, width, writers, prefer_expand, &mut budget);
         // Matching spends one unit at a time. A failed match must not hide
         // exhaustion and publish bindings collected earlier in the pass.
         budget.spend(1).ok()?;

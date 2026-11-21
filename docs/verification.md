@@ -102,7 +102,7 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 [byte対応表の検査](../tests/verification/byte_memory.rs)は、実際のMemorySSAが出した候補を独立したSMT配列モデルと比較します。全幅の位置関係、曖昧なアドレス、φの変換を含みます。実行追跡では書込み元IDに加え、そのStoreのどのbyteが読まれたかも照合します。
 [射影の合成則](../tests/verification/unary_ops.rs)は、静的抽出・mask・符号拡張から作った実際の還元候補を全域u64で照合します。[実行比較](../tests/transform/simplify.rs)ではLoadとlazy Selectを同じ式へ入れ、faultと状態を含めて確認します。
 [bit挿入の検査](../tests/verification/bit_insert.rs)は全位置・幅の純粋式と、両operandのLoad・lazy Select・Storeの順序を持つブロックを照合します。未使用operandのfaultを落とした対照例もIRで再実行します。
-[保存値のbyte復元](../tests/verification/memory_values.rs)は、実際の変換候補をchecked-memory-blockモデルで照合します。幅・位置の全contained組合せについて、正常終了時の元レジスタ境界と返り値、RAM、最初のfaultを検査します。独立したbit出所検査器には、SSA値と位置を変えた候補も渡します。
+[保存値のbyte復元](../tests/verification/memory_values.rs)は、実際の変換候補をchecked-memory-blockモデルで照合します。幅・位置の全contained組合せについて、正常終了時の元レジスタ境界と返り値、RAM、最初のfaultを検査します。別レジスタでシフト・mask・Extractした値を分割保存する候補も、実際の変換をSMTで照合します。独立したbit出所検査器には、SSA値と位置を変えた候補も渡します。
 [符号付き逆数除算モデル](../tests/models/signed_reciprocal.smt2.in)は、20種類の正負の除数について、整数上の上位積の正規化・範囲・商・剰余と、誤った係数の反例・最小負数の到達を検査します。
 適用範囲は各モデルの算術・分岐選択と停止済みprefixです。C全体とISAの対応は実行比較でも確認します。
 

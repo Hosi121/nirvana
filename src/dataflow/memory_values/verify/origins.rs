@@ -10,9 +10,73 @@ enum Bit {
     Register(ValueId, u8),
 }
 type Word = [Bit; 64];
+fn opaque(value: ValueId) -> Word {
+    std::array::from_fn(|bit| Bit::Register(value, bit as u8))
+}
+#[derive(Default)]
+struct NormalValues {
+    cache: BTreeMap<ValueId, Word>,
+    active: BTreeSet<ValueId>,
+}
+impl NormalValues {
+    fn word(
+        &mut self,
+        context: &Context<'_>,
+        value: ValueId,
+        budget: &mut Budget,
+        depth: usize,
+    ) -> Result<Word, SsaError> {
+        budget.spend(1)?;
+        if let Some(word) = self.cache.get(&value) {
+            return Ok(*word);
+        }
+        if depth >= 32 || !self.active.insert(value) {
+            return Ok(opaque(value));
+        }
+        let mut word =
+            if let Some(Definition::Assignment { site, .. }) = context.graph.values.get(value.0) {
+                let assignment = context
+                    .assignment(*site)
+                    .ok_or(invalid("bit origin producer"))?;
+                if !matches!(assignment.destination, Place::Register(_)) {
+                    return Err(invalid("bit origin producer destination"));
+                }
+                let point = context
+                    .point(*site)
+                    .ok_or(invalid("bit origin producer point"))?;
+                let mut cursor = 0;
+                let word = expression(
+                    &assignment.value,
+                    context,
+                    point,
+                    &mut cursor,
+                    budget,
+                    self,
+                    depth + 1,
+                )?;
+                if cursor != point.reads.len() {
+                    return Err(invalid("bit origin producer reads"));
+                }
+                word
+            } else {
+                opaque(value)
+            };
+        // An unsupported bit still denotes this exact SSA result, rather
+        // than equating unrelated unknown expressions or re-reading memory.
+        for (bit, origin) in word.iter_mut().enumerate() {
+            if *origin == Bit::Unknown {
+                *origin = Bit::Register(value, bit as u8);
+            }
+        }
+        self.active.remove(&value);
+        self.cache.insert(value, word);
+        Ok(word)
+    }
+}
 #[derive(Default)]
 pub(super) struct Values {
     stores: BTreeMap<Site, Word>,
+    values: NormalValues,
 }
 impl Values {
     pub(super) fn matches(
@@ -25,6 +89,7 @@ impl Values {
         if u32::from(key.start) + key.width.bits() > 64 {
             return Ok(false);
         }
+        let expected = self.values.word(context, key.value, budget, 0)?;
         for byte in 0..key.width.bytes() {
             let mut found = false;
             for writer in writers {
@@ -45,8 +110,24 @@ impl Values {
                         return Err(invalid("byte origin source width"));
                     }
                     let mut cursor = 0;
-                    expression(address, context, point, &mut cursor, budget)?;
-                    let value = expression(&assignment.value, context, point, &mut cursor, budget)?;
+                    expression(
+                        address,
+                        context,
+                        point,
+                        &mut cursor,
+                        budget,
+                        &mut self.values,
+                        0,
+                    )?;
+                    let value = expression(
+                        &assignment.value,
+                        context,
+                        point,
+                        &mut cursor,
+                        budget,
+                        &mut self.values,
+                        0,
+                    )?;
                     if cursor != point.reads.len() {
                         return Err(invalid("byte origin read count"));
                     }
@@ -60,8 +141,9 @@ impl Values {
                     found = true;
                     for bit in 0..8 {
                         budget.spend(1)?;
-                        if word[source * 8 + bit]
-                            != Bit::Register(key.value, key.start + (byte * 8 + bit) as u8)
+                        if word[source * 8 + bit] == Bit::Unknown
+                            || word[source * 8 + bit]
+                                != expected[usize::from(key.start) + byte * 8 + bit]
                         {
                             return Ok(false);
                         }
@@ -92,6 +174,8 @@ fn expression(
     point: &PointValues,
     cursor: &mut usize,
     budget: &mut Budget,
+    values: &mut NormalValues,
+    depth: usize,
 ) -> Result<Word, SsaError> {
     budget.spend(64)?;
     let no = Bit::Literal(false);
@@ -112,10 +196,10 @@ fn expression(
                 .aliases
                 .get(read.value.0)
                 .ok_or(invalid("byte origin value class"))?;
-            std::array::from_fn(|bit| Bit::Register(value, bit as u8))
+            values.word(context, value, budget, depth + 1)?
         }
         Expr::Unary(op, value) => {
-            let value = expression(value, context, point, cursor, budget)?;
+            let value = expression(value, context, point, cursor, budget, values, depth + 1)?;
             match op {
                 UnaryOp::SignExtend(width) => {
                     std::array::from_fn(|bit| value[bit.min(width.bits() as usize - 1)])
@@ -131,7 +215,7 @@ fn expression(
             }
         }
         Expr::Load { address, width } => {
-            expression(address, context, point, cursor, budget)?;
+            expression(address, context, point, cursor, budget, values, depth + 1)?;
             std::array::from_fn(|bit| {
                 if bit < width.bits() as usize {
                     Bit::Unknown
@@ -145,14 +229,14 @@ fn expression(
             taken,
             not_taken,
         } => {
-            expression(condition, context, point, cursor, budget)?;
-            let a = expression(taken, context, point, cursor, budget)?;
-            let b = expression(not_taken, context, point, cursor, budget)?;
+            expression(condition, context, point, cursor, budget, values, depth + 1)?;
+            let a = expression(taken, context, point, cursor, budget, values, depth + 1)?;
+            let b = expression(not_taken, context, point, cursor, budget, values, depth + 1)?;
             std::array::from_fn(|i| if a[i] == b[i] { a[i] } else { Bit::Unknown })
         }
         Expr::Binary(op, left, right) => {
-            let a = expression(left, context, point, cursor, budget)?;
-            let b = expression(right, context, point, cursor, budget)?;
+            let a = expression(left, context, point, cursor, budget, values, depth + 1)?;
+            let b = expression(right, context, point, cursor, budget, values, depth + 1)?;
             match op {
                 B::And => std::array::from_fn(|i| {
                     if a[i] == no || b[i] == no {
