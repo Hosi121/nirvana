@@ -4,11 +4,15 @@
 //! store is below the entry return slot, every ordinary call has a normal link,
 //! and every return restores the entry stack pointer. Unknown memory effects or
 //! control make the function and its callers opaque. No ABI rules are assumed.
+//! DIV/IDIV have unknown normal results in AX or DX:AX; operand faults and #DE
+//! stop before the normal continuation. Their loads preserve return-slot RAM.
 
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::dataflow::stack::StackAnalysis;
-use crate::model::ir::{AccessKind, Assignment, Control, Expr, IrInstruction, Place, Program, Reg};
+use crate::model::ir::{
+    AccessKind, Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width,
+};
 use crate::model::module_ir::{self, Instruction, Target};
 
 const MAX_FUNCTIONS: usize = 512;
@@ -280,8 +284,9 @@ fn preflight(source: &[Instruction], registers: usize, work: &mut Work) -> Resul
             Instruction::StoreString { .. } | Instruction::MoveString { .. } => {
                 return Err("call footprint string transfer requires a checked summary".into());
             }
-            Instruction::Divide { .. } => {
-                return Err("call footprint division effect requires a checked summary".into());
+            Instruction::Divide { source, .. } => {
+                work.expression(source, registers)?;
+                &[]
             }
             Instruction::Core(i) => &i.assignments[..],
             Instruction::Vector(i) => {
@@ -329,6 +334,7 @@ fn project(
             Instruction::Core(i) => i.assignments.len() + 1,
             Instruction::Vector(i) => i.assignments.len() + 1,
             Instruction::Transfer { link: Some(_), .. } => registers,
+            Instruction::Divide { width, .. } => divide_registers(*width).len() + 1,
             _ => 1,
         };
         work.charge(point_count, "projection")?;
@@ -336,9 +342,18 @@ fn project(
             Instruction::StoreString { .. } | Instruction::MoveString { .. } => {
                 return Err("call footprint string transfer requires a checked summary".into());
             }
-            Instruction::Divide { .. } => {
-                return Err("call footprint division effect requires a checked summary".into());
-            }
+            Instruction::Divide { width, .. } => (
+                divide_registers(*width)
+                    .iter()
+                    .map(|&reg| Assignment {
+                        destination: reg.into(),
+                        // A successful divide produces a new unknown bit pattern.
+                        // Its source Load can fault, but never modifies guest RAM.
+                        value: Expr::Register(Reg(registers)),
+                    })
+                    .collect(),
+                Control::Next,
+            ),
             Instruction::Core(i) => (i.assignments.clone(), i.control.clone()),
             Instruction::Vector(i) => (i.assignments.clone(), Control::Next),
             Instruction::Transfer {
@@ -373,6 +388,12 @@ fn safe_offset(offset: Option<i64>, width: u64) -> bool {
             && width != 0
             && i128::from(offset) + i128::from(width) <= 0
     })
+}
+
+fn divide_registers(width: Width) -> &'static [Reg] {
+    const AX: &[Reg] = &[Reg(crate::binary::x86::RAX)];
+    const DX_AX: &[Reg] = &[Reg(crate::binary::x86::RAX), Reg(crate::binary::x86::RDX)];
+    if width == Width::U8 { AX } else { DX_AX }
 }
 
 fn local(
@@ -421,8 +442,13 @@ fn local_source(
                 Instruction::StoreString { .. } | Instruction::MoveString { .. } => {
                     return Err("call footprint string transfer requires a checked summary".into());
                 }
-                Instruction::Divide { .. } => {
-                    return Err("call footprint division effect requires a checked summary".into());
+                Instruction::Divide { source, width, .. } => {
+                    local.reads |= reads(source);
+                    for &register in divide_registers(*width) {
+                        local.reads |= 1 << register.0;
+                        local.clobbers |= 1 << register.0;
+                    }
+                    &[]
                 }
                 Instruction::Core(i) => {
                     match &i.control {
@@ -620,6 +646,84 @@ mod tests {
                 .reason
                 .is_some()
         );
+    }
+
+    #[test]
+    fn successful_divides_preserve_every_register_except_their_result_pair() {
+        for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+            for signed in [false, true] {
+                let division = Instruction::Divide {
+                    address: 1,
+                    size: 1,
+                    width,
+                    signed,
+                    source: Expr::load(Expr::Register(Reg(63)), width),
+                };
+                let local = check(&[division, ret(2)]).unwrap();
+                assert!(local.reason.is_none());
+                let results = if width == Width::U8 { 1 } else { 1 | (1 << 2) };
+                assert_eq!(local.clobbers, results);
+                assert_eq!(local.reads, results | (1 << 63) | (1 << RSP.0));
+                assert!(local.callees.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn divide_results_become_unknown_before_later_stack_proofs() {
+        let core = |address, destination, value| {
+            Instruction::Core(IrInstruction {
+                address,
+                size: 1,
+                assignments: vec![Assignment {
+                    destination: Place::Register(destination),
+                    value,
+                }],
+                control: Control::Next,
+            })
+        };
+        for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+            let source = [
+                core(1, Reg(2), Expr::Register(RSP)),
+                Instruction::Divide {
+                    address: 2,
+                    size: 1,
+                    width,
+                    signed: false,
+                    source: Expr::Register(Reg(6)),
+                },
+                core(3, RSP, Expr::Register(Reg(2))),
+                ret(4),
+            ];
+            let local = check(&source).unwrap();
+            assert_eq!(local.reason.is_none(), width == Width::U8);
+        }
+        let invalid = Instruction::Divide {
+            address: 1,
+            size: 1,
+            width: Width::U64,
+            signed: false,
+            source: Expr::Register(Reg(80)),
+        };
+        assert!(
+            check(&[invalid, ret(2)])
+                .err()
+                .unwrap()
+                .contains("invalid guest register")
+        );
+        let division = Instruction::Divide {
+            address: 1,
+            size: 1,
+            width: Width::U64,
+            signed: false,
+            source: Expr::Const(1),
+        };
+        let mut work = Work {
+            projected_points: MAX_PROJECTED_POINTS - 2,
+            ..Work::default()
+        };
+        assert!(project(&[division], 80, &mut work).is_err());
+        assert!(work.exhausted);
     }
 
     #[test]

@@ -84,6 +84,7 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 [module_values](../src/dataflow/module_values.rs)はCALL・DIV・STOS・MOVSを順序付きイベントに写します。
 [call_footprint](../src/dataflow/call_footprint.rs)の閉じた正常復帰要約を使える場合は保存レジスタの値IDを継続し、未知の結果には新しいIDを付けます。
 レジスタの保存とRAMの保存は個別に判断します。CALLと未知のメモリ効果はMemorySSAの境界になります。
+DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認してレジスタ要約を作ります。商・剰余の結果は未知とし、書き換えられないレジスタの値IDを継続します。
 
 ## 表示用IRと局所変数
 

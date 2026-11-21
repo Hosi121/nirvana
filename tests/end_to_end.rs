@@ -18,6 +18,8 @@ mod algorithm_fixtures;
 mod block_copy;
 #[path = "end_to_end/dispatch_programs.rs"]
 mod dispatch_programs;
+#[path = "end_to_end/divide_calls.rs"]
+mod divide_calls;
 #[path = "end_to_end/divide_compiler.rs"]
 mod divide_compiler;
 #[path = "end_to_end/generated_recovery.rs"]
