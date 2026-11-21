@@ -22,6 +22,30 @@ pub(super) struct PreparedFunction {
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
     pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
+    pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
+}
+
+type CheckedDisplay<E> = (
+    Program,
+    ValueWidths,
+    Result<StructuredFunction, StructureError>,
+    E,
+);
+fn checked_display<E>(
+    expanded: Program,
+    structured_before: bool,
+    evidence: E,
+) -> Option<CheckedDisplay<E>> {
+    let candidate = crate::transform::display_dce::propose(&expanded)?;
+    if !crate::transform::display_dce::validate(&expanded, &candidate) {
+        return None;
+    }
+    let structure = StructuredFunction::recover(&candidate);
+    if structured_before && structure.is_err() {
+        return None;
+    }
+    let widths = ValueWidths::analyze(&candidate);
+    Some((candidate, widths, structure, evidence))
 }
 
 pub(super) fn prepare(
@@ -88,16 +112,7 @@ fn prepare_selected(
     let constants =
         crate::dataflow::ssa_constants::ConstantPlan::analyze(&program).and_then(|plan| {
             let (expanded, evidence) = plan.propose(&program)?;
-            let candidate = crate::transform::display_dce::propose(&expanded)?;
-            if !crate::transform::display_dce::validate(&expanded, &candidate) {
-                return None;
-            }
-            let recovered = StructuredFunction::recover(&candidate);
-            if structure.is_ok() && recovered.is_err() {
-                return None;
-            }
-            let candidate_widths = ValueWidths::analyze(&candidate);
-            Some((candidate, candidate_widths, recovered, evidence))
+            checked_display(expanded, structure.is_ok(), evidence)
         });
     let (program, widths, structure, ssa_constants) = match constants {
         Some((program, widths, structure, evidence)) => {
@@ -105,21 +120,19 @@ fn prepare_selected(
         }
         None => (program, widths, structure, None),
     };
+    let bits = crate::dataflow::known_bits::BitPlan::analyze(&program).and_then(|plan| {
+        let (expanded, evidence) = plan.propose(&program)?;
+        checked_display(expanded, structure.is_ok(), evidence)
+    });
+    let (program, widths, structure, known_bits) = match bits {
+        Some((p, w, s, e)) => (p, w, s, Some(e)),
+        None => (program, widths, structure, None),
+    };
     // Choose arithmetic before any read/liveness/allocation consumer. Explicit
     // snapshots retain historical numerators; independent DCE removes pure work.
     let arithmetic =
         crate::model::expression_ir::ExpressionPlan::analyze(&program).and_then(|plan| {
-            let expanded = plan.lower(&program)?;
-            let candidate = crate::transform::display_dce::propose(&expanded)?;
-            if !crate::transform::display_dce::validate(&expanded, &candidate) {
-                return None;
-            }
-            let recovered = StructuredFunction::recover(&candidate);
-            if structure.is_ok() && recovered.is_err() {
-                return None;
-            }
-            let candidate_widths = ValueWidths::analyze(&candidate);
-            Some((candidate, candidate_widths, recovered, plan.evidence()))
+            checked_display(plan.lower(&program)?, structure.is_ok(), plan.evidence())
         });
     let (program, widths, structure, expression_evidence) = match arithmetic {
         Some((program, widths, structure, evidence)) => {
@@ -128,17 +141,7 @@ fn prepare_selected(
         None => (program, widths, structure, None),
     };
     let semantic = crate::model::semantic_ir::SemanticPlan::analyze(&program).and_then(|plan| {
-        let expanded = plan.lower(&program)?;
-        let candidate = crate::transform::display_dce::propose(&expanded)?;
-        if !crate::transform::display_dce::validate(&expanded, &candidate) {
-            return None;
-        }
-        let recovered = StructuredFunction::recover(&candidate);
-        if structure.is_ok() && recovered.is_err() {
-            return None;
-        }
-        let widths = ValueWidths::analyze(&candidate);
-        Some((candidate, widths, recovered, plan.evidence()))
+        checked_display(plan.lower(&program)?, structure.is_ok(), plan.evidence())
     });
     let (program, widths, structure, semantic_evidence) = match semantic {
         Some((p, w, s, e)) => (p, w, s, Some(e)),
@@ -148,6 +151,7 @@ fn prepare_selected(
         let nodes = if expression_evidence.is_some()
             || semantic_evidence.is_some()
             || ssa_constants.is_some()
+            || known_bits.is_some()
         {
             function.body().to_vec()
         } else {
@@ -183,6 +187,7 @@ fn prepare_selected(
         expression_evidence,
         semantic_evidence,
         ssa_constants,
+        known_bits,
     })
 }
 

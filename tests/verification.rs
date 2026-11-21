@@ -15,6 +15,8 @@ mod division_ops;
 mod exhaustive;
 #[path = "verification/integer_ops.rs"]
 mod integer_ops;
+#[path = "verification/known_bits.rs"]
+mod known_bits;
 #[path = "verification/recovery_verification.rs"]
 mod recovery_verification;
 #[path = "verification/unary_ops.rs"]

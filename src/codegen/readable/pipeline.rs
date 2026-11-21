@@ -71,6 +71,7 @@ fn emit_prepared_c(
         expression_evidence,
         semantic_evidence,
         ssa_constants,
+        known_bits,
     } = prepared;
     let program = &presented;
     let context_remainders = expression_evidence
@@ -443,6 +444,7 @@ fn emit_prepared_c(
         expression_evidence,
         semantic_evidence,
         ssa_constants,
+        known_bits,
         web_recovery,
         stack_views,
         object_views,

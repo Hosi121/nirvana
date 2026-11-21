@@ -26,11 +26,11 @@ pub use control_flow::{
     structure_verify,
 };
 pub use dataflow::{
-    address_identity, allocation, allocation_verify, call_footprint, local_identity, memory_ssa,
-    module_local_plan, module_values, parallel_copy, provenance, record_shapes, source_locals, ssa,
-    ssa_constants, ssa_destroy, ssa_locals, ssa_storage, stack, stack_cells, stack_role,
-    stack_values, type_infer, value_graph, value_liveness, value_role, value_width, web,
-    web_verify,
+    address_identity, allocation, allocation_verify, call_footprint, known_bits, local_identity,
+    memory_ssa, module_local_plan, module_values, parallel_copy, provenance, record_shapes,
+    source_locals, ssa, ssa_constants, ssa_destroy, ssa_locals, ssa_storage, stack, stack_cells,
+    stack_role, stack_values, type_infer, value_graph, value_liveness, value_role, value_width,
+    web, web_verify,
 };
 pub use model::{
     effects, effects_observe, expression_ir, hir, ir, memory, module_ir, observe, semantic_ir,

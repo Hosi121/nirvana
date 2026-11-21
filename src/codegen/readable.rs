@@ -94,6 +94,8 @@ pub struct ReadableC {
     pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
     /// Source-bound constants proved across SSA predecessor and loop phi edges.
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
+    /// Checked partial-bit SSA invariants used for load-free constant fragments.
+    pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
     pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,

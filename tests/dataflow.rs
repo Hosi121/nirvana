@@ -18,6 +18,8 @@ mod allocation_verify;
 mod call_footprint;
 #[path = "dataflow/copy_allocation.rs"]
 mod copy_allocation;
+#[path = "dataflow/known_bits.rs"]
+mod known_bits;
 #[path = "dataflow/local_identity.rs"]
 mod local_identity;
 #[path = "dataflow/memory_ssa.rs"]

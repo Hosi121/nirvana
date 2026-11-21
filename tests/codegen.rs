@@ -35,6 +35,8 @@ mod emit_sequence;
 mod goto_layout;
 #[path = "codegen/indexed_views.rs"]
 mod indexed_views;
+#[path = "codegen/known_bits_backend.rs"]
+mod known_bits_backend;
 #[path = "codegen/loop_backend.rs"]
 mod loop_backend;
 #[path = "codegen/loop_exit_backend.rs"]
