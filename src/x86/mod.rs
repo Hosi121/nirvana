@@ -9,6 +9,7 @@ mod decode;
 pub mod divide;
 mod effects;
 mod lift;
+mod tls;
 mod vector;
 
 pub use decode::{
@@ -20,6 +21,7 @@ pub use effects::{EffectLiftError, lift_effects};
 pub(crate) use lift::check_effect_flags;
 pub(crate) use lift::lift_instruction;
 pub use lift::{LiftError, lift};
+pub use tls::{FS_GUARD_OFFSET, decode_fs_guard_at};
 pub use vector::{VectorInstruction, VectorMemory, decode_vector_at};
 
 pub const RAX: usize = 0;

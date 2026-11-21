@@ -760,6 +760,8 @@ fn initial_string_views_are_bounded_escaped_and_leave_mutable_ram_authoritative(
         sections: vec![],
         puts_address: PUTS,
         stack_pointer: BASE + 120,
+        external_data: Vec::new(),
+        thread_local: None,
     };
     let output = nirvana::effects_readable::emit_image(&program, &image).unwrap();
     assert!(output.fallback_reason.is_none());

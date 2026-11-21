@@ -198,7 +198,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
     {
         code.push_str(crate::x86::divide::C_HELPER);
     }
-    code.push_str(posix_header());
+    code.push_str(&posix_header(module));
     code.push_str(
         "\n#ifndef NV_HOST_DEPTH_LIMIT\n#define NV_HOST_DEPTH_LIMIT 64\n#endif\n#if NV_HOST_DEPTH_LIMIT < 1 || NV_HOST_DEPTH_LIMIT > 256\n#error NV_HOST_DEPTH_LIMIT_must_be_between_1_and_256\n#endif\n\n\
          struct nv_frame { struct nv_module *state; unsigned depth,yielded; };\n\

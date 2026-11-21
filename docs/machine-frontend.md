@@ -13,6 +13,8 @@ ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`�
 
 リンク済みELFは`PT_LOAD`をゲストRAMへ配置し、BSSをゼロ初期化します。
 `PT_DYNAMIC`の再配置を使ってPIEのデータポインタとGOTを解決し、実際のPLT命令とimportを照合します。
+8-byteの`stdin/stdout/stderr`はCOPY再配置とGOT経由の参照を共有する外部データとして扱います。
+PLTの照合はENDBR64・BND付きJMPも対象とし、実際のfunction import欄を確認します。
 通常の実行ファイルは固定アドレス、PIEは既定bias `0x10000`を使います。
 ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
 単一関数の`effects-*`は整数処理と`puts`モデルを扱い、追加の呼出しは位置付きで報告します。
@@ -56,6 +58,8 @@ JSONの`read_sites`には、表の値を読み込む命令位置とアドレス�
 条件式で使うフラグは、全到達経路で定義されたものを受理します。
 即値SHLD/SHRDは、mask後のcountがオペランド幅以下の形式を扱います。
 `module-*`ではNOTRACK付きの近距離間接CALL/JMPも扱います。CETの追跡状態は実行モデルの追加対象です。
+`module-*`のTLS guard profileは、`FS:0x28`を64-bit MOV・ALU sourceとして読みます。
+初期guardと通常RAMを介した書換えの規則は[実行モデル](equivalence.md)にあります。
 `module-*`は8/16/32/64-bitのDIV/IDIVを、sourceのLoadとdivide error（#DE）を持つ命令として実行します。
 商・剰余・部分レジスタと停止位置の規則は[実行モデル](equivalence.md)にあります。
 仕様は[Intel SDM Vol.1 §18.3.1](https://cdrdv2-public.intel.com/843827/253665-sdm-vol-1-dec-24.pdf)と、[命令リファレンス](https://cdrdv2-public.intel.com/782156/325383-sdm-vol-2abcd.pdf)を参照してください。

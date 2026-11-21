@@ -1,11 +1,14 @@
 //! Selected ELF64/x86-64 functions and their bounded initial guest image.
 //!
 //! PT_LOAD determines guest bytes (including zeroed BSS); PT_DYNAMIC determines
-//! relocations. The modeled external function is puts. Dependency loading,
-//! startup, TLS and IFUNC execution lie outside this selected-function model.
+//! relocations. Standard-stream pointer variables have explicit guest bindings.
+//! Module loading adds an FS stack-guard image; dependency loading, startup,
+//! general TLS and IFUNC execution require additional runtime profiles.
 
 use crate::elf::FunctionImage;
-use crate::loader::{LinkedImage, LoadedSection};
+use crate::loader::{
+    ExternalDataBinding, LinkedImage, LoadedSection, StandardStream, ThreadLocalImage,
+};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -71,7 +74,8 @@ pub struct BinaryImage {
 
 impl BinaryImage {
     /// Recognize exactly an executable `jmp *disp32(%rip)`, optionally preceded
-    /// by ENDBR64. The computed pointer must be an actual dynamic import field.
+    /// by ENDBR64 and BND (the normal-RAM profile has MPX disabled).
+    /// The computed pointer must be an actual dynamic function import field.
     /// No PLT section name, presumed stride or lazy-linker convention is trusted.
     pub fn plt_slot(&self, entry: u64) -> Option<&ImportSlot> {
         let read = |address: u64, size: u64| {
@@ -88,6 +92,9 @@ impl BinaryImage {
         let mut jump = entry;
         if read(entry, 4)? == [0xf3, 0x0f, 0x1e, 0xfa] {
             jump = entry.checked_add(4)?;
+        }
+        if read(jump, 1)? == [0xf2] {
+            jump = jump.checked_add(1)?;
         }
         let bytes = read(jump, 6)?;
         if bytes[..2] != [0xff, 0x25] {
@@ -694,11 +701,11 @@ fn relocations(
             if record.kind == 0 {
                 continue;
             }
-            if !matches!(record.kind, 1 | 6 | 7 | 8) {
+            if !matches!(record.kind, 1 | 5 | 6 | 7 | 8) {
                 return Err(BinaryError::Relocation {
                     address: record.address,
                     kind: record.kind,
-                    reason: "unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)",
+                    reason: "unsupported relocation (TLS, IFUNC and unknown types are rejected)",
                 });
             }
             if !mapping.contains(record.address, 8, false) {
@@ -716,6 +723,80 @@ fn relocations(
     Ok(records)
 }
 
+fn external_data_layout(
+    mapping: &Mapping<'_>,
+    dynamic: &Dynamic,
+    records: &[Relocation],
+    bias: u64,
+    mut next: u64,
+    work: &mut Work,
+) -> Result<(BTreeMap<StandardStream, u64>, u64)> {
+    let mut bindings = BTreeMap::new();
+    // COPY establishes the executable's canonical variable. A GOT reference to
+    // that name must share its address, even when it uses another symbol index.
+    for record in records.iter().filter(|r| r.kind == 5) {
+        let error = |reason| BinaryError::Relocation {
+            address: record.address,
+            kind: record.kind,
+            reason,
+        };
+        if record.symbol == 0 {
+            return Err(error("COPY requires a symbol"));
+        }
+        let symbol = dynamic.symbol(mapping, record.symbol)?;
+        let name = work.name(dynamic.names(mapping)?, symbol.name)?;
+        let stream = StandardStream::named(name)
+            .ok_or_else(|| error("COPY requires an explicit external-data binding"))?;
+        if symbol.kind() != 1
+            || !matches!(symbol.info >> 4, 1 | 2)
+            || symbol.size != 8
+            || symbol.section == 0
+            || symbol.section >= 0xff00
+            || symbol.value != record.address
+            || record.addend != 0
+        {
+            return Err(error(
+                "standard-stream COPY requires a defined eight-byte OBJECT and zero addend",
+            ));
+        }
+        if bindings
+            .insert(stream, end(record.address, bias)?)
+            .is_some()
+        {
+            return Err(error("duplicate standard-stream COPY binding"));
+        }
+    }
+    for record in records
+        .iter()
+        .filter(|r| matches!(r.kind, 1 | 6 | 7) && r.symbol != 0)
+    {
+        let symbol = dynamic.symbol(mapping, record.symbol)?;
+        if symbol.section != 0 || symbol.kind() != 1 {
+            continue;
+        }
+        let error = |reason| BinaryError::Relocation {
+            address: record.address,
+            kind: record.kind,
+            reason,
+        };
+        let name = work.name(dynamic.names(mapping)?, symbol.name)?;
+        let stream = StandardStream::named(name)
+            .ok_or_else(|| error("data import requires an explicit external-data binding"))?;
+        if record.kind == 7
+            || symbol.value != 0
+            || !matches!(symbol.size, 0 | 8)
+            || !matches!(symbol.info >> 4, 1 | 2)
+        {
+            return Err(error("invalid standard-stream data import"));
+        }
+        if let std::collections::btree_map::Entry::Vacant(slot) = bindings.entry(stream) {
+            slot.insert(next);
+            next = end(next, 8)?;
+        }
+    }
+    Ok((bindings, next))
+}
+
 /// Load deterministic guest RAM, never host executable pages. Sparse spans,
 /// BSS, padding and stack together are limited to 16 MiB; function bytes to
 /// 1 MiB and symbol/relocation tables to 262144 records. ET_EXEC requires bias
@@ -724,10 +805,11 @@ fn relocations(
 ///
 /// Unmodeled function imports receive distinct non-RAM sentinel addresses;
 /// these are metadata for conservative call rejection, never host addresses.
-/// Undefined STT_NOTYPE is permitted only for puts or weak CRT imports. Data
-/// imports, COPY, TLS, IFUNC, REL/RELR and unknown relocation types are rejected.
+/// Undefined STT_NOTYPE is permitted only for puts or weak CRT imports.
+/// Eight-byte stdin/stdout/stderr objects share explicit COPY/GOT bindings.
+/// Other external data, general TLS, IFUNC and REL/RELR require another profile.
 pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<BinaryImage> {
-    load_selected(object, Selection::Name(symbol), options)
+    load_selected(object, Selection::Name(symbol), options, false)
 }
 
 /// Select an exact link-time virtual address. Positive-size function symbols
@@ -735,7 +817,22 @@ pub fn load(object: &[u8], symbol: &str, options: LinkedOptions) -> Result<Binar
 /// and synthetic names. PIE load bias is added after metadata interpretation.
 /// An interior PC requires a known region entry rather than a guessed boundary.
 pub fn load_at(object: &[u8], entry: u64, options: LinkedOptions) -> Result<BinaryImage> {
-    load_selected(object, Selection::Address(entry), options)
+    load_selected(object, Selection::Address(entry), options, false)
+}
+
+pub(crate) fn load_module(
+    object: &[u8],
+    symbol: &str,
+    options: LinkedOptions,
+) -> Result<BinaryImage> {
+    load_selected(object, Selection::Name(symbol), options, true)
+}
+pub(crate) fn load_module_at(
+    object: &[u8],
+    entry: u64,
+    options: LinkedOptions,
+) -> Result<BinaryImage> {
+    load_selected(object, Selection::Address(entry), options, true)
 }
 
 #[derive(Clone, Copy)]
@@ -748,6 +845,7 @@ fn load_selected(
     object: &[u8],
     selection: Selection<'_>,
     options: LinkedOptions,
+    module_tls: bool,
 ) -> Result<BinaryImage> {
     if object.len() > 64 * 1024 * 1024 {
         return Err(BinaryError::Limit("input file exceeds 64 MiB"));
@@ -865,6 +963,39 @@ fn load_selected(
     let (selected_symbol, mut functions) =
         select_function(&mapping, &sections, &dynamic, name, &mut work)?;
     let relocations = relocations(&mapping, &dynamic, &mut work)?;
+    let (data_addresses, data_end) = external_data_layout(
+        &mapping,
+        &dynamic,
+        &relocations,
+        options.load_bias,
+        stack_start,
+        &mut work,
+    )?;
+    let thread_local = module_tls.then_some(ThreadLocalImage {
+        base: aligned(data_end)?,
+        size: 64,
+    });
+    let stack_start = aligned(if let Some(tls) = &thread_local {
+        end(tls.base, tls.size)?
+    } else {
+        data_end
+    })?;
+    let memory_end = aligned(end(stack_start, stack_size)?)?;
+    let memory_size = memory_end - memory_base;
+    if memory_size > MAX_MEMORY {
+        return Err(BinaryError::Limit("runtime data and stack exceed 16 MiB"));
+    }
+    let external_data: Vec<_> = data_addresses
+        .iter()
+        .map(|(&stream, &address)| {
+            // Keep data handles beyond the entire bounded function-import namespace.
+            Ok(ExternalDataBinding {
+                stream,
+                address,
+                handle: end(memory_end, (MAX_TABLE + 16 + stream as u64) * 8)?,
+            })
+        })
+        .collect::<Result<_>>()?;
     let selected = match selection {
         Selection::Name(name) => {
             let symbol =
@@ -897,7 +1028,13 @@ fn load_selected(
             kind: record.kind,
             reason,
         };
-        let value = if record.kind == 8 {
+        let value = if record.kind == 5 {
+            external_data
+                .iter()
+                .find(|binding| binding.address == record.address + options.load_bias)
+                .ok_or_else(|| error("missing COPY binding"))?
+                .handle
+        } else if record.kind == 8 {
             if record.symbol != 0 {
                 return Err(error("RELATIVE must use symbol zero"));
             }
@@ -918,6 +1055,20 @@ fn load_selected(
                 let name = work.name(dynamic.names(&mapping)?, sym.name)?;
                 if name.is_empty() {
                     return Err(error("unnamed import"));
+                }
+                if sym.kind() == 1 {
+                    let stream = StandardStream::named(name)
+                        .ok_or_else(|| error("unbound external object"))?;
+                    let base = *data_addresses
+                        .get(&stream)
+                        .ok_or_else(|| error("missing external object address"))?;
+                    if record.kind == 6 && record.addend != 0 {
+                        return Err(error("GLOB_DAT requires a zero addend"));
+                    }
+                    let value = u64::try_from(i128::from(base) + i128::from(record.addend))
+                        .map_err(|_| error("external object reference overflows u64"))?;
+                    patches.push((record.address - original_base, value));
+                    continue;
                 }
                 if sym.kind() != 2 && !(sym.kind() == 0 && (name == "puts" || sym.info >> 4 == 2)) {
                     return Err(error("unsupported data or untyped nonweak import"));
@@ -999,6 +1150,18 @@ fn load_selected(
     for (offset, value) in patches {
         memory[offset as usize..offset as usize + 8].copy_from_slice(&value.to_le_bytes());
     }
+    for binding in &external_data {
+        let offset = usize::try_from(binding.address - memory_base)
+            .map_err(|_| invalid("external data offset exceeds host"))?;
+        memory
+            .get_mut(offset..offset + 8)
+            .ok_or_else(|| invalid("external data outside guest image"))?
+            .copy_from_slice(&binding.handle.to_le_bytes());
+    }
+    if let Some(tls) = &thread_local {
+        let offset = (tls.base - memory_base + crate::x86::FS_GUARD_OFFSET) as usize;
+        memory[offset..offset + 8].copy_from_slice(&0x6e69_7276_616e_6100_u64.to_le_bytes());
+    }
     let function_start = (selected.address - original_base) as usize;
     let function = FunctionImage {
         name: selected.name,
@@ -1025,6 +1188,8 @@ fn load_selected(
             sections: loaded_sections,
             puts_address: memory_end,
             stack_pointer: memory_end - 8,
+            external_data,
+            thread_local,
         },
         elf_type,
         bias: options.load_bias,

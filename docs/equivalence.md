@@ -131,9 +131,27 @@ RETとimportからの復帰は実際のゲストstackから戻り先をLoadし�
 未登録のtarget、予算到達、range／alignment違反は、部分状態付きの停止結果を返します。
 
 入口は、シンボルまたはunwind情報から範囲を検査したコード領域です。初期画像にはrootの戻り先markerとerrno用領域を置きます。
-生成Cの入口はRSP以外をゼロとし、プロセス起動処理・argv・constructor・TLSの復元は追加の実行環境の対象です。
+生成Cの入口はRSP以外をゼロとし、プロセス起動処理・argv・constructorは追加の実行環境の対象です。
 単一関数と同じ通常RAMの規則を使います。
 IR/Cの比較では、全レジスタ・全RAM・fault・PC・命令開始数を照合します。
+
+リンク済み画像の`stdin/stdout/stderr`は、8-byteポインタ変数とopaque handleを持つ明示的なbindingです。
+COPY先と同名のGOT参照は同じ変数を共有し、別名経由の書換えも共通RAMへ反映します。
+このprofileが定める初期値と、stream handleの解釈を担う外部adapterを組み合わせて実行します。
+生成CのPOSIX adapterは、`puts`の呼出し時にゲストの`stdout`変数を読みます。
+既知のstdout／stderr handleは対応するホストstreamへ出力し、未知のhandleは出力前に部分状態付きで停止します。
+stderrへの転送時の返り値はLinux/glibcの[puts](https://github.com/bminor/glibc/blob/master/libio/ioputs.c)に合わせ、glibc環境で検証します。
+一般の外部データの初期化とFILE内部のモデルは、追加bindingの対象です。
+
+module画像はstackの前に64-byteのゲストTLS領域を持ちます。
+`FS:0x28`の8-byte sourceはその領域のguard slotへ対応付け、命令のPC・幅・評価順・flagの効果を保ちます。
+初期guardは`0x6e697276616e6100`で、`LinkedImage.thread_local`から位置を取得して、実行前のRAMで設定できます。
+これは供給する初期状態の一部です。通常のポインタでguardを書き換えた場合も、後のFS Loadは更新された値を読みます。
+他のFS/GSオフセット、thread pointerの変更、PT_TLSは別のprofileとして扱います。
+glibcの配置は[tcbhead_t](https://github.com/bminor/glibc/blob/master/sysdeps/x86_64/nptl/tls.h)と[guard参照](https://github.com/bminor/glibc/blob/master/sysdeps/x86_64/stackguard-macros.h)を参照してください。
+
+PLT照合はENDBR64・BND付きJMPを受理し、通常RAM profileではMPXを無効、CETを非追跡として扱います。
+BND PLTの形式は[GNU ldのbndplt](https://sourceware.org/binutils/docs-2.29/ld/Options.html)、MPX状態は[Intel SDM Appendix E](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf)を参照してください。
 
 DIV/IDIVは8/16/32/64-bitのレジスタ／メモリsourceを扱います。
 命令予算を消費し、sourceを一度評価してから、二倍幅の被除数を割ります。

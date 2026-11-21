@@ -37,6 +37,10 @@ static inline unsigned nv_posix_unsupported(struct nv_module *s) {
     return 0;
 }
 
+#ifndef NV_GUEST_STDOUT
+#define NV_GUEST_STDOUT(s) ((void)(s), stdout)
+#endif
+
 static inline uint8_t *nv_posix_bytes(struct nv_module *s, uint64_t address,
                                      uint64_t width, unsigned access) {
     /* NULL is a permitted empty I/O buffer; non-NULL empty ranges must be
@@ -197,11 +201,27 @@ static inline unsigned nv_posix_call(struct nv_module *s, const char *name) {
         const uint64_t offset = nv_check(s, a0, 1, 1);
         const size_t available = (size_t)(s->size - offset);
         const char *string = (const char *)(s->memory + offset);
-        if (!memchr(string, 0, available)) {
+        const char *terminator = (const char *)memchr(string, 0, available);
+        FILE *stream;
+        if (!terminator) {
             (void)nv_check(s, a0 + available, 1, 1);
             return nv_posix_unsupported(s); /* unreachable after checked fault */
         }
-        result = puts(string);
+        stream = NV_GUEST_STDOUT(s);
+        if (!stream) return nv_posix_unsupported(s);
+        if (stream == stdout) result = puts(string);
+        else {
+#if defined(__GLIBC__)
+            const size_t length = (size_t)(terminator - string);
+            /* Linux/glibc puts returns length+1 on success. Guest strings are
+             * bounded by the 16 MiB image limit, so this fits in int. */
+            result = EOF;
+            if (fwrite(string, 1, length, stream) == length && fputc('\n', stream) != EOF)
+                result = (int)(length + 1);
+#else
+            return nv_posix_unsupported(s);
+#endif
+        }
     }
     saved_errno = errno;
     /* C functions returning int write EAX, zero extending the upper half. */

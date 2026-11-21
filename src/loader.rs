@@ -32,6 +32,46 @@ pub struct LoadedSection {
     pub size: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum StandardStream {
+    Stdin = 0,
+    Stdout = 1,
+    Stderr = 2,
+}
+impl StandardStream {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Stdin => "stdin",
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
+    }
+    pub(crate) fn named(name: &str) -> Option<Self> {
+        match name {
+            "stdin" => Some(Self::Stdin),
+            "stdout" => Some(Self::Stdout),
+            "stderr" => Some(Self::Stderr),
+            _ => None,
+        }
+    }
+}
+
+/// A guest pointer variable bound to an opaque standard-stream handle.
+/// References to the same external variable share this guest address.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalDataBinding {
+    pub stream: StandardStream,
+    pub address: u64,
+    pub handle: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThreadLocalImage {
+    pub base: u64,
+    pub size: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkedImage {
     pub memory_base: u64,
@@ -41,6 +81,8 @@ pub struct LinkedImage {
     pub puts_address: u64,
     /// SysV entry alignment (RSP % 16 == 8), with a reserved root return slot.
     pub stack_pointer: u64,
+    pub external_data: Vec<ExternalDataBinding>,
+    pub thread_local: Option<ThreadLocalImage>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -322,5 +364,7 @@ pub fn link(object: &[u8], symbol: &str, options: LoadOptions) -> Result<LinkedI
         sections: placements.into_iter().flatten().collect(),
         puts_address,
         stack_pointer: stack_end - 8,
+        external_data: Vec::new(),
+        thread_local: None,
     })
 }

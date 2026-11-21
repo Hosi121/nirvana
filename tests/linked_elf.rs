@@ -151,6 +151,91 @@ fn maps_bss_relative_absolute_and_imports_without_trusting_section_relocations()
     }
     assert_eq!(b, original);
 }
+
+fn stream_fixture(copy: bool) -> Vec<u8> {
+    let mut b = fixture();
+    b[0x31d..0x324].copy_from_slice(b"stdout\0");
+    put64(&mut b, 0x198, 36); // DT_STRSZ
+    put64(&mut b, 0x5a0, 36); // linked string section
+    for index in [2, 3] {
+        let o = 0x280 + index * 24;
+        put32(&mut b, o, 29);
+        b[o + 4] = 0x11;
+        put16(&mut b, o + 6, if copy && index == 2 { 1 } else { 0 });
+        put64(&mut b, o + 8, if copy && index == 2 { 0x478 } else { 0 });
+        put64(&mut b, o + 16, if copy && index == 2 { 8 } else { 0 });
+    }
+    rela(&mut b, 0x358, 0x478, if copy { 5 } else { 1 }, 2, 0);
+    rela(&mut b, 0x3a0, 0x480, 6, 2, 0);
+    b
+}
+
+#[test]
+fn copy_and_got_data_references_share_one_mutable_guest_variable() {
+    for copy in [false, true] {
+        for bias in [0, 0x10000, 0x234567] {
+            let bytes = stream_fixture(copy);
+            let mut image = linked_elf::load(
+                &bytes,
+                "fixture",
+                LinkedOptions {
+                    load_bias: bias,
+                    stack_size: 64,
+                },
+            )
+            .unwrap();
+            assert_eq!(image.image.external_data.len(), 1);
+            assert!(
+                image.imports.is_empty(),
+                "data objects must not become callable imports"
+            );
+            assert!(image.plt_slot(bias + 0x400).is_none());
+            let binding = image.image.external_data[0].clone();
+            assert_eq!(binding.stream.name(), "stdout");
+            assert_eq!(read(&image, bias + 0x480), binding.address);
+            assert_eq!(read(&image, bias + 0x488), binding.address);
+            assert_eq!(read(&image, binding.address), binding.handle);
+            assert!(binding.handle > image.image.memory_base + image.image.memory.len() as u64);
+            if copy {
+                assert_eq!(binding.address, bias + 0x478);
+            } else {
+                assert_eq!(read(&image, bias + 0x478), binding.address);
+            }
+            let offset = (binding.address - image.image.memory_base) as usize;
+            image.image.memory[offset..offset + 8].copy_from_slice(&0x1234_u64.to_le_bytes());
+            assert_eq!(read(&image, read(&image, bias + 0x480)), 0x1234);
+            assert_eq!(read(&image, read(&image, bias + 0x488)), 0x1234);
+        }
+    }
+}
+
+#[test]
+fn copy_bindings_require_matching_object_size_location_name_and_addend() {
+    let original = stream_fixture(true);
+    for (offset, width, value) in [
+        (0x2b4, 1, 0x12), // FUNC
+        (0x2b6, 2, 0),    // undefined COPY
+        (0x2b8, 8, 0x480),
+        (0x2c0, 8, 16),
+        (0x368, 8, 1), // nonzero COPY addend
+        (0x2b0, 4, 9), // unsupported external object name
+    ] {
+        let mut bytes = original.clone();
+        match width {
+            1 => bytes[offset] = value as u8,
+            2 => put16(&mut bytes, offset, value as u16),
+            4 => put32(&mut bytes, offset, value as u32),
+            _ => put64(&mut bytes, offset, value),
+        }
+        assert!(load(&bytes).is_err(), "offset={offset:#x}");
+    }
+    let mut bytes = original;
+    rela(&mut bytes, 0x3a0, 0x480, 7, 3, 0);
+    assert!(
+        load(&bytes).is_err(),
+        "an OBJECT JUMP_SLOT is not a callable binding"
+    );
+}
 #[test]
 fn validates_plt_instruction_execution_range_and_exact_import_field() {
     let mut image = load(&fixture()).unwrap();
@@ -191,6 +276,27 @@ fn validates_plt_instruction_execution_range_and_exact_import_field() {
     let mut image = load(&bytes).unwrap();
     image.image.memory[0x800..0x806].copy_from_slice(&[0xff, 0x25, 0x7a, 0xfc, 0xff, 0xff]);
     assert!(image.plt_slot(base + 0x800).is_none());
+}
+
+#[test]
+fn endbr_bnd_plt_uses_the_actual_instruction_end_and_function_got_field() {
+    let mut image = load(&fixture()).unwrap();
+    let base = image.image.memory_base;
+    image.image.memory[0x400..0x40b]
+        .copy_from_slice(&[0xf3, 0x0f, 0x1e, 0xfa, 0xf2, 0xff, 0x25, 0x75, 0, 0, 0]);
+    assert_eq!(image.plt_slot(base + 0x400).unwrap().address, base + 0x480);
+    image.image.memory[0x407] += 1;
+    assert!(
+        image.plt_slot(base + 0x400).is_none(),
+        "one byte into a GOT field is not its identity"
+    );
+    image.image.memory[0x400..0x407].copy_from_slice(&[0xf2, 0xff, 0x25, 0x79, 0, 0, 0]);
+    assert_eq!(image.plt_slot(base + 0x400).unwrap().address, base + 0x480);
+    image.image.memory[0x400..0x408].copy_from_slice(&[0xf2, 0xf2, 0xff, 0x25, 0x78, 0, 0, 0]);
+    assert!(
+        image.plt_slot(base + 0x400).is_none(),
+        "ambiguous repeated prefixes stay unsupported"
+    );
 }
 #[test]
 fn malformed_headers_segments_and_function_symbols_are_rejected() {

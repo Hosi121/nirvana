@@ -24,7 +24,8 @@ pub fn lift_elf(
     if options.stack_size < 32 {
         return Err(error("module stack requires at least 32 bytes"));
     }
-    let binary = linked_elf::load(object, symbol, options).map_err(|e| error(e.to_string()))?;
+    let binary =
+        linked_elf::load_module(object, symbol, options).map_err(|e| error(e.to_string()))?;
     lift_binary(binary)
 }
 
@@ -37,7 +38,8 @@ pub fn lift_elf_at(
     if options.stack_size < 32 {
         return Err(error("module stack requires at least 32 bytes"));
     }
-    let binary = linked_elf::load_at(object, entry, options).map_err(|e| error(e.to_string()))?;
+    let binary =
+        linked_elf::load_module_at(object, entry, options).map_err(|e| error(e.to_string()))?;
     lift_binary(binary)
 }
 
@@ -117,10 +119,25 @@ fn lift_binary(mut binary: BinaryImage) -> Result<Module, ModuleError> {
             return Err(error("module code regions overlap instruction streams"));
         }
     }
+    let function_ends: BTreeSet<_> = functions.iter().map(|f| f.address + f.size).collect();
     let shape = crate::ir::Program::new(
         entry,
         REGISTER_COUNT,
-        instructions.iter().map(shape).collect(),
+        instructions
+            .iter()
+            .map(|i| {
+                let mut metadata = shape(i);
+                if let Instruction::Transfer {
+                    link: Some(next), ..
+                } = i
+                    && function_ends.contains(next)
+                {
+                    // This is a host-body exit, not an executed guest RET.
+                    metadata.control = Control::Return(Expr::Const(0));
+                }
+                metadata
+            })
+            .collect(),
     )
     .map_err(|e| error(format!("module layout: {e}")))?;
     crate::emit::validate_program(&shape).map_err(|e| error(format!("module syntax: {e}")))?;
@@ -313,7 +330,21 @@ fn lift_function_inner(
                 return Err(error("function instruction limit exceeded"));
             }
             let source = &bytes[(address - base) as usize..];
-            let (instruction, original) = match x86::decode_reference_at(source, address) {
+            let decoded_instruction = x86::decode_reference_at(source, address).or_else(|scalar| {
+                if source.first() == Some(&0x64) {
+                    let guard = binary
+                        .image
+                        .thread_local
+                        .as_ref()
+                        .ok_or_else(|| scalar.clone())?
+                        .base
+                        + x86::FS_GUARD_OFFSET;
+                    x86::decode_fs_guard_at(source, address, guard)
+                } else {
+                    Err(scalar)
+                }
+            });
+            let (instruction, original) = match decoded_instruction {
                 Ok(original) => {
                     let next = address + u64::from(original.size);
                     let transfer = match original.operation {
@@ -412,7 +443,14 @@ fn lift_function_inner(
                 },
                 Instruction::Transfer {
                     link: Some(next), ..
-                } => pending.push(*next),
+                } => {
+                    // A final CALL may be a stack-check failure path. Keep its
+                    // real return slot, but leave an out-of-region continuation
+                    // to checked module dispatch if the callee does return.
+                    if *next != end {
+                        pending.push(*next);
+                    }
+                }
                 Instruction::Vector(_) | Instruction::Divide { .. } => pending.push(next),
                 _ => {}
             }

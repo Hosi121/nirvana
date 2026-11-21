@@ -37,7 +37,7 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
     {
         code.push_str(crate::x86::divide::C_HELPER);
     }
-    code.push_str(posix_header());
+    code.push_str(&posix_header(module));
     code.push_str("\nstatic unsigned nv_run(struct nv_module *s) {\n    uint64_t *r=s->r;\n    struct nirvana_memory m={s};\n    (void)r; (void)m;\n    if(setjmp(s->jump)!=0) return s->status;\n    for(;;) {\n");
     writeln!(
         code,
@@ -197,14 +197,60 @@ pub(crate) fn divide_statement(
     .unwrap();
     Ok(())
 }
-pub(crate) fn posix_header() -> &'static str {
-    POSIX
+pub(crate) fn posix_header(module: &Module) -> String {
+    use crate::loader::StandardStream;
+    let mut code = String::from(
+        "\n#define NV_GUEST_STDOUT(s) nv_guest_stdout(s)\nstatic inline FILE *nv_guest_stdout(struct nv_module *s) {\n",
+    );
+    if let Some(stdout) = module
+        .image
+        .external_data
+        .iter()
+        .find(|b| b.stream == StandardStream::Stdout)
+    {
+        writeln!(code, "    uint64_t handle=nv_read(s,UINT64_C({}),8);\n    if(handle==UINT64_C({})) return stdout;",
+            stdout.address, stdout.handle).unwrap();
+        if let Some(stderr) = module
+            .image
+            .external_data
+            .iter()
+            .find(|b| b.stream == StandardStream::Stderr)
+        {
+            writeln!(
+                code,
+                "    if(handle==UINT64_C({})) return stderr;",
+                stderr.handle
+            )
+            .unwrap();
+        }
+        code.push_str("    return NULL;\n");
+    } else {
+        code.push_str("    (void)s; return stdout;\n");
+    }
+    code.push_str("}\n");
+    code.push_str(POSIX);
+    code
 }
 
 pub(crate) fn image_initialization(module: &Module) -> Result<String, String> {
     let (size, base, root_sp) = image_layout(module)?;
     let program = &module.program;
     let mut code = String::new();
+    for binding in &module.image.external_data {
+        writeln!(
+            code,
+            "/* external {}: guest pointer variable at {:#x} */\n#define NV_{}_HANDLE UINT64_C({})",
+            binding.stream.name(),
+            binding.address,
+            binding.stream.name().to_ascii_uppercase(),
+            binding.handle
+        )
+        .unwrap();
+    }
+    if let Some(tls) = &module.image.thread_local {
+        writeln!(code, "/* guest FS stack guard; supplied by the initial image */\n#define NV_TLS_GUARD_ADDRESS UINT64_C({})",
+            tls.base + crate::x86::FS_GUARD_OFFSET).unwrap();
+    }
     writeln!(code, "\nstatic const uint8_t nv_initial_image[{}]={{", size).unwrap();
     let mut any = false;
     for (index, byte) in module.image.memory.iter().enumerate() {

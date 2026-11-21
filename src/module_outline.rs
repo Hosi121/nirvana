@@ -60,7 +60,7 @@ pub fn recover(program: &module_ir::Program) -> Result<Plan, String> {
             .instructions()
             .iter()
             .filter(|i| (function.address..end).contains(&i.address()))
-            .map(shape_instruction)
+            .map(|i| shape_instruction(i, end))
             .collect();
         let shape =
             crate::ir::Program::new(function.address, program.register_count(), instructions)
@@ -142,7 +142,7 @@ fn recover_structured(
     Err(reason)
 }
 
-fn shape_instruction(instruction: &Instruction) -> IrInstruction {
+fn shape_instruction(instruction: &Instruction, end: u64) -> IrInstruction {
     match instruction {
         Instruction::Divide { address, size, .. } => IrInstruction {
             address: *address,
@@ -166,7 +166,7 @@ fn shape_instruction(instruction: &Instruction) -> IrInstruction {
             address: *address,
             size: *size,
             assignments: vec![],
-            control: if link.is_some() {
+            control: if link.is_some_and(|next| next != end) {
                 Control::Next
             } else {
                 Control::Return(Expr::Const(0))

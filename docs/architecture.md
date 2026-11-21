@@ -16,6 +16,9 @@ ELFの`read_function_context`は、セクションの識別と再配置のシン
 数値入口の経路は、独立した`eh_frame` readerでFDEの連続領域を読み、実行可能なファイル範囲と所有関係を照合します。
 サイズ付きシンボルを優先し、残る領域には合成名と元FDEのファイル位置を付けます。命令の検査と実行器は名前指定と共有します。
 PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式を持ちます。
+`stdin/stdout/stderr`の8-byte外部変数には、COPY先または合成したゲスト領域を割り当てます。
+同じ名前のGOT・絶対参照はその変数のアドレスを共有し、格納値はopaqueなstream handleです。
+関数importとデータのbindingを分け、PLTはENDBR64・BND付きの形式も実命令とGOT欄から照合します。
 `effects::Program`は通常命令とCALLを明示的に分け、整数・メモリ操作には既存の実行器を使います。
 外部結果入力が出力prefix・返り値・破壊レジスタを定め、Cバックエンドも同じ入力で実行します。
 このIR専用のC生成・比較APIを設け、各変換が扱う効果と検証範囲を型で区別しています。
@@ -25,6 +28,10 @@ PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式�
 `module_ir`は複数の関数とimportをまとめ、CALLの戻り先StoreとRETのLoadを明示します。
 動的な呼出し先・戻り先は、共通のゲストRAMと登録した命令位置を使ってdispatchします。
 スカラー命令は既存の実行器とlifterを共有し、ベクトル命令にはアクセス全幅とalignmentの事前検査を付けます。
+moduleの画像には64-byteのTLS領域を置き、`FS:0x28`の64-bit MOV・ALU sourceを、そのguard slotへの通常のLoadへ変換します。
+guardはRAM上の値なので、通常のポインタによる書込みとのaliasも同じ実行経路で扱います。
+関数末尾のCALLは実際の戻り先を保持し、calleeが戻った場合の継続をmodule dispatcherへ渡します。
+構造shapeではこの位置をホスト関数の出口として表します。
 DIV/IDIVはsource・幅・符号を持つ独立した命令で、予算、sourceの評価、#DE判定、結果の反映を順に実行します。
 Rustは倍幅整数、Cはunsignedの二語演算を使い、Cバックエンド間で同じ検査付きloweringを共有します。
 除算のSSAはsourceと被除数を観測し、成功後のRAXと、16-bit以上ではRDXへ新しい未知の値IDを付けます。
