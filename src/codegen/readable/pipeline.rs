@@ -39,6 +39,10 @@ fn emit_reduced_c(
 ) -> Result<ReadableC, ReadableError> {
     use prepare::MemoryRecovery;
     let mut best = emit_reduced_choice(&reduced, options, MemoryRecovery::Disabled);
+    // Stored-value recovery requires checked memory expressions.
+    if !reduced.program().uses_memory() {
+        return best;
+    }
     // Compare complete renders: more proved loads can require more C storage.
     // Keep the baseline on ties and preserve the previous register-only choice.
     for recovery in [
