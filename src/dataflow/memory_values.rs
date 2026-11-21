@@ -1,16 +1,17 @@
 //! Recover values saved to memory without removing their checked reloads.
 //!
-//! Exact reaching writers identify the stored word. A value captured once in
+//! Every reaching byte agrees on a slice of one SSA value. A value captured once in
 //! the acyclic entry prefix can replace uses of its successful reload. Original
 //! registers, memory effects, source PCs and instruction budgets are retained;
 //! equivalence projects away the additional internal capture registers.
 use crate::dataflow::ssa::{
     self, Budget, Definition, PointValues, Site, SsaError, SsaEvidence, SsaFunction, ValueId,
 };
-use crate::dataflow::ssa_facts::LoadInputs;
+use crate::dataflow::ssa_facts::{LoadInputs, ReachingWriter};
 use crate::model::ir::{Assignment, Expr, Program, Reg, UnaryOp, Width};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod analyze;
+mod projection;
 mod rewrite;
 mod verify;
 const MAX_CAPTURES: usize = 256;
@@ -18,6 +19,7 @@ const MAX_CAPTURES: usize = 256;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Key {
     value: ValueId,
+    start: u8,
     width: Width,
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -28,7 +30,7 @@ struct CapturePoint {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Capture {
-    key: Key,
+    value: ValueId,
     point: CapturePoint,
     source: Reg,
 }
@@ -39,11 +41,17 @@ impl Capture {
         Expr::Register(self.source)
     }
 }
-fn word(width: Width, value: Expr) -> Expr {
-    if width == Width::U64 {
+fn word(key: Key, value: Expr) -> Expr {
+    if key.start == 0 && key.width == Width::U64 {
         value
     } else {
-        Expr::unary(UnaryOp::Extract { start: 0, width }, value)
+        Expr::unary(
+            UnaryOp::Extract {
+                start: key.start,
+                width: key.width,
+            },
+            value,
+        )
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

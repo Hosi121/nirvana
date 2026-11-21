@@ -28,6 +28,9 @@ fn b(op: nirvana::ir::BinaryOp, a: Expr, z: Expr) -> Expr {
     Expr::binary(op, a, z)
 }
 fn compare(source: &Program, candidate: &Program) -> usize {
+    compare_at(source, candidate, 7)
+}
+fn compare_at(source: &Program, candidate: &Program, pointer_register: usize) -> usize {
     let mut count = 0;
     for value in [0, 1, 2, 3, 127, 128, 255, 256, 1 << 31, 1 << 63, u64::MAX] {
         for branch in [0, 1] {
@@ -35,7 +38,7 @@ fn compare(source: &Program, candidate: &Program) -> usize {
                 let mut initial = vec![0x7890_cafe_1234_5678; source.register_count()];
                 initial[0] = value;
                 initial[1] = branch;
-                initial[7] = pointer;
+                initial[pointer_register] = pointer;
                 let mut extended = initial.clone();
                 extended.resize(candidate.register_count(), 0xdead_beef_1234_5678);
                 for memory in [[0; 32], [0xa5; 32]] {
@@ -294,7 +297,6 @@ fn cyclic_producers_entry_backedges_and_non_preserving_word_wrappers_decline() {
             },
             r(0),
         ),
-        b(B::Shr, r(0), c(8)),
     ] {
         let source = source(Width::U16);
         let old = MemoryValuePlan::analyze(&source).unwrap();
@@ -304,4 +306,367 @@ fn cyclic_producers_entry_backedges_and_non_preserving_word_wrappers_decline() {
         assert!(MemoryValuePlan::analyze(&changed).is_none());
         assert!(old.lower(&changed).is_none());
     }
+}
+
+#[test]
+fn changed_shift_gets_a_fresh_projection_and_rejects_the_old_word_claim() {
+    use nirvana::ir::BinaryOp as B;
+    let source = source(Width::U16);
+    let old = MemoryValuePlan::analyze(&source).unwrap();
+    let mut rows = source.instructions().to_vec();
+    rows[0].assignments[0].value = b(B::Shr, r(0), c(8));
+    let shifted = Program::new(0, 4, rows).unwrap();
+    assert!(old.lower(&shifted).is_none());
+    let plan = MemoryValuePlan::analyze(&shifted).unwrap();
+    let lowered = plan.lower(&shifted).unwrap();
+    println!(
+        "{} shifted-word full-state observations",
+        compare_at(&shifted, &lowered, 3)
+    );
+}
+#[test]
+fn every_contained_width_offset_projects_the_saved_word_and_keeps_load_faults() {
+    let widths = [Width::U8, Width::U16, Width::U32, Width::U64];
+    let mut cases = 0;
+    let mut checked = 0;
+    for write in widths {
+        for read in widths {
+            for offset in 0..=8usize {
+                let source = Program::new(
+                    0,
+                    8,
+                    vec![
+                        ins(
+                            0,
+                            vec![
+                                Assignment {
+                                    destination: Place::Memory {
+                                        address: r(7),
+                                        width: write,
+                                    },
+                                    value: r(0),
+                                },
+                                set(0, c(0)),
+                            ],
+                            Control::Next,
+                        ),
+                        ins(
+                            1,
+                            vec![set(
+                                2,
+                                Expr::load(
+                                    b(nirvana::ir::BinaryOp::Add, r(7), c(offset as u64)),
+                                    read,
+                                ),
+                            )],
+                            Control::Return(r(2)),
+                        ),
+                    ],
+                )
+                .unwrap();
+                if offset + read.bytes() > write.bytes() {
+                    assert!(MemoryValuePlan::analyze(&source).is_none());
+                    continue;
+                }
+                let plan = MemoryValuePlan::analyze(&source)
+                    .expect("every observed byte has a stable origin");
+                let candidate = plan.lower(&source).unwrap();
+                assert!(memory_values::validate(&source, &plan, &candidate).is_ok());
+                checked += compare(&source, &candidate);
+                cases += 1;
+                for value in [0u64, 0x1234_5678_9abc_def0, 1 << 63, u64::MAX] {
+                    let mut expected = [0; 8];
+                    expected[..read.bytes()]
+                        .copy_from_slice(&value.to_le_bytes()[offset..offset + read.bytes()]);
+                    let mut regs = vec![0; candidate.register_count()];
+                    regs[0] = value;
+                    regs[7] = 4096;
+                    assert_eq!(
+                        candidate
+                            .execute_with_memory(&regs, 4096, &[0xa5; 32], 3)
+                            .unwrap()
+                            .value,
+                        u64::from_le_bytes(expected)
+                    );
+                }
+            }
+        }
+    }
+    println!(
+        "{cases} contained word/byte slices, {checked} full-prefix/RAM/PC/fault/budget observations"
+    );
+}
+#[test]
+fn split_stores_and_phi_widths_reassemble_one_original_value() {
+    use nirvana::ir::{BinaryOp as B, UnaryOp as U};
+    let at = |offset| b(B::Add, r(7), c(offset));
+    let store = |offset, width, value| Assignment {
+        destination: Place::Memory {
+            address: at(offset),
+            width,
+        },
+        value,
+    };
+    let split = vec![
+        ins(
+            0,
+            vec![store(
+                0,
+                Width::U16,
+                Expr::unary(
+                    U::Extract {
+                        start: 0,
+                        width: Width::U16,
+                    },
+                    r(0),
+                ),
+            )],
+            Control::Next,
+        ),
+        ins(
+            1,
+            vec![
+                store(
+                    2,
+                    Width::U16,
+                    Expr::unary(
+                        U::Extract {
+                            start: 16,
+                            width: Width::U16,
+                        },
+                        r(0),
+                    ),
+                ),
+                set(0, c(0)),
+            ],
+            Control::Next,
+        ),
+        ins(
+            2,
+            vec![set(2, Expr::load(r(7), Width::U32))],
+            Control::Return(r(2)),
+        ),
+    ];
+    let phi = vec![
+        ins(
+            0,
+            vec![],
+            Control::Branch {
+                condition: r(1),
+                target: 2,
+            },
+        ),
+        ins(
+            1,
+            vec![store(0, Width::U32, r(0)), set(0, c(0))],
+            Control::Jump(3),
+        ),
+        ins(
+            2,
+            vec![store(0, Width::U64, r(0)), set(0, c(0))],
+            Control::Jump(3),
+        ),
+        ins(
+            3,
+            vec![set(2, Expr::load(at(1), Width::U16))],
+            Control::Return(r(2)),
+        ),
+    ];
+    let mut checked = 0;
+    for rows in [split, phi] {
+        let source = Program::new(0, 8, rows).unwrap();
+        let plan = MemoryValuePlan::analyze(&source).unwrap();
+        let candidate = plan.lower(&source).unwrap();
+        checked += compare(&source, &candidate);
+        let mut stale = source.instructions().to_vec();
+        let assignment = stale
+            .iter_mut()
+            .flat_map(|i| &mut i.assignments)
+            .find(|a| matches!(a.destination, Place::Memory { .. }))
+            .unwrap();
+        assignment.value = r(6);
+        let stale = Program::new(0, 8, stale).unwrap();
+        assert!(plan.lower(&stale).is_none());
+    }
+    println!("{checked} split-store and unequal-width phi projection observations");
+}
+
+#[test]
+fn may_alias_byte_writers_keep_one_value_and_different_values_decline() {
+    use nirvana::ir::BinaryOp as B;
+    let q = b(B::Add, r(7), b(B::Mul, b(B::And, r(1), c(3)), c(8)));
+    let rows = vec![
+        ins(
+            0,
+            vec![Assignment {
+                destination: Place::Memory {
+                    address: r(7),
+                    width: Width::U8,
+                },
+                value: r(0),
+            }],
+            Control::Next,
+        ),
+        ins(
+            1,
+            vec![
+                Assignment {
+                    destination: Place::Memory {
+                        address: q,
+                        width: Width::U8,
+                    },
+                    value: r(0),
+                },
+                set(0, c(0)),
+            ],
+            Control::Next,
+        ),
+        ins(
+            2,
+            vec![set(2, Expr::load(r(7), Width::U8))],
+            Control::Return(r(2)),
+        ),
+    ];
+    let source = Program::new(0, 8, rows.clone()).unwrap();
+    let plan = MemoryValuePlan::analyze(&source).unwrap();
+    let candidate = plan.lower(&source).unwrap();
+    println!(
+        "{} may-alias byte-identity observations",
+        compare(&source, &candidate)
+    );
+    let mut other = rows;
+    other[1].assignments[0].value = r(6);
+    let other = Program::new(0, 8, other).unwrap();
+    assert!(MemoryValuePlan::analyze(&other).is_none());
+    assert!(plan.lower(&other).is_none());
+}
+#[test]
+fn insert_store_bytes_select_the_right_ssa_read_and_mixed_whole_words_decline() {
+    use nirvana::ir::BinaryOp as B;
+    let mut checked = 0;
+    for start in [0, 8] {
+        for byte in [0, 1] {
+            let source = Program::new(
+                0,
+                8,
+                vec![
+                    ins(
+                        0,
+                        vec![
+                            Assignment {
+                                destination: Place::Memory {
+                                    address: r(7),
+                                    width: Width::U16,
+                                },
+                                value: b(
+                                    B::Insert {
+                                        start,
+                                        width: Width::U8,
+                                    },
+                                    r(0),
+                                    r(6),
+                                ),
+                            },
+                            set(0, c(0)),
+                            set(6, c(0)),
+                        ],
+                        Control::Next,
+                    ),
+                    ins(
+                        1,
+                        vec![set(2, Expr::load(b(B::Add, r(7), c(byte)), Width::U8))],
+                        Control::Return(r(2)),
+                    ),
+                ],
+            )
+            .unwrap();
+            let plan = MemoryValuePlan::analyze(&source).unwrap();
+            let candidate = plan.lower(&source).unwrap();
+            checked += compare(&source, &candidate);
+            let mut mixed = source.instructions().to_vec();
+            mixed[1].assignments[0].value = Expr::load(r(7), Width::U16);
+            assert!(MemoryValuePlan::analyze(&Program::new(0, 8, mixed).unwrap()).is_none());
+        }
+    }
+    println!(
+        "{checked} partial-insert byte observations with distinct base/value register identities"
+    );
+}
+
+#[test]
+fn saved_word_origins_remain_available_across_shared_compound_memory_programs() {
+    let mut checked = 0;
+    for (index, source) in crate::support::byte_values::programs()
+        .into_iter()
+        .enumerate()
+    {
+        let plan = MemoryValuePlan::analyze(&source)
+            .unwrap_or_else(|| panic!("byte origin family {index}"));
+        if index == 0 {
+            assert_eq!(
+                plan.evidence().snapshot_values,
+                1,
+                "both disjoint slices share their original full word"
+            );
+        }
+        let candidate = plan.lower(&source).unwrap();
+        checked += compare(&source, &candidate);
+    }
+    println!("{checked} compound saved-byte full-prefix/memory/PC/fault/budget observations");
+}
+
+#[test]
+fn shifted_masked_and_extended_stored_bytes_keep_their_actual_bit_positions() {
+    use nirvana::ir::{BinaryOp as B, UnaryOp as U};
+    let mut checked = 0;
+    for (value, offset, width) in [
+        (
+            Expr::unary(
+                U::Extract {
+                    start: 5,
+                    width: Width::U32,
+                },
+                r(0),
+            ),
+            0,
+            Width::U8,
+        ),
+        (b(B::Shr, r(0), c(65)), 0, Width::U16),
+        (b(B::Shl, r(0), c(8)), 1, Width::U16),
+        (b(B::And, r(0), c(0xff0000)), 2, Width::U8),
+        (b(B::Or, r(0), c(0x8000_0000_0000_0001)), 3, Width::U16),
+        (b(B::Xor, r(0), c(1)), 2, Width::U16),
+        (Expr::unary(U::SignExtend(Width::U16), r(0)), 0, Width::U16),
+    ] {
+        let source = Program::new(
+            0,
+            8,
+            vec![
+                ins(
+                    0,
+                    vec![
+                        Assignment {
+                            destination: Place::Memory {
+                                address: r(7),
+                                width: Width::U64,
+                            },
+                            value,
+                        },
+                        set(0, c(0)),
+                    ],
+                    Control::Next,
+                ),
+                ins(
+                    1,
+                    vec![set(2, Expr::load(b(B::Add, r(7), c(offset)), width))],
+                    Control::Return(r(2)),
+                ),
+            ],
+        )
+        .unwrap();
+        let plan = MemoryValuePlan::analyze(&source).unwrap();
+        let candidate = plan.lower(&source).unwrap();
+        checked += compare(&source, &candidate);
+    }
+    println!("{checked} stored expression/bit-window full-state observations");
 }

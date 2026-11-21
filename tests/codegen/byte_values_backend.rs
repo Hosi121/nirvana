@@ -1,0 +1,133 @@
+use crate::support::{byte_values, checked_c, native};
+use nirvana::ir::{AccessKind, Reg, RunStatus};
+use std::fmt::Write as _;
+#[test]
+fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
+    let scratch = native::Scratch::new();
+    let mut checked = 0;
+    let mut adopted = 0;
+    for (index, source) in byte_values::programs().into_iter().enumerate() {
+        assert!(nirvana::memory_values::MemoryValuePlan::analyze(&source).is_some());
+        let mut input = String::new();
+        let mut expected = Vec::new();
+        let mut statuses = [0; 3];
+        for pointer in [
+            4096u64,
+            4097,
+            4104,
+            4112,
+            4120,
+            4123,
+            4125,
+            4127,
+            4136,
+            4152,
+            4159,
+            u64::MAX,
+        ] {
+            for value in [
+                0u64,
+                1,
+                2,
+                3,
+                127,
+                128,
+                255,
+                256,
+                1 << 31,
+                1 << 63,
+                u64::MAX,
+                0x1234_5678_9abc_def0,
+            ] {
+                for flag in [0u64, 1] {
+                    let words = [value, value ^ (value >> 8), 19, flag];
+                    writeln!(
+                        input,
+                        "{pointer} {} {} {} {}",
+                        words[0], words[1], words[2], words[3]
+                    )
+                    .unwrap();
+                    let mut ram: Vec<_> = (0..64u8)
+                        .map(|i| i.wrapping_mul(29).wrapping_add(7))
+                        .collect();
+                    for (word, value) in words.into_iter().enumerate() {
+                        if let Some(offset) = pointer
+                            .checked_add(word as u64 * 8)
+                            .and_then(|p| p.checked_sub(4096))
+                            .filter(|n| *n <= 56)
+                        {
+                            ram[offset as usize..offset as usize + 8]
+                                .copy_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                    let mut regs = [0; 8];
+                    regs[7] = pointer;
+                    regs[4] = 4160;
+                    let report = source.run_with_memory(&regs, 4096, &ram, 1000).unwrap();
+                    let mut row = match report.status {
+                        RunStatus::Returned(v) => {
+                            statuses[0] += 1;
+                            vec![0, 0, 0, 0, v]
+                        }
+                        RunStatus::Fault(f) => {
+                            let kind = if f.access == AccessKind::Read { 1 } else { 2 };
+                            statuses[kind] += 1;
+                            vec![1, f.address, kind as u64, f.width.bytes() as u64, 0]
+                        }
+                        _ => panic!("bounded saved-value family"),
+                    };
+                    row.extend(
+                        report
+                            .state
+                            .memory
+                            .chunks_exact(8)
+                            .map(|w| u64::from_le_bytes(w.try_into().unwrap())),
+                    );
+                    expected.push(row);
+                }
+            }
+        }
+        assert!(statuses.into_iter().all(|n| n > 0));
+        for coalesce in [false, true] {
+            for objects in [false, true] {
+                let out = nirvana::readable::emit_readable_c_with_options(
+                    &source,
+                    nirvana::readable::ReadableOptions {
+                        stack_register: Some(Reg(4)),
+                        coalesce_locals: coalesce,
+                        recover_objects: objects,
+                        compact_memory: true,
+                    },
+                )
+                .unwrap();
+                adopted += usize::from(out.memory_values.is_some());
+                let path = scratch
+                    .0
+                    .join(format!("byte-values-{index}-{coalesce}-{objects}.c"));
+                std::fs::write(&path, checked_c::source(&out, 8, 4)).unwrap();
+                for opt in ["-O0", "-O2"] {
+                    let binary = path.with_extension(format!("{opt}.bin"));
+                    native::compile_c(
+                        &path,
+                        &binary,
+                        &[
+                            opt,
+                            "-fsanitize=undefined",
+                            "-fno-sanitize-recover=undefined",
+                        ],
+                    );
+                    assert_eq!(
+                        native::run_fields(&binary, &input, 13),
+                        expected,
+                        "family {index}/{coalesce}/{objects}/{opt}"
+                    );
+                    checked += expected.len();
+                }
+            }
+        }
+    }
+    assert!(adopted > 0, "source recovery must reach selected C output");
+    println!(
+        "{checked} partial saved-value C/full-RAM/first-fault observations; {adopted} render configurations adopted value snapshots"
+    );
+}

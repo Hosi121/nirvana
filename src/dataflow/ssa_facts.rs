@@ -7,7 +7,7 @@ use crate::dataflow::ssa::{
 use crate::model::ir::{BinaryOp as B, Control, Expr, Place, Program, UnaryOp, Width};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod memory;
-pub(crate) use memory::LoadInputs;
+pub(crate) use memory::{LoadInputs, Writer as ReachingWriter};
 
 pub(crate) trait Domain: Copy + Eq {
     fn bottom() -> Self;

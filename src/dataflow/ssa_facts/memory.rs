@@ -3,22 +3,21 @@
 //! Loads remain effectful expressions at their original source sites.
 use super::*;
 use crate::dataflow::address_identity::Operand;
-use crate::dataflow::memory_ssa::{self, Alias, Definition as MemoryDefinition};
+use crate::dataflow::memory_ssa::{self, Definition as MemoryDefinition};
 use crate::model::ir::AccessKind;
 
 const MAX_INPUTS: usize = 262_144;
 
 #[derive(Clone, Debug)]
-struct Writer {
-    site: Site,
-    width: Width,
-    sources: [u8; 8],
+pub(crate) struct Writer {
+    pub(crate) site: Site,
+    pub(crate) width: Width,
+    pub(crate) sources: [u8; 8],
 }
 #[derive(Clone, Debug)]
 struct Load {
     width: Width,
     writers: Vec<Writer>,
-    exact_writers: Vec<Site>,
     unknown_bytes: u8,
     dependencies: Vec<ValueId>,
 }
@@ -65,7 +64,6 @@ impl LoadInputs {
             let all_bytes = ((1u16 << access.width.bytes()) - 1) as u8;
             let mut writers = Vec::new();
             let mut dependencies = BTreeSet::new();
-            let mut exact = !query.address_widened;
             let mut unknown_bytes = 0;
             let mut coverage = 0;
             for clobber in &query.candidates {
@@ -81,7 +79,6 @@ impl LoadInputs {
                 let MemoryDefinition::Store { access: store, .. } =
                     memory.definitions().get(clobber.definition.0)?
                 else {
-                    exact = false;
                     unknown_bytes |= clobber.byte_mask;
                     continue;
                 };
@@ -92,10 +89,6 @@ impl LoadInputs {
                 {
                     return None;
                 }
-                exact &= clobber.alias == Alias::Exact
-                    && clobber.byte_mask == all_bytes
-                    && clobber.unknown_bytes == 0
-                    && store.width == access.width;
                 let mut sources = clobber.byte_sources;
                 let store_bytes = ((1u16 << store.width.bytes()) - 1) as u8;
                 for (byte, source) in sources.iter_mut().enumerate() {
@@ -113,9 +106,6 @@ impl LoadInputs {
                     }
                     if clobber.unknown_bytes & mask != 0 {
                         *source = 0;
-                    }
-                    if exact && byte < access.width.bytes() && *source != mask {
-                        return None;
                     }
                 }
                 writers.push(Writer {
@@ -166,11 +156,6 @@ impl LoadInputs {
                 site,
                 Load {
                     width: access.width,
-                    exact_writers: if exact {
-                        writers.iter().map(|w| w.site).collect()
-                    } else {
-                        Vec::new()
-                    },
                     writers,
                     unknown_bytes,
                     dependencies: dependencies.into_iter().collect(),
@@ -182,13 +167,9 @@ impl LoadInputs {
     pub(crate) fn len(&self) -> usize {
         self.loads.len()
     }
-    pub(crate) fn bindings(&self) -> impl Iterator<Item = (Site, Width, &[Site])> {
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = (Site, Width, &[Writer])> {
         self.loads.iter().filter_map(|(&site, load)| {
-            (!load.exact_writers.is_empty()).then_some((
-                site,
-                load.width,
-                load.exact_writers.as_slice(),
-            ))
+            (load.unknown_bytes == 0).then_some((site, load.width, load.writers.as_slice()))
         })
     }
     pub(super) fn dependencies(&self, site: Site) -> &[ValueId] {

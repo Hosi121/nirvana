@@ -10,12 +10,12 @@ pub(super) fn mapping(
         .captures
         .iter()
         .enumerate()
-        .map(|(index, capture)| (capture.key, Reg(plan.source_registers + index)))
+        .map(|(index, capture)| (capture.value, Reg(plan.source_registers + index)))
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::new();
     for proof in &plan.proofs {
-        let register = *captures.get(&proof.key)?;
-        let replacement = word(proof.key.width, Expr::Register(register));
+        let register = *captures.get(&proof.key.value)?;
+        let replacement = word(proof.key, Expr::Register(register));
         let class = context.root_class(proof.site)?;
         if result
             .insert(class, replacement.clone())

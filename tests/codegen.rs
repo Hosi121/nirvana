@@ -2,6 +2,7 @@
 #[path = "support"]
 mod support {
     pub mod bit_invariants;
+    pub mod byte_values;
     pub mod checked_c;
     pub mod ir;
     pub mod loop_headers;
@@ -74,3 +75,6 @@ mod typed_address_backend;
 mod typed_locals;
 #[path = "codegen/word_signed_backend.rs"]
 mod word_signed_backend;
+
+#[path = "codegen/byte_values_backend.rs"]
+mod byte_values_backend;

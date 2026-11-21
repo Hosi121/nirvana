@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 const BASE: u64 = 0x1000;
 const STATE: usize = 0x1000;
 const MEMORY_SIZE: usize = 0x10000;
-const CASES: [&str; 34] = [
+const CASES: [&str; 35] = [
     "byte-fields",
     "strided-input",
     "selected-alias",
@@ -49,6 +49,7 @@ const CASES: [&str; 34] = [
     "modulo-sum",
     "hoisted-division-loop",
     "spilled-flags",
+    "byte-saved-value",
 ];
 
 fn inputs() -> Vec<[u64; 4]> {
@@ -229,6 +230,21 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                         && bits.memory_loads > 0
                         && bits.store_load_edges > 0
                         && bits.replacements > 0
+                );
+            }
+            if optimization == "-O2" && name == "byte-saved-value" {
+                let values = output
+                    .memory_values
+                    .expect("saved word byte views are selected");
+                assert!(values.proved_loads >= 2);
+                assert_eq!(
+                    values.snapshot_values, 1,
+                    "both byte views share the saved word"
+                );
+                assert_eq!(
+                    output.locals.len(),
+                    1,
+                    "one full word replaces separate byte temporaries"
                 );
             }
             let indexed_reads: usize = output

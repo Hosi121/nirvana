@@ -3,6 +3,7 @@
 use super::analyze::Context;
 use super::*;
 use crate::model::ir::{Control, Place};
+mod origins;
 fn invalid(message: &'static str) -> SsaError {
     SsaError::Malformed(message)
 }
@@ -23,14 +24,14 @@ pub(super) fn plan(
     }
     let mut keys = BTreeSet::new();
     for &capture in &plan.captures {
-        if context.aliases.get(capture.key.value.0) != Some(&capture.key.value)
-            || context.capture(capture.key) != Some(capture)
-            || !keys.insert(capture.key)
+        if context.aliases.get(capture.value.0) != Some(&capture.value)
+            || context.capture(capture.value) != Some(capture)
+            || !keys.insert(capture.value)
         {
             return Err(invalid("memory value capture source"));
         }
     }
-    if !plan.captures.windows(2).all(|p| p[0].key < p[1].key) {
+    if !plan.captures.windows(2).all(|p| p[0].value < p[1].value) {
         return Err(invalid("memory value capture order"));
     }
     let loads = context
@@ -38,6 +39,7 @@ pub(super) fn plan(
         .bindings()
         .map(|(site, width, writers)| (site, (width, writers)))
         .collect::<BTreeMap<_, _>>();
+    let mut origins = origins::Values::default();
     let mut sites = BTreeSet::new();
     let mut used = BTreeSet::new();
     let mut budget = Budget::new();
@@ -48,12 +50,12 @@ pub(super) fn plan(
             .ok_or(invalid("memory value reaching stores"))?;
         if !sites.insert(proof.site)
             || *width != proof.key.width
-            || !keys.contains(&proof.key)
-            || context.load_key(proof.site, *width, writers, &mut budget) != Some(proof.key)
+            || !keys.contains(&proof.key.value)
+            || !origins.matches(context, proof.key, writers, &mut budget)?
         {
             return Err(invalid("memory value store identity"));
         }
-        used.insert(proof.key);
+        used.insert(proof.key.value);
     }
     if used != keys || rewrite::mapping(plan, context).is_none() {
         return Err(invalid("memory value source classes"));
@@ -376,5 +378,73 @@ mod tests {
         )
         .unwrap();
         assert!(initialized(&looped, 1).is_err());
+    }
+}
+
+#[cfg(test)]
+mod byte_mutants {
+    use super::*;
+    use crate::model::ir::{IrInstruction, Width};
+    #[test]
+    fn independent_origins_reject_wrong_source_and_offset_despite_matching_capture_schema() {
+        let r = |i| Expr::Register(Reg(i));
+        let source = Program::new(
+            0,
+            8,
+            vec![IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![
+                    Assignment {
+                        destination: Place::Memory {
+                            address: r(7),
+                            width: Width::U8,
+                        },
+                        value: r(0),
+                    },
+                    Assignment {
+                        destination: Reg(0).into(),
+                        value: Expr::Const(0),
+                    },
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(r(7), Width::U8),
+                    },
+                ],
+                control: Control::Return(r(2)),
+            }],
+        )
+        .unwrap();
+        let context = analyze::Context::new(&source).unwrap();
+        let good = MemoryValuePlan::analyze(&source).unwrap();
+        for wrong_source in [false, true] {
+            let mut plan = good.clone();
+            let mut key = plan.proofs[0].key;
+            if wrong_source {
+                let id=context.graph.values.iter().position(|definition|matches!(definition,Definition::Initial{register} if *register==Reg(7))).unwrap();
+                key.value = context.aliases[id];
+            } else {
+                key.start = 8;
+            }
+            plan.proofs[0].key = key;
+            plan.captures[0] = context.capture(key.value).unwrap();
+            let (candidate, _) = rewrite::construct(&source, &plan, &context).unwrap();
+            assert!(matches!(
+                check(&source, &plan, &candidate, &context),
+                Err(SsaError::Malformed("memory value store identity"))
+            ));
+            let mut initial = vec![0; 8];
+            initial[0] = 0x3412;
+            initial[6] = 0x5678;
+            initial[7] = 4096;
+            let expected = source
+                .execute_with_memory(&initial, 4096, &[0; 32], 1)
+                .unwrap();
+            initial.resize(candidate.register_count(), u64::MAX);
+            let wrong = candidate
+                .execute_with_memory(&initial, 4096, &[0; 32], 1)
+                .unwrap();
+            assert_ne!(expected.value, wrong.value);
+        }
     }
 }
