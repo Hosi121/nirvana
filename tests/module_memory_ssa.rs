@@ -216,6 +216,12 @@ for function in report['functions']:
     for query in m['queries']['reads']:
         assert query['candidates']
         assert all(defs[c['definition']]['kind'] in ('initial','store','opaque') for c in query['candidates'])
+        mask=(1<<(accesses[query['access']]['width']//8))-1
+        covered=0
+        for c in query['candidates']:
+            assert c['byte_mask'] and c['byte_mask'] & ~mask == 0
+            covered |= c['byte_mask']
+        assert covered==mask
     checked+=1
 assert checked>=6
 "#]).stdin(Stdio::piped()).spawn().unwrap();

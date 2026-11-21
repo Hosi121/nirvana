@@ -11,49 +11,62 @@ pub(super) fn queries(analysis: &Analysis, graph: &SsaFunction) -> Result<Vec<Qu
         if access.source.kind != AccessKind::Read {
             continue;
         }
-        let mut candidates = BTreeMap::new();
-        let mut pending = vec![(access.incoming, false)];
-        let mut seen = BTreeSet::new();
-        while let Some((id, crossed_phi)) = pending.pop() {
+        let mut candidates: BTreeMap<MemoryId, Clobber> = BTreeMap::new();
+        let all_bytes = ((1u16 << access.source.width.bytes()) - 1) as u8;
+        let mut pending = vec![(access.incoming, false, all_bytes)];
+        let mut seen: BTreeMap<(MemoryId, bool), u8> = BTreeMap::new();
+        while let Some((id, crossed_phi, bytes)) = pending.pop() {
             remaining = remaining
                 .checked_sub(1)
                 .ok_or("memory SSA query work limit")?;
-            if !seen.insert((id, crossed_phi)) {
+            let visited = seen.entry((id, crossed_phi)).or_default();
+            let bytes = bytes & !*visited;
+            if bytes == 0 {
                 continue;
             }
-            let mut record = |alias| {
+            *visited |= bytes;
+            let mut record = |alias, byte_mask| {
                 candidates
                     .entry(id)
-                    .and_modify(|old| *old = std::cmp::max(*old, alias))
-                    .or_insert(alias);
+                    .and_modify(|old| {
+                        old.alias = std::cmp::max(old.alias, alias);
+                        old.byte_mask |= byte_mask;
+                    })
+                    .or_insert(Clobber {
+                        definition: id,
+                        alias,
+                        byte_mask,
+                    });
             };
             match &analysis.definitions[id.0] {
-                Definition::Initial => record(Alias::May),
+                Definition::Initial => record(Alias::May, bytes),
                 Definition::Phi { inputs, .. } => {
                     remaining = remaining
                         .checked_sub(inputs.len())
                         .ok_or("memory SSA query edge limit")?;
-                    pending.extend(inputs.iter().map(|i| (i.memory, true)));
+                    pending.extend(inputs.iter().map(|i| (i.memory, true, bytes)));
                 }
                 Definition::Opaque { previous, .. } => {
-                    record(Alias::May);
-                    pending.push((*previous, crossed_phi));
+                    record(Alias::May, bytes);
+                    pending.push((*previous, crossed_phi, bytes));
                 }
                 Definition::Store {
                     access: store,
                     previous,
                 } => {
-                    let alias = relation(
+                    let (alias, mask) = relation(
                         &access.source,
                         &analysis.accesses[*store].source,
                         crossed_phi,
                         graph,
                     );
-                    if alias != Alias::Disjoint {
-                        record(alias);
+                    let overlap = mask.unwrap_or(all_bytes) & bytes;
+                    if overlap != 0 {
+                        record(alias, overlap);
                     }
-                    if alias != Alias::Exact {
-                        pending.push((*previous, crossed_phi));
+                    let remaining = bytes & !mask.unwrap_or(0);
+                    if remaining != 0 {
+                        pending.push((*previous, crossed_phi, remaining));
                     }
                 }
             }
@@ -66,10 +79,7 @@ pub(super) fn queries(analysis: &Analysis, graph: &SsaFunction) -> Result<Vec<Qu
         }
         queries.push(Query {
             access: index,
-            candidates: candidates
-                .into_iter()
-                .map(|(definition, alias)| Clobber { definition, alias })
-                .collect(),
+            candidates: candidates.into_values().collect(),
         });
     }
     Ok(queries)
@@ -96,13 +106,13 @@ fn relation(
     store: &MemoryAccess,
     crossed_phi: bool,
     graph: &SsaFunction,
-) -> Alias {
+) -> (Alias, Option<u8>) {
     // A loop phi denotes different dynamic values on different iterations.
     // Across memory phis only input-rooted or absolute forms are invariant.
     // Other symbolic comparisons need edge translation before proving alias
     // or separation; retaining May also covers forward joins conservatively.
     if crossed_phi && (!invariant(read.address, graph) || !invariant(store.address, graph)) {
-        return Alias::May;
+        return (Alias::May, None);
     }
     let offsets = match (read.address, store.address) {
         (AddressShape::Absolute(a), AddressShape::Absolute(b)) => Some((a, b)),
@@ -121,14 +131,22 @@ fn relation(
         _ => None,
     };
     let Some((a, b)) = offsets else {
-        return Alias::May;
+        return (Alias::May, None);
     };
     let (ra, rb) = (read.width.bytes() as u64, store.width.bytes() as u64);
-    if a == b && ra == rb {
+    let mask = (0..ra).fold(0u8, |mask, byte| {
+        mask | if a.wrapping_add(byte).wrapping_sub(b) < rb {
+            1 << byte
+        } else {
+            0
+        }
+    });
+    let alias = if a == b && ra == rb {
         Alias::Exact
-    } else if a.wrapping_sub(b) >= rb && b.wrapping_sub(a) >= ra {
+    } else if mask == 0 {
         Alias::Disjoint
     } else {
         Alias::Overlap
-    }
+    };
+    (alias, Some(mask))
 }

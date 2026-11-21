@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -47,6 +47,9 @@ fn analyze(instructions: Vec<IrInstruction>) -> (Program, Analysis) {
     (program, result)
 }
 fn writers(analysis: &Analysis, instruction: u64) -> BTreeSet<u64> {
+    contributions(analysis, instruction).into_keys().collect()
+}
+fn contributions(analysis: &Analysis, instruction: u64) -> BTreeMap<u64, u8> {
     let access = analysis
         .accesses()
         .iter()
@@ -61,12 +64,17 @@ fn writers(analysis: &Analysis, instruction: u64) -> BTreeSet<u64> {
         .unwrap()
         .candidates
         .iter()
-        .map(|c| match &analysis.definitions()[c.definition.0] {
-            Definition::Initial => 0,
-            Definition::Store { access, .. } => {
-                analysis.accesses()[*access].source.site.instruction
-            }
-            other => panic!("unexpected candidate: {other:?}"),
+        .map(|c| {
+            (
+                match &analysis.definitions()[c.definition.0] {
+                    Definition::Initial => 0,
+                    Definition::Store { access, .. } => {
+                        analysis.accesses()[*access].source.site.instruction
+                    }
+                    other => panic!("unexpected candidate: {other:?}"),
+                },
+                c.byte_mask,
+            )
         })
         .collect()
 }
@@ -124,7 +132,7 @@ fn concrete_byte_tags_never_introduce_a_writer_missing_from_the_candidates() {
             Control::Return(r(2)),
         ),
     ]);
-    let candidates = writers(&a, 103);
+    let candidates = contributions(&a, 103);
     for p in 32..=48 {
         for q in 24..=64 {
             let result = program
@@ -133,7 +141,7 @@ fn concrete_byte_tags_never_introduce_a_writer_missing_from_the_candidates() {
             let RunStatus::Returned(value) = result.status else {
                 panic!("{result:?}");
             };
-            for tag in value.to_le_bytes() {
+            for (byte, tag) in value.to_le_bytes().into_iter().enumerate() {
                 let writer = match tag {
                     0 => 0,
                     1 => 100,
@@ -141,7 +149,12 @@ fn concrete_byte_tags_never_introduce_a_writer_missing_from_the_candidates() {
                     3 => 102,
                     _ => panic!("unexpected byte tag"),
                 };
-                assert!(candidates.contains(&writer), "p={p} q={q} tag={tag}");
+                assert!(
+                    candidates
+                        .get(&writer)
+                        .is_some_and(|mask| mask & (1 << byte) != 0),
+                    "p={p} q={q} tag={tag} byte={byte}"
+                );
             }
         }
     }
@@ -315,21 +328,91 @@ fn modular_offsets_and_register_versions_do_not_invent_object_separation() {
 }
 
 #[test]
+fn partial_stores_compose_per_byte_without_combining_alternative_paths() {
+    let (_, a) = analyze(vec![
+        ins(100, vec![store(r(0), Width::U64, 1)], Control::Next),
+        ins(101, vec![store(r(0), Width::U32, 2)], Control::Next),
+        ins(102, vec![store(add(r(0), 4), Width::U32, 3)], Control::Next),
+        ins(103, vec![], Control::Return(Expr::load(r(0), Width::U64))),
+    ]);
+    assert_eq!(
+        contributions(&a, 103),
+        BTreeMap::from([(101, 0x0f), (102, 0xf0)])
+    );
+    let (_, a) = analyze(vec![
+        ins(
+            100,
+            vec![store(r(0), Width::U64, 1)],
+            Control::Branch {
+                condition: r(1),
+                target: 110,
+            },
+        ),
+        ins(101, vec![store(r(0), Width::U32, 2)], Control::Jump(120)),
+        ins(
+            110,
+            vec![store(add(r(0), 4), Width::U32, 3)],
+            Control::Jump(120),
+        ),
+        ins(120, vec![], Control::Return(Expr::load(r(0), Width::U64))),
+    ]);
+    assert_eq!(
+        contributions(&a, 120),
+        BTreeMap::from([(100, 0xff), (101, 0x0f), (110, 0xf0)])
+    );
+}
+
+#[test]
+fn byte_intervals_match_executed_memory_for_all_widths_and_shifted_overlaps() {
+    for read in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        for write in [Width::U8, Width::U16, Width::U32, Width::U64] {
+            for offset in -12i64..=12 {
+                let (p, a) = analyze(vec![
+                    ins(
+                        100,
+                        vec![store(add(r(0), offset as u64), write, 2)],
+                        Control::Next,
+                    ),
+                    ins(101, vec![], Control::Return(Expr::load(r(0), read))),
+                ]);
+                let RunStatus::Returned(value) = p
+                    .run_with_memory(&[64, 0, 0, 0], 0, &[1; 128], 10)
+                    .unwrap()
+                    .status
+                else {
+                    panic!()
+                };
+                let candidates = contributions(&a, 101);
+                let mut expected = BTreeMap::new();
+                for (byte, tag) in value.to_le_bytes().iter().take(read.bytes()).enumerate() {
+                    let writer = match tag {
+                        1 => 0,
+                        2 => 100,
+                        _ => panic!(),
+                    };
+                    *expected.entry(writer).or_insert(0u8) |= 1 << byte;
+                }
+                assert_eq!(
+                    candidates, expected,
+                    "read={read:?} write={write:?} offset={offset}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn query_exhaustion_keeps_the_graph_and_reports_no_partial_candidate_set() {
     let mut code = Vec::new();
     for i in 0..600 {
-        code.push(ins(
-            100 + i,
-            vec![store(c(32), Width::U8, 1)],
-            Control::Next,
-        ));
+        code.push(ins(100 + i, vec![store(r(0), Width::U8, 1)], Control::Next));
     }
     for i in 0..600 {
         code.push(ins(
             700 + i,
-            vec![set(0, Expr::load(c(32), Width::U64))],
+            vec![set(2, Expr::load(r(1), Width::U64))],
             if i == 599 {
-                Control::Return(r(0))
+                Control::Return(r(2))
             } else {
                 Control::Next
             },

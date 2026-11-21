@@ -165,14 +165,15 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
                     }
                     write!(
                         out,
-                        "{{\"definition\":{},\"alias\":\"{}\"}}",
+                        "{{\"definition\":{},\"alias\":\"{}\",\"byte_mask\":{}}}",
                         candidate.definition.0,
                         match candidate.alias {
                             Alias::Disjoint => "disjoint",
                             Alias::Exact => "exact",
                             Alias::Overlap => "overlap",
                             Alias::May => "may",
-                        }
+                        },
+                        candidate.byte_mask
                     )
                     .unwrap();
                 }

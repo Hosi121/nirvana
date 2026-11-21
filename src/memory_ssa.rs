@@ -91,13 +91,16 @@ pub enum Alias {
 pub struct Clobber {
     pub definition: MemoryId,
     pub alias: Alias,
+    /// Bit i denotes a possible contribution to byte i of the queried Load.
+    pub byte_mask: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Query {
     pub access: usize,
-    /// Every possible reaching writer in this abstraction. A partial or
-    /// possible overlap retains earlier writers; opaque effects retain them too.
+    /// Possible reaching writers, preserving older contributions only for
+    /// bytes that a later definite Store leaves untouched. May-alias stores
+    /// and opaque effects retain older contributions to every pending byte.
     pub candidates: Vec<Clobber>,
 }
 
