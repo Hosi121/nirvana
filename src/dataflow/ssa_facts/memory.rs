@@ -121,6 +121,11 @@ impl LoadInputs {
     pub(crate) fn len(&self) -> usize {
         self.loads.len()
     }
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = (Site, Width, &[Site])> {
+        self.loads
+            .iter()
+            .map(|(&site, load)| (site, load.width, load.writers.as_slice()))
+    }
     pub(super) fn dependencies(&self, site: Site) -> &[ValueId] {
         self.loads.get(&site).map_or(&[], |load| &load.dependencies)
     }

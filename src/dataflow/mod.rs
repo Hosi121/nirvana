@@ -7,6 +7,7 @@ pub mod call_footprint;
 pub mod known_bits;
 pub mod local_identity;
 pub mod memory_ssa;
+pub mod memory_values;
 pub mod module_local_plan;
 pub mod module_values;
 pub mod parallel_copy;

@@ -25,6 +25,8 @@ mod known_bits;
 mod local_identity;
 #[path = "dataflow/memory_ssa.rs"]
 mod memory_ssa;
+#[path = "dataflow/memory_values.rs"]
+mod memory_values;
 #[path = "dataflow/parallel_copy.rs"]
 mod parallel_copy;
 #[path = "dataflow/provenance.rs"]

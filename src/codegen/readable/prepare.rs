@@ -23,6 +23,7 @@ pub(super) struct PreparedFunction {
     pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
     pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
+    pub memory_values: Option<crate::dataflow::memory_values::MemoryValueEvidence>,
 }
 
 type CheckedDisplay<E> = (
@@ -51,14 +52,16 @@ fn checked_display<E>(
 pub(super) fn prepare(
     original: &Program,
     parameters: &[Reg],
+    use_memory_values: bool,
 ) -> Result<PreparedFunction, ReductionError> {
     let selected = webs::select(original);
     let renamed = matches!(selected.recovery, WebRecovery::Applied { .. });
-    match prepare_selected(original, parameters, selected) {
+    match prepare_selected(original, parameters, selected, use_memory_values) {
         Err(error) if renamed => prepare_original(
             original,
             parameters,
             WebRecovery::RenderingFallback(super::ReadableError::Reduction(error)),
+            use_memory_values,
         ),
         result => result,
     }
@@ -68,11 +71,13 @@ pub(super) fn prepare_original(
     original: &Program,
     parameters: &[Reg],
     recovery: WebRecovery,
+    use_memory_values: bool,
 ) -> Result<PreparedFunction, ReductionError> {
     prepare_selected(
         original,
         parameters,
         webs::keep_original(original, recovery),
+        use_memory_values,
     )
 }
 
@@ -80,6 +85,7 @@ fn prepare_selected(
     original: &Program,
     parameters: &[Reg],
     selected: webs::SelectedWebs,
+    use_memory_values: bool,
 ) -> Result<PreparedFunction, ReductionError> {
     let input = selected.program.as_ref().unwrap_or(original);
     let masked = crate::transform::load_mask::propose(input, parameters).and_then(|candidate| {
@@ -128,6 +134,28 @@ fn prepare_selected(
         Some((p, w, s, e)) => (p, w, s, Some(e)),
         None => (program, widths, structure, None),
     };
+    let memory = use_memory_values
+        .then(|| crate::dataflow::memory_values::MemoryValuePlan::analyze(&program))
+        .flatten()
+        .and_then(|plan| {
+            let lowered = plan.lower(&program)?;
+            let bounds = ValueWidths::analyze(&lowered);
+            let width = |reg| {
+                if parameters.contains(&reg) {
+                    Width::U64
+                } else {
+                    bounds.width(reg)
+                }
+            };
+            // Reload identities can expose equal pure operands. Normalize
+            // before dependency/allocation analysis and strict C diagnostics.
+            let displayed = presentation_program(&lowered, &width).ok()?;
+            checked_display(displayed, structure.is_ok(), plan.evidence())
+        });
+    let (program, widths, structure, memory_values) = match memory {
+        Some((p, w, s, e)) => (p, w, s, Some(e)),
+        None => (program, widths, structure, None),
+    };
     // Choose arithmetic before any read/liveness/allocation consumer. Explicit
     // snapshots retain historical numerators; independent DCE removes pure work.
     let arithmetic =
@@ -152,6 +180,7 @@ fn prepare_selected(
             || semantic_evidence.is_some()
             || ssa_constants.is_some()
             || known_bits.is_some()
+            || memory_values.is_some()
         {
             function.body().to_vec()
         } else {
@@ -188,6 +217,7 @@ fn prepare_selected(
         semantic_evidence,
         ssa_constants,
         known_bits,
+        memory_values,
     })
 }
 

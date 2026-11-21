@@ -37,17 +37,52 @@ fn emit_reduced_c(
     reduced: ReducedFunction,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
-    let prepared = prepare::prepare(reduced.program(), reduced.parameters())?;
+    let candidate = match emit_reduced_choice(&reduced, options, true) {
+        Ok(candidate) => candidate,
+        Err(_) => return emit_reduced_choice(&reduced, options, false),
+    };
+    if candidate.memory_values.is_none() {
+        return Ok(candidate);
+    }
+    let Ok(original) = emit_reduced_choice(&reduced, options, false) else {
+        return Ok(candidate);
+    };
+    // Variable count is the primary readability cost. Equal counts prefer a
+    // shorter function body, then fewer helper/declaration bytes. Keep the
+    // complete baseline when a proved value rewrite costs more to render.
+    let cost = |output: &ReadableC| {
+        (
+            output.locals.len(),
+            output
+                .code
+                .split_once("uint64_t nirvana_readable(")
+                .map_or(output.code.len(), |(_, body)| body.len()),
+            output.code.len(),
+        )
+    };
+    Ok(if cost(&candidate) < cost(&original) {
+        candidate
+    } else {
+        original
+    })
+}
+fn emit_reduced_choice(
+    reduced: &ReducedFunction,
+    options: ReadableOptions,
+    use_memory_values: bool,
+) -> Result<ReadableC, ReadableError> {
+    let prepared = prepare::prepare(reduced.program(), reduced.parameters(), use_memory_values)?;
     let renamed = matches!(prepared.web_recovery, WebRecovery::Applied { .. });
-    match emit_prepared_c(&reduced, options, prepared) {
+    match emit_prepared_c(reduced, options, prepared) {
         Ok(output) => Ok(output),
         Err(error) if renamed => {
             let fallback = prepare::prepare_original(
                 reduced.program(),
                 reduced.parameters(),
                 WebRecovery::RenderingFallback(error),
+                use_memory_values,
             )?;
-            emit_prepared_c(&reduced, options, fallback)
+            emit_prepared_c(reduced, options, fallback)
         }
         Err(error) => Err(error),
     }
@@ -72,6 +107,7 @@ fn emit_prepared_c(
         semantic_evidence,
         ssa_constants,
         known_bits,
+        memory_values,
     } = prepared;
     let program = &presented;
     let context_remainders = expression_evidence
@@ -445,6 +481,7 @@ fn emit_prepared_c(
         semantic_evidence,
         ssa_constants,
         known_bits,
+        memory_values,
         web_recovery,
         stack_views,
         object_views,

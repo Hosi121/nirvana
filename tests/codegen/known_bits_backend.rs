@@ -33,7 +33,7 @@ fn ins(address: u64, assignments: Vec<Assignment>, control: Control) -> IrInstru
         control,
     }
 }
-fn sources() -> Vec<(Program, u64)> {
+fn sources() -> Vec<(Program, u64, bool)> {
     let diamond = vec![
         ins(
             0,
@@ -102,18 +102,43 @@ fn sources() -> Vec<(Program, u64)> {
             Control::Jump(1),
         ),
     ];
+    let equal = b(B::Eq, r(2), r(3));
+    let identity = Program::new(
+        0,
+        8,
+        vec![ins(
+            0,
+            vec![
+                set(0, Expr::load(r(7), Width::U64)),
+                store(8, r(0)),
+                set(2, Expr::load(address(8), Width::U64)),
+                set(3, Expr::load(address(8), Width::U64)),
+                store(
+                    16,
+                    Expr::select(
+                        Expr::load(address(24), Width::U64),
+                        equal.clone(),
+                        Expr::load(address(40), Width::U64),
+                    ),
+                ),
+            ],
+            Control::Return(equal),
+        )],
+    )
+    .unwrap();
     [diamond, looped]
         .into_iter()
         .zip([17, 16])
-        .map(|(i, value)| (Program::new(0, 8, i).unwrap(), value))
-        .chain(crate::support::bit_invariants::memory_programs().map(|p| (p, 128)))
+        .map(|(i, value)| (Program::new(0, 8, i).unwrap(), value, false))
+        .chain(crate::support::bit_invariants::memory_programs().map(|p| (p, 128, false)))
+        .chain([(identity, 1, true)])
         .collect()
 }
 #[test]
 fn bit_phi_and_loop_invariants_reduce_c_while_preserving_all_ram_and_first_faults() {
     let scratch = native::Scratch::new();
     let mut rows = 0;
-    for (index, (source, returned)) in sources().into_iter().enumerate() {
+    for (index, (source, returned, identity)) in sources().into_iter().enumerate() {
         let mut text = String::new();
         let mut expected = Vec::new();
         let mut outcomes = [0; 3];
@@ -189,16 +214,28 @@ fn bit_phi_and_loop_invariants_reduce_c_while_preserving_all_ram_and_first_fault
                     },
                 )
                 .unwrap();
-                let evidence = out.known_bits.expect("partial bit proof adopted");
-                assert!(
-                    evidence.replacements > 0 && evidence.known_values > evidence.constant_values
-                );
-                if index >= 2 {
+                if identity {
+                    let evidence = out
+                        .memory_values
+                        .expect("word identity is adopted after cost comparison");
                     assert!(
-                        evidence.memory_available
-                            && evidence.memory_loads > 0
-                            && evidence.store_load_edges > 0
+                        evidence.proved_loads >= 2
+                            && evidence.snapshot_values > 0
+                            && evidence.replaced_reads >= 4
                     );
+                } else {
+                    let evidence = out.known_bits.expect("partial bit proof adopted");
+                    assert!(
+                        evidence.replacements > 0
+                            && evidence.known_values > evidence.constant_values
+                    );
+                    if index >= 2 {
+                        assert!(
+                            evidence.memory_available
+                                && evidence.memory_loads > 0
+                                && evidence.store_load_edges > 0
+                        );
+                    }
                 }
                 let body = out.code.split("uint64_t nirvana_readable(").nth(1).unwrap();
                 assert!(body.contains(&format!("return {returned};")), "{body}");

@@ -96,6 +96,7 @@ DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認して�
 候補ごとの検査を経て、load-mask、SSA定数伝播、算術式選択、純粋な不要代入除去を表示IRへ適用します。
 [known_bits](../src/dataflow/known_bits.rs)は既知の0/1を別maskで持ち、φでは両経路に共通するbitを残します。定数伝播と[SSA fact基盤](../src/dataflow/ssa_facts.rs)を共有し、解いた固定点を閉じた不変条件として再検査します。表示IRへは、証明できたLoad-freeの定数部分式を採用します。
 [メモリ入力](../src/dataflow/ssa_facts/memory.rs)は、同じ全byte幅の読み書きについてMemorySSAの全書込み候補を照合し、StoreのSSA入力からLoad結果へ依存辺を加えます。保存・再読込み・φを一つの固定点で解き、レジスタの上書きやループを越える共通bitを保ちます。初期メモリや曖昧な書込み候補はLoadの幅による情報として扱い、Load自体は元の位置に残します。
+[memory_values](../src/dataflow/memory_values.rs)は、全書込み候補が同じ保存値を指すLoadの利用先を、その値のスナップショットへ結びます。最初のcycleより前に一度確保できる値を扱い、全bitを保存してword幅への射影を利用時に行います。[対応検査](../src/dataflow/memory_values/verify.rs)は実際の候補と初期化状態を照合します。C出力では元の候補とも比較し、局所変数数、関数本体の長さ、全体長の順で選びます。
 [arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
 [signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。
 [semantic_ir](../src/model/semantic_ir.rs)はblock内の不変な値IDを使い、別々に保存された上位積・符号補正・商・剰余を結びます。分子を一度保存し、代入・メモリアドレス・分岐・返り値の部分式を、利用可能な意味付きの値へ置き換えます。独立した対応検査が、保存時点、元レジスタへの書込み、Load/Storeの順序、制御辺を照合します。

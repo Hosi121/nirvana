@@ -1350,9 +1350,20 @@ fn native_c_source_lineage_across_storage_widths_retains_full_values_and_faults(
         },
     )
     .unwrap();
-    let recovery = output.local_plan.source_allocation.unwrap();
-    assert!(recovery.after.locals < recovery.before.locals);
-    assert_eq!(output.locals.len(), 1);
+    if let Some(recovery) = output.local_plan.source_allocation {
+        assert!(recovery.after.locals < recovery.before.locals);
+    } else {
+        // Checked reload identities can expose the full-width copy before
+        // source-lineage allocation, making that later merge redundant.
+        assert!(output.memory_values.is_some());
+    }
+    assert_eq!(
+        output.locals.len(),
+        1,
+        "{:?}\n{}",
+        output.local_plan,
+        output.code
+    );
     assert_eq!(output.locals[0].width, Width::U64);
     let inputs: Vec<_> = [0x1000, 0x100f, 0xffff]
         .into_iter()

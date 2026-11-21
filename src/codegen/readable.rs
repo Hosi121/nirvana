@@ -96,6 +96,8 @@ pub struct ReadableC {
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
     /// Checked partial-bit SSA invariants used for load-free constant fragments.
     pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
+    /// Stored word identities retained by captures and effectful reloads.
+    pub memory_values: Option<crate::dataflow::memory_values::MemoryValueEvidence>,
     pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,
