@@ -312,7 +312,7 @@ pub fn stored_expression_programs() -> Vec<Program> {
 
 /// Repeated definitions depend only on values read before the loop.
 pub fn invariant_loop_programs() -> Vec<Program> {
-    [false, true]
+    let mut result: Vec<_> = [false, true]
         .into_iter()
         .map(|register| {
             let value = b(B::Add, r(0), r(1));
@@ -343,5 +343,41 @@ pub fn invariant_loop_programs() -> Vec<Program> {
                 ins(2, vec![], Control::Return(r(2))),
             ])
         })
-        .collect()
+        .collect();
+    // Only the inserted byte varies; byte zero still comes from the input.
+    result.push(program(vec![
+        ins(
+            0,
+            vec![
+                set(0, load(0, Width::U64)),
+                set(3, b(B::Add, b(B::And, load(8, Width::U64), c(3)), c(1))),
+            ],
+            Control::Next,
+        ),
+        ins(
+            1,
+            vec![
+                set(
+                    6,
+                    b(
+                        B::Insert {
+                            start: 8,
+                            width: Width::U8,
+                        },
+                        r(0),
+                        r(3),
+                    ),
+                ),
+                store(32, Width::U64, r(6)),
+                set(2, load(32, Width::U8)),
+                set(3, b(B::Sub, r(3), c(1))),
+            ],
+            Control::Branch {
+                condition: r(3),
+                target: 1,
+            },
+        ),
+        ins(2, vec![], Control::Return(r(2))),
+    ]));
+    result
 }

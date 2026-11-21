@@ -757,6 +757,17 @@ fn repeated_invariant_captures_keep_every_prefix_and_loop_carried_inputs_decline
         assert_eq!(plan.evidence().snapshot_values, 1);
         let candidate = plan.lower(&source).unwrap();
         checked += compare(&source, &candidate);
+        if index == 2 {
+            let mut rows = source.instructions().to_vec();
+            rows[1].assignments[2].value =
+                Expr::load(b(nirvana::ir::BinaryOp::Add, r(7), c(33)), Width::U8);
+            let changing_byte = Program::new(0, 8, rows).unwrap();
+            assert!(
+                MemoryValuePlan::analyze(&changing_byte).is_none(),
+                "the inserted byte changes across iterations"
+            );
+            assert!(plan.lower(&changing_byte).is_none());
+        }
         let mut rows = source.instructions().to_vec();
         rows[1].assignments[0].value = b(nirvana::ir::BinaryOp::Add, r(0), r(3));
         let changing = Program::new(0, 8, rows).unwrap();
