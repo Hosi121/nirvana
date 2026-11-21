@@ -5,6 +5,11 @@ use nirvana::verify::{Solver, UnknownReason, Verdict, pure_query};
 #[path = "support/rewrite_cases.rs"]
 mod rewrite_cases;
 
+// Executable fixture files can return ETXTBSY when written while another test
+// spawns a child. Keep file creation and solver spawns in one test at a time so
+// these tests exercise the intended solver protocol and timeout paths.
+static SOLVER_FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn memory_and_resource_limits_are_explicit_unknowns() {
     let load = Expr::load(Expr::Const(0), Width::U64);
@@ -34,6 +39,7 @@ fn memory_and_resource_limits_are_explicit_unknowns() {
 
 #[test]
 fn missing_solver_and_unmodeled_operations_never_accept_a_candidate() {
+    let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
     let solver = Solver::new("/nirvana-no-such-solver");
     let before = Expr::binary(BinaryOp::Add, Expr::Register(Reg(0)), Expr::Const(0));
     let checked = solver.checked_rewrite(&before, &simplify(&before));
@@ -97,6 +103,7 @@ mod protocol {
 
     #[test]
     fn solver_unknown_errors_and_extra_output_are_not_proofs() {
+        let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
         for body in [
             "print('unknown')",
             "print('unsat'); sys.exit(7)",
@@ -113,6 +120,7 @@ mod protocol {
 
     #[test]
     fn counterexamples_must_parse_completely_and_replay_in_the_ir() {
+        let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
         let zero_model = Script::new(
             "print('sat')\nif '(get-value' in script: print('((r0 #x0000000000000000))')",
         );
@@ -135,6 +143,7 @@ mod protocol {
 
     #[test]
     fn a_stalled_solver_is_killed_and_reported_as_unknown() {
+        let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
         let script = Script::new("import time\ntime.sleep(10)");
         let solver = Solver::new(&script.0).with_timeout(Duration::from_millis(5));
         assert_eq!(
@@ -151,6 +160,7 @@ fn solver() -> Solver {
 #[test]
 #[ignore = "requires Z3; set NIRVANA_Z3 and run with --include-ignored"]
 fn symbolic_rewrites_are_equal_for_all_u64_inputs_and_mutants_have_witnesses() {
+    let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
     let solver = solver();
     let mut checked = 0;
     for (name, before) in rewrite_cases::cases() {
@@ -202,6 +212,7 @@ fn symbolic_rewrites_are_equal_for_all_u64_inputs_and_mutants_have_witnesses() {
 #[test]
 #[ignore = "requires Z3; set NIRVANA_Z3 and run with --include-ignored"]
 fn bitvector_encoding_matches_the_ir_at_integer_boundaries_for_every_operator() {
+    let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
     use BinaryOp::*;
     let solver = solver();
     let values = [0, 1, 63, 64, 65, 1 << 63, u64::MAX];
