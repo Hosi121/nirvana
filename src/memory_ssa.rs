@@ -13,6 +13,7 @@ use crate::ssa::{Site, SsaFunction};
 use crate::type_infer::MemoryAccess;
 
 mod report;
+mod translate;
 mod walk;
 
 const MAX_EFFECTS: usize = 32768;
@@ -61,6 +62,8 @@ pub struct Access {
     pub source: MemoryAccess,
     pub incoming: MemoryId,
     pub definition: Option<MemoryId>,
+    /// Exact modular identity before edge translation, when representable.
+    pub address: Option<crate::type_infer::ModularAddress>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,6 +105,9 @@ pub struct Query {
     /// bytes that a later definite Store leaves untouched. May-alias stores
     /// and opaque effects retain older contributions to every pending byte.
     pub candidates: Vec<Clobber>,
+    pub translated_edges: usize,
+    /// An unavailable address or growing loop expression was widened to May.
+    pub address_widened: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -145,7 +151,7 @@ impl Analysis {
             + self
                 .accesses
                 .iter()
-                .map(|a| a.source.path.len())
+                .map(|a| a.source.path.len() + a.address.as_ref().map_or(0, |a| a.terms.len()))
                 .sum::<usize>()
             + self.queries.as_ref().map_or(0, |q| {
                 q.len() + q.iter().map(|q| q.candidates.len()).sum::<usize>()
@@ -196,8 +202,9 @@ pub(crate) fn analyze_with_effects(
             return Err("memory SSA opaque definition mismatch".into());
         }
     }
-    let accesses = crate::type_infer::ordered_memory_accesses(source, graph, opaque)
+    let addresses = crate::type_infer::ordered_memory_addresses(source, graph, opaque)
         .ok_or("memory SSA address/control resource limit")?;
+    let accesses = addresses.accesses;
     let mut by_instruction: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
     for (index, access) in accesses.iter().enumerate() {
         by_instruction
@@ -253,6 +260,7 @@ pub(crate) fn analyze_with_effects(
                     source: access,
                     incoming: current,
                     definition,
+                    address: addresses.forms[original].clone(),
                 });
                 events.push(Event::Access(index));
                 if let Some(id) = definition {
@@ -307,7 +315,10 @@ pub(crate) fn analyze_with_effects(
     if result.members() > MAX_MEMBERS {
         return Err("memory SSA storage limit".into());
     }
-    result.queries = walk::queries(&result, graph);
+    result.queries = match addresses.phi_values {
+        Ok(values) => walk::queries(&result, graph, &values),
+        Err(reason) => Err(reason),
+    };
     if result.members() > MAX_MEMBERS {
         return Err("memory SSA query storage limit".into());
     }

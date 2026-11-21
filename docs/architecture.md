@@ -47,8 +47,12 @@ SSAのordered-store境界は幅・REP・入力レジスタを記録し、更新�
 Storeごとにメモリ世代を作り、ブロック入口のφへ到達する全先行辺と関数入口の初期状態を結びます。
 Loadへの書込み候補はbyteごとのmaskを持ち、確実なStoreで埋まったbyteだけ遡及を止めます。複数の部分Storeで全byteが埋まれば古い世代を落とし、may-alias・未知の効果では前の候補も残します。
 φの各経路には未解決byteを個別に渡し、別の分岐にある部分Storeを一つの書込みとして合成することを防ぎます。
-異なる入力pointer同士はmay-aliasです。φを跨ぐ比較では、絶対アドレスと関数入力由来の不変な基点を使い、動的なSSA値にはmay-aliasを保ちます。
-この制約により、ループ前回と今回で同じSSA名のpointerが別の位置を指す場合も候補を保持します。
+アドレスの恒等関係は`offset + Σ(coefficient * SSA値) mod 2^64`で表し、pointer・配列などの形状候補から独立して使います。
+φの先行辺では、現在のSSA値をその辺の入力式へ同時に置換します。ループの入力式内に残るφは前の反復の値で、次にその辺を跨ぐときに置換します。
+ブロック内でLoadしたpointerや未知の結果を、そのブロックの入口より前へ遡る場合はアドレスを未知へ広げます。
+成長するループ式は一つのメモリ世代あたり16種類で未知へ広げ、状態数・未処理辺・計算量にも上限を置きます。`address_widened`と`translated_edges`はこの照会経路を示します。
+異なる入力pointer同士と、入力pointer・stackの間にはmay-aliasを保ちます。オブジェクトの非重なりは追加の観測契約で扱います。
+先行辺でのアドレス変換は[LLVM PHITransAddr](https://www.llvm.org/docs/doxygen/classllvm_1_1PHITransAddr.html)も設計の参考にしています。
 情報の範囲は関数入口から正常に継続した経路で、lazy式のLoadは実行され得る参照として位置と枝を記録します。
 Load／Storeとfaultの順序は既存の実行器・生成Cに保持します。MemorySSAの構成と書込み候補の照会には個別の上限を設け、照会上限ではグラフと理由を残します。
 `module-values`はこの情報を`memory_ssa`へ出力します。CALLには未知のメモリ効果を置き、PLTのtarget読取りの前には戻り先Storeの効果も置きます。

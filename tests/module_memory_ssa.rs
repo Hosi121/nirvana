@@ -189,6 +189,12 @@ for function in report['functions']:
     assert defs[0]['kind']=='initial'
     assert [d['id'] for d in defs]==list(range(len(defs)))
     assert [a['id'] for a in accesses]==list(range(len(accesses)))
+    for access in accesses:
+        identity=access['identity']
+        if identity is not None:
+            ids=[term['value'] for term in identity['terms']]
+            assert ids==sorted(set(ids)) and all(0<=i<len(function['values']) for i in ids)
+            assert all(0<term['coefficient']<1<<64 for term in identity['terms'])
     visited=[]
     blocks={b['start']:b for b in m['blocks']}
     for block in blocks.values():
@@ -215,6 +221,7 @@ for function in report['functions']:
     assert [q['access'] for q in m['queries']['reads']]==[a['id'] for a in accesses if a['kind']=='read']
     for query in m['queries']['reads']:
         assert query['candidates']
+        assert isinstance(query['address_widened'],bool) and query['translated_edges']>=0
         assert all(defs[c['definition']]['kind'] in ('initial','store','opaque') for c in query['candidates'])
         mask=(1<<(accesses[query['access']]['width']//8))-1
         covered=0

@@ -1,9 +1,16 @@
 use super::*;
-use crate::type_infer::AddressShape;
+use crate::type_infer::ModularAddress;
 
 const MAX_CANDIDATES: usize = 262144;
+const MAX_LOCATIONS_PER_VERSION: usize = 16;
+const MAX_LOCATION_STATES: usize = 32768;
 
-pub(super) fn queries(analysis: &Analysis, graph: &SsaFunction) -> Result<Vec<Query>, String> {
+pub(super) fn queries(
+    analysis: &Analysis,
+    graph: &SsaFunction,
+    values: &BTreeMap<crate::ssa::ValueId, ModularAddress>,
+) -> Result<Vec<Query>, String> {
+    let translation = super::translate::Translation::new(graph, values);
     let mut remaining = MAX_WORK;
     let mut retained = 0usize;
     let mut queries = Vec::new();
@@ -12,14 +19,32 @@ pub(super) fn queries(analysis: &Analysis, graph: &SsaFunction) -> Result<Vec<Qu
             continue;
         }
         let mut candidates: BTreeMap<MemoryId, Clobber> = BTreeMap::new();
+        let mut translated_edges = 0usize;
+        let mut address_widened = false;
         let all_bytes = ((1u16 << access.source.width.bytes()) - 1) as u8;
-        let mut pending = vec![(access.incoming, false, all_bytes)];
-        let mut seen: BTreeMap<(MemoryId, bool), u8> = BTreeMap::new();
-        while let Some((id, crossed_phi, bytes)) = pending.pop() {
+        let mut pending = vec![(access.incoming, access.address.clone(), all_bytes)];
+        let mut seen: BTreeMap<(MemoryId, Option<ModularAddress>), u8> = BTreeMap::new();
+        let mut locations: BTreeMap<MemoryId, BTreeSet<Option<ModularAddress>>> = BTreeMap::new();
+        while let Some((id, mut location, bytes)) = pending.pop() {
             remaining = remaining
                 .checked_sub(1)
                 .ok_or("memory SSA query work limit")?;
-            let visited = seen.entry((id, crossed_phi)).or_default();
+            remaining = remaining
+                .checked_sub(location.as_ref().map_or(1, |a| a.terms.len() + 1))
+                .ok_or("memory SSA location work limit")?;
+            let previous_locations = locations.entry(id).or_default();
+            if previous_locations.contains(&None)
+                || (previous_locations.len() >= MAX_LOCATIONS_PER_VERSION
+                    && !previous_locations.contains(&location))
+            {
+                address_widened |= location.is_some();
+                location = None;
+            }
+            previous_locations.insert(location.clone());
+            if seen.len() >= MAX_LOCATION_STATES && !seen.contains_key(&(id, location.clone())) {
+                return Err("memory SSA location state limit".into());
+            }
+            let visited = seen.entry((id, location.clone())).or_default();
             let bytes = bytes & !*visited;
             if bytes == 0 {
                 continue;
@@ -40,33 +65,46 @@ pub(super) fn queries(analysis: &Analysis, graph: &SsaFunction) -> Result<Vec<Qu
             };
             match &analysis.definitions[id.0] {
                 Definition::Initial => record(Alias::May, bytes),
-                Definition::Phi { inputs, .. } => {
+                Definition::Phi { block, inputs } => {
                     remaining = remaining
                         .checked_sub(inputs.len())
                         .ok_or("memory SSA query edge limit")?;
-                    pending.extend(inputs.iter().map(|i| (i.memory, true, bytes)));
+                    if pending.len().saturating_add(inputs.len()) > MAX_LOCATION_STATES {
+                        return Err("memory SSA pending location limit".into());
+                    }
+                    for input in inputs {
+                        let address = translation.edge(
+                            location.as_ref(),
+                            *block,
+                            input.predecessor,
+                            &mut remaining,
+                        )?;
+                        translated_edges += 1;
+                        address_widened |= location.is_some() && address.is_none();
+                        pending.push((input.memory, address, bytes));
+                    }
                 }
                 Definition::Opaque { previous, .. } => {
                     record(Alias::May, bytes);
-                    pending.push((*previous, crossed_phi, bytes));
+                    pending.push((*previous, location, bytes));
                 }
                 Definition::Store {
                     access: store,
                     previous,
                 } => {
                     let (alias, mask) = relation(
-                        &access.source,
-                        &analysis.accesses[*store].source,
-                        crossed_phi,
-                        graph,
+                        location.as_ref(),
+                        analysis.accesses[*store].address.as_ref(),
+                        access.source.width,
+                        analysis.accesses[*store].source.width,
                     );
                     let overlap = mask.unwrap_or(all_bytes) & bytes;
                     if overlap != 0 {
                         record(alias, overlap);
                     }
-                    let remaining = bytes & !mask.unwrap_or(0);
-                    if remaining != 0 {
-                        pending.push((*previous, crossed_phi, remaining));
+                    let pending_bytes = bytes & !mask.unwrap_or(0);
+                    if pending_bytes != 0 {
+                        pending.push((*previous, location, pending_bytes));
                     }
                 }
             }
@@ -80,60 +118,27 @@ pub(super) fn queries(analysis: &Analysis, graph: &SsaFunction) -> Result<Vec<Qu
         queries.push(Query {
             access: index,
             candidates: candidates.into_values().collect(),
+            translated_edges,
+            address_widened,
         });
     }
     Ok(queries)
 }
 
-fn invariant(shape: AddressShape, graph: &SsaFunction) -> bool {
-    let initial = |id: crate::ssa::ValueId| {
-        matches!(
-            graph.values.get(id.0),
-            Some(crate::ssa::Definition::Initial { .. })
-        )
-    };
-    match shape {
-        AddressShape::Absolute(_) => true,
-        AddressShape::Base { base, index, .. } => {
-            initial(base) && index.is_none_or(|i| initial(i.value))
-        }
-        AddressShape::Unknown => false,
-    }
-}
-
 fn relation(
-    read: &MemoryAccess,
-    store: &MemoryAccess,
-    crossed_phi: bool,
-    graph: &SsaFunction,
+    read: Option<&ModularAddress>,
+    store: Option<&ModularAddress>,
+    read_width: crate::ir::Width,
+    store_width: crate::ir::Width,
 ) -> (Alias, Option<u8>) {
-    // A loop phi denotes different dynamic values on different iterations.
-    // Across memory phis only input-rooted or absolute forms are invariant.
-    // Other symbolic comparisons need edge translation before proving alias
-    // or separation; retaining May also covers forward joins conservatively.
-    if crossed_phi && (!invariant(read.address, graph) || !invariant(store.address, graph)) {
+    let (Some(read), Some(store)) = (read, store) else {
+        return (Alias::May, None);
+    };
+    if read.terms != store.terms {
         return (Alias::May, None);
     }
-    let offsets = match (read.address, store.address) {
-        (AddressShape::Absolute(a), AddressShape::Absolute(b)) => Some((a, b)),
-        (
-            AddressShape::Base {
-                base: a,
-                offset: x,
-                index: i,
-            },
-            AddressShape::Base {
-                base: b,
-                offset: y,
-                index: j,
-            },
-        ) if a == b && i == j => Some((x, y)),
-        _ => None,
-    };
-    let Some((a, b)) = offsets else {
-        return (Alias::May, None);
-    };
-    let (ra, rb) = (read.width.bytes() as u64, store.width.bytes() as u64);
+    let (a, b) = (read.offset, store.offset);
+    let (ra, rb) = (read_width.bytes() as u64, store_width.bytes() as u64);
     let mask = (0..ra).fold(0u8, |mask, byte| {
         mask | if a.wrapping_add(byte).wrapping_sub(b) < rb {
             1 << byte

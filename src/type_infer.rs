@@ -73,6 +73,20 @@ pub enum AddressShape {
     },
     Unknown,
 }
+
+/// A modular equality over SSA values, independent of pointer/object roles.
+/// Terms have nonzero coefficients and are sorted by value ID.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModularAddress {
+    pub offset: u64,
+    pub terms: Vec<(ValueId, u64)>,
+}
+
+pub(crate) struct MemoryAddresses {
+    pub accesses: Vec<MemoryAccess>,
+    pub forms: Vec<Option<ModularAddress>>,
+    pub phi_values: Result<std::collections::BTreeMap<ValueId, ModularAddress>, String>,
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MemoryAccess {
     pub site: Site,
@@ -151,14 +165,14 @@ pub fn validate_bounds(source: &Program, graph: &SsaFunction, bits: &[u8]) -> bo
 
 /// Exact modular access identities with fresh, uninterpreted effect outputs.
 /// All bit hulls are 64: analysis placeholders supply no numeric facts.
-pub(crate) fn ordered_memory_accesses(
+pub(crate) fn ordered_memory_addresses(
     source: &Program,
     graph: &SsaFunction,
     opaque: &std::collections::BTreeSet<Site>,
-) -> Option<Vec<MemoryAccess>> {
+) -> Option<MemoryAddresses> {
     crate::ssa::validate(source, graph).ok()?;
     let aliases = analyze::aliases_except(source, graph, opaque)?;
-    address::collect_with_opaque(
+    address::collect_memory(
         source,
         graph,
         &aliases,

@@ -27,6 +27,16 @@ struct Affine {
     terms: BTreeMap<ValueId, Term>,
 }
 impl Affine {
+    fn modular(&self) -> ModularAddress {
+        ModularAddress {
+            offset: self.offset,
+            terms: self
+                .terms
+                .iter()
+                .map(|(id, term)| (*id, term.coefficient))
+                .collect(),
+        }
+    }
     fn constant(offset: u64) -> Self {
         Self {
             offset,
@@ -188,6 +198,7 @@ struct Collector<'a> {
     memo: Vec<Option<Affine>>,
     visiting: Vec<bool>,
     accesses: Vec<MemoryAccess>,
+    memory_forms: Option<Vec<Option<ModularAddress>>>,
     budget: Budget,
 }
 impl Collector<'_> {
@@ -250,7 +261,18 @@ impl Collector<'_> {
         if self.accesses.len() >= MAX_ACCESSES {
             return Err(());
         }
-        self.budget.spend(path.len() + 1)?;
+        self.budget.spend(
+            path.len()
+                + 1
+                + if self.memory_forms.is_some() {
+                    form.map_or(0, |f| f.terms.len())
+                } else {
+                    0
+                },
+        )?;
+        if let Some(forms) = &mut self.memory_forms {
+            forms.push(form.map(Affine::modular));
+        }
         self.accesses.push(MemoryAccess {
             site: point.site,
             operand,
@@ -448,6 +470,49 @@ pub(super) fn collect_with_opaque(
     bits: &[u8],
     opaque: &std::collections::BTreeSet<Site>,
 ) -> Option<Vec<MemoryAccess>> {
+    Some(collect_impl(source, graph, aliases, bits, opaque, false)?.accesses)
+}
+
+pub(super) fn collect_memory(
+    source: &Program,
+    graph: &SsaFunction,
+    aliases: &[ValueId],
+    bits: &[u8],
+    opaque: &std::collections::BTreeSet<Site>,
+) -> Option<MemoryAddresses> {
+    let mut collector = collect_impl(source, graph, aliases, bits, opaque, true)?;
+    let phi_values = (|| {
+        let mut values = BTreeMap::new();
+        for definition in &graph.values {
+            if let Definition::Phi { inputs, .. } = definition {
+                for input in inputs {
+                    collector.budget.spend(1).ok()?;
+                    if let std::collections::btree_map::Entry::Vacant(slot) =
+                        values.entry(input.value)
+                    {
+                        slot.insert(collector.value(input.value, 1).ok()?.modular());
+                    }
+                }
+            }
+        }
+        Some(values)
+    })()
+    .ok_or_else(|| "memory SSA phi address resource limit".into());
+    Some(MemoryAddresses {
+        accesses: collector.accesses,
+        forms: collector.memory_forms?,
+        phi_values,
+    })
+}
+
+fn collect_impl<'a>(
+    source: &'a Program,
+    graph: &'a SsaFunction,
+    aliases: &'a [ValueId],
+    bits: &'a [u8],
+    opaque: &'a std::collections::BTreeSet<Site>,
+    memory: bool,
+) -> Option<Collector<'a>> {
     ssa::validate(source, graph).ok()?;
     if bits.len() != graph.values.len() || bits.iter().any(|&n| n > 64) {
         return None;
@@ -465,6 +530,7 @@ pub(super) fn collect_with_opaque(
         memo: vec![None; graph.values.len()],
         visiting: vec![false; graph.values.len()],
         accesses: Vec::new(),
+        memory_forms: memory.then(Vec::new),
         budget: Budget(MAX_WORK),
     };
     for block in &graph.blocks {
@@ -568,7 +634,7 @@ pub(super) fn collect_with_opaque(
             }
         }
     }
-    Some(collector.accesses)
+    Some(collector)
 }
 
 pub(super) fn layouts(accesses: &[MemoryAccess]) -> Option<Vec<LayoutCandidate>> {

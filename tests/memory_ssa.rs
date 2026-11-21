@@ -233,6 +233,17 @@ fn loop_carried_addresses_do_not_confuse_equal_ssa_names_with_equal_iterations()
             ins(104, vec![], Control::Return(r(2))),
         ]);
         assert_eq!(writers(&a, 100), BTreeSet::from([0, 101]));
+        let query = &a.queries().as_ref().unwrap()[0];
+        assert_eq!(query.address_widened, delta == 0);
+        let previous_store = query
+            .candidates
+            .iter()
+            .find(|c| matches!(a.definitions()[c.definition.0], Definition::Store { .. }))
+            .unwrap();
+        assert_eq!(
+            previous_store.alias,
+            if delta == 8 { Alias::Exact } else { Alias::May }
+        );
         let Definition::Phi { inputs, .. } = &a.definitions()[a.blocks()[0].entry.0] else {
             panic!()
         };
@@ -325,6 +336,154 @@ fn modular_offsets_and_register_versions_do_not_invent_object_separation() {
     ]);
     assert_eq!(writers(&a, 101), BTreeSet::from([0]));
     assert_eq!(writers(&a, 103), BTreeSet::from([0, 100]));
+}
+
+#[test]
+fn pointer_phis_translate_separately_for_each_predecessor_and_keep_real_aliases() {
+    let (p, a) = analyze(vec![
+        ins(100, vec![store(r(0), Width::U64, 1)], Control::Next),
+        ins(
+            101,
+            vec![store(r(1), Width::U64, 2)],
+            Control::Branch {
+                condition: r(2),
+                target: 110,
+            },
+        ),
+        ins(102, vec![set(3, r(0))], Control::Jump(120)),
+        ins(110, vec![set(3, r(1))], Control::Jump(120)),
+        ins(120, vec![], Control::Return(Expr::load(r(3), Width::U64))),
+    ]);
+    assert_eq!(writers(&a, 120), BTreeSet::from([100, 101]));
+    for choice in [0, 1] {
+        for other in 24..=48 {
+            let RunStatus::Returned(value) = p
+                .run_with_memory(&[32, other, choice, 0], 0, &[0; 128], 20)
+                .unwrap()
+                .status
+            else {
+                panic!()
+            };
+            for (byte, tag) in value.to_le_bytes().into_iter().enumerate() {
+                let writer = match tag {
+                    1 => 100,
+                    2 => 101,
+                    _ => panic!("initial memory cannot reach this Load"),
+                };
+                assert!(contributions(&a, 120)[&writer] & (1 << byte) != 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn simultaneous_loop_phi_translation_keeps_previous_iteration_pointer_values() {
+    let (p, a) = analyze(vec![
+        ins(
+            100,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Next,
+        ),
+        ins(101, vec![store(r(1), Width::U64, 2)], Control::Next),
+        ins(
+            102,
+            vec![set(3, r(0)), set(0, r(1)), set(1, r(3))],
+            Control::Next,
+        ),
+        // A one-shot control byte repeats the loop once. Both pointer phis
+        // swap simultaneously; R2 keeps the observed data until exit.
+        ins(
+            103,
+            vec![],
+            Control::Branch {
+                condition: Expr::load(c(16), Width::U8),
+                target: 110,
+            },
+        ),
+        ins(104, vec![], Control::Return(r(2))),
+        ins(110, vec![store(c(16), Width::U8, 0)], Control::Jump(100)),
+    ]);
+    assert_eq!(writers(&a, 100), BTreeSet::from([0, 101, 110]));
+    let mut ram = [0; 128];
+    ram[16] = 1;
+    let RunStatus::Returned(value) = p
+        .run_with_memory(&[32, 48, 0, 0], 0, &ram, 30)
+        .unwrap()
+        .status
+    else {
+        panic!()
+    };
+    assert_eq!(value, 0x0202020202020202);
+    assert!(contributions(&a, 100)[&101] == 0xff);
+    // Unconstrained input pointers may also alias the loop-control byte.
+    assert!(contributions(&a, 100)[&110] != 0);
+}
+
+#[test]
+fn reloaded_pointer_atoms_expire_when_their_defining_block_is_crossed() {
+    let (p, a) = analyze(vec![
+        ins(
+            100,
+            vec![
+                set(3, Expr::load(c(16), Width::U64)),
+                set(2, Expr::load(r(3), Width::U64)),
+            ],
+            Control::Next,
+        ),
+        ins(101, vec![store(r(3), Width::U64, 1)], Control::Next),
+        ins(
+            102,
+            vec![Assignment {
+                destination: Place::Memory {
+                    address: c(16),
+                    width: Width::U64,
+                },
+                value: r(1),
+            }],
+            Control::Next,
+        ),
+        ins(
+            103,
+            vec![set(0, add(r(0), u64::MAX))],
+            Control::Branch {
+                condition: r(0),
+                target: 100,
+            },
+        ),
+        ins(104, vec![], Control::Return(r(2))),
+    ]);
+    let access = a
+        .accesses()
+        .iter()
+        .position(|x| x.source.site.instruction == 100 && x.source.site.assignment == Some(1))
+        .unwrap();
+    let query = a
+        .queries()
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|q| q.access == access)
+        .unwrap();
+    assert!(query.address_widened);
+    assert!(
+        query
+            .candidates
+            .iter()
+            .any(|c| matches!(a.definitions()[c.definition.0], Definition::Initial))
+    );
+    let mut ram = [0; 128];
+    ram[16..24].copy_from_slice(&32u64.to_le_bytes());
+    let RunStatus::Returned(value) = p
+        .run_with_memory(&[2, 48, 0, 0], 0, &ram, 30)
+        .unwrap()
+        .status
+    else {
+        panic!()
+    };
+    assert_eq!(
+        value, 0,
+        "the newly loaded pointer reaches untouched initial memory"
+    );
 }
 
 #[test]

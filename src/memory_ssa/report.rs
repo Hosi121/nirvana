@@ -147,6 +147,24 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
                 out.push('}');
             }
         }
+        out.push_str(",\"identity\":");
+        if let Some(address) = &access.address {
+            write!(out, "{{\"offset\":{},\"terms\":[", address.offset).unwrap();
+            for (i, (value, coefficient)) in address.terms.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write!(
+                    out,
+                    "{{\"value\":{},\"coefficient\":{coefficient}}}",
+                    value.0
+                )
+                .unwrap();
+            }
+            out.push_str("]}");
+        } else {
+            out.push_str("null");
+        }
         out.push('}');
         bound(&out)?;
     }
@@ -158,7 +176,7 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
                 if i > 0 {
                     out.push(',');
                 }
-                write!(out, "{{\"access\":{},\"candidates\":[", query.access).unwrap();
+                write!(out, "{{\"access\":{},\"translated_edges\":{},\"address_widened\":{},\"candidates\":[", query.access,query.translated_edges,query.address_widened).unwrap();
                 for (j, candidate) in query.candidates.iter().enumerate() {
                     if j > 0 {
                         out.push(',');
