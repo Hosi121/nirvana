@@ -69,7 +69,8 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 | [ssa/verify](../src/ssa/verify.rs) | 実際のread・逐次定義・φの全先行辺と出口値の対応。仮想入口と戻り辺を含む実行辺について帰納的に照合 |
 | [ssa_constants](../src/ssa_constants.rs) | 任意の初期値に対する定数の閉じた不変条件と、純粋な式片の定数化を照合。メモリ操作と分岐先を保持 |
 | [type_infer](../src/type_infer.rs) | SSA値の上位ビット境界を初期値・φ入力・定義式から検査。符号・アドレス・参照形状は根拠付きの検査用候補として出力 |
-| [memory_ssa](../src/memory_ssa.rs) | byteに書込み元のtagを置いた705通りの実行で候補の包含を確認。完全／部分Store・異なるpointer・φ・ループ世代・lazy式の順序・照会上限を検査。moduleではCALL／PLT／REP、未知レジスタ結果とJSONの依存辺を照合 |
+| [memory_ssa](../src/memory_ssa.rs) | byteに書込み元のtagを置いた実行で候補maskを照合。全参照幅と重なり、φ辺のpointer選択、ループの同時代入と再Load、lazy式の順序、未知への拡大と照会上限を検査。moduleではCALL／PLT／REP、未知レジスタ結果とJSONの依存辺を照合 |
+| [memory trace](../tests/module_memory_trace.rs) | GCC O0/O2の5アルゴリズムで120入口状態を具体比較。入力とcallee stackが重なる状態、fault・予算停止も含め、命令内の各代入をIRで再生し、全レジスタ・RAMと各Read byteの実際の書込み元を照合 |
 | [access_expr](../src/access_expr.rs) | 現在の純粋アドレス式に含まれるbase・indexを借用し、modulo 2^64の対応とオペランドの同一性を独立に照合 |
 | [address_types](../src/address_types.rs) | 実際のreadと参照幅を照合して表示用の型名を選択。Cの保存型は`uint64_t`を維持し、統合する全メンバーの候補一致を要求 |
 | [object_refs](../src/object_refs.rs) | 再配置を実opcodeとフィールド幅・位置へ照合し、CFG全流入とSysV破壊規則から静的な引数参照を導出。文字列byte列を実リンカによる異なる配置の実行とも比較 |
