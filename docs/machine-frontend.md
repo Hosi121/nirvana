@@ -1,50 +1,34 @@
-# 機械語とCLI
+# CLIと対応範囲
 
-Nirvanaは、指定した関数の機械語を[ELF reader](../src/elf.rs)で切り出し、
-[x86-64 decoder/lifter](../src/x86/mod.rs)でIRへ変換します。
+Nirvanaは、指定した関数の機械語を[ELF reader](../src/binary/elf.rs)で切り出し、
+[x86-64 decoder/lifter](../src/binary/x86/mod.rs)でIRへ変換します。
 関数はシンボル名または入口アドレスで指定します。後続の処理は[設計](architecture.md)を参照してください。
 
 ## 入力
 
-ELF入力はELF64・little-endian・`EM_X86_64`のオブジェクト（`ET_REL`）、実行ファイル（`ET_EXEC`）、PIE（`ET_DYN`）です。
-名前と正のサイズを持つ`STT_FUNC`シンボルを使い、既定名は`fixture`です。
-実行IR・C生成では対象関数の再配置を検査し、解決が必要な参照を位置と種類で報告します。
-`--emit references`では、元の再配置を使って文字列・シンボル・呼出し引数の対応を解析します。
+| 入力 | 入口と用途 |
+| --- | --- |
+| ELF64 little-endian x86-64（`ET_REL` / `ET_EXEC` / `ET_DYN`） | 単一関数は名前と正のサイズを持つ`STT_FUNC`を使用。既定は`fixture` |
+| リンク済みELFの`module-*` | 既定の`main`、`--symbol NAME`、または`--entry ADDRESS`から複数関数を読み込む |
+| `--raw`のbyte列 | `--base`がコード先頭、`--entry`が領域内の入口。ゲストメモリの配置は実行APIで指定 |
 
-リンク済みELFは`PT_LOAD`をゲストRAMへ配置し、BSSをゼロ初期化します。
-`PT_DYNAMIC`の再配置を使ってPIEのデータポインタとGOTを解決し、実際のPLT命令とimportを照合します。
-8-byteの`stdin/stdout/stderr`はCOPY再配置とGOT経由の参照を共有する外部データとして扱います。
-PLTの照合はENDBR64・BND付きJMPも対象とし、実際のfunction import欄を確認します。
-通常の実行ファイルは固定アドレス、PIEは既定bias `0x10000`を使います。
-ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
-単一関数の`effects-*`は整数処理と`puts`モデルを扱い、追加の呼出しは位置付きで報告します。
-`module-*`は複数の関数を読み、内部CALL・間接CALL・RETとPOSIX importを扱います。
-連続配置が16 MiBを超える場合は疎な範囲表を使い、実データ・TLS・stackの合計に同じ16 MiB上限を適用します。
-疎な画像の穴・権限・途中停止の契約は[実行モデル](equivalence.md)にあります。
-入口は既定の`main`、`--symbol NAME`、または`--entry ADDRESS`で指定します。
-`--entry`はリンク時の仮想アドレスで、PIEのbiasはローダが加算します。
-正のサイズを持つ関数シンボルを優先し、strip後のELFにはマッピングを照合した`.eh_frame`のFDE範囲を使います。
-FDEは関数の一部分を表す場合もあり、合成名`sub_ADDRESS`を持つ連続コード領域として扱います。
-APIは`linked_elf::load_at`と`module_ir::lift_elf_at`です。範囲の根拠とFDEのファイル位置は`FunctionOrigin`に保持します。
-ジャンプテーブルの初期値から追加の命令を発見し、実行時の分岐先は現在のゲストRAMから評価します。
-候補と残る未知の分岐先は`module-jumps`で確認できます。
-JSONの`read_sites`には、表の値を読み込む命令位置とアドレス成分を含めます。
-直接CFGの先行経路から、離れた定義や合流する別の表も探索します。
-循環や、探索の深さ・経路数・work・表数・照会回数の上限に達した分岐はJSONの`context_limited_branches`に含まれます。
-初期状態はロード直後のモデル画像です。プロセス起動処理・constructor・実libcの内部状態は別の実行環境として扱います。
-ゲストRAMのアクセス規則は[実行モデル](equivalence.md)に従います。
+`module-*`の数値入口はリンク時の仮想アドレスです。PIEのbiasはローダが加算します。
+通常ELFは固定アドレス、PIEは既定bias `0x10000`を使います。APIの`linked_elf::LinkedOptions`ではbiasとstack容量を指定できます。
+strip入力には実行可能なファイル範囲と照合した`.eh_frame`のFDE範囲を使い、サイズ付き関数シンボルを優先します。
+FDEは関数の一部の場合もあるため、合成名`sub_ADDRESS`を持つ連続コード領域として扱います。
+`linked_elf::load_at`・`module_ir::lift_elf_at`は数値入口に対応し、範囲の根拠とFDE位置を`FunctionOrigin`に保持します。
 
-`--raw`ではコード領域のbyte列を入力します。
-`--base`はコード先頭、`--entry`は領域内の入口アドレスです。
-コードの配置と、実行APIに渡すゲストメモリの配置は個別に指定します。
+リンク済み画像ではsegment・BSS・動的再配置・GOTを読み、PLTを実命令とimportから照合します。
+`effects-*`は単一関数と`puts`、`module-*`は内部・間接CALL・RETとPOSIX importを扱います。
+初期状態はロード直後のモデル画像です。疎なRAM、stream binding、TLS、外部効果の規則は[実行モデル](equivalence.md#複数関数とposix)にあります。
 
-デコーダは入口から直接分岐と継続先をたどります。
-分岐先が命令先頭にあること、命令の範囲が整合すること、必要なbyteが揃うことを検査します。
-解析対象は到達する命令列です。
+デコーダは入口から直接辺と継続先をたどり、命令先頭・範囲・必要byteを検査します。
+表の初期値から追加命令を発見し、動的移転は現在のRAMから評価します。
+`module-jumps`は候補・読取り位置・範囲のヒントと未知の残余を表示し、探索上限に達した分岐を`context_limited_branches`へ記録します。
 
 ## 命令
 
-主な対応形式は次のとおりです。個々の形式は[decode.rs](../src/x86/decode.rs)にあります。
+主な対応形式は次のとおりです。個々の形式は[decode.rs](../src/binary/x86/decode.rs)にあります。
 
 | 命令群 | 対応形式 |
 | --- | --- |
@@ -93,6 +77,7 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--base ADDRESS` | raw領域の先頭。既定は0 |
 | `--entry ADDRESS` | raw領域の入口、または`module-*`でのリンク時の領域入口 |
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
+| `--emit ssa-c` | 検査済みの局所値・φの辺上コピーと、全レジスタへの書込みを持つC |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
 | `--emit record-types` | フィールド配置・ポインタの型互換性から構造体候補をC11の宣言で出力 |
@@ -112,18 +97,13 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--no-coalesce-locals` | readable-cで局所値ごとに保存場所を確保 |
 | `--verify-reduction PATH` | readable-cのIR還元を指定のZ3で検査 |
 
-`module-c`はゲストRAMとPC dispatchを持つstandalone C11を出力します。
-`cc -std=c11 -O2 server.c -o server`でコンパイルし、POSIX importをホストのLinux x86-64 libcへ接続します。
-入口引数はRSP以外をゼロで初期化し、独自の入力には`Module::initial_registers`と`Program::run`を使います。
-命令・import予算は生成Cの`NV_INSTRUCTION_LIMIT`・`NV_IMPORT_LIMIT`で指定できます。
-サーバ全体の再現コマンドは[HTTP fixture](../tests/fixtures/http-server/README.md)にあります。
-`module-readable-c`では通常の直接CALLを名前付きC関数へ接続します。
-途中のPCからは各関数のresume用ラベルへ入り、構造化の資源上限に達した関数にはgotoを使います。
-ゲストのレジスタ・RAM・stackを保持し、引数型や局所変数名の回復は後続の表示処理として扱います。
-`module-locals-c`は、値の保存先を`v_N`として宣言し、元の各レジスタ書込みも保持します。
-寿命の重ならない値は保存先を再利用し、名前を関数内で`v_0`から割り当てます。
-関数入口・途中再開・成功したCALL／DIV／STOSの後に局所値をゲスト状態から復元します。
-検査や資源上限による関数単位のfallbackはCのコメントに、変数数・復元数は標準エラーに出力します。
+`module-c`はstandalone C11です。`cc -std=c11 -O2 server.c -o server`でコンパイルし、POSIX importをLinux x86-64 libcへ接続できます。
+入口はRSP以外をゼロ初期化し、独自の入力には`Module::initial_registers`と`Program::run`を使います。
+命令・import予算は`NV_INSTRUCTION_LIMIT`・`NV_IMPORT_LIMIT`で指定します。[HTTP fixture](../tests/fixtures/http-server/README.md)に全体の実行例があります。
+
+`module-readable-c`は名前付き関数と構造AST、`module-locals-c`はさらに生存範囲で共有した`v_N`の局所変数を使います。
+途中PCからの再入、成功したCALL/DIV/STOS後の値復元、レジスタ形式への関数単位のfallbackは[設計](architecture.md#cの描画と途中再開)にあります。
+変数数・復元数を標準エラーへ、fallback理由をCのコメントへ出力します。
 
 strip入力の範囲読取りはCIE v1/v3、32-bitレコード長、絶対／PC相対の対応ポインタ表現を扱います。
 範囲の重なり、実行可能なファイルbyteとの対応、逆参照と整数overflowを検査し、位置付きのエラーを返します。
@@ -208,7 +188,5 @@ GPレジスタの初期値は0、RSPは配置したstackの入口です。
 終了status・返り値・出力長・消費数・faultは同じ構造体へ返します。
 レジスタ、ゲストRAM、出力buffer、結果入力列には、それぞれ独立したホスト領域を用意します。
 
-モデル付き読込みは割当てセクションのalignment、BSS、コード・データのRELA、GOTを扱います。
-対応importは`puts`で、通常CALL・GOT経由・末尾CALLを実行します。
-配置先は`loader::LoadOptions`で指定でき、RAMはpadding・GOT・stackを含めて16 MiBが上限です。
-元オブジェクトの呼出し証拠と配置後の命令を照合し、実行時にもGOTの値を検査します。
+オブジェクトの配置先は`loader::LoadOptions`で指定できます。alignment・BSS・RELA・GOTと呼出し証拠を照合し、実行時にもGOTの値を検査します。
+RAM容量と動的移転の規則は[実行モデル](equivalence.md)を参照してください。

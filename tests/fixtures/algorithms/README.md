@@ -17,11 +17,11 @@ Graphs have 1–8 vertices. Bit `8*u+v` is edge `u -> v`; configuration selects
 `n = (state[1] & 7) + 1` and `start = min((state[1] >> 3) & 7, n - 1)`.
 The queue has eight slots, list traversal takes at most 16 steps, and the BST
 has seven nodes. Queue entries, DFS frames, list nodes and tree nodes use C
-structs. Source comments and the [independent Rust oracles](../../algorithm_fixtures.rs)
+structs. Source comments and the [independent Rust oracles](../../end_to_end/algorithm_fixtures.rs)
 define the remaining encodings and return values. All four-word inputs are valid.
 
 ```sh
-cargo test --test algorithm_fixtures -- --nocapture
+cargo test --test end_to_end algorithm_fixtures:: -- --nocapture
 ```
 
 Each source is compiled at O0/O2 with C11, strict warnings, `-fno-lto` and

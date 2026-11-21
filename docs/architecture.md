@@ -1,305 +1,109 @@
 # 設計
 
 Nirvanaは機械語を実行可能IRへ変換し、制御構造と値の流れからCを生成します。
-命令デコーダからC出力までをRustの標準ライブラリで実装しています。
-入力形式とコマンドは[機械語とCLI](machine-frontend.md)にあります。
+命令の意味と観測項目は[実行モデル](equivalence.md)、入力形式は[CLI](machine-frontend.md)、検査の実行方法は[検証ガイド](verification.md)にまとめています。
 
-ELFの`read_function_context`は、セクションの識別と再配置のシンボル・addendを保持します。
-`object_refs`は命令の実際のフィールドと再配置を照合し、文字列参照とCALLの引数候補を結びます。
-セクション内オフセットを使うため、参照の解析を将来のリンク配置と独立して扱えます。
-解析用デコーダはCALL・GOT経由の制御移転を読み、外部効果はopaqueとして記録します。
-通常の実行IR・C生成は、その実行モデルに対応する命令集合を使います。
-
-`loader`はELFの全割当てセクションを配置し、コード・データ・GOTの再配置を適用します。
-`frontend::lift_elf_effects`は元オブジェクトの`puts`参照を照合してから、配置済み命令をliftします。
-`linked_elf`は実行ファイルのsegmentと動的再配置を読み、`frontend::lift_linked_elf_effects`がimportの同一性を照合します。
-数値入口の経路は、独立した`eh_frame` readerでFDEの連続領域を読み、実行可能なファイル範囲と所有関係を照合します。
-サイズ付きシンボルを優先し、残る領域には合成名と元FDEのファイル位置を付けます。命令の検査と実行器は名前指定と共有します。
-PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式を持ちます。
-`stdin/stdout/stderr`の8-byte外部変数には、COPY先または合成したゲスト領域を割り当てます。
-同じ名前のGOT・絶対参照はその変数のアドレスを共有し、格納値はopaqueなstream handleです。
-関数importとデータのbindingを分け、PLTはENDBR64・BND付きの形式も実命令とGOT欄から照合します。
-`effects::Program`は通常命令とCALLを明示的に分け、整数・メモリ操作には既存の実行器を使います。
-外部結果入力が出力prefix・返り値・破壊レジスタを定め、Cバックエンドも同じ入力で実行します。
-このIR専用のC生成・比較APIを設け、各変換が扱う効果と検証範囲を型で区別しています。
-`effects_readable`は制御構造の対応検査を使い、元の各命令とCALLを構造ASTへ差し戻して描画します。
-命令予算・現在位置・全レジスタを保持するため、純粋IR向けの不要代入除去とは個別の経路を使います。
-
-`module_ir`は複数の関数とimportをまとめ、CALLの戻り先StoreとRETのLoadを明示します。
-大きな疎な画像には、`memory::Layout`で検査した仮想範囲・権限とpacked backingを使います。
-ローダの初期化、命令抽出、GOT、表の探索、Rust実行器とCのアクセス検査は、この対応表を通して元のアドレスを保ちます。
-連続画像の通常RAM profileと疎な画像のprofileは、`Program::model_id()`と生成Cの先頭で識別できます。
-動的な呼出し先・戻り先は、共通のゲストRAMと登録した命令位置を使ってdispatchします。
-スカラー命令は既存の実行器とlifterを共有し、ベクトル命令にはアクセス全幅とalignmentの事前検査を付けます。
-moduleの画像には64-byteのTLS領域を置き、`FS:0x28`の64-bit MOV・ALU sourceを、そのguard slotへの通常のLoadへ変換します。
-guardはRAM上の値なので、通常のポインタによる書込みとのaliasも同じ実行経路で扱います。
-関数末尾のCALLは実際の戻り先を保持し、calleeが戻った場合の継続をmodule dispatcherへ渡します。
-構造shapeではこの位置をホスト関数の出口として表します。
-DIV/IDIVはsource・幅・符号を持つ独立した命令で、予算、sourceの評価、#DE判定、結果の反映を順に実行します。
-Rustは倍幅整数、Cはunsignedの二語演算を使い、Cバックエンド間で同じ検査付きloweringを共有します。
-除算のSSAはsourceと被除数を観測し、成功後のRAXと、16-bit以上ではRDXへ新しい未知の値IDを付けます。
-他のレジスタの値IDを保ち、局所変数は実際の除算が成功した後にゲスト状態から読み戻します。
-STOSは要素ごとのStoreとRDI更新、REP時のRCX更新を持つ命令として扱い、faultまでの部分進捗を残します。
-SSAのordered-store境界は幅・REP・入力レジスタを記録し、更新結果だけに新しい未知の値IDを付けます。局所変数の適用時は、境界と元命令の対応を独立に照合します。
-呼出し要約では、除算・STOSを含むcalleeを現在はopaqueとして扱います。
-
-`memory_ssa`は、検査済みのレジスタSSAからLoad／Storeの順序とアドレスの恒等関係を取り出します。
-Storeごとにメモリ世代を作り、ブロック入口のφへ到達する全先行辺と関数入口の初期状態を結びます。
-Loadへの書込み候補はbyteごとのmaskを持ち、確実なStoreで埋まったbyteだけ遡及を止めます。複数の部分Storeで全byteが埋まれば古い世代を落とし、may-alias・未知の効果では前の候補も残します。
-φの各経路には未解決byteを個別に渡し、別の分岐にある部分Storeを一つの書込みとして合成することを防ぎます。
-アドレスの恒等関係は`offset + Σ(coefficient * SSA値) mod 2^64`で表し、pointer・配列などの形状候補から独立して使います。
-φの先行辺では、現在のSSA値をその辺の入力式へ同時に置換します。ループの入力式内に残るφは前の反復の値で、次にその辺を跨ぐときに置換します。
-ブロック内でLoadしたpointerや未知の結果を、そのブロックの入口より前へ遡る場合はアドレスを未知へ広げます。
-成長するループ式は一つのメモリ世代あたり16種類で未知へ広げ、状態数・未処理辺・計算量にも上限を置きます。`address_widened`と`translated_edges`はこの照会経路を示します。
-異なる入力pointer同士と、入力pointer・stackの間にはmay-aliasを保ちます。オブジェクトの非重なりは追加の観測契約で扱います。
-先行辺でのアドレス変換は[LLVM PHITransAddr](https://www.llvm.org/docs/doxygen/classllvm_1_1PHITransAddr.html)も設計の参考にしています。
-情報の範囲は関数入口から正常に継続した経路で、lazy式のLoadは実行され得る参照として位置と枝を記録します。
-Load／Storeとfaultの順序は既存の実行器・生成Cに保持します。MemorySSAの構成と書込み候補の照会には個別の上限を設け、照会上限ではグラフと理由を残します。
-`module-values`はこの情報を`memory_ssa`へ出力します。CALLには未知のメモリ効果を置き、PLTのtarget読取りの前には戻り先Storeの効果も置きます。
-レジスタの閉じた呼出し要約とメモリ効果は個別に扱い、calleeのRAMの保存には独立した根拠を要求します。
-未知のレジスタ結果は新しいアドレスatomとして扱います。解析用のplaceholder定数はアドレス計算の根拠から除外します。
-MemorySSAの予算はレジスタ解析から独立させ、局所変数付きCの生成にはレジスタ解析を使います。
-
-`Program::run`の外部効果は`Environment`へ渡します。
-`module_emit`は同じ制御をCへ展開し、POSIXアダプタがゲスト構造体とホストABIの変換を担います。
-ゲストのstackとPCを実行状態として保持し、再帰の深さもゲストRAMと命令予算で制限します。
-
-`module_outline`は関数ごとの制御shapeを作り、全命令位置からの再入を検査します。
-複製したStepにも同じ検査を適用し、全体のStep数を元命令数の2倍までに制限します。
-`module_readable`は名前付きC関数と構造ASTを描画します。
-`module_tail_dispatch`は開いた表候補から同じ関数の分岐先を選び、元の命令PCと検査済みの再入ラベルへ照合します。
-生成Cは実際のtargetを一度評価し、値が一致した場合に局所ラベルへ進み、残りをdispatcherへ渡します。
-局所変数の再構成が有効な関数は既存の再入経路を使います。ガードは1移転64件・全体8,192件までです。
-表のRead位置はコピーやspillを経ても保持し、`module_switch_keys`がLoad前の純粋なアドレス式から添字を保存します。
-生成Cの`switch(key)`は保存値の有効性と実targetの一致を確認し、残りをtargetによる分岐とdispatcherへ渡します。
-保存先は1関数16個までのホスト局所変数とし、CALL/tail移転で寿命を区切ります。追加する処理は純粋な整数計算です。
-通常CALLはCの関数呼出しで進み、深い再帰や想定外の戻り先では、外側のdispatcherが現在のゲストPCから再開します。
-各Stepの一時値はそのStep内、複雑な条件式の一時値は式helper内に置きます。
-
-## パイプライン
+## 処理の流れ
 
 ```text
-ELF / raw bytes → x86-64 decoder・lifter → Program（IR + CFG）
-  ├─ 実行 / IR・グラフ出力 / 全レジスタ形式のC
-  └─ 還元 → reduced IR
-       ├─ IRと構造の対応検査
-       └─ 定義web分割・対応検査 → 表示IR
-            → 式の整形・SSA/φによる定数伝播・算術式選択・純粋な不要代入の除去
-            → 構造対応検査・幅/生存解析・メモリview・LocalPlan → readable C
+ELF / raw bytes
+  → binary: 配置・再配置・命令デコード・IRへの変換
+  → model: 命令位置、順序付き代入、CALL/RET、ゲスト状態
+      ├─ 実行・状態観測・解析レポート
+      └─ control_flow / dataflow: 制御構造・SSA・値とメモリの対応
+           → transform: 還元・式選択・表示用IR
+           → 対応検査
+           → codegen: 変数計画・構造化C・再入用dispatch
 ```
 
-`Program`は命令位置、順序付き代入、制御移転を持ちます。
-CFGの到達可能部分について、支配関係・後支配関係・自然ループを解析し、
-`If`・`Loop`・脱出などの`Node`を組み立てます。
-Nodeを独立にフローグラフへ戻して元IRと照合し、構造に応じたCまたはgotoを出力します。
-複数ループを跨ぐ転送は、深さから対象を定め、参照されるcontinue・breakのラベルを生成します。
-複数入口の循環には、[入口の制限付き複製](../src/structure/split.rs)も試します。
-自然ループの戻り辺を除いたグラフで循環を特定し、短い入口ブロックを1個複製します。
-候補の一時PCを元のPCへ戻して全体を照合し、元ブロックのコピー数とStep数の上限も確認します。
-`StructuredFunction::split_evidence`で選んだ辺と複製の規模を確認できます。
+単一関数、外部効果付き単一関数、複数関数は、それぞれの状態モデルに対応する生成経路を持ちます。
+各経路は実行時のアドレスとゲストRAMを使い、外部効果や途中停止を観測できる状態を保ちます。
 
-## 還元と表示IR
+## ソースの配置
 
-還元はブロック内の補助値や代入を整理し、入口レジスタを値引数へ対応付けます。
-`reduce_checked`は候補をSMTで検査し、採用条件が揃った候補へ置き換えます。
-検査結果に応じて元IRを保持する経路もあります。
-
-定義web分割は、レジスタの定義をCFG上のreadとの関係で分ける前処理です。
-演算・幅・代入順・命令位置・分岐先・入口ABIを保持したまま、レジスタIDを割り当て直します。
-`web_verify`は、追加レジスタの任意の初期値を含め、各readで元の値との対応を検査します。
-
-`ReadableC.structure_evidence`は、元の還元IRと構造ASTの対応を保持します。
-`display_structure_evidence`は、web改名・load-mask・SSA定数伝播・算術式選択を経て採用した表示IRと構造ASTの対応です。
-`web_recovery`には候補の採用状態と退避理由を記録します。
-IR・構造・C描画は、それぞれの段階に合った[検査](verification.md)を持ちます。
-
-## ブロックを跨ぐ値の対応
-
-`ssa`は、到達する各レジスタ定義とreadに値IDを割り当てます。
-合流点のφは、各先行ブロックの出口値を受け取り、関数入口には任意の初期値を渡す仮想辺を設けます。
-戻り辺を持つ入口・自己ループ・複数入口の循環も同じ規則で扱います。
-`ssa/verify`は構築器から独立し、逐次代入のread、定義元、φの全入力辺と出口値を照合します。
-
-`value_liveness`は検査済みのSSAから、各値の使用箇所と各代入の前後の生存集合を求めます。
-φの入力は先行辺ごとに扱い、ループでは後続の使用を固定点まで伝播します。
-集合はCFG上の位置で表すため、命令アドレスの区間だけでは扱いにくい分岐や戻り辺も保持できます。
-同じ式内の重複read、Selectの両枝、Storeの宛先も構文上の使用として数えます。
-
-`ssa_locals`はcopy・φのつながりを使って局所変数の保存先をまとめます。
-同時に生存する値、未使用の代入による上書き、同時に定義されるφを干渉として扱い、初期値には専用の保存先を置きます。
-構築器は疎な使用位置の集合を使い、独立検査器が候補の対応表を各使用位置で照合します。
-
-`ssa_storage`はこのまとまりの生存箇所を保守的な区間で囲み、重ならない区間の保存先を再利用します。
-初期値には専用の保存先を保ち、未使用の書込みとφの同時定義も区間へ含めます。
-別途、元IRから生存集合を再計算する`ssa_locals::validate`で候補を採用します。
-複数関数の局所変数復元では、この保存先割当を使います。
-
-`parallel_copy`はφの並列代入を、一つの一時変数で循環を解く逐次代入へ変換します。
-別の検査器が任意の初期値を表す記号を使って、全転送先と他の保存先の保持を確認します。
-`ssa_destroy`はそのコピーを元命令の辺上へ配置し、分岐条件を保存してから選択された辺のコピーを反映します。
-元の各レジスタ書込みも直ちに反映するため、命令位置・trace・予算・途中faultを含む完全な状態で比較できます。
-`--emit ssa-c`はこのIRから局所名を持つCを生成します。生成Cの検証は再コンパイルした実行結果で行います。
-
-`module_values`は複数関数のIRを解析用イベントへ写し、`--emit module-values`で値と寿命を表示します。
-`jump_tables`はデコード済みの直接CFG辺から先行経路をたどり、表のアドレス・符号拡張・基準値を導出します。
-合流する異なる表は経路ごとに保持し、同じ表の候補は分岐先の和集合へまとめます。
-直接辺のデコードと候補からの追加デコードを交互に進め、命令配置やworklist順序に依存する取りこぼしを減らします。
-比較した値の別名・レジスタ幅とtaken/fallthrough側を追い、範囲比較やmaskを表の長さのヒントに使います。
-SUBによる範囲チェックも、減算前の値に対する比較として追跡します。
-文脈内のStore/Loadは最大32個の同一アドレス・同一幅の保存値を追い、stack退避をまたいで値と範囲を引き継ぎます。
-同じaffine baseのbyte範囲が離れた書込みは保存値を維持し、重なる書込みや別の未知baseでは該当候補を無効化します。
-符号拡張後の値は、符号bitがゼロと分かる場合に元の値と同じIDを使います。
-値を解釈しないscalar命令は実行IRの書込み集合を使い、変更先GPR・flag・保存メモリの事実を無効化します。
-他のレジスタの表ベースは維持し、CALLとscalar IR外の操作は不透明な境界、ベクトル命令は文脈の境界として扱います。
-探索は1経路64命令、64経路、32,768 work単位、1関数64回の照会に制限します。
-ループや上限による未探索文脈は`module-jumps`の`context_limited_branches`へ記録し、候補は開いたまま保持します。
-追加した入口ごとに継承flagの事実を空にして検査し、不正な候補では元の動的移転と命令範囲を使います。
-実行時のTransferは現在のゲストRAMを評価し、候補外でも発見済みのPCへ進めます。未発見のPCは`UnknownTarget`です。
-`call_footprint`は実際の代入・readと既知calleeの使用を集約し、変更され得るレジスタを求めます。
-全Storeが入口の戻り先より下の既知stack領域に収まり、RETでRSPが入口へ戻ることを確認します。
-既知の内部CALL・末尾呼出しで閉じた集合を使い、再帰も有限の正常復帰に対する保存条件として扱います。
-間接・PLT移転、未知のStoreやRSPにはopaqueの理由を残し、その関数を呼ぶ側にも伝播します。
-保存集合は実際の書込みとRSPの復元条件から求めます。通常のspill/reloadで戻すレジスタも、現段階では変更候補に含めます。
-
-閉じたcalleeへのCALLでは、変更され得るレジスタだけへ新しい未知の値IDを付け、生存する保存値の対応を継続します。
-他のCALLでは全ゲストレジスタを入力として観測し、通常復帰後の各レジスタを未知として扱います。
-JSONのv3には、関数の要約、各呼出しの採用理由、除算の幅・符号・継続先と保存した値IDを含めます。
-除算sourceの構文上のreadは`operand_reads`、暗黙の被除数は`inputs`、新しい結果IDは`outputs`へ記録します。
-`local_recovery`には局所変数候補への対応表とφのコピー計画を追加します。候補には初期値や解析用イベントの値も含みます。
-read集合は内部の一時レジスタも含む構文上の使用で、引数候補を選ぶ解析はその先の段階です。
-RET・末尾呼出しでも全レジスタを観測し、Vectorの検査アドレスは元の代入より先に記録します。
-解析用SSAの対象経路は関数入口と、呼出し・除算の正常継続先です。
-
-`module_local_plan`は元のCore・Vector代入をこのSSAの使用箇所へ対応付け、`module-locals-c`用の実行計画を作ります。
-実代入で使う値からφ入力へ需要を伝播し、必要な保存先だけを宣言します。φコピーは絞った集合を再スケジュールし、独立検査器で照合します。
-元の各レジスタ書込みを直ちにゲスト状態へ反映し、全命令位置に生存値の復元表を置きます。
-CALL・除算の成功後にも、生存値を対応する実レジスタから読み直します。解析用イベントの未知値はメタデータとして扱います。
-除算の対応検査はsource観測、暗黙の入力、結果定義の順序と個数を独立に照合します。
-これにより、局所変数を使う通常フローと、途中PCへの再入・fault・予算停止を同じ状態モデルで扱います。
-対応検査や資源上限に達した関数は従来のレジスタ形式で描画し、理由をC内へ記録します。
-表示する保存先には関数内で`v_0`から名前を付け、同じ保存先への単純な自己コピーを省きます。
-`emit/compact`は演算子の優先順位に合わせて括弧を付け、既にuint64_tである算術式のcastを省きます。
-比較結果にはuint64_tのcastを保ち、シフト量は定数の正規化か63とのmaskで扱います。
-Loadの評価順と遅延分岐は、共通の式の逐次化処理で保持します。
-
-`ssa_constants`はこのグラフ上で定数を伝播します。ループ不変の定数はφを通して扱い、
-値が異なる経路や変化する反復値はUnknownへまとめます。
-候補とは別に、任意の初期値から成り立つ定数の不変条件と、実際の書換え先を検査します。
-書換えは純粋な式片の定数化に限定し、全Store・構文上の全Load・分岐先を保持します。
-メモリは位置と評価順を持つ通常のIR操作として扱います。
-
-## 型の制約と参照形状
-
-`type_infer`はSSA値ごとの上位ビット境界、符号比較・bit演算・アドレスなどの使用を記録します。
-ビット境界は任意の初期値と全φ入力に対する閉じた不変条件を検査し、使用の候補はcopy・φを通して伝播します。
-符号とポインタの解釈は使用ごとの候補として保持し、同じ値の複数の使い方を併記します。
-
-`record_shapes`はcopy・必要なφ/Selectの値枝・確定したstack store/loadを通して、共通レイアウトの候補をまとめます。
-実際のアドレスbaseから必要なフローを遡り、NULLはゼロ代替の証拠として保持します。
-フィールドのロード値が他の候補のアドレスbaseへ流れれば、ポインタの参照先を記録し、自己参照も同じ規則で表します。
-値の同一性は既存のalias表で扱い、型互換性の候補は`types`の`record_shapes`へ分けて表示します。
-`record-types`は候補宣言を出力し、重なり・内部オフセット・整列の曖昧な配置はバイト領域で示します。
-Cの実行には従来の検査付きゲストメモリ操作を使います。
-
-参照形状は、検査したビット境界も使って`base + offset + index * stride`のmodulo 2^64の対応を求めます。
-Loadごとの結果は別の値として扱い、同じ見た目の再読込みも区別します。
-オフセット・幅・strideをフィールドや配列の候補へまとめ、重なる幅の候補も保持します。
-CLIの`--emit types`はこの情報をJSONで表示します。値IDは還元IRのSSAに対応します。
-アクセス一覧は条件分岐の両枝を含む静的な参照箇所で、各候補の範囲は観測したアクセスに基づきます。
-`address_types`は実際にreadされたSSA値を照合し、参照幅が揃う局所値に
-`nirvana_u32_address`などの型名を付けます。型の実体は`uint64_t`で、ゲストアドレスを保持します。
-一つのC局所変数へ統合する全メンバーの候補が一致した場合に、この表示を採用します。
-幅が混在する値や曖昧な使用は通常の整数型で表示します。
-
-動的な配列アドレスは`access_expr`が現在の式からbase・index・strideを借用し、
-独立した検査器でmodulo 2^64の対応を確認して`element(base, index, stride)`へ表示します。
-実際のオペランドをその場で参照し、上書きによる値の変化と局所変数の寿命を保ちます。
-Loadを含むアドレスには元の評価順と遅延評価を使い、全アクセスを既存の境界検査へ渡します。
-
-## 算術式の復元
-
-定数除算は、上位乗算・シフト・補正の値を数学的な証明と結び付けて表示します。
-`value_graph`はブロック内の代入順に不変の値IDを割り当て、copyと純粋演算の共有を追跡します。
-Loadごとに固有のIDを付け、読み出した値をその時点のスナップショットとして扱います。
-
-`arithmetic_graph`は、上位乗算・商・剰余を実際の定義位置と値IDで結び、除数と算術の証拠を導出します。
-`expression_ir`は、その証拠から値IDを参照する除算・剰余を選択します。
-必要な分子を元の上位乗算位置で保存し、証明済みの純粋なIR式へloweringします。
-検査器は元の式・保存位置・追加レジスタ・書換え先と、各命令の全代入を照合します。
-
-`display_dce`は、返り値・メモリ・faultに必要な値をCFG全体で求め、不要な純粋代入を除きます。
-独立した検査器が実際の候補を読み、各削除の死活性と、全Store・構文上の全Loadの保持を確認します。
-選択後のProgramから幅・read・生存期間・変数割当てを計算するため、復元で延びた値の寿命も解析に含まれます。
-算術式の選択は同一ブロック内で行い、後続の生存解析と割当ては分岐・ループを含むCFGを扱います。
-各解析は資源上限を持ち、算術式選択の不成立時には既存の局所表示規則を使います。
-
-## 保存場所と変数
-
-`prepare`は幅解析、表示用Program、構造候補を用意します。
-メモリview・依存関係・変数計画・描画は、この表示用Programを共通に使います。
-パラメータの型は`uint64_t`、局所値の型は全定義を収められる幅から選びます。
-
-単一定義・単一readの一時値では、`T = load(A); D = T & M;`を
-`T = load(A) & M; D = T;`へ整えます。独立した検査器が変更形と全readを照合し、
-Loadの位置・回数・順序を保ちます。表示用Programから幅とNodeを再計算し、
-`load_mask_evidence`に対応を記録します。
-
-`LocalPlan`が名前・幅・保存場所を計画します。同幅の局所値を生存解析とcopy関係で色分けし、
-系譜と役割から表示上の変数を分けます。入口パラメータには個別の保存場所を割り当てます。
-`counter`・`limit`・`accumulator`・`address`は、ここで推論した役割に基づく生成名です。
-保存先の全代入が検査済みの割算と同じ保存先へのcopyから成る場合は、最終命名で`quotient`を候補にします。
-
-保存場所の共有は、干渉グラフを守る割当て候補と、`allocation_verify`による各readの値の対応検査で決めます。
-`source_locals`は位置・幅・役割の整合する候補をまとめ、元の色を跨ぐ統合も全体検査へ渡します。
-結果は表示変数の候補と、採用した保存場所の対応として保持します。
-
-関数先頭の逐次代入では、初回のreadより前にある最初のwriteを宣言と初期化にまとめます。
-`DeclarationPlan`が最終的な保存名と命令位置を照合し、共通末尾の候補とも安全な位置を選びます。
-
-スタック解析は次の情報を供給します。
-
-| 解析 | 情報と用途 |
+| ディレクトリ | 責務と入口 |
 | --- | --- |
-| `stack_values` | 正確な位置・幅ごとの到達書込み。部分書込み、不明アドレス、入口メモリ、合流も追跡 |
-| `stack_cells` | 単一定義のLoadとcopyから得る読込み位置 |
-| `stack_role` | spill/reloadの系譜と役割。命名と割当ての優先情報 |
+| [binary](../src/binary/mod.rs) | ELF・再配置・範囲発見、x86デコーダ/lifter、ジャンプテーブル候補 |
+| [model](../src/model/mod.rs) | IRの構造と実行器、checked memory、外部効果、状態観測 |
+| [control_flow](../src/control_flow/mod.rs) | CFG、支配関係、自然ループ、構造ASTと対応検査 |
+| [dataflow](../src/dataflow/mod.rs) | SSA、生存範囲、アドレスの恒等関係、MemorySSA、型候補、変数割当て |
+| [transform](../src/transform/mod.rs) | IR還元、算術の復元、不要代入除去、評価順・ループの表示変換 |
+| [codegen](../src/codegen/mod.rs) | Cの式・宣言・描画、複数関数のoutline・局所変数・dispatch |
+| [verification](../src/verification/mod.rs) | 純粋式とブロック還元のSMTエンコード・反例の再実行 |
 
-メモリ操作はIRの評価順と回数を保持します。これらの位置情報は表示変数の計画に使います。
-メモリviewは、入口スタックや入力レジスタからのオフセット・添字を名前で表します。
-view同士のaliasを許し、アクセス先は同じゲストメモリです。
+公開APIはこの配置で参照できます。従来の`nirvana::ir`や`nirvana::memory_ssa`などのパスも、[lib.rs](../src/lib.rs)の再公開で維持しています。
+解析固有の検査器は、候補を作る解析と同じディレクトリに置きます。`verification`はSMTによる検査を担当します。
 
-## Cの表示
+## 機械語から実行IRへ
 
-複数のLoadは順序付きの評価へ分け、Selectは選択した枝を評価します。
-while・for・do-whileや複合代入は、元の更新順と脱出先を保つ借用viewから描画します。
-ヘッダの準備代入は本体の先頭へ文として置き、その後に終了条件を判定します。
-最終判定やcontinueでも同じ順序を保ち、短いfor更新は更新節へ、複雑な更新列は元の本体位置へ表示します。
-途中のcontinueは対象ループを判別し、returnに至る脱出末尾は制御条件が揃った場合にループの後へ表示します。
-共通分岐末尾は命令位置まで一致する場合に共有候補とします。
-候補の選択条件は、C本体が短くなり、最大の字下げが同じか小さくなることです。
+[elf](../src/binary/elf.rs)は元のセクション座標と再配置を保持し、[object_refs](../src/binary/object_refs.rs)が実opcodeのフィールドと照合して文字列・呼出し参照を導きます。
+[loader](../src/binary/loader.rs)はオブジェクトの割当てセクションを、[linked_elf](../src/binary/linked_elf.rs)は実行ファイルのsegment・GOT・動的再配置をゲスト画像へ配置します。
+strip入力の数値入口は、[eh_frame](../src/binary/eh_frame.rs)のFDE範囲を実行可能なファイル範囲と照合して読み込みます。
+疎な画像は[共通の範囲表](../src/model/memory.rs)で元アドレス・権限とpacked backingを対応付けます。
 
-純粋なrotate・byte swap・符号付き比較の厳密な式にはC helperを使い、使用する定義を出力します。
-小さい幅のrotateは、入力と結果のmaskが式内で確認できる形を扱います。
-上位乗算とシフトによる定数割算は、全u64値に対する算術的な十分条件を検査し、`/10`などへ整えます。
-明示maskで入力範囲が分かる通常の乗算にも、積の非overflowを確認して同じ対応を適用します。
-必要なhelperの定義は、最終的に選んだCの式に合わせて出力します。
-展開された加算ループは、前段から導出した有限入力全体の対応とC保存幅を検査して通常ループへ戻します。
-初期累積値が任意のu64なら、有限な制御値ごとに`a*A+b mod 2^64`の対応を検査します。
-表示領域の証拠は`finite_regions`・`affine_regions`に記録し、元CFGの証拠も保持します。
+[x86](../src/binary/x86/mod.rs)は直接辺から命令を発見し、部分レジスタ・フラグ・評価順を実行IRへ展開します。
+[jump_tables](../src/binary/jump_tables.rs)は先行CFGの経路文脈、copy、stack退避、比較とmaskから表候補を求め、追加デコードと交互に進めます。
+候補には読取り位置・範囲の根拠・未探索の残余を保持します。実行時の間接移転は現在のRAMからtargetを評価し、発見済みPCへdispatchします。
 
-goto配置では空の無条件経路を畳み、空の巡回には代表を残します。
-各任意解析は資源上限を持ち、結果に応じて既存の表示経路を選びます。
+[effects](../src/model/effects.rs)は`puts`の外部結果入力を、[module_ir](../src/model/module_ir.rs)は複数関数とimportを扱います。
+CALLの戻り先Store、PLT targetのLoad、RET、DIV/IDIV、STOSの部分進捗を明示し、faultと命令予算を同じ順序で処理します。
+POSIXアダプタはゲスト構造体とホストABIを変換します。TLS guardとstream handleの規則は実行モデルにあります。
 
-## 主なモジュール
+## CFGの構造化
 
-| 責務 | モジュール |
-| --- | --- |
-| 機械語変換 | [frontend.rs](../src/frontend.rs)、[elf.rs](../src/elf.rs)、[x86](../src/x86/mod.rs) |
-| 実行と観測 | [ir.rs](../src/ir.rs)、[observe.rs](../src/observe.rs) |
-| CFGと構造 | [cfg.rs](../src/cfg.rs)、[structure.rs](../src/structure.rs)、[structure_verify.rs](../src/structure_verify.rs) |
-| 還元と改名 | [reduce.rs](../src/reduce.rs)、[block_verify.rs](../src/block_verify.rs)、[web.rs](../src/web.rs)、[web_verify.rs](../src/web_verify.rs) |
-| 表示変数 | [locals.rs](../src/readable/locals.rs)、[declarations.rs](../src/readable/declarations.rs)、[allocation.rs](../src/allocation.rs)、[allocation_verify.rs](../src/allocation_verify.rs)、[source_locals.rs](../src/source_locals.rs) |
-| メモリとスタック | [views.rs](../src/readable/views.rs)、[provenance.rs](../src/provenance.rs)、[stack.rs](../src/stack.rs)、[stack_values.rs](../src/stack_values.rs) |
-| 描画と評価順 | [readable.rs](../src/readable.rs)、[sequence.rs](../src/sequence.rs)、[bit_expr.rs](../src/bit_expr.rs)、[narrow_rotate.rs](../src/narrow_rotate.rs)、[signed_expr.rs](../src/signed_expr.rs)、[division_expr.rs](../src/division_expr.rs) |
-| ループ表示 | [for_loop.rs](../src/for_loop.rs)、[loop_shape.rs](../src/loop_shape.rs)、[loop_exit.rs](../src/loop_exit.rs)、[loop_labels.rs](../src/loop_labels.rs) |
-| 純粋領域の復元 | [loop_recover.rs](../src/loop_recover.rs)、[finite_region.rs](../src/finite_region.rs)、[affine_region.rs](../src/affine_region.rs) |
+[cfg](../src/control_flow/cfg.rs)・支配/後支配解析・自然ループ解析から、`If`・`Loop`・脱出を持つ[Node](../src/control_flow/structure.rs)を組み立てます。
+[structure_verify](../src/control_flow/structure_verify.rs)はNodeを独立にグラフへ戻し、命令・逐次代入・条件・移転先を元IRと照合します。
+複数ループを跨ぐ転送には、対象ループのcontinue/breakラベルを割り当てます。
+
+複数入口の循環には、[短い入口の制限付き複製](../src/control_flow/structure/split.rs)を試します。
+候補PCを元PCへ対応付けて全体を照合し、コピー数とStep数の上限を検査します。
+構造化の採用条件が揃わない領域は、元の制御をgotoで描画します。
+
+## 値・メモリ・型の解析
+
+[ssa](../src/dataflow/ssa.rs)は逐次read/定義に値IDを付け、φの全先行辺と任意の初期値を持つ仮想入口を表します。
+独立した[SSA検査器](../src/dataflow/ssa/verify.rs)が元IRとの対応を確認します。
+[value_liveness](../src/dataflow/value_liveness.rs)はφ入力を辺ごとに扱い、ループの固定点まで使用を伝播します。
+[ssa_locals](../src/dataflow/ssa_locals.rs)・[ssa_storage](../src/dataflow/ssa_storage.rs)は干渉を守って保存先をまとめます。
+[parallel_copy](../src/dataflow/parallel_copy.rs)はφの同時代入を逐次化し、記号による検査で循環と他の保存先の保持を確認します。
+[ssa_destroy](../src/dataflow/ssa_destroy.rs)が実行可能IRへの配置を、[emit/ssa](../src/codegen/emit/ssa.rs)がCの宣言と保存先名の描画を担当します。
+
+アドレスの正確な恒等関係は[address_identity](../src/dataflow/address_identity.rs)が担当します。
+`offset + Σ(coefficient × SSA値) mod 2^64`を、型やオブジェクト形状の仮説から独立して扱います。
+[type_infer](../src/dataflow/type_infer.rs)はこの参照情報と値の幅・使用制約からフィールドや配列の候補を組み、[record_shapes](../src/dataflow/record_shapes.rs)が構造体候補をまとめます。
+
+[memory_ssa](../src/dataflow/memory_ssa.rs)はStoreごとのメモリ世代とφを作り、Loadへの書込み候補をbyte mask付きで求めます。
+確実なStoreで埋まったbyteだけ遡及を止め、may-alias・未知の効果では前の候補も残します。分岐ごとの未解決byteを個別に追跡します。
+先行辺ではφ入力を同時置換し、ループで成長するアドレス式や予算到達では未知へ広げます。
+別々の入力pointerとstackの間にもmay-aliasを保ちます。対象は関数入口から正常に継続した経路です。
+解析グラフの構築と書込み元の照会は個別の予算を持ち、未判定の理由をレポートへ残します。
+
+[module_values](../src/dataflow/module_values.rs)はCALL・DIV・STOSを順序付きイベントに写します。
+[call_footprint](../src/dataflow/call_footprint.rs)の閉じた正常復帰要約を使える場合は保存レジスタの値IDを継続し、未知の結果には新しいIDを付けます。
+レジスタの保存とRAMの保存は個別に判断します。CALLと未知のメモリ効果はMemorySSAの境界になります。
+
+## 表示用IRと局所変数
+
+[reduce](../src/transform/reduce.rs)は補助値を整理し、[web](../src/dataflow/web.rs)はレジスタ定義を使用とのつながりで分割します。
+候補ごとの検査を経て、load-mask、SSA定数伝播、算術式選択、純粋な不要代入除去を表示IRへ適用します。
+[arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
+Loadのスナップショット、保存位置、全命令の代入順も採用条件です。
+
+[LocalPlan](../src/codegen/readable/locals.rs)は表示IRの幅・生存範囲・copy関係・値の系譜から名前と保存場所を決めます。
+[allocation_verify](../src/dataflow/allocation_verify.rs)は各readの値を、[DeclarationPlan](../src/codegen/readable/declarations.rs)は宣言・初期化の位置を照合します。
+[stack_values](../src/dataflow/stack_values.rs)は部分Storeとaliasを含む到達書込み、[stack_role](../src/dataflow/stack_role.rs)はspill/reloadの系譜を供給します。
+メモリviewは同じゲストRAMへの表示名として使い、互いのaliasを許します。
+
+## Cの描画と途中再開
+
+[readable](../src/codegen/readable.rs)は公開出力型を持ち、[pipeline](../src/codegen/readable/pipeline.rs)が変換と計画を組み立て、[printer](../src/codegen/readable/printer.rs)が描画します。
+共通の[sequence](../src/transform/sequence.rs)が式の規模・評価順の前提を確認し、複数Loadやlazy Selectは順序付きの処理へ展開します。
+ループ更新・共有末尾・有限/affine領域の表示も、元の制御と値の対応を検査して採用します。
+
+複数関数では[module_outline](../src/codegen/module_outline.rs)が全Stepからの再入を検査し、[module_readable](../src/codegen/module_readable.rs)が名前付き関数を描画します。
+間接移転の局所化は[module_tail_dispatch](../src/codegen/module_tail_dispatch.rs)・[module_switch_keys](../src/codegen/module_switch_keys.rs)が計画し、保存したkeyと実targetを照合して局所ラベルを選びます。
+残るtargetはdispatcherへ渡します。通常CALLはCの呼出しを使い、深い再帰や想定外の戻り先ではゲストPCから再開します。
+
+[module_local_plan](../src/dataflow/module_local_plan.rs)は局所値と元の代入を照合し、各レジスタ書込みをゲスト状態へ反映します。
+途中PCと成功したCALL/DIV/STOSの後には、生存値を実レジスタから復元します。
+検査や資源上限に達した関数はレジスタ形式を使い、理由を出力へ記録します。

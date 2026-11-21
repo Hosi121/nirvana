@@ -8,8 +8,8 @@ C11 programs add separate source families to the switch corpus:
 - `permuted-machine.c`: byte swaps precede dispatch in a state-machine loop.
 
 ```sh
-cargo test --test dispatch_programs -- --nocapture
-NIRVANA_CLANG=clang-18 cargo test --test dispatch_programs -- --include-ignored --nocapture
+cargo test --test end_to_end dispatch_programs:: -- --nocapture
+NIRVANA_CLANG=clang-18 cargo test --test end_to_end dispatch_programs:: -- --include-ignored --nocapture
 ```
 
 Each compiler builds O0/O2 × ET_EXEC/PIE with the same flags as

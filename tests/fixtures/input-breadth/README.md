@@ -8,10 +8,10 @@ NOPs separating the base from its use. All share
 `uint64_t fixture(uint64_t state[4])` with the main corpus.
 
 ```sh
-cargo test --test input_breadth -- --nocapture
+cargo test --test end_to_end input_breadth:: -- --nocapture
 
 # Also run the explicit Clang cohort (clang-18 may be a compiler path).
-NIRVANA_CLANG=clang-18 cargo test --test input_breadth -- --include-ignored --nocapture
+NIRVANA_CLANG=clang-18 cargo test --test end_to_end input_breadth:: -- --include-ignored --nocapture
 ```
 
 The default test uses `cc` and builds O0/O2 × ET_EXEC/PIE for each C source, with ordinary optimization

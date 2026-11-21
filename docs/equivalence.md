@@ -43,7 +43,7 @@ CPUのページ権限・その他の例外・MMIO・並行実行は今後の拡�
 ## 実行API
 
 `Program`・`StructuredFunction`・`ReducedFunction`の`run_with_memory`は、
-`Result<RunReport, ExecutionError>`を返します。実装は[ir.rs](../src/ir.rs)にあります。
+`Result<RunReport, ExecutionError>`を返します。実装は[ir.rs](../src/model/ir.rs)にあります。
 
 | 結果 | 内容 |
 | --- | --- |
@@ -61,7 +61,7 @@ CPUのページ権限・その他の例外・MMIO・並行実行は今後の拡�
 
 ## 比較プロファイル
 
-[observe::Contract](../src/observe.rs)は、終了結果と正確なfault、全メモリのbase・size・byte列を共通で比較します。
+[observe::Contract](../src/model/observe.rs)は、終了結果と正確なfault、全メモリのbase・size・byte列を共通で比較します。
 用途に応じて、レジスタと命令traceを追加します。
 
 | ID | 追加の比較項目 | 用途 |
@@ -194,7 +194,7 @@ socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを
 sockaddrは128 byte、pollは65536要素、setsockoptは送受信timeoutのtimevalを扱います。
 HTTP比較の観測はstatus・headers・body・接続終了・プロセス終了です。各実行のportとfdはOSが割り当てます。
 
-書式付きI/Oは[`formatted.h`](../src/module_emit/formatted.h)で共通化しています。
+書式付きI/Oは[`formatted.h`](../src/codegen/module_emit/formatted.h)で共通化しています。
 SysVの整数／pointer引数を6個のGP registerと、calleeの`RSP+8`以降のstack slotから読みます。
 `printf/sprintf/snprintf`は`diuoxX`・`c`・`s`・`%%`、整数の`hh/h/l/ll`、幅・精度と`*`を扱います。
 `scanf/__isoc99_scanf`と`sscanf/__isoc99_sscanf`は整数の`diuoxX`、同じ幅修飾、`c`・`s`・scanset（`[...]`）、field幅、空白・literal・`%%`を扱い、代入数・EOF・部分成功を保持します。

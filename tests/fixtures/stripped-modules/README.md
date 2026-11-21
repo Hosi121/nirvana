@@ -5,8 +5,8 @@ three stages. `stages.c` and `table.c` are separate translation units, linked
 with the shared four-word fixture harness and `-fno-lto`.
 
 ```sh
-cargo test --test stripped_elf -- --nocapture
-NIRVANA_CLANG=clang-18 cargo test --test stripped_elf -- --include-ignored --nocapture
+cargo test --test end_to_end stripped_elf:: -- --nocapture
+NIRVANA_CLANG=clang-18 cargo test --test end_to_end stripped_elf:: -- --include-ignored --nocapture
 ```
 
 The test needs GNU binutils `strip` and `nm`. It obtains the fixture address

@@ -32,20 +32,20 @@ fixtureの特徴は元Cの分類です。最適化後の命令列とCFGは、各
 Rustと`cc`で呼べるC11コンパイラを使います。
 
 ```sh
-cargo test --test native_c
-cargo test --test machine_pipeline -- --nocapture
-cargo test --test recovery_fixture -- --nocapture
-cargo test --test algorithm_fixtures -- --nocapture
-cargo test --test divide_compiler -- --nocapture
-NIRVANA_CLANG=clang-18 cargo test --test divide_compiler clang_ -- --ignored --nocapture
+cargo test --test end_to_end native_c::
+cargo test --test end_to_end machine_pipeline:: -- --nocapture
+cargo test --test end_to_end recovery_fixture:: -- --nocapture
+cargo test --test end_to_end algorithm_fixtures:: -- --nocapture
+cargo test --test end_to_end divide_compiler:: -- --nocapture
+NIRVANA_CLANG=clang-18 cargo test --test end_to_end divide_compiler::clang_ -- --ignored --nocapture
 ```
 
 `native_c`は元CのO0/O2と手計算の期待値、対応する手書きIRを比較します。
 `machine_pipeline`はELFから得た機械語を入口にし、`recovery_fixture`は追加の回復例を検査します。
 返り値と状態に加え、readable CとIRではゲストメモリ全体のdigestも照合します。
-固定seedによる追加ソースの生成は[generated_recovery.rs](../generated_recovery.rs)にあります。
+固定seedによる追加ソースの生成は[generated_recovery.rs](../end_to_end/generated_recovery.rs)にあります。
 `divide_compiler`は`NV_BITS`・`NV_SIGNED`で4形式をビルドし、ゼロ除算・signed overflowをC側で分岐します。
-命令自身の#DEとRAM faultの順序は[命令単位の比較](../module_divide.rs)で検査します。
+命令自身の#DEとRAM faultの順序は[命令単位の比較](../module/module_divide.rs)で検査します。
 
 ## オブジェクトと参照結果を保存する
 

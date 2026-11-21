@@ -2,7 +2,7 @@
 
 対象はx86-64 long modeのバイナリを調べる開発者・解析者。
 機械語の動作を保ち、人が関数・データ・制御の意味を追えるCを、より広い入力から得ることを目指す。
-現状の記述は [`ef581a1`](https://github.com/Hosi121/nirvana/tree/ef581a12f3b073145af4a81bff6d9ea8a3dc71bd) を基準とする。
+現在地は整理前の実装 [`18170c7`](https://github.com/Hosi121/nirvana/tree/18170c7) を基準とする。固定corpusの過去の測定には、その測定revisionを併記する。
 以下は、各段階の成果物と合格条件を定める開発案である。
 
 ## 「完璧」を評価できる目標にする
@@ -24,15 +24,15 @@ CPU実時間やホストのfd番号を含め、何を同一視するかもプロ
 固定された有限状態の機械をそのまま決定不能と呼ぶのは適切ではないが、全状態の列挙を実用的な検査法にはできない。
 検査には適用領域・前提・上限を持たせ、未判定を保持する。
 
-## 確認できる現在地
+## 確認できる現在地（2026-11-21）
 
 | 領域 | 基準コミットにある能力と根拠 | 現在の境界 |
 | --- | --- | --- |
-| 入力 | [ELF reader](../src/elf.rs)、[linked ELF](../src/linked_elf.rs)、[CLI](machine-frontend.md)。ELF64 LEのET_REL/ET_EXEC/ET_DYN、raw bytes、再配置・PLT/GOT・BSS | 通常は名前と正のサイズを持つ関数シンボルが入口。stripped画像全体の関数発見は今後の対象 |
-| 命令意味 | [x86](../src/x86/mod.rs)の整数・部分レジスタ・5種のflag。moduleに[限定的なSSE搬送等](../src/x86/vector.rs) | DIV/IDIV、一般のSIMD演算・浮動小数点、FS/GS、一般例外などに追加実装が必要 |
-| 関数間実行 | [module IR](../src/module_ir.rs)、[HTTP比較](../tests/fixtures/http-server/README.md)。内部・間接CALL、実stackのRET、POSIXアダプタ | ロード直後のモデル画像と限定したLinux環境。起動処理・TLS・実libc全体の再現は別の対象 |
-| 間接分岐 | [jump tables](../src/jump_tables.rs)、[input breadth](../tests/input_breadth.rs)。絶対・符号付き相対表から追加命令を発見 | 初期画像の候補は `complete:false`。実行時は現在のRAMを読み、未発見PCでは `UnknownTarget` |
-| 値・型 | [SSA検査](../src/ssa/verify.rs)、[module values](../src/module_values.rs)、[record候補](../src/record_shapes.rs)、[型テスト](../tests/record_shapes.rs) | 値ID・寿命・保存場所と、元変数・型互換性・実際のaliasは個別の情報。候補宣言は検査付きメモリ実行を変更しない |
+| 入力 | [ELF reader](../src/binary/elf.rs)、[linked ELF](../src/binary/linked_elf.rs)、[CLI](machine-frontend.md)。ELF64 LEのET_REL/ET_EXEC/ET_DYN、raw bytes、再配置・PLT/GOT・BSS | シンボルまたは数値入口と検査済みFDE範囲を使う。unwind情報に依存しない関数発見、非連続な所属範囲は追加対象 |
+| 命令意味 | [x86](../src/binary/x86/mod.rs)の整数・部分レジスタ・5種のflag。moduleにDIV/IDIV、REP STOS、TLS guard、[限定的なSSE搬送等](../src/binary/x86/vector.rs) | 一般のSIMD演算・浮動小数点、追加の文字列命令、FS/GS、CPU例外は追加対象 |
+| 関数間実行 | [module IR](../src/model/module_ir.rs)、[HTTP比較](../tests/fixtures/http-server/README.md)。内部・間接CALL、実stackのRET、POSIXアダプタ | ロード直後のモデル画像と限定したLinux環境。stream binding・TLS guard・書式付きI/Oを持つ。起動処理・一般TLS・実libc全体は別の対象 |
+| 間接分岐 | [jump tables](../src/binary/jump_tables.rs)、[input breadth](../tests/end_to_end/input_breadth.rs)。絶対・符号付き相対表から追加命令を発見 | 初期画像の候補は `complete:false`。実行時は現在のRAMを読み、未発見PCでは `UnknownTarget` |
+| 値・型 | [SSA検査](../src/dataflow/ssa/verify.rs)、[MemorySSA](../src/dataflow/memory_ssa.rs)、[module values](../src/dataflow/module_values.rs)、[record候補](../src/dataflow/record_shapes.rs) | 値ID・寿命・保存場所と、元変数・型互換性・実際のaliasは個別の情報。候補宣言は検査付きメモリ実行を変更しない |
 | 出力・検査 | [構造化](architecture.md)、[独立検査器とSMT](verification.md)。if/loop/goto、φコピー、局所変数、途中PCからの再開 | 検査モデルと具体入力比較にはそれぞれ適用範囲がある。生成Cまでの包括的な証明は未達 |
 
 ジャンプテーブルの[基準コミットの比較記録](https://github.com/Hosi121/nirvana/blob/ef581a12f3b073145af4a81bff6d9ea8a3dc71bd/tests/fixtures/input-breadth/README.md)は、3ソース×O0/O2×ET_EXEC/PIEの12構成で、
@@ -66,7 +66,7 @@ JIT・自己書換えはコードの版と再解析が必要になるため、�
 対応表をopcode名だけでなく、prefix・幅・addressing・flag定義・例外・機能条件の組合せで管理する。
 未定義flagは定義済み値と区別し、独立したデコーダ比較とnative命令oracleでlifterを検査する。
 
-整数の欠けた形式、DIV/IDIVの例外、REP文字列操作、FS/GS・TLSを先に扱う。
+DIV/IDIV・REP STOS・TLS guardの実装と境界比較を足場に、整数の欠けた形式、追加の文字列操作、FS/GS・TLSへ進める。
 続いてSSE/AVXの整数演算と浮動小数点へ進み、レーン、mask、上位レジスタ、丸め、NaN、MXCSR/x87状態を表す。
 生成Cには、許される機械状態でCの未定義動作を起こさないloweringと必要なhelperを用意する。
 ホストのfloatやlibcに委ねる部分は、保存できる意味と環境条件を検査する。
@@ -80,7 +80,7 @@ JIT・自己書換えはコードの版と再解析が必要になるため、�
 
 ### 3. メモリから値・オブジェクト・型へ上げる
 
-現在のレジスタSSAを土台に、メモリの世代とmay-alias/must-aliasを追加する。
+レジスタSSAと、byte単位の書込み元・may-aliasを持つMemorySSAを土台に、関数間のメモリ効果とオブジェクト境界を深める。
 [LLVM MemorySSA](https://llvm.org/docs/MemorySSA.html)のdef/use/phiは設計の参考になるが、aliasの正しさやfault順序は別に検査する。
 stackの部分書込み、再利用、動的RSP、escape、heap、global、未知CALLの破壊を同じ値の流れへ結び付ける。
 同じアドレス式の再Loadを同じ値と扱うには、間の書込み・外部効果が干渉しない根拠を要求する。
@@ -96,7 +96,7 @@ C++のclass/vtable、RustやGoのruntime由来の形は、この共通基盤に�
 
 ### 4. コンパイラ変換を踏まえて構造と意図を回復する
 
-[CFG調査](cfg-recovery-research.md)と[SAILR](https://www.usenix.org/conference/usenixsecurity24/presentation/basque)を踏まえ、
+[CFG調査](research/cfg-recovery-research.md)と[SAILR](https://www.usenix.org/conference/usenixsecurity24/presentation/basque)を踏まえ、
 loop rotation、jump threading、共通末尾、複製、if-conversion、switch loweringを領域単位で扱う。
 純粋なCFG配置変更と、条件・演算・反復数を変える候補では、別の意味検査を使う。
 Store・CALL・fault・途中再開の対応を維持し、変更後のSSA・寿命・型根拠を更新する。
