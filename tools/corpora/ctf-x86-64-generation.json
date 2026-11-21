@@ -1,0 +1,306 @@
+{
+  "schema": "nirvana-ctf-generation-v1",
+  "nirvana_commit": "e6e5b5e9811fa32d1cb6a8de55b512aef395ebd1",
+  "baseline_commit": "3730adf648b90ce4e914269adcbc1801d8ee974c",
+  "manifest_sha256": "eab33d95b7d15628dc766d51f61f1984433fc2a76aa4c791d045ecb91486071c",
+  "nirvana_sha256": "971e1638102ec80ede905fec71c5c4ffd26003d5928142d25c2eace85c4aa307",
+  "probe_sha256": "99cc93f97b2b20da12ee9e2457a07803671672c09ec1cfb00d2576cd67128659",
+  "scope": "C generation from pinned original main entries; execution coverage and blind challenge solving evaluated separately",
+  "summary": {
+    "challenges": 6,
+    "before_main_c_generated": 0,
+    "after_main_c_generated": 5,
+    "after_main_c_compiled": 5,
+    "instruction_decode_counts": {
+      "scalar": 1109,
+      "fs-guard": 7
+    },
+    "unchanged_model_runs": 9,
+    "optimized_c_translation_units_compiled": 15
+  },
+  "compile_profiles": {
+    "main": [
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-pedantic",
+      "-c"
+    ],
+    "all_three_backends": [
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-pedantic",
+      "-O2",
+      "-fsanitize=undefined",
+      "-fno-sanitize-recover=all",
+      "-c"
+    ]
+  },
+  "verification": {
+    "rust_targets": 164,
+    "rust_passed": 1181,
+    "rust_ignored": 20,
+    "rust_run_note": "Full all-target run followed by affected-target rerun after the POSIX stream adapter correction.",
+    "clippy": "cargo clippy --locked --all-targets -- -D warnings",
+    "format": "cargo fmt --all -- --check",
+    "python_tests": {
+      "run": 42,
+      "passed": 41,
+      "skipped": 1
+    },
+    "native_fixture_profiles": "GCC O0/O2, EXEC/PIE, checked C backends O0/O2 with UBSan; full-state resumption, stream-alias mutation, and guard changes",
+    "stdout_redirect": {
+      "original": {
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "stream-effect\n"
+      },
+      "generated": {
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "stream-effect\n"
+      }
+    }
+  },
+  "limitations": [
+    "wrong-signal requires sparse mappings, page permissions and signal transfer",
+    "jmp-flag main uses checked register fallback when aggregate local-value storage exceeds its bound; pwnymalloc has one fallback function",
+    "jmp-flag computed return still reaches UnknownTarget(0x112b6)",
+    "General FILE internals, additional libc import adapters, heap MemorySSA and whole-program native parity are further work"
+  ],
+  "cases": [
+    {
+      "id": "ductf2024-jmp-flag",
+      "binary_sha256": "8e50dac00da0944823f13cac91d725d5aa8a4adaa83884b4e3ba713233206e63",
+      "before_main": {
+        "entry": "0x5300",
+        "exit_code": 1,
+        "diagnostic": "module function \"sub_5300\": x86 decode at 0x1530c: unsupported prefix 0x64; vector fallback: x86 decode at 0x1530c: unsupported vector opcode or prefix sequence"
+      },
+      "after_main": {
+        "exit_code": 0,
+        "diagnostic": "module locals: 0 functions, 131 fallback; 0 variables, 0 resume bindings, 0 call reloads\nmodule structure: 131 structured, 0 goto; 2 direct calls, 1 dynamic calls, 4 import calls; 0 guarded tails, 0 key switches",
+        "compile_exit_code": 0,
+        "c_sha256": "100adb492dd9595c3e5378fc6e8664c28da18dc8618b786e415645ec9da72b92"
+      },
+      "instruction_decode_counts": {
+        "scalar": 70,
+        "fs-guard": 2
+      },
+      "model_runs": [
+        {
+          "entry": "0x1280",
+          "arguments": [
+            65
+          ],
+          "purpose": "computed branch and synthetic return address",
+          "state": "status=UnknownTarget(70326)\npc=0x112b6\nrax=33554432\nsteps=25\n"
+        }
+      ]
+    },
+    {
+      "id": "ductf2024-sheep-farm",
+      "binary_sha256": "4f220d130793e8b75d1426c4e5868ca5683805c0f23ef3c1059ef386b765ecf3",
+      "before_main": {
+        "entry": "0x197f",
+        "exit_code": 1,
+        "diagnostic": "linked ELF relocation 5 at 0x40c0: unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)"
+      },
+      "after_main": {
+        "exit_code": 0,
+        "diagnostic": "module locals: 13 functions, 0 fallback; 286 variables, 2419 resume bindings, 51 call reloads\nmodule structure: 12 structured, 1 goto; 14 direct calls, 1 dynamic calls, 29 import calls; 0 guarded tails, 0 key switches",
+        "compile_exit_code": 0,
+        "c_sha256": "a66bf0ee71646d08879cf5cb70c607c8edc7609fe2e059407acee6244fb4b33d"
+      },
+      "instruction_decode_counts": {
+        "scalar": 247
+      },
+      "model_runs": []
+    },
+    {
+      "id": "ductf2023-wrong-signal",
+      "binary_sha256": "ad07b154f4f00597d44536b5b7ad048001e1422fcd53c5a0d3bb0b9bef683bcd",
+      "before_main": {
+        "entry": "0x4011a0",
+        "exit_code": 1,
+        "diagnostic": "linked ELF resource limit: guest image including stack exceeds 16 MiB"
+      },
+      "after_main": {
+        "exit_code": 1,
+        "diagnostic": "linked ELF resource limit: guest image including stack exceeds 16 MiB"
+      },
+      "instruction_decode_counts": {
+        "scalar": 87
+      },
+      "model_runs": []
+    },
+    {
+      "id": "uiuctf2024-summarize",
+      "binary_sha256": "66e8392f3eaaf0ee279369f4bbdb61ca7ede335f802339359e67daaa171b4340",
+      "before_main": {
+        "entry": "0x4011d6",
+        "exit_code": 1,
+        "diagnostic": "module function \"sub_4011d6\": x86 decode at 0x4011e9: unsupported prefix 0x64; vector fallback: x86 decode at 0x4011e9: unsupported vector opcode or prefix sequence"
+      },
+      "after_main": {
+        "exit_code": 0,
+        "diagnostic": "module locals: 8 functions, 0 fallback; 180 variables, 2398 resume bindings, 66 call reloads\nmodule structure: 8 structured, 0 goto; 16 direct calls, 0 dynamic calls, 19 import calls; 0 guarded tails, 0 key switches",
+        "compile_exit_code": 0,
+        "c_sha256": "a469d7aa42e58a1de603105348784622f33e29b4e3e7ed023f17a4f01b4ae15a"
+      },
+      "instruction_decode_counts": {
+        "scalar": 309,
+        "fs-guard": 2
+      },
+      "model_runs": [
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "author-provided solution",
+          "state": "status=Returned(1)\npc=0xffffffffffffffff\nrax=1\nsteps=10882\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "purpose": "out-of-range rejection",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=18\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965528,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 0",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10867\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663453,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 1",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10867\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222190,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 2",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10867\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893240,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 3",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10875\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221408,
+            217433792
+          ],
+          "purpose": "one changed argument 4",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10879\n"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433793
+          ],
+          "purpose": "one changed argument 5",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10877\n"
+        }
+      ]
+    },
+    {
+      "id": "uiuctf2024-pwnymalloc",
+      "binary_sha256": "acd33918be218d536e79850ecb468d1f3a8b13efa3754db7558507cf7982dea2",
+      "before_main": {
+        "entry": "0x161f",
+        "exit_code": 1,
+        "diagnostic": "linked ELF relocation 5 at 0x4020: unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)"
+      },
+      "after_main": {
+        "exit_code": 0,
+        "diagnostic": "module locals: 21 functions, 1 fallback; 449 variables, 2856 resume bindings, 127 call reloads\nmodule structure: 21 structured, 1 goto; 52 direct calls, 1 dynamic calls, 46 import calls; 1 guarded tails, 1 key switches",
+        "compile_exit_code": 0,
+        "c_sha256": "de9e5b49e6d02c9cf88394c92a6f8ea39c2bb854c8f954f145803695933b18ca"
+      },
+      "instruction_decode_counts": {
+        "scalar": 266,
+        "fs-guard": 1
+      },
+      "model_runs": []
+    },
+    {
+      "id": "dicectf2024-baby-talk",
+      "binary_sha256": "d12445bc31833d076632bd6d910152fa0dfe21f345095b6dfa8383a457f2ac11",
+      "before_main": {
+        "entry": "0xbfe",
+        "exit_code": 1,
+        "diagnostic": "linked ELF relocation 5 at 0x202020: unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)"
+      },
+      "after_main": {
+        "exit_code": 0,
+        "diagnostic": "module locals: 9 functions, 0 fallback; 190 variables, 768 resume bindings, 35 call reloads\nmodule structure: 9 structured, 0 goto; 9 direct calls, 2 dynamic calls, 27 import calls; 0 guarded tails, 0 key switches",
+        "compile_exit_code": 0,
+        "c_sha256": "678a76753c4eb70b82342896f433df92815214e69c093e7725135c88984a64d5"
+      },
+      "instruction_decode_counts": {
+        "scalar": 130,
+        "fs-guard": 2
+      },
+      "model_runs": []
+    }
+  ]
+}

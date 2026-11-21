@@ -29,6 +29,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(i) if usize::from(i.size) == bytes.len() => {
                         ("scalar", format!("{:?}", i.operation))
                     }
+                    _ if x86::decode_fs_guard_at(&bytes, address, x86::FS_GUARD_OFFSET)
+                        .is_ok_and(|i| usize::from(i.size) == bytes.len()) =>
+                    {
+                        ("fs-guard", "explicit guest TLS guard profile".into())
+                    }
                     scalar => match x86::decode_vector_at(&bytes, address) {
                         Ok(i) if i.size as usize == bytes.len() => ("vector", "vector".into()),
                         vector => (

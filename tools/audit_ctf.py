@@ -147,6 +147,12 @@ def main():
         observed["copy_relocations"] = [line.strip() for line in metadata["relocations"].splitlines()
                                          if "R_X86_64_COPY" in line]
         observed["root"] = command([nirvana, binary, "--entry", case["entry"], "--emit", "module-locals-c"], directory / "root")
+        if observed["root"]["exit_code"] == 0:
+            obj = directory / "root.o"
+            observed["root_compile"] = command(
+                ["cc", "-x", "c", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+                 "-c", observed["root"]["stdout"], "-o", obj], directory / "root-compile")
+            obj.unlink(missing_ok=True)
         found = symbols(metadata["symbols"])
         wanted = {"main": int(case["entry"], 0), **{p["name"]: int(p["entry"], 0)
                                                     for p in case["module_probes"]}}
