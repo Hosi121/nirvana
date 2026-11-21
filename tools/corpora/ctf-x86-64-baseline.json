@@ -1,0 +1,668 @@
+{
+  "schema": "nirvana-ctf-baseline-v1",
+  "nirvana_commit": "3730adf648b90ce4e914269adcbc1801d8ee974c",
+  "manifest_sha256": "eab33d95b7d15628dc766d51f61f1984433fc2a76aa4c791d045ecb91486071c",
+  "nirvana_sha256": "83264d2ba13594a5327f54c5383635426165382e5bf728f14d41fe827f16a688",
+  "scope": "static original binaries, selected function probes and bounded modeled runs",
+  "summary": {
+    "challenges": 6,
+    "whole_main_c_generated": 0,
+    "selected_functions": 20,
+    "instructions_probed": 1116,
+    "instructions_unsupported": 7,
+    "c_translation_units_compiled": 9
+  },
+  "cases": [
+    {
+      "id": "ductf2024-jmp-flag",
+      "source_url": "https://github.com/DownUnderCTF/Challenges_2024_Public/tree/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/jmp-flag",
+      "binary_sha256": "8e50dac00da0944823f13cac91d725d5aa8a4adaa83884b4e3ba713233206e63",
+      "mapped_bytes": 25349,
+      "image_span": 36896,
+      "imports": [
+        "__cxa_finalize",
+        "__isoc99_scanf",
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "printf",
+        "puts"
+      ],
+      "copy_relocations": [],
+      "regions": {
+        "main": [
+          21248,
+          246
+        ],
+        "process": [
+          4736,
+          56
+        ]
+      },
+      "instruction_decode_counts": {
+        "scalar": 70,
+        "unsupported": 2
+      },
+      "unsupported_instructions": [
+        {
+          "address": 21260,
+          "hex": "64488b042528000000",
+          "assembly": "mov    rax,QWORD PTR fs:0x28",
+          "regions": [
+            "main"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 21260, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 21260, reason: \"unsupported vector opcode or prefix sequence\" })"
+        },
+        {
+          "address": 21476,
+          "hex": "64482b142528000000",
+          "assembly": "sub    rdx,QWORD PTR fs:0x28",
+          "regions": [
+            "main"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 21476, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 21476, reason: \"unsupported vector opcode or prefix sequence\" })"
+        }
+      ],
+      "main": {
+        "entry": "0x5300",
+        "exit_code": 1,
+        "diagnostic": "module function \"sub_5300\": x86 decode at 0x1530c: unsupported prefix 0x64; vector fallback: x86 decode at 0x1530c: unsupported vector opcode or prefix sequence"
+      },
+      "raw_functions": [],
+      "module_probes": [
+        {
+          "name": "process",
+          "entry": "0x1280",
+          "compile_exit_code": 0,
+          "outputs": {
+            "module-jumps": {
+              "exit_code": 0,
+              "diagnostic": ""
+            },
+            "module-values": {
+              "exit_code": 0,
+              "diagnostic": "module values: 130/130 functions analyzed; 1 closed call summaries"
+            },
+            "module-locals-c": {
+              "exit_code": 0,
+              "diagnostic": "module locals: 130 functions, 0 fallback; 1196 variables, 4501 resume bindings, 0 call reloads\nmodule structure: 130 structured, 0 goto; 0 direct calls, 1 dynamic calls, 0 import calls; 0 guarded tails, 0 key switches"
+            }
+          }
+        }
+      ],
+      "model_runs": [
+        {
+          "entry": "0x1280",
+          "arguments": [
+            65
+          ],
+          "purpose": "computed branch and synthetic return address",
+          "state": "status=UnknownTarget(70326)\npc=0x112b6\nrax=33554432\nsteps=25\n",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "ductf2024-sheep-farm",
+      "source_url": "https://github.com/DownUnderCTF/Challenges_2024_Public/tree/f2797a33d8f5851508f37e854afceedf85eee8a3/pwn/sheep-farm-simulator",
+      "binary_sha256": "4f220d130793e8b75d1426c4e5868ca5683805c0f23ef3c1059ef386b765ecf3",
+      "mapped_bytes": 8249,
+      "image_span": 21840,
+      "imports": [
+        "__cxa_finalize",
+        "__isoc99_scanf",
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "free",
+        "malloc",
+        "memset",
+        "printf",
+        "puts",
+        "rand",
+        "setvbuf"
+      ],
+      "copy_relocations": [
+        "00000000000040c0  0000000e00000005 R_X86_64_COPY          00000000000040c0 stdout@GLIBC_2.2.5 + 0",
+        "00000000000040d0  0000001000000005 R_X86_64_COPY          00000000000040d0 stdin@GLIBC_2.2.5 + 0"
+      ],
+      "regions": {
+        "normal": [
+          4947,
+          21
+        ],
+        "multiply": [
+          4968,
+          23
+        ],
+        "grow": [
+          4991,
+          39
+        ],
+        "upgrade_sheep": [
+          5448,
+          386
+        ],
+        "update_state": [
+          6236,
+          184
+        ],
+        "main": [
+          6527,
+          195
+        ]
+      },
+      "instruction_decode_counts": {
+        "scalar": 247
+      },
+      "unsupported_instructions": [],
+      "main": {
+        "entry": "0x197f",
+        "exit_code": 1,
+        "diagnostic": "linked ELF relocation 5 at 0x40c0: unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)"
+      },
+      "raw_functions": [
+        {
+          "name": "normal",
+          "address": "0x1353",
+          "size": 21,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "multiply",
+          "address": "0x1368",
+          "size": 23,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "grow",
+          "address": "0x137f",
+          "size": 39,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "upgrade_sheep",
+          "address": "0x1548",
+          "size": 386,
+          "readable_exit_code": 1,
+          "diagnostic": "x86 decode at 0x1562: unsupported opcode e8",
+          "compile_exit_code": null,
+          "types_exit_code": null
+        },
+        {
+          "name": "update_state",
+          "address": "0x185c",
+          "size": 184,
+          "readable_exit_code": 1,
+          "diagnostic": "x86 decode at 0x18e5: indirect call/jump or unsupported FF group",
+          "compile_exit_code": null,
+          "types_exit_code": null
+        }
+      ],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "ductf2023-wrong-signal",
+      "source_url": "https://github.com/DownUnderCTF/Challenges_2023_Public/tree/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal",
+      "binary_sha256": "ad07b154f4f00597d44536b5b7ad048001e1422fcd53c5a0d3bb0b9bef683bcd",
+      "mapped_bytes": 952685,
+      "image_span": 319123456,
+      "imports": [
+        "__libc_start_main",
+        "_exit",
+        "memset",
+        "puts",
+        "read",
+        "sigaction"
+      ],
+      "copy_relocations": [],
+      "regions": {
+        "main": [
+          4198816,
+          441
+        ]
+      },
+      "instruction_decode_counts": {
+        "scalar": 87
+      },
+      "unsupported_instructions": [],
+      "main": {
+        "entry": "0x4011a0",
+        "exit_code": 1,
+        "diagnostic": "linked ELF resource limit: guest image including stack exceeds 16 MiB"
+      },
+      "raw_functions": [
+        {
+          "name": "main",
+          "address": "0x4011a0",
+          "size": 441,
+          "readable_exit_code": 1,
+          "diagnostic": "x86 decode at 0x4011c0: unsupported opcode e8",
+          "compile_exit_code": null,
+          "types_exit_code": null
+        }
+      ],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "uiuctf2024-summarize",
+      "source_url": "https://github.com/sigpwny/UIUCTF-2024-Public/tree/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/summarize",
+      "binary_sha256": "66e8392f3eaaf0ee279369f4bbdb61ca7ede335f802339359e67daaa171b4340",
+      "mapped_bytes": 4929,
+      "image_span": 16480,
+      "imports": [
+        "__isoc99_scanf",
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "printf",
+        "putchar",
+        "puts",
+        "sprintf"
+      ],
+      "copy_relocations": [],
+      "regions": {
+        "main": [
+          4198870,
+          421
+        ],
+        "check": [
+          4199291,
+          706
+        ]
+      },
+      "instruction_decode_counts": {
+        "scalar": 309,
+        "unsupported": 2
+      },
+      "unsupported_instructions": [
+        {
+          "address": 4198889,
+          "hex": "64488b042528000000",
+          "assembly": "mov    rax,QWORD PTR fs:0x28",
+          "regions": [
+            "main"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 4198889, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 4198889, reason: \"unsupported vector opcode or prefix sequence\" })"
+        },
+        {
+          "address": 4199273,
+          "hex": "64482b142528000000",
+          "assembly": "sub    rdx,QWORD PTR fs:0x28",
+          "regions": [
+            "main"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 4199273, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 4199273, reason: \"unsupported vector opcode or prefix sequence\" })"
+        }
+      ],
+      "main": {
+        "entry": "0x4011d6",
+        "exit_code": 1,
+        "diagnostic": "module function \"sub_4011d6\": x86 decode at 0x4011e9: unsupported prefix 0x64; vector fallback: x86 decode at 0x4011e9: unsupported vector opcode or prefix sequence"
+      },
+      "raw_functions": [],
+      "module_probes": [
+        {
+          "name": "check",
+          "entry": "0x40137b",
+          "compile_exit_code": 0,
+          "outputs": {
+            "module-jumps": {
+              "exit_code": 0,
+              "diagnostic": ""
+            },
+            "module-values": {
+              "exit_code": 0,
+              "diagnostic": "module values: 7/7 functions analyzed; 5 closed call summaries"
+            },
+            "module-locals-c": {
+              "exit_code": 0,
+              "diagnostic": "module locals: 7 functions, 0 fallback; 140 variables, 2019 resume bindings, 51 call reloads\nmodule structure: 7 structured, 0 goto; 15 direct calls, 0 dynamic calls, 0 import calls; 0 guarded tails, 0 key switches"
+            }
+          }
+        }
+      ],
+      "model_runs": [
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "author-provided solution",
+          "expected_rax": 1,
+          "state": "status=Returned(1)\npc=0xffffffffffffffff\nrax=1\nsteps=10882\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "purpose": "out-of-range rejection",
+          "expected_rax": 0,
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=18\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965528,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 0",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10867\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663453,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 1",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10867\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222190,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 2",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10867\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893240,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 3",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10875\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221408,
+            217433792
+          ],
+          "purpose": "one changed argument 4",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10879\n",
+          "exit_code": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433793
+          ],
+          "purpose": "one changed argument 5",
+          "state": "status=Returned(0)\npc=0xffffffffffffffff\nrax=0\nsteps=10877\n",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "uiuctf2024-pwnymalloc",
+      "source_url": "https://github.com/sigpwny/UIUCTF-2024-Public/tree/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc",
+      "binary_sha256": "acd33918be218d536e79850ecb468d1f3a8b13efa3754db7558507cf7982dea2",
+      "mapped_bytes": 9033,
+      "image_span": 16584,
+      "imports": [
+        "__cxa_finalize",
+        "__isoc99_sscanf",
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "exit",
+        "fclose",
+        "fgets",
+        "fopen",
+        "memset",
+        "printf",
+        "puts",
+        "sbrk",
+        "setvbuf"
+      ],
+      "copy_relocations": [
+        "0000000000004020  0000001000000005 R_X86_64_COPY          0000000000004020 stdout@GLIBC_2.2.5 + 0",
+        "0000000000004030  0000001200000005 R_X86_64_COPY          0000000000004030 stdin@GLIBC_2.2.5 + 0",
+        "0000000000004040  0000001300000005 R_X86_64_COPY          0000000000004040 stderr@GLIBC_2.2.5 + 0"
+      ],
+      "regions": {
+        "set_btag": [
+          6150,
+          49
+        ],
+        "free_list_insert": [
+          6651,
+          80
+        ],
+        "free_list_remove": [
+          6731,
+          98
+        ],
+        "coalesce": [
+          6829,
+          421
+        ],
+        "main": [
+          5663,
+          403
+        ]
+      },
+      "instruction_decode_counts": {
+        "scalar": 266,
+        "unsupported": 1
+      },
+      "unsupported_instructions": [
+        {
+          "address": 5675,
+          "hex": "64488b042528000000",
+          "assembly": "mov    rax,QWORD PTR fs:0x28",
+          "regions": [
+            "main"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 5675, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 5675, reason: \"unsupported vector opcode or prefix sequence\" })"
+        }
+      ],
+      "main": {
+        "entry": "0x161f",
+        "exit_code": 1,
+        "diagnostic": "linked ELF relocation 5 at 0x4020: unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)"
+      },
+      "raw_functions": [
+        {
+          "name": "set_btag",
+          "address": "0x1806",
+          "size": 49,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "free_list_insert",
+          "address": "0x19fb",
+          "size": 80,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "free_list_remove",
+          "address": "0x1a4b",
+          "size": 98,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "coalesce",
+          "address": "0x1aad",
+          "size": 421,
+          "readable_exit_code": 1,
+          "diagnostic": "x86 decode at 0x1ac5: unsupported opcode e8",
+          "compile_exit_code": null,
+          "types_exit_code": null
+        }
+      ],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "dicectf2024-baby-talk",
+      "source_url": "https://github.com/dicegang/dicectf-quals-2024-challenges/tree/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/pwn/baby-talk",
+      "binary_sha256": "d12445bc31833d076632bd6d910152fa0dfe21f345095b6dfa8383a457f2ac11",
+      "mapped_bytes": 4864,
+      "image_span": 2105536,
+      "imports": [
+        "__cxa_finalize",
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "free",
+        "malloc",
+        "printf",
+        "puts",
+        "read",
+        "setbuf",
+        "strtok",
+        "strtoul"
+      ],
+      "copy_relocations": [
+        "0000000000202020  0000000f00000005 R_X86_64_COPY          0000000000202020 stdout@GLIBC_2.2.5 + 0"
+      ],
+      "regions": {
+        "get_empty": [
+          2390,
+          64
+        ],
+        "get_num": [
+          2301,
+          89
+        ],
+        "do_tok": [
+          2710,
+          216
+        ],
+        "main": [
+          3070,
+          142
+        ]
+      },
+      "instruction_decode_counts": {
+        "scalar": 130,
+        "unsupported": 2
+      },
+      "unsupported_instructions": [
+        {
+          "address": 2309,
+          "hex": "64488b042528000000",
+          "assembly": "mov    rax,QWORD PTR fs:0x28",
+          "regions": [
+            "get_num"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 2309, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 2309, reason: \"unsupported vector opcode or prefix sequence\" })"
+        },
+        {
+          "address": 2372,
+          "hex": "6448330c2528000000",
+          "assembly": "xor    rcx,QWORD PTR fs:0x28",
+          "regions": [
+            "get_num"
+          ],
+          "decode": "unsupported",
+          "detail": "scalar=Err(DecodeError { address: 2372, reason: \"unsupported prefix 0x64\" }); vector=Err(DecodeError { address: 2372, reason: \"unsupported vector opcode or prefix sequence\" })"
+        }
+      ],
+      "main": {
+        "entry": "0xbfe",
+        "exit_code": 1,
+        "diagnostic": "linked ELF relocation 5 at 0x202020: unsupported relocation (COPY, TLS, IFUNC and unknown types are rejected)"
+      },
+      "raw_functions": [
+        {
+          "name": "get_empty",
+          "address": "0x956",
+          "size": 64,
+          "readable_exit_code": 0,
+          "diagnostic": "",
+          "compile_exit_code": 0,
+          "types_exit_code": 0
+        },
+        {
+          "name": "get_num",
+          "address": "0x8fd",
+          "size": 89,
+          "readable_exit_code": 1,
+          "diagnostic": "x86 decode at 0x905: unsupported prefix 0x64",
+          "compile_exit_code": null,
+          "types_exit_code": null
+        },
+        {
+          "name": "do_tok",
+          "address": "0xa96",
+          "size": 216,
+          "readable_exit_code": 1,
+          "diagnostic": "x86 decode at 0xaaa: unsupported opcode e8",
+          "compile_exit_code": null,
+          "types_exit_code": null
+        }
+      ],
+      "module_probes": [],
+      "model_runs": []
+    }
+  ]
+}

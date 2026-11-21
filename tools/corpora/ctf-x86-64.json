@@ -1,0 +1,477 @@
+{
+  "nirvana_commit": "3730adf648b90ce4e914269adcbc1801d8ee974c",
+  "selection": "six C challenges selected by feature before running Nirvana; original official binaries; 3 rev and 3 pwn",
+  "schema": "nirvana-ctf-corpus-v1",
+  "cases": [
+    {
+      "id": "ductf2024-jmp-flag",
+      "event": "DownUnderCTF 2024",
+      "category": "rev",
+      "repo": "DownUnderCTF/Challenges_2024_Public",
+      "challenge_dir": "rev/jmp-flag",
+      "binary": "rev/jmp-flag/publish/jmp_flag",
+      "sources": [
+        "rev/jmp-flag/src/main.c"
+      ],
+      "extra": [
+        "rev/jmp-flag/README.md",
+        "rev/jmp-flag/src/gen.py"
+      ],
+      "revision": "f2797a33d8f5851508f37e854afceedf85eee8a3",
+      "challenge_url": "https://github.com/DownUnderCTF/Challenges_2024_Public/tree/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/jmp-flag",
+      "files": [
+        {
+          "path": "rev/jmp-flag/publish/jmp_flag",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/jmp-flag/publish/jmp_flag",
+          "git_blob": "11b45a91d9a8f0a5fde29a9393f6b6996ff10cab",
+          "sha256": "8e50dac00da0944823f13cac91d725d5aa8a4adaa83884b4e3ba713233206e63",
+          "bytes": 34960
+        },
+        {
+          "path": "rev/jmp-flag/src/main.c",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/jmp-flag/src/main.c",
+          "git_blob": "adac4bad8895fe4f8d47c305b2522d078e972383",
+          "sha256": "8a97f6d123dfc5fff967e7e9ca477f1d1ed1395ea6931e9dfa981d6c2e9e9395",
+          "bytes": 6969
+        },
+        {
+          "path": "rev/jmp-flag/README.md",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/jmp-flag/README.md",
+          "git_blob": "82609c0a32f8b21559e032d486fb09954a1cae4d",
+          "sha256": "2cceaa158d710fe873399180a28705cabd71df3aa4971ef87b9cca8c3481237b",
+          "bytes": 227
+        },
+        {
+          "path": "rev/jmp-flag/src/gen.py",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/rev/jmp-flag/src/gen.py",
+          "git_blob": "f60c8bfc9024b34666487024ebc6d89b87c5b886",
+          "sha256": "6ba7e98cbefaddd21d191acc781d71ea9f654b205e2fcd631c39d6211f6143c8",
+          "bytes": 860
+        }
+      ],
+      "entry": "0x5300",
+      "entry_evidence": "SysV _start argument to __libc_start_main",
+      "raw_symbols": [],
+      "module_probes": [
+        {
+          "name": "process",
+          "entry": "0x1280"
+        }
+      ],
+      "model_runs": [
+        {
+          "entry": "0x1280",
+          "arguments": [
+            65
+          ],
+          "purpose": "computed branch and synthetic return address"
+        }
+      ]
+    },
+    {
+      "id": "ductf2024-sheep-farm",
+      "event": "DownUnderCTF 2024",
+      "category": "pwn",
+      "repo": "DownUnderCTF/Challenges_2024_Public",
+      "challenge_dir": "pwn/sheep-farm-simulator",
+      "binary": "pwn/sheep-farm-simulator/src/sheep",
+      "sources": [
+        "pwn/sheep-farm-simulator/src/sheep.c"
+      ],
+      "extra": [
+        "pwn/sheep-farm-simulator/README.md",
+        "pwn/sheep-farm-simulator/src/Dockerfile"
+      ],
+      "revision": "f2797a33d8f5851508f37e854afceedf85eee8a3",
+      "challenge_url": "https://github.com/DownUnderCTF/Challenges_2024_Public/tree/f2797a33d8f5851508f37e854afceedf85eee8a3/pwn/sheep-farm-simulator",
+      "files": [
+        {
+          "path": "pwn/sheep-farm-simulator/src/sheep",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/pwn/sheep-farm-simulator/src/sheep",
+          "git_blob": "20c6b2bdb79031e9d29faf157a93e5d8369bedbb",
+          "sha256": "4f220d130793e8b75d1426c4e5868ca5683805c0f23ef3c1059ef386b765ecf3",
+          "bytes": 21840
+        },
+        {
+          "path": "pwn/sheep-farm-simulator/src/sheep.c",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/pwn/sheep-farm-simulator/src/sheep.c",
+          "git_blob": "6edbb9893ed9ccff39825c14a281459c5deb9468",
+          "sha256": "84c6d62c04b4bddbf017781aab17a58ccf626a2db924dabd11ee93ccc2950f2f",
+          "bytes": 4796
+        },
+        {
+          "path": "pwn/sheep-farm-simulator/README.md",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/pwn/sheep-farm-simulator/README.md",
+          "git_blob": "f9f96d9d53b7232bc5085d1c0bf1160ed233b1b4",
+          "sha256": "e97e94259d3d7f3e4a2edbd7a021a1998062be443dae25b26c6d51ff86300a56",
+          "bytes": 408
+        },
+        {
+          "path": "pwn/sheep-farm-simulator/src/Dockerfile",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2024_Public/f2797a33d8f5851508f37e854afceedf85eee8a3/pwn/sheep-farm-simulator/src/Dockerfile",
+          "git_blob": "15e4d8e4f730d4132f3cf65b90da1bb83cef24f3",
+          "sha256": "35aa6eb0cc2c27c183a131e2429352fdbf677781cde4615c63f6d7209c45dcf3",
+          "bytes": 259
+        }
+      ],
+      "entry": "0x197f",
+      "entry_evidence": "main STT_FUNC symbol",
+      "raw_symbols": [
+        "normal",
+        "multiply",
+        "grow",
+        "upgrade_sheep",
+        "update_state"
+      ],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "ductf2023-wrong-signal",
+      "event": "DownUnderCTF 2023",
+      "category": "rev",
+      "repo": "DownUnderCTF/Challenges_2023_Public",
+      "challenge_dir": "rev/wrong-signal",
+      "binary": "rev/wrong-signal/publish/wrong-signal",
+      "sources": [
+        "rev/wrong-signal/src/wrong-signal.c"
+      ],
+      "extra": [
+        "rev/wrong-signal/README.md",
+        "rev/wrong-signal/src/compile.sh",
+        "rev/wrong-signal/src/postprocess.py"
+      ],
+      "revision": "b48f83db2984bc7fa2ec7879a32d7efb1be8d333",
+      "challenge_url": "https://github.com/DownUnderCTF/Challenges_2023_Public/tree/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal",
+      "files": [
+        {
+          "path": "rev/wrong-signal/publish/wrong-signal",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2023_Public/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal/publish/wrong-signal",
+          "git_blob": "27e215b007f535034bff085bda365ad85b591f1b",
+          "sha256": "ad07b154f4f00597d44536b5b7ad048001e1422fcd53c5a0d3bb0b9bef683bcd",
+          "bytes": 1028464
+        },
+        {
+          "path": "rev/wrong-signal/src/wrong-signal.c",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2023_Public/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal/src/wrong-signal.c",
+          "git_blob": "5ad47fb1e119f5aff76625a6e0d2d5385d967ccb",
+          "sha256": "709417969a22c1bba50dc15e9352cf44846cac654cbe90399383f62274638f3f",
+          "bytes": 1378
+        },
+        {
+          "path": "rev/wrong-signal/README.md",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2023_Public/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal/README.md",
+          "git_blob": "3079f36a0f4c1418525c0ec0a3a3ee9a752d6ae3",
+          "sha256": "792dd2ab96430771cacf0a753929c0307bcf721ab25be745b18ae49639ab2137",
+          "bytes": 145
+        },
+        {
+          "path": "rev/wrong-signal/src/compile.sh",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2023_Public/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal/src/compile.sh",
+          "git_blob": "cdcf5bec9cc6453776da0d1edd49f55c2e7a2306",
+          "sha256": "b027bfc3e7b69c18f791638ccc4782cc768ed2b10c3e6bb38b084c13b447ccb8",
+          "bytes": 112
+        },
+        {
+          "path": "rev/wrong-signal/src/postprocess.py",
+          "url": "https://raw.githubusercontent.com/DownUnderCTF/Challenges_2023_Public/b48f83db2984bc7fa2ec7879a32d7efb1be8d333/rev/wrong-signal/src/postprocess.py",
+          "git_blob": "d8456b65dbf8c7c2fb5bd0f8c0b93531b4d51fc3",
+          "sha256": "4a445b10795ea69d32e6817b52892ec8384f062fac6baa6a98fab1098e260b07",
+          "bytes": 954
+        }
+      ],
+      "entry": "0x4011a0",
+      "entry_evidence": "main STT_FUNC symbol",
+      "raw_symbols": [
+        "main"
+      ],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "uiuctf2024-summarize",
+      "event": "UIUCTF 2024",
+      "category": "rev",
+      "repo": "sigpwny/UIUCTF-2024-Public",
+      "challenge_dir": "challenges/rev/summarize",
+      "binary": "challenges/rev/summarize/challenge/summarize",
+      "sources": [
+        "challenges/rev/summarize/summarize.c",
+        "challenges/rev/summarize/operations.c"
+      ],
+      "extra": [
+        "challenges/rev/summarize/challenge.yaml"
+      ],
+      "revision": "073cb80f1f42669252e88020fdb5b281f031c693",
+      "challenge_url": "https://github.com/sigpwny/UIUCTF-2024-Public/tree/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/summarize",
+      "files": [
+        {
+          "path": "challenges/rev/summarize/challenge/summarize",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/summarize/challenge/summarize",
+          "git_blob": "26cb348ef9ec25acf3e41413302efeb14509b58c",
+          "sha256": "66e8392f3eaaf0ee279369f4bbdb61ca7ede335f802339359e67daaa171b4340",
+          "bytes": 14552
+        },
+        {
+          "path": "challenges/rev/summarize/summarize.c",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/summarize/summarize.c",
+          "git_blob": "70f5a510bf761b801d7e25a2f0148a2a4b032162",
+          "sha256": "9bcec92c16c5265b7ddcb27f762335f1ea33dd16ee47142a9181516ef2797a25",
+          "bytes": 2007
+        },
+        {
+          "path": "challenges/rev/summarize/operations.c",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/summarize/operations.c",
+          "git_blob": "15279ce7a40e68c56728021f6bf0eb39bf10ee90",
+          "sha256": "415e850febceed15f3e30f23ae26a11dd3c3ff6365d6f7ed383a8186f54c29f5",
+          "bytes": 1537
+        },
+        {
+          "path": "challenges/rev/summarize/challenge.yaml",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/rev/summarize/challenge.yaml",
+          "git_blob": "ec450d1daf044eacc252f6111b3b25c9934c019d",
+          "sha256": "4bc2a954c10336bfd5fd4ac078a6796b2f09d8a67c3faf9f542cc989923897de",
+          "bytes": 237
+        }
+      ],
+      "entry": "0x4011d6",
+      "entry_evidence": "SysV _start argument to __libc_start_main",
+      "raw_symbols": [],
+      "module_probes": [
+        {
+          "name": "check",
+          "entry": "0x40137b"
+        }
+      ],
+      "model_runs": [
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "author-provided solution",
+          "expected_rax": 1
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "purpose": "out-of-range rejection",
+          "expected_rax": 0
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965528,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 0"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663453,
+            341222189,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 1"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222190,
+            465893239,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 2"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893240,
+            966221407,
+            217433792
+          ],
+          "purpose": "one changed argument 3"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221408,
+            217433792
+          ],
+          "purpose": "one changed argument 4"
+        },
+        {
+          "entry": "0x40137b",
+          "arguments": [
+            705965527,
+            780663452,
+            341222189,
+            465893239,
+            966221407,
+            217433793
+          ],
+          "purpose": "one changed argument 5"
+        }
+      ]
+    },
+    {
+      "id": "uiuctf2024-pwnymalloc",
+      "event": "UIUCTF 2024",
+      "category": "pwn",
+      "repo": "sigpwny/UIUCTF-2024-Public",
+      "challenge_dir": "challenges/pwn/pwnymalloc",
+      "binary": "challenges/pwn/pwnymalloc/challenge/chal",
+      "sources": [
+        "challenges/pwn/pwnymalloc/challenge/main.c",
+        "challenges/pwn/pwnymalloc/challenge/alloc.c"
+      ],
+      "extra": [
+        "challenges/pwn/pwnymalloc/challenge/alloc.h",
+        "challenges/pwn/pwnymalloc/challenge/Makefile",
+        "challenges/pwn/pwnymalloc/challenge/Dockerfile"
+      ],
+      "revision": "073cb80f1f42669252e88020fdb5b281f031c693",
+      "challenge_url": "https://github.com/sigpwny/UIUCTF-2024-Public/tree/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc",
+      "files": [
+        {
+          "path": "challenges/pwn/pwnymalloc/challenge/chal",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc/challenge/chal",
+          "git_blob": "e054dad72de9a16afaa919f829618826108d30e3",
+          "sha256": "acd33918be218d536e79850ecb468d1f3a8b13efa3754db7558507cf7982dea2",
+          "bytes": 17464
+        },
+        {
+          "path": "challenges/pwn/pwnymalloc/challenge/main.c",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc/challenge/main.c",
+          "git_blob": "364c3502b3e918b13dd5622bc7d97edd31ea847f",
+          "sha256": "b0c3fca6bcb5329b98df536a9072c45a975246edbc9e7b8e7d3a26929f799121",
+          "bytes": 3678
+        },
+        {
+          "path": "challenges/pwn/pwnymalloc/challenge/alloc.c",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc/challenge/alloc.c",
+          "git_blob": "9f8a817f2980dac58d02ddf3c4503ee47acacc65",
+          "sha256": "646be9390526052b149abeb49059c9681d292397419361494f5a67c608c9117c",
+          "bytes": 6155
+        },
+        {
+          "path": "challenges/pwn/pwnymalloc/challenge/alloc.h",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc/challenge/alloc.h",
+          "git_blob": "66742f72faa82e1be1a9573125e5909cb0dcbee2",
+          "sha256": "a4cbb314b438dc0000569e2a267984240d1bedcd222e64eb5b910ebe2dafa7fe",
+          "bytes": 80
+        },
+        {
+          "path": "challenges/pwn/pwnymalloc/challenge/Makefile",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc/challenge/Makefile",
+          "git_blob": "61f3957c4d8d82ce648029be5644227f2e430c02",
+          "sha256": "48e9105ec47ec923fc5a0c20158b1d455d27940af851e14dd1ae15af52a1e8f2",
+          "bytes": 74
+        },
+        {
+          "path": "challenges/pwn/pwnymalloc/challenge/Dockerfile",
+          "url": "https://raw.githubusercontent.com/sigpwny/UIUCTF-2024-Public/073cb80f1f42669252e88020fdb5b281f031c693/challenges/pwn/pwnymalloc/challenge/Dockerfile",
+          "git_blob": "fdb92ee113a162d4e4c68ff09bfcfae755d3dddd",
+          "sha256": "dec56736208572fd8579c608dfe93e94e00e3d25e4f691893430e59826176c64",
+          "bytes": 461
+        }
+      ],
+      "entry": "0x161f",
+      "entry_evidence": "main STT_FUNC symbol",
+      "raw_symbols": [
+        "set_btag",
+        "free_list_insert",
+        "free_list_remove",
+        "coalesce"
+      ],
+      "module_probes": [],
+      "model_runs": []
+    },
+    {
+      "id": "dicectf2024-baby-talk",
+      "event": "DiceCTF Quals 2024",
+      "category": "pwn",
+      "repo": "dicegang/dicectf-quals-2024-challenges",
+      "challenge_dir": "pwn/baby-talk",
+      "binary": "pwn/baby-talk/bin/chall",
+      "sources": [
+        "pwn/baby-talk/bin/chall.c"
+      ],
+      "extra": [
+        "pwn/baby-talk/bin/Makefile",
+        "pwn/baby-talk/challenge.yml"
+      ],
+      "revision": "d7f5441edb95f3a98cb49e61b1a608938dacb2a0",
+      "challenge_url": "https://github.com/dicegang/dicectf-quals-2024-challenges/tree/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/pwn/baby-talk",
+      "files": [
+        {
+          "path": "pwn/baby-talk/bin/chall",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/pwn/baby-talk/bin/chall",
+          "git_blob": "b3de33cfb56412dfc09f63603f7ce2181e3bea47",
+          "sha256": "d12445bc31833d076632bd6d910152fa0dfe21f345095b6dfa8383a457f2ac11",
+          "bytes": 13024
+        },
+        {
+          "path": "pwn/baby-talk/bin/chall.c",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/pwn/baby-talk/bin/chall.c",
+          "git_blob": "d0c2b446ecdc2ebb0d86e183cde7db0fab8543cb",
+          "sha256": "8a38917864ee084769db59121e6ad7f9f161f93a0a5ae478a7c2fdda86d14dcf",
+          "bytes": 2262
+        },
+        {
+          "path": "pwn/baby-talk/bin/Makefile",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/pwn/baby-talk/bin/Makefile",
+          "git_blob": "f02b6e4f6dd3ceae7fee2284b6281993dc40a2e0",
+          "sha256": "8a809af4e3074a630f39057968ff26273b457566f8c26a85ad3ba7cb0c733803",
+          "bytes": 65
+        },
+        {
+          "path": "pwn/baby-talk/challenge.yml",
+          "url": "https://raw.githubusercontent.com/dicegang/dicectf-quals-2024-challenges/d7f5441edb95f3a98cb49e61b1a608938dacb2a0/pwn/baby-talk/challenge.yml",
+          "git_blob": "f223c04de2f8817fcf401d044cff649652b0d38f",
+          "sha256": "977de548544b5ef224456ab8cc9883c962b097ce384198b00c961d26e7dcdbd8",
+          "bytes": 405
+        }
+      ],
+      "entry": "0xbfe",
+      "entry_evidence": "main STT_FUNC symbol",
+      "raw_symbols": [
+        "get_empty",
+        "get_num",
+        "do_tok"
+      ],
+      "module_probes": [],
+      "model_runs": []
+    }
+  ]
+}
