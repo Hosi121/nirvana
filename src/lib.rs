@@ -2,96 +2,41 @@
 //!
 //! A checked ELF function reader and an x86-64 integer decoder/lifter feed an
 //! executable IR with guest memory. Basic-block recovery, graph analysis,
-//! structuring and C emission use no external disassembler or compiler framework.
+//! structuring and C emission are implemented with the Rust standard library.
 
-pub mod access_expr;
-pub mod add_division_expr;
-pub mod address_identity;
-pub mod address_types;
-pub mod affine_region;
-pub mod allocation;
-pub mod allocation_verify;
-pub mod analysis;
-pub mod arithmetic_graph;
-pub mod bit_expr;
-pub mod block_verify;
-pub mod branch_tail;
-pub mod call_footprint;
-pub mod cfg;
-pub mod context_remainder;
-pub mod display_dce;
-pub mod division_expr;
-pub mod effects;
-pub mod effects_emit;
-pub mod effects_observe;
-pub mod effects_readable;
-pub mod eh_frame;
-pub mod elf;
-pub mod emit;
-pub mod expression_ir;
-pub mod finite_region;
-pub mod for_loop;
-pub mod frontend;
-pub mod goto_layout;
-pub mod guarded_loop;
-pub mod hir;
-pub mod indexed;
-pub mod ir;
-mod join;
-pub mod jump_tables;
-pub mod linked_elf;
-pub mod load_mask;
-pub mod loader;
-pub mod local_identity;
-pub mod loop_exit;
-pub mod loop_labels;
-pub mod loop_recover;
-pub mod loop_shape;
-pub mod memory;
-pub mod memory_ssa;
-pub mod module_emit;
-pub mod module_ir;
-pub mod module_local_plan;
-pub mod module_outline;
-pub mod module_readable;
-pub mod module_switch_keys;
-pub mod module_tail_dispatch;
-pub mod module_values;
-pub mod narrow_division_expr;
-pub mod narrow_rotate;
-pub mod object_refs;
-pub mod observe;
-pub mod parallel_copy;
-pub mod postdom;
-pub mod presentation;
-pub mod provenance;
-pub mod readable;
-pub mod record_shapes;
-pub mod reduce;
-pub mod remainder_expr;
-pub mod remainder_graph;
-pub mod self_update;
-pub mod sequence;
-pub mod signed_expr;
-pub mod simplify;
-pub mod source_locals;
-pub mod ssa;
-pub mod ssa_constants;
-pub mod ssa_destroy;
-pub mod ssa_locals;
-pub mod ssa_storage;
-pub mod stack;
-pub mod stack_cells;
-pub mod stack_role;
-pub mod stack_values;
-pub mod structure;
-pub mod structure_verify;
-pub mod type_infer;
-pub mod value_graph;
-pub mod value_liveness;
-pub mod value_role;
-pub mod value_width;
-pub mod verify;
-pub mod web;
-pub mod web_verify;
-pub mod x86;
+//! Implementations are grouped by responsibility; root exports preserve the
+//! existing Rust API.
+
+pub mod binary;
+pub mod codegen;
+pub mod control_flow;
+pub mod dataflow;
+pub mod model;
+pub mod transform;
+pub mod verification;
+
+pub use binary::{eh_frame, elf, frontend, jump_tables, linked_elf, loader, object_refs, x86};
+pub use codegen::{
+    address_types, effects_emit, effects_readable, emit, goto_layout, loop_labels, module_emit,
+    module_outline, module_readable, module_switch_keys, module_tail_dispatch, presentation,
+    readable,
+};
+pub use control_flow::{
+    analysis, branch_tail, cfg, loop_exit, loop_recover, loop_shape, postdom, structure,
+    structure_verify,
+};
+pub use dataflow::{
+    address_identity, allocation, allocation_verify, call_footprint, local_identity, memory_ssa,
+    module_local_plan, module_values, parallel_copy, provenance, record_shapes, source_locals, ssa,
+    ssa_constants, ssa_destroy, ssa_locals, ssa_storage, stack, stack_cells, stack_role,
+    stack_values, type_infer, value_graph, value_liveness, value_role, value_width, web,
+    web_verify,
+};
+pub use model::{effects, effects_observe, expression_ir, hir, ir, memory, module_ir, observe};
+pub use transform::{
+    access_expr, add_division_expr, affine_region, arithmetic_graph, bit_expr, context_remainder,
+    display_dce, division_expr, finite_region, for_loop, guarded_loop, indexed, load_mask,
+    narrow_division_expr, narrow_rotate, reduce, remainder_expr, remainder_graph, self_update,
+    sequence, signed_expr, simplify,
+};
+pub use verification::{block_verify, verify};

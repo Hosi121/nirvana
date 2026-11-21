@@ -1,0 +1,48 @@
+//! transform integration suite.
+#[allow(dead_code)]
+mod support;
+
+#[path = "transform/access_expr.rs"]
+mod access_expr;
+#[path = "transform/add_division_expr.rs"]
+mod add_division_expr;
+#[path = "transform/affine_region.rs"]
+mod affine_region;
+#[path = "transform/arithmetic_graph.rs"]
+mod arithmetic_graph;
+#[path = "transform/bit_expr.rs"]
+mod bit_expr;
+#[path = "transform/context_remainder.rs"]
+mod context_remainder;
+#[path = "transform/display_dce.rs"]
+mod display_dce;
+#[path = "transform/division_expr.rs"]
+mod division_expr;
+#[path = "transform/finite_region.rs"]
+mod finite_region;
+#[path = "transform/for_loop.rs"]
+mod for_loop;
+#[path = "transform/guarded_loop.rs"]
+mod guarded_loop;
+#[path = "transform/indexed.rs"]
+mod indexed;
+#[path = "transform/load_mask.rs"]
+mod load_mask;
+#[path = "transform/narrow_division_expr.rs"]
+mod narrow_division_expr;
+#[path = "transform/narrow_rotate.rs"]
+mod narrow_rotate;
+#[path = "transform/reduction.rs"]
+mod reduction;
+#[path = "transform/remainder_expr.rs"]
+mod remainder_expr;
+#[path = "transform/remainder_graph.rs"]
+mod remainder_graph;
+#[path = "transform/self_update.rs"]
+mod self_update;
+#[path = "transform/sequence.rs"]
+mod sequence;
+#[path = "transform/signed_expr.rs"]
+mod signed_expr;
+#[path = "transform/simplify.rs"]
+mod simplify;

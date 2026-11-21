@@ -1,0 +1,30 @@
+//! SSA, memory and value identities, lifetimes and type candidates.
+
+pub mod address_identity;
+pub mod allocation;
+pub mod allocation_verify;
+pub mod call_footprint;
+pub mod local_identity;
+pub mod memory_ssa;
+pub mod module_local_plan;
+pub mod module_values;
+pub mod parallel_copy;
+pub mod provenance;
+pub mod record_shapes;
+pub mod source_locals;
+pub mod ssa;
+pub mod ssa_constants;
+pub mod ssa_destroy;
+pub mod ssa_locals;
+pub mod ssa_storage;
+pub mod stack;
+pub mod stack_cells;
+pub mod stack_role;
+pub mod stack_values;
+pub mod type_infer;
+pub mod value_graph;
+pub mod value_liveness;
+pub mod value_role;
+pub mod value_width;
+pub mod web;
+pub mod web_verify;
