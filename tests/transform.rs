@@ -1,6 +1,13 @@
 //! transform integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod checked_c;
+    pub mod ir;
+    pub mod native;
+    #[path = "../../examples/programs/mod.rs"]
+    pub mod programs;
+}
 
 #[path = "transform/access_expr.rs"]
 mod access_expr;

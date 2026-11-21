@@ -1,6 +1,10 @@
 //! binary integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod module_fixture;
+    pub mod native;
+}
 
 #[path = "binary/divide_arithmetic.rs"]
 mod divide_arithmetic;

@@ -1,6 +1,10 @@
 //! control flow integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    pub mod ir;
+    #[path = "../../examples/programs/mod.rs"]
+    pub mod programs;
+}
 
 #[path = "control_flow/analysis.rs"]
 mod analysis;

@@ -1,6 +1,9 @@
 //! cli integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod native;
+}
 
 #[path = "cli/record_shapes_cli.rs"]
 mod record_shapes_cli;

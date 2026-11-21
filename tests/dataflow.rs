@@ -1,6 +1,12 @@
 //! dataflow integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod checked_c;
+    pub mod ir;
+    #[allow(dead_code)]
+    pub mod native;
+}
 
 #[path = "dataflow/allocation.rs"]
 mod allocation;

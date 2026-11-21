@@ -328,7 +328,7 @@ fn step(address: u64) -> Node {
         assignments: vec![],
     }
 }
-use crate::support::ir::c;
+use nirvana::ir::Expr::Const as c;
 
 #[test]
 fn all_syntactic_copies_are_checked_even_after_an_unconditional_return() {

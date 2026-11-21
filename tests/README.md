@@ -31,7 +31,8 @@ python3 -m unittest discover -s tools/tests
 
 ## 共通処理
 
-[共通コード](support/mod.rs)を各suiteの`support`として読み込みます。
+共通helperは`tests/support/`に置き、各suiteの`mod support`で使用するモジュールを選びます。
+例えば[プロセス起動と一時領域](support/native.rs)は、native比較を行うsuiteから読み込みます。
 
 - `native`: 一時ディレクトリ、コンパイラ起動、入力と出力、期限付き実行。コンパイラはsuite内で最大4個を同時実行します。
 - `checked_c`・`module_fixture`: 生成Cのコンパイルとゲスト状態の比較。

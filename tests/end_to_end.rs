@@ -1,6 +1,16 @@
 //! end to end integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod checked_c;
+    pub mod dispatch_oracle;
+    pub mod loop_headers;
+    pub mod memory_trace;
+    pub mod module_fixture;
+    pub mod native;
+    #[path = "../../examples/programs/mod.rs"]
+    pub mod programs;
+}
 
 #[path = "end_to_end/algorithm_fixtures.rs"]
 mod algorithm_fixtures;

@@ -1,6 +1,11 @@
 //! module integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod module_fixture;
+    #[allow(dead_code)]
+    pub mod native;
+}
 
 #[path = "module/module_bindings.rs"]
 mod module_bindings;

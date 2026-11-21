@@ -1,6 +1,13 @@
 //! codegen integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    pub mod checked_c;
+    pub mod ir;
+    pub mod loop_headers;
+    pub mod native;
+    #[path = "../../examples/programs/mod.rs"]
+    pub mod programs;
+}
 
 #[path = "codegen/address_types.rs"]
 mod address_types;

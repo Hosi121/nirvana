@@ -1,6 +1,9 @@
 //! verification integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    pub mod ir;
+    pub mod rewrite_cases;
+}
 
 #[path = "verification/block_verification.rs"]
 mod block_verification;

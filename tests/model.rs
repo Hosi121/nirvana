@@ -1,6 +1,14 @@
 //! model integration suite.
-#[allow(dead_code)]
-mod support;
+#[path = "support"]
+mod support {
+    #[allow(dead_code)]
+    pub mod checked_c;
+    pub mod ir;
+    #[allow(dead_code)]
+    pub mod native;
+    #[path = "../../examples/programs/mod.rs"]
+    pub mod programs;
+}
 
 #[path = "model/call_preservation.rs"]
 mod call_preservation;
