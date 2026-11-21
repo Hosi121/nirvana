@@ -189,6 +189,7 @@ pub fn programs() -> Vec<Program> {
     ]);
     let mut result = vec![shifted, split, inserted, may, phi, looped, transformed];
     result.extend(producer_programs());
+    result.extend(after_loop_programs());
     result
 }
 
@@ -225,4 +226,35 @@ pub fn producer_programs() -> Vec<Program> {
         ])
     })
     .collect()
+}
+
+/// Values created in the single-visit exit of a loop, rather than its prefix.
+pub fn after_loop_programs() -> Vec<Program> {
+    [b(B::Add, r(0), r(1)), load(0, Width::U64)]
+        .into_iter()
+        .map(|value| {
+            program(vec![
+                ins(0, vec![set(3, b(B::And, r(1), c(3)))], Control::Jump(1)),
+                ins(
+                    1,
+                    vec![],
+                    Control::Branch {
+                        condition: r(3),
+                        target: 3,
+                    },
+                ),
+                ins(
+                    2,
+                    vec![
+                        set(6, value),
+                        store(16, Width::U64, r(6)),
+                        set(6, c(0)),
+                        set(2, load(17, Width::U16)),
+                    ],
+                    Control::Return(r(2)),
+                ),
+                ins(3, vec![set(3, b(B::Sub, r(3), c(1)))], Control::Jump(1)),
+            ])
+        })
+        .collect()
 }

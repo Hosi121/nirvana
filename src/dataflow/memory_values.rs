@@ -1,7 +1,7 @@
 //! Recover values saved to memory without removing their checked reloads.
 //!
 //! Every reaching byte agrees on a slice of one SSA value. A value captured once in
-//! the acyclic entry prefix can replace uses of its successful reload. Original
+//! a block visited at most once from entry can replace uses of its successful reload. Original
 //! registers, memory effects, source PCs and instruction budgets are retained;
 //! equivalence projects away the additional internal capture registers.
 use crate::dataflow::ssa::{
@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod analyze;
 mod projection;
 mod rewrite;
+mod single_visit;
 mod verify;
 const MAX_CAPTURES: usize = 256;
 

@@ -246,3 +246,31 @@ fn actual_split_ssa_producers_have_checked_memory_proofs() {
         "5 universal actual SSA producer/RAM/first-fault proofs; 1 IR-replayed wrong-bit SAT control"
     );
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn actual_loop_exit_captures_preserve_checked_block_observations() {
+    use nirvana::block_verify::{self, BlockVerdict};
+    use nirvana::ir::Reg;
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/post-loop-values");
+    std::fs::create_dir_all(&root).unwrap();
+    let prefix: Vec<_> = (0..8).map(Reg).collect();
+    for (i, source) in crate::support::byte_values::after_loop_programs()
+        .into_iter()
+        .enumerate()
+    {
+        let plan = nirvana::memory_values::MemoryValuePlan::analyze(&source).unwrap();
+        let candidate = plan.lower(&source).unwrap();
+        let query = block_verify::block_query(&source, &candidate, 2, &prefix, &prefix).unwrap();
+        std::fs::write(
+            root.join(format!("exit-{i}.smt2")),
+            format!("{}(check-sat)\n", query.smt2()),
+        )
+        .unwrap();
+        let verdict = query.check(&solver);
+        std::fs::write(root.join(format!("exit-{i}.out")), format!("{verdict:?}\n")).unwrap();
+        assert_eq!(verdict, BlockVerdict::EquivalentUnderModel);
+    }
+}

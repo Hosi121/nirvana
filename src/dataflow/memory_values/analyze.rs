@@ -1,5 +1,4 @@
 use super::*;
-use crate::control_flow::cfg::Target;
 use crate::dataflow::address_identity;
 pub(super) struct Context<'a> {
     pub source: &'a Program,
@@ -8,7 +7,7 @@ pub(super) struct Context<'a> {
     pub loads: LoadInputs,
     pub evidence: SsaEvidence,
     points: BTreeMap<Site, (usize, usize)>,
-    prefix: Vec<bool>,
+    single_visit: Vec<bool>,
 }
 impl<'a> Context<'a> {
     pub fn new(source: &'a Program) -> Option<Self> {
@@ -20,7 +19,7 @@ impl<'a> Context<'a> {
             return None;
         }
         let mut budget = Budget::new();
-        let prefix = entry_prefix(source, &mut budget)?;
+        let single_visit = super::single_visit::blocks(source, &mut budget)?;
         let mut points = BTreeMap::new();
         for (b, block) in graph.blocks.iter().enumerate() {
             for (p, point) in block.points.iter().enumerate() {
@@ -35,7 +34,7 @@ impl<'a> Context<'a> {
             loads,
             evidence,
             points,
-            prefix,
+            single_visit,
         })
     }
     pub fn point(&self, site: Site) -> Option<&PointValues> {
@@ -86,7 +85,7 @@ impl<'a> Context<'a> {
             ),
         };
         let id = self.source.cfg().block_at(block)?;
-        self.prefix[id.index()].then_some(Capture {
+        self.single_visit[id.index()].then_some(Capture {
             value,
             point,
             source,
@@ -154,43 +153,6 @@ impl<'a> Context<'a> {
         let key = key?;
         Some(key)
     }
-}
-// Kahn removal identifies the entry region preceding every cycle. Each
-// removed block executes at most once. Cycle successors stay conservative.
-fn entry_prefix(source: &Program, budget: &mut Budget) -> Option<Vec<bool>> {
-    let cfg = source.cfg();
-    let reachable = cfg.reachable_blocks();
-    let mut degree = vec![0usize; cfg.blocks().len()];
-    for &id in &reachable {
-        for edge in &cfg.block(id).successors {
-            budget.spend(1).ok()?;
-            let Target::Block(to) = edge.target else {
-                return None;
-            };
-            degree[to.index()] = degree[to.index()].checked_add(1)?;
-        }
-    }
-    let mut pending: VecDeque<_> = reachable
-        .iter()
-        .copied()
-        .filter(|id| degree[id.index()] == 0)
-        .collect();
-    let mut prefix = vec![false; degree.len()];
-    while let Some(id) = pending.pop_front() {
-        budget.spend(1).ok()?;
-        prefix[id.index()] = true;
-        for edge in &cfg.block(id).successors {
-            budget.spend(1).ok()?;
-            let Target::Block(to) = edge.target else {
-                return None;
-            };
-            degree[to.index()] = degree[to.index()].checked_sub(1)?;
-            if degree[to.index()] == 0 {
-                pending.push_back(to);
-            }
-        }
-    }
-    Some(prefix)
 }
 pub(super) fn collect(
     context: &Context<'_>,

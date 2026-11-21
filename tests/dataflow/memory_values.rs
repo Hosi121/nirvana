@@ -688,3 +688,23 @@ fn split_words_follow_actual_ssa_producers_without_erasing_first_faults() {
     }
     println!("{checked} SSA-producer split-word full-register/RAM/PC/fault/budget observations");
 }
+
+#[test]
+fn values_created_after_loops_are_captured_once_and_backedges_reject_the_plan() {
+    let mut checked = 0;
+    for source in crate::support::byte_values::after_loop_programs() {
+        let plan = MemoryValuePlan::analyze(&source).expect("single-visit loop exit producer");
+        assert_eq!(plan.evidence().snapshot_values, 1);
+        assert_eq!(plan.evidence().proved_loads, 1);
+        checked += compare(&source, &plan.lower(&source).unwrap());
+        let mut rows = source.instructions().to_vec();
+        rows[2].control = Control::Branch {
+            condition: r(2),
+            target: 1,
+        };
+        let cyclic = Program::new(0, 8, rows).unwrap();
+        assert!(MemoryValuePlan::analyze(&cyclic).is_none());
+        assert!(plan.lower(&cyclic).is_none());
+    }
+    println!("{checked} post-loop capture full-state/fault/budget observations");
+}
