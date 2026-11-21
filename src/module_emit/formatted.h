@@ -70,6 +70,7 @@ struct nv_format_spec {
     unsigned length; /* 0:int, 1:hh, 2:h, 3:l, 4:ll */
     size_t end;
     int width, precision;
+    unsigned char characters[32];
 };
 static inline unsigned nv_format_number(const char *format, size_t *cursor, int *value) {
     *value = 0;
@@ -127,8 +128,8 @@ static inline unsigned nv_format_parse(struct nv_module *s, const char *format,
         if (format[at] == 'l') { ++at; spec->length = 4; }
     }
     spec->conversion = format[at];
-    if (!spec->conversion || !strchr(input ? "diuoxX" : "diuoxXcs", spec->conversion)) return 0;
-    if ((spec->conversion == 'c' || spec->conversion == 's') && spec->length) return 0;
+    if (!spec->conversion || !strchr(input ? "diuoxXcs[" : "diuoxXcs", spec->conversion)) return 0;
+    if (strchr("cs[", spec->conversion) && spec->length) return 0;
     if (spec->conversion == 'c' && has_precision) return 0;
     /* C only defines '-' for strings/chars, '+'/' ' for signed conversions,
      * '#' for octal/hex, and zero padding for integer conversions. */
@@ -137,6 +138,23 @@ static inline unsigned nv_format_parse(struct nv_module *s, const char *format,
         if ((flag == '+' || flag == ' ') && !strchr("di", conversion)) return 0;
         if (flag == '#' && !strchr("oxX", conversion)) return 0;
         if (flag == '0' && !strchr("diuoxX", conversion)) return 0;
+    }
+    if (input && spec->conversion == '[') {
+        unsigned invert = format[++at] == '^', members = 0;
+        if (invert) ++at;
+        memset(spec->characters, 0, sizeof(spec->characters));
+        if (format[at] == ']') { spec->characters[']' / 8] |= 1u << (']' % 8); ++at; ++members; }
+        while (format[at] && format[at] != ']') {
+            unsigned first = (unsigned char)format[at++], last = first;
+            if (format[at] == '-' && format[at + 1] && format[at + 1] != ']') {
+                last = (unsigned char)format[at + 1]; at += 2;
+                if (last < first) return 0;
+            }
+            for (unsigned c = first; c <= last; ++c) spec->characters[c / 8] |= 1u << (c % 8);
+            ++members;
+        }
+        if (format[at] != ']' || !members) return 0;
+        if (invert) for (unsigned i = 0; i < sizeof(spec->characters); ++i) spec->characters[i] ^= 255;
     }
     spec->end = at + 1;
     memcpy(spec->text + used, flags, flag_count); used += flag_count;
@@ -193,14 +211,28 @@ static inline unsigned nv_format_output(struct nv_module *s, const char *format,
 }
 
 struct nv_scan_conversion { struct nv_format_spec spec; unsigned argument; };
-static inline unsigned nv_format_input(struct nv_module *s, const char *format, int *result) {
+struct nv_scan_input { struct nv_module *state; FILE *stream; uint64_t address; unsigned string; };
+static inline int nv_scan_get(struct nv_scan_input *input) {
+    if (!input->string) return fgetc(input->stream);
+    unsigned ch = (unsigned)nv_read(input->state, input->address, 1);
+    if (!ch) return EOF;
+    ++input->address;
+    return (int)ch;
+}
+static inline void nv_scan_unget(struct nv_scan_input *input, int ch) {
+    if (ch == EOF) return;
+    if (input->string) --input->address;
+    else (void)ungetc(ch, input->stream);
+}
+static inline unsigned nv_format_input(struct nv_module *s, const char *format,
+                                        unsigned argument, unsigned string,
+                                        uint64_t address, int *result) {
     struct nv_scan_conversion conversions[NV_FORMAT_CONVERSIONS];
-    unsigned count = 0, argument = 1, index = 0;
+    struct nv_scan_input input = {s, NULL, address, string};
+    unsigned count = 0, index = 0;
     size_t at = 0;
-    FILE *stream;
     /* Validate the complete grammar before consuming input. Destinations are
-     * checked at their conversion, so earlier assignments can alias later
-     * stack arguments without freezing their old pointer values. */
+     * fetched at their conversion: earlier assignments may alias later args. */
     while (format[at]) {
         if (format[at] != '%' || format[at + 1] == '%') {
             if (format[at++] == '%') ++at;
@@ -213,8 +245,8 @@ static inline unsigned nv_format_input(struct nv_module *s, const char *format, 
             at = conversion->spec.end;
         }
     }
-    stream = NV_GUEST_STDIN(s);
-    if (!stream) return 0;
+    if (!string) { input.stream = NV_GUEST_STDIN(s); if (!input.stream) return 0; }
+    else { size_t ignored; (void)nv_format_string(s, address, SIZE_MAX, &ignored); }
     at = 0; *result = 0;
     while (format[at]) {
         int ch, matched;
@@ -222,26 +254,59 @@ static inline unsigned nv_format_input(struct nv_module *s, const char *format, 
         struct nv_scan_conversion *conversion;
         unsigned width;
         if (isspace((unsigned char)format[at])) {
-            do { ch = fgetc(stream); } while (ch != EOF && isspace((unsigned char)ch));
-            if (ch != EOF) (void)ungetc(ch, stream);
+            do { ch = nv_scan_get(&input); } while (ch != EOF && isspace((unsigned char)ch));
+            nv_scan_unget(&input, ch);
             ++at; continue;
         }
         if (format[at] != '%' || format[at + 1] == '%') {
-            ch = fgetc(stream);
+            ch = nv_scan_get(&input);
             if (ch != (unsigned char)format[at]) {
-                if (ch != EOF) (void)ungetc(ch, stream);
-                else if (*result == 0) *result = EOF;
+                nv_scan_unget(&input, ch);
+                if (ch == EOF && *result == 0) *result = EOF;
                 return 1;
             }
             if (format[at++] == '%') ++at;
             continue;
         }
         conversion = &conversions[index++];
-        width = conversion->spec.length == 1 ? 1 : conversion->spec.length == 2 ? 2 : conversion->spec.length >= 3 ? 8 : 4;
         destination = nv_format_argument(s, conversion->argument);
+        if (strchr("cs[", conversion->spec.conversion)) {
+            const char kind = conversion->spec.conversion;
+            uint64_t written = 0, maximum = conversion->spec.width ? (uint64_t)conversion->spec.width : kind == 'c' ? 1 : UINT64_MAX;
+            if (kind == 's') {
+                do { ch = nv_scan_get(&input); } while (ch != EOF && isspace((unsigned char)ch));
+                nv_scan_unget(&input, ch);
+            }
+            ch = EOF;
+            while (written < maximum) {
+                ch = nv_scan_get(&input);
+                if (ch == EOF || (kind == 's' && isspace((unsigned char)ch)) ||
+                    (kind == '[' && !(conversion->spec.characters[(unsigned)ch / 8] & (1u << ((unsigned)ch % 8))))) {
+                    nv_scan_unget(&input, ch); break;
+                }
+                nv_write(s, destination + written, 1, (unsigned char)ch);
+                ++written;
+            }
+            if (!written) { if (ch == EOF && *result == 0) *result = EOF; return 1; }
+            if (kind != 'c') nv_write(s, destination + written, 1, 0);
+            ++*result; at = conversion->spec.end;
+            continue;
+        }
+        width = conversion->spec.length == 1 ? 1 : conversion->spec.length == 2 ? 2 : conversion->spec.length >= 3 ? 8 : 4;
         (void)nv_check(s, destination, width, 2);
-        /* Separate typed locals avoid pointer punning and variadic type UB. */
-#define NV_SCAN_TYPED(type) do { type item = 0; matched = fscanf(stream, conversion->spec.text, &item); value = (uint64_t)item; } while (0)
+        /* Each host call receives an explicitly typed local. %n here only
+         * measures a host string scan, and never targets guest memory. */
+#define NV_SCAN_TYPED(type) do { \
+    type item = 0; \
+    if (input.string) { \
+        size_t ignored; int consumed = 0; char pattern[68]; \
+        const char *source = nv_format_string(s, input.address, SIZE_MAX, &ignored); \
+        (void)snprintf(pattern, sizeof(pattern), "%s%%n", conversion->spec.text); \
+        matched = sscanf(source, pattern, &item, &consumed); \
+        if (matched == 1) input.address += (unsigned)consumed; \
+    } else matched = fscanf(input.stream, conversion->spec.text, &item); \
+    value = (uint64_t)item; \
+} while (0)
         if (strchr("di", conversion->spec.conversion)) {
             switch (conversion->spec.length) {
             case 1: NV_SCAN_TYPED(signed char); break;
@@ -260,10 +325,7 @@ static inline unsigned nv_format_input(struct nv_module *s, const char *format, 
             }
         }
 #undef NV_SCAN_TYPED
-        if (matched != 1) {
-            if (matched == EOF && *result == 0) *result = EOF;
-            return 1;
-        }
+        if (matched != 1) { if (matched == EOF && *result == 0) *result = EOF; return 1; }
         nv_write(s, destination, width, value);
         ++*result; at = conversion->spec.end;
     }
@@ -274,7 +336,8 @@ static inline unsigned nv_formatted_call(struct nv_module *s, const char *name, 
     char format[NV_FORMAT_LIMIT + 1], output[NV_FORMAT_OUTPUT_LIMIT + 1];
     uint64_t format_address, destination = 0, capacity = UINT64_MAX;
     uint64_t object_size = UINT64_MAX;
-    unsigned argument = 1;
+    unsigned scanning_string = !strcmp(name, "sscanf") || !strcmp(name, "__isoc99_sscanf");
+    unsigned argument = scanning_string ? 2 : 1;
     unsigned printing = !strcmp(name, "printf") || !strcmp(name, "__printf_chk");
     size_t length, size;
     const char *string;
@@ -299,8 +362,8 @@ static inline unsigned nv_formatted_call(struct nv_module *s, const char *name, 
     string = nv_format_string(s, format_address, NV_FORMAT_LIMIT + 1, &length);
     if (length > NV_FORMAT_LIMIT) return nv_format_unsupported(s);
     memcpy(format, string, length); format[length] = 0;
-    if (!strcmp(name, "scanf") || !strcmp(name, "__isoc99_scanf")) {
-        if (!nv_format_input(s, format, result)) return nv_format_unsupported(s);
+    if (scanning_string || !strcmp(name, "scanf") || !strcmp(name, "__isoc99_scanf")) {
+        if (!nv_format_input(s, format, argument, scanning_string, s->r[7], result)) return nv_format_unsupported(s);
         return 1;
     }
     if (!nv_format_output(s, format, argument, output, &size)) return nv_format_unsupported(s);

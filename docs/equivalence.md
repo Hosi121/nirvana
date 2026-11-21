@@ -182,7 +182,9 @@ moduleのSTOSは8/16/32/64-bitとREP、CLD／STDを扱います。方向フラ�
 REPは一命令として予算を消費し、各Storeの成功後にRDIとRCXを更新します。
 count 0ではメモリを参照せず、途中faultでは書込み済みprefix・残りcount・次の書込み先と元のPCを保持します。
 STOSの5つの算術flagは保持し、64-bitのアドレスとcountを使います。
-実行器は要素ごとの検査を行い、SSA・呼出し要約は繰返しStoreをopaqueとしてレジスタ表現へ退避します。
+実行器は要素ごとの検査を行います。解析用SSAには幅・REP・継続先を持つordered-store境界を置き、RAX・RDI・DFとREP時のRCXを入力として記録します。
+RDIとREP時のRCXには未知の新しい値を割り当て、ほかの生存値は同じidentityで継続します。局所変数付きCは成功後に実レジスタを読み戻し、fault時の部分進捗はcanonical stateに残します。
+局所変数の適用時には元命令の幅・REP・継続先と解析イベントを独立に照合します。呼出し要約では反復Storeをopaqueなメモリ効果として扱います。
 仕様は[Intel SDM Vol.2のREP／STOS](https://cdrdv2-public.intel.com/835757/325383-sdm-vol-2abcd.pdf)を基準にし、native oracleで幅・方向・flag・page fault時の進捗を検査します。
 
 CのPOSIXアダプタはLinux x86-64の、有効なbufferを持つ呼出しを対象とします。
@@ -195,16 +197,20 @@ HTTP比較の観測はstatus・headers・body・接続終了・プロセス終�
 書式付きI/Oは[`formatted.h`](../src/module_emit/formatted.h)で共通化しています。
 SysVの整数／pointer引数を6個のGP registerと、calleeの`RSP+8`以降のstack slotから読みます。
 `printf/sprintf/snprintf`は`diuoxX`・`c`・`s`・`%%`、整数の`hh/h/l/ll`、幅・精度と`*`を扱います。
-`scanf/__isoc99_scanf`は整数の`diuoxX`、同じ幅修飾、field幅、空白・literal・`%%`を扱い、代入数・EOF・部分成功を保持します。
+`scanf/__isoc99_scanf`と`sscanf/__isoc99_sscanf`は整数の`diuoxX`、同じ幅修飾、`c`・`s`・scanset（`[...]`）、field幅、空白・literal・`%%`を扱い、代入数・EOF・部分成功を保持します。
+scansetは先頭の`]`、`^`による反転、昇順の範囲を解釈します。文字入力はbyteごとのStoreで、後続のfaultでも書込み済みprefixを保持します。
+`sscanf`の入力文字列は開始時にNUL終端まで検査し、変換ごとにRAMを読みます。入力と出力が重なる場合は、アダプタ独自のordered-memory動作として後続入力の位置を保持します。
+この重なりはnative Cの`restrict` profileから分離し、メモリモデルへの直接テストで検査します。
 全書式を検査してからI/Oへ進み、scanfの各destinationはその変換の直前に検査します。先のStoreが後のstack引数を書き換えた場合も再Loadします。
-各変換は型を合わせたホストlibc呼出しへ渡し、ゲストpointerは検査済みRAM内のhost pointerへ変換します。
+整数変換は型を合わせたホストlibc呼出しを使い、文字入力は共通のreaderと検査付きStoreを使います。
 `snprintf`は切詰め・NUL・本来の出力長を区別し、capacity 0ではdestinationへアクセスしません。
 `putchar`と`printf`はゲストstdout binding、`scanf`はゲストstdin bindingを参照します。
+`fgets`と`fflush`は引数のFILE handleを標準streamへ対応づけます。`fgets`は指定した全bufferを先に検査し、改行・EOF・NUL終端と64-bitゲストpointer返り値を保持します。`fflush(NULL)`は全出力streamをflushします。
 `__printf_chk/__sprintf_chk/__snprintf_chk`も対応する引数位置を使い、object size条件を検査します。
 fortifyの条件違反は外部効果前のunsupportedとして扱い、SIGABRTの再現はsignal profileの対象です。
 このprofileはC locale、対象整数型の範囲内の入力、重ならないformat／出力bufferを前提にします。
-書式は4,096 byte、出力は65,536 byte、変換は32個までです。上限、浮動小数点、位置指定、`%n`、入力の抑制・文字列変換はunsupportedとして保持します。
-仕様の根拠は[SysVの可変長引数](https://gitlab.com/x86-psABIs/x86-64-ABI/-/blob/master/x86-64-ABI/low-level-sys-info.tex)、glibcの[出力書式](https://sourceware.org/glibc/manual/latest/html_node/Output-Conversion-Syntax.html)・[整数入力](https://sourceware.org/glibc/manual/latest/html_node/Numeric-Input-Conversions.html)・[fortify](https://sourceware.org/glibc/manual/latest/html_node/Source-Fortification.html)です。
+書式は4,096 byte、出力・入力field幅・`fgets`のcapacityは65,536 byte、変換は32個までです。上限、浮動小数点、位置指定、`%n`、入力の代入抑制はunsupportedとして保持します。
+仕様の根拠は[SysVの可変長引数](https://gitlab.com/x86-psABIs/x86-64-ABI/-/blob/master/x86-64-ABI/low-level-sys-info.tex)、glibcの[出力書式](https://sourceware.org/glibc/manual/latest/html_node/Output-Conversion-Syntax.html)・[整数入力](https://sourceware.org/glibc/manual/latest/html_node/Numeric-Input-Conversions.html)・[行入力](https://sourceware.org/glibc/manual/latest/html_node/Line-Input.html)・[fortify](https://sourceware.org/glibc/manual/latest/html_node/Source-Fortification.html)です。
 
 `module-readable-c`も同じmoduleモデルを使います。
 構造ASTの全Stepから始めた次命令・条件・代入を独立検査します。

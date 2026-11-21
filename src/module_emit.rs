@@ -276,6 +276,17 @@ pub(crate) fn posix_header(module: &Module) -> String {
         code.push_str("    (void)s; return stdin;\n");
     }
     code.push_str("}\n");
+    code.push_str("#define NV_GUEST_STREAM(s,h) nv_guest_stream((s),(h))\nstatic inline FILE *nv_guest_stream(struct nv_module *s,uint64_t handle) {\n    (void)s; (void)handle;\n");
+    for binding in &module.image.external_data {
+        writeln!(
+            code,
+            "    if(handle==UINT64_C({})) return {};",
+            binding.handle,
+            binding.stream.name()
+        )
+        .unwrap();
+    }
+    code.push_str("    return NULL;\n}\n");
     code.push_str(FORMATTED);
     code.push_str(POSIX);
     code

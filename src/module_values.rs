@@ -62,11 +62,11 @@ pub struct Boundary {
     pub kind: BoundaryKind,
     pub target_reads: Vec<RegisterValue>,
     pub operand_reads: Vec<RegisterValue>,
-    /// Conservative register observations before entering the call or exit.
+    /// Register inputs observed before an effect or exit.
     pub inputs: Vec<RegisterValue>,
     /// Fresh identities on a normal effect continuation; values are unknown.
     pub outputs: Vec<RegisterValue>,
-    /// Live identities forwarded unchanged to a normal call continuation.
+    /// Live identities forwarded unchanged to a normal effect continuation.
     pub preserved: Vec<RegisterValue>,
     pub call_contract: Option<CallContract>,
 }

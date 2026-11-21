@@ -64,6 +64,7 @@ JSONの`read_sites`には、表の値を読み込む命令位置とアドレス�
 初期guardと通常RAMを介した書換えの規則は[実行モデル](equivalence.md)にあります。
 `module-*`は8/16/32/64-bitのDIV/IDIVを、sourceのLoadとdivide error（#DE）を持つ命令として実行します。
 商・剰余・部分レジスタと停止位置の規則は[実行モデル](equivalence.md)にあります。
+`module-*`のSTOSは8/16/32/64-bit、REP、CLD／STDを扱い、途中faultまでの書込みとcount・pointerの進捗を保持します。
 仕様は[Intel SDM Vol.1 §18.3.1](https://cdrdv2-public.intel.com/843827/253665-sdm-vol-1-dec-24.pdf)と、[命令リファレンス](https://cdrdv2-public.intel.com/782156/325383-sdm-vol-2abcd.pdf)を参照してください。
 CMOVのメモリsourceは、条件の真偽にかかわらず読み込みます。
 RETではRSPを進め、RAXを対象関数の返り値として実行を終えます。
@@ -120,7 +121,7 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 ゲストのレジスタ・RAM・stackを保持し、引数型や局所変数名の回復は後続の表示処理として扱います。
 `module-locals-c`は、値の保存先を`v_N`として宣言し、元の各レジスタ書込みも保持します。
 寿命の重ならない値は保存先を再利用し、名前を関数内で`v_0`から割り当てます。
-関数入口・途中再開・成功したCALLの後に局所値をゲスト状態から復元します。
+関数入口・途中再開・成功したCALL／DIV／STOSの後に局所値をゲスト状態から復元します。
 検査や資源上限による関数単位のfallbackはCのコメントに、変数数・復元数は標準エラーに出力します。
 
 strip入力の範囲読取りはCIE v1/v3、32-bitレコード長、絶対／PC相対の対応ポインタ表現を扱います。

@@ -40,6 +40,9 @@ static inline unsigned nv_posix_unsupported(struct nv_module *s) {
 #ifndef NV_GUEST_STDOUT
 #define NV_GUEST_STDOUT(s) ((void)(s), stdout)
 #endif
+#ifndef NV_GUEST_STREAM
+#define NV_GUEST_STREAM(s,h) ((void)(s),(void)(h),(FILE *)NULL)
+#endif
 
 static inline uint8_t *nv_posix_bytes(struct nv_module *s, uint64_t address,
                                      uint64_t width, unsigned access) {
@@ -84,18 +87,38 @@ static inline unsigned nv_posix_call(struct nv_module *s, const char *name) {
         strcmp(name, "printf") && strcmp(name, "sprintf") &&
         strcmp(name, "snprintf") && strcmp(name, "scanf") &&
         strcmp(name, "__isoc99_scanf") && strcmp(name, "__printf_chk") &&
-        strcmp(name, "__sprintf_chk") && strcmp(name, "__snprintf_chk"))
+        strcmp(name, "__sprintf_chk") && strcmp(name, "__snprintf_chk") &&
+        strcmp(name, "sscanf") && strcmp(name, "__isoc99_sscanf") &&
+        strcmp(name, "fflush") && strcmp(name, "fgets"))
         return nv_posix_unsupported(s);
 
     (void)nv_check(s, s->errno_address, 4, 2);
     entry_errno = (int32_t)(uint32_t)nv_read(s, s->errno_address, 4);
     errno = entry_errno;
 
+    if (!strcmp(name,"fflush")) {
+        FILE *stream=a0 ? NV_GUEST_STREAM(s,a0) : NULL;
+        if(a0 && !stream) return nv_posix_unsupported(s);
+        result=fflush(stream);
+        return nv_posix_finish(s,(uint32_t)result,errno,result<0);
+    }
+    if (!strcmp(name,"fgets")) {
+        const int32_t length=(int32_t)(uint32_t)a1;
+        FILE *stream=NV_GUEST_STREAM(s,a2);
+        if(!stream) return nv_posix_unsupported(s);
+        if(length<=0) return nv_posix_finish(s,0,errno,0);
+        if(length>NV_FORMAT_OUTPUT_LIMIT) return nv_posix_unsupported(s);
+        char *buffer=(char *)nv_posix_bytes(s,a0,(uint32_t)length,2);
+        char *read=fgets(buffer,length,stream);
+        return nv_posix_finish(s,read ? a0 : 0,errno,!read && ferror(stream));
+    }
+
     if (!strcmp(name, "printf") || !strcmp(name, "sprintf") ||
         !strcmp(name, "snprintf") || !strcmp(name, "scanf") ||
         !strcmp(name, "__isoc99_scanf") || !strcmp(name, "putchar") ||
         !strcmp(name, "__printf_chk") || !strcmp(name, "__sprintf_chk") ||
-        !strcmp(name, "__snprintf_chk")) {
+        !strcmp(name, "__snprintf_chk") || !strcmp(name, "sscanf") ||
+        !strcmp(name, "__isoc99_sscanf")) {
         if (!nv_formatted_call(s, name, &result)) return 0;
         return nv_posix_finish(s, (uint32_t)result, errno, result < 0);
     }

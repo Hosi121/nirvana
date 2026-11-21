@@ -13,6 +13,41 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
 fn mixed_integer_widths_stack_varargs_and_failed_scans_match_native() {
+    compare_fixture(
+        "formatted-io.c",
+        &[
+            "-2147483648 4294967295 ffffffffffffffff -9223372036854775808 -128 65535\n",
+            "2147483647 0 0 9223372036854775807 127 0\n",
+            "1 2 ff -4 -5 6\n",
+            "\n",
+            "bad\n",
+            "12 34\n",
+            "12 bad\n",
+            "12 34 56 78 -9 bad\n",
+        ],
+    );
+}
+
+#[test]
+fn line_input_scansets_strings_and_eof_match_native() {
+    compare_fixture(
+        "scanned-io.c",
+        &[
+            "token:abc|}} -7 65535 -9223372036854775808 AB end\n",
+            "token:abc|}} 127 0 9223372036854775807 XY longtail\n",
+            "token:abc|} -7 12 19 A",
+            "token:abc|}} -7 12 19 AB",
+            "token:abc|}} -7 12 19",
+            "token:abc|}} bad\n",
+            "token:ABCDE|}} 1 2 3 XY end\n",
+            "\n",
+            "",
+            "record{abcdefgh}\n",
+        ],
+    );
+}
+
+fn compare_fixture(fixture: &str, inputs: &[&str]) {
     let scratch = native::Scratch::new();
     for pie in [false, true] {
         for original_opt in ["-O0", "-O2"] {
@@ -20,7 +55,7 @@ fn mixed_integer_widths_stack_varargs_and_failed_scans_match_native() {
             std::fs::create_dir(&directory).unwrap();
             let original = directory.join("original");
             compile(
-                &native::fixture_root().join("formatted-io.c"),
+                &native::fixture_root().join(fixture),
                 &original,
                 &[
                     original_opt,
@@ -38,16 +73,6 @@ fn mixed_integer_widths_stack_varargs_and_failed_scans_match_native() {
                 },
             )
             .unwrap();
-            let inputs = [
-                "-2147483648 4294967295 ffffffffffffffff -9223372036854775808 -128 65535\n",
-                "2147483647 0 0 9223372036854775807 127 0\n",
-                "1 2 ff -4 -5 6\n",
-                "\n",
-                "bad\n",
-                "12 34\n",
-                "12 bad\n",
-                "12 34 56 78 -9 bad\n",
-            ];
             let expected: Vec<_> = inputs
                 .iter()
                 .map(|input| run_output(&original, Some(input), TIMEOUT))
@@ -131,6 +156,7 @@ const PRELUDE: &str = r#"
 static FILE *input_stream, *output_stream;
 #define NV_GUEST_STDIN(s) ((void)(s), input_stream)
 #define NV_GUEST_STDOUT(s) ((void)(s), output_stream)
+#define NV_GUEST_STREAM(s,h) ((void)(s), (h)==1 ? input_stream : (h)==2 ? output_stream : NULL)
 "#;
 
 const HARNESS: &str = r#"
@@ -234,6 +260,43 @@ int main(void) {
     reset("%d");argument(0,FMT);state.r[4]=UINT64_MAX-3;
     if(setjmp(state.jump)==0) { (void)nv_format_argument(&state,6); assert(0); }
     assert(state.status==1 && state.fault_access==1);
+    reset("%3[a-z]%2c %4s");argument(0,FMT);argument(1,DEST);argument(2,DEST+16);argument(3,DEST+32);input("abc!! wordtail");
+    assert(call("scanf") && state.r[0]==3);
+    assert(!strcmp((char*)memory+512,"abc") && !memcmp(memory+528,"!!",2));
+    assert(!strcmp((char*)memory+544,"word") && fgetc(input_stream)=='t');
+    reset("%3[^]]%[]]");memcpy(memory+1024,"ab]]",5);
+    argument(0,BASE+1024);argument(1,FMT);argument(2,DEST);argument(3,DEST+16);
+    assert(call("sscanf") && state.r[0]==2);
+    assert(!strcmp((char*)memory+512,"ab") && !strcmp((char*)memory+528,"]]"));
+    /* Adapter-defined ordered memory behavior, outside native sscanf's
+     * restrict profile: output overwrites an already consumed source prefix. */
+    reset("record{%8s%[}]");memcpy(memory+1024,"record{abcdefgh}",17);
+    argument(0,BASE+1024);argument(1,FMT);argument(2,DEST);argument(3,BASE+1024);
+    assert(call("sscanf") && state.r[0]==2);
+    assert(!strcmp((char*)memory+512,"abcdefgh") && !strcmp((char*)memory+1024,"}"));
+    reset("%3s");memcpy(memory+sizeof(memory)-3,"abc",3);
+    argument(0,BASE+sizeof(memory)-3);argument(1,FMT);argument(2,DEST);
+    assert(!call("sscanf") && state.status==1 && memory[512]==0xa5);
+    reset("%s");memcpy(memory+1024,"abc",4);
+    argument(0,BASE+1024);argument(1,FMT);argument(2,BASE+sizeof(memory)-2);
+    assert(!call("sscanf") && state.status==1 && memory[sizeof(memory)-2]=='a' && memory[sizeof(memory)-1]=='b');
+    reset("%d");input("line\nnext");argument(0,DEST);argument(1,16);argument(2,1);
+    assert(call("fgets") && state.r[0]==DEST && !strcmp((char*)memory+512,"line\n"));
+    assert(fgetc(input_stream)=='n');
+    reset("%d");input("");argument(0,DEST);argument(1,16);argument(2,1);
+    assert(call("fgets") && state.r[0]==0 && memory[512]==0xa5);
+    reset("%d");input("x");argument(0,DEST);argument(1,1);argument(2,1);
+    assert(call("fgets") && state.r[0]==DEST && memory[512]==0 && fgetc(input_stream)=='x');
+    reset("%d");input("x");argument(0,UINT64_MAX);argument(1,0);argument(2,1);
+    assert(call("fgets") && state.r[0]==0 && ftell(input_stream)==0);
+    reset("%d");input("x");argument(0,BASE+sizeof(memory)-1);argument(1,2);argument(2,1);
+    assert(!call("fgets") && state.status==1 && ftell(input_stream)==0);
+    reset("%d");input("x");state.base+=UINT64_C(0x100000000);state.errno_address+=UINT64_C(0x100000000);
+    state.r[4]+=UINT64_C(0x100000000);argument(0,DEST+UINT64_C(0x100000000));argument(1,2);argument(2,1);
+    assert(call("fgets") && state.r[0]==DEST+UINT64_C(0x100000000) && memory[512]=='x');
+    reset("%d");argument(0,2);assert(call("fflush") && state.r[0]==0);
+    reset("%d");argument(0,0);assert(call("fflush") && state.r[0]==0);
+    reset("%d");argument(0,99);assert(!call("fflush") && state.status==3);
     fclose(input_stream); fclose(output_stream); return 0;
 }
 "#;
