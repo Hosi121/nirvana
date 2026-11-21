@@ -120,6 +120,70 @@ fn high_byte_reads_keep_static_slices_and_match_native_movzx_for_all_byte_values
     println!("{compared} native high-byte/IR observations across all four register aliases");
 }
 
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn every_low_register_alias_keeps_its_width_and_matches_native_zero_extension() {
+    use nirvana::ir::UnaryOp;
+    let mut compared = 0;
+    for width in [Width::U8, Width::U16, Width::U32] {
+        for index in 0..16 {
+            let mut code = Vec::new();
+            if index >= 8 || width == Width::U8 && index >= 4 {
+                code.push(0x40 | u8::from(index >= 8));
+            }
+            if width == Width::U32 {
+                code.push(0x8b);
+            } else {
+                code.extend([0x0f, if width == Width::U8 { 0xb6 } else { 0xb7 }]);
+            }
+            code.extend([0xc0 | (index as u8 & 7), 0xc3]);
+            let program = x86::lift(&code, 0, 0).unwrap();
+            assert!(program.uses_unary_operator(UnaryOp::Extract { start: 0, width }));
+            for low in 0..256u64 {
+                for surround in [0, 0xa1b2_c3d4_8000_7f00, 0x1234_5678_ff00_0000, !255u64] {
+                    let value = surround | low;
+                    let actual: u64;
+                    unsafe {
+                        match width {
+                            Width::U8 => {
+                                std::arch::asm!("movzx ecx,al", in("rax") value, lateout("rcx") actual, options(pure,nomem,nostack,preserves_flags))
+                            }
+                            Width::U16 => {
+                                std::arch::asm!("movzx ecx,ax", in("rax") value, lateout("rcx") actual, options(pure,nomem,nostack,preserves_flags))
+                            }
+                            Width::U32 => {
+                                std::arch::asm!("mov ecx,eax", in("rax") value, lateout("rcx") actual, options(pure,nomem,nostack,preserves_flags))
+                            }
+                            Width::U64 => unreachable!(),
+                        }
+                    }
+                    let mut registers = vec![0x9371_cafe_7890_fedc; x86::REGISTER_COUNT];
+                    registers[index] = value;
+                    let result = program.execute(&registers, 2).unwrap();
+                    assert_eq!(result.value, actual, "{width:?}, register {index}");
+                    for (other, &original) in registers.iter().enumerate().take(21) {
+                        let expected = if other == x86::RAX {
+                            actual
+                        } else if other == x86::RSP {
+                            original.wrapping_add(8)
+                        } else {
+                            original
+                        };
+                        assert_eq!(
+                            result.registers[other], expected,
+                            "preserved register {other}"
+                        );
+                    }
+                    compared += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "{compared} native/IR low-register projections with preserved machine registers and flags"
+    );
+}
+
 #[test]
 fn rex_b_turns_the_nop_opcode_into_exchange_with_r8() {
     let program = x86::lift(&[0x49, 0x90, 0xc3], 0, 0).unwrap();

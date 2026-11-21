@@ -2,6 +2,7 @@
 #[path = "support"]
 mod support {
     pub mod ir;
+    pub mod projections;
     pub mod rewrite_cases;
     pub mod signed_reciprocals;
     pub mod word_reciprocals;

@@ -639,12 +639,17 @@ fn operand_value(operand: Operand, next: u64) -> Result<Expr, ModuleError> {
     Ok(match operand {
         Operand::Register(reg) => {
             let value = Expr::Register(Reg(reg.index as usize));
-            let value = if reg.shift == 0 {
+            if reg.width == crate::model::ir::Width::U64 && reg.shift == 0 {
                 value
             } else {
-                Expr::binary(BinaryOp::Shr, value, Expr::Const(u64::from(reg.shift)))
-            };
-            Expr::binary(BinaryOp::And, value, Expr::Const(reg.width.mask()))
+                Expr::unary(
+                    crate::model::ir::UnaryOp::Extract {
+                        start: reg.shift,
+                        width: reg.width,
+                    },
+                    value,
+                )
+            }
         }
         Operand::Memory { address, width } => Expr::load(address_expr(address, next), width),
         _ => return Err(error("division requires a register or memory operand")),

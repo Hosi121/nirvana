@@ -328,7 +328,7 @@ impl Lifter {
         value
     }
     fn read_register(&self, register: Register) -> Expr {
-        if register.shift != 0 {
+        if register.width != Width::U64 || register.shift != 0 {
             return Expr::unary(
                 crate::model::ir::UnaryOp::Extract {
                     start: register.shift,
@@ -337,7 +337,7 @@ impl Lifter {
                 r(register.index as usize),
             );
         }
-        mask(r(register.index as usize), register.width)
+        r(register.index as usize)
     }
     fn read(&self, operand: Operand) -> Expr {
         match operand {

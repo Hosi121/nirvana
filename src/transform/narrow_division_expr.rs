@@ -1,7 +1,7 @@
-//! Certified constant division of an explicitly masked, pure u64 value.
+//! Certified constant division of an explicitly bounded, pure u64 value.
 //!
-//! The complete And operand remains borrowed in the view. Its literal mask is
-//! an interval bound; C types, inferred widths, and earlier definitions supply
+//! The complete mask or slice operand remains borrowed in the view. Its explicit
+//! upper bound supplies the interval; C types, inferred widths, and earlier definitions supply
 //! no facts. A checked product bound proves that the IR's low multiply is the
 //! full unsigned product before the quotient/error certificate is applied.
 
@@ -14,7 +14,7 @@ pub const MAX_WORK: usize = 32_768;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NarrowDivisionEvidence {
-    /// The literal mask in the borrowed And expression; 0 <= value <= maximum.
+    /// The mask or slice result bound; 0 <= value <= maximum.
     pub maximum: u64,
     pub multiplier: u64,
     /// The original literal, never a shift count reduced modulo 64.
@@ -29,14 +29,14 @@ pub struct NarrowDivisionEvidence {
 
 #[derive(Clone, Copy, Debug)]
 pub struct NarrowDivisionView<'a> {
-    /// The entire original And expression, retaining its mask and dependencies.
+    /// The entire bounded expression, retaining its projection and dependencies.
     pub value: &'a Expr,
     pub divisor: u64,
     pub evidence: NarrowDivisionEvidence,
 }
 
-/// Recognize `(And(tree, constant_mask) * constant) >> literal`, allowing both
-/// product/mask operand orders. Load anywhere, invalid certificates, and whole
+/// Recognize `(bounded_value * constant) >> literal`, accepting a literal mask
+/// or static slice and both product/mask operand orders. Load anywhere, invalid certificates, and whole
 /// expression budget exhaustion decline. No executable expression is modified.
 pub fn recognize(expression: &Expr) -> Option<NarrowDivisionView<'_>> {
     bounded_pure(expression)?;
@@ -92,7 +92,7 @@ pub fn recognize(expression: &Expr) -> Option<NarrowDivisionView<'_>> {
 }
 
 /// Reparse independently, bind every field to the raw source, and recompute the
-/// bounds with checked u128 arithmetic. Pointer identity binds the whole And;
+/// bounds with checked u128 arithmetic. Pointer identity binds the whole operand;
 /// neither its unmasked child nor an equal-looking clone is sufficient.
 ///
 /// For X in [0, maximum], the product bound makes lowMul(M,X) equal M*X.
@@ -125,12 +125,14 @@ pub fn validate(expression: &Expr, view: &NarrowDivisionView<'_>) -> bool {
         _ => return false,
     };
     // Independent structural parsing rather than trusting the matcher's mask.
-    let Expr::Binary(BinaryOp::And, a, b) = bound_operand else {
-        return false;
-    };
-    let maximum = match (&**a, &**b) {
-        (_, Expr::Const(mask)) => *mask,
-        (Expr::Const(mask), _) => *mask,
+    let maximum = match bound_operand {
+        Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
+            (_, Expr::Const(mask)) | (Expr::Const(mask), _) => *mask,
+            _ => return false,
+        },
+        Expr::Unary(crate::model::ir::UnaryOp::Extract { start, width }, _) => {
+            width.mask() & u64::MAX.checked_shr(u32::from(*start)).unwrap_or(0)
+        }
         _ => return false,
     };
     if maximum != evidence.maximum {
@@ -156,11 +158,14 @@ pub fn validate(expression: &Expr, view: &NarrowDivisionView<'_>) -> bool {
 }
 
 fn explicit_maximum(value: &Expr) -> Option<u64> {
-    let Expr::Binary(BinaryOp::And, a, b) = value else {
-        return None;
-    };
-    match (&**a, &**b) {
-        (_, Expr::Const(mask)) | (Expr::Const(mask), _) => Some(*mask),
+    match value {
+        Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
+            (_, Expr::Const(mask)) | (Expr::Const(mask), _) => Some(*mask),
+            _ => None,
+        },
+        Expr::Unary(crate::model::ir::UnaryOp::Extract { start, width }, _) => {
+            Some(width.mask() & u64::MAX.checked_shr(u32::from(*start)).unwrap_or(0))
+        }
         _ => None,
     }
 }

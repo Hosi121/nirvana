@@ -330,3 +330,63 @@ fn selected_word_helpers_match_signed_c_oracles_under_ubsan() {
         2 * expected.len() * names.len()
     );
 }
+
+#[test]
+fn slice_projected_trees_share_the_signed_word_certificate() {
+    use nirvana::ir::UnaryOp;
+    fn slices(e: &Expr) -> Expr {
+        match e {
+            Expr::Unary(op, v) => Expr::unary(*op, slices(v)),
+            Expr::Binary(B::And, a, b) => {
+                for (value, mask) in [(&**a, &**b), (&**b, &**a)] {
+                    if let Expr::Const(mask) = mask {
+                        for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+                            if *mask == width.mask() {
+                                return Expr::unary(
+                                    UnaryOp::Extract { start: 0, width },
+                                    slices(value),
+                                );
+                            }
+                        }
+                    }
+                }
+                Expr::binary(B::And, slices(a), slices(b))
+            }
+            Expr::Binary(op, a, z) => b(*op, slices(a), slices(z)),
+            Expr::Const(_) | Expr::Register(_) => e.clone(),
+            _ => unreachable!(),
+        }
+    }
+    let mut checked = 0;
+    for width in WIDTHS {
+        for (d, shift) in word_cases(width) {
+            for negative in [false, true] {
+                let d = if negative { -d } else { d };
+                let q = slices(&kernel(width, d, shift, true, false));
+                let rem = slices(&remainder(q.clone(), d, width, true));
+                for (e, op) in [(q, Operation::Quotient), (rem, Operation::Remainder)] {
+                    let view = signed::recognize(&e).unwrap();
+                    assert_eq!((view.width, view.divisor, view.operation), (width, d, op));
+                    assert!(signed::validate(&e, &view));
+                    let original = program(e);
+                    for x in values(width) {
+                        let n = signed_value(x, width);
+                        let expected = if op == Operation::Quotient {
+                            n / d
+                        } else {
+                            n % d
+                        };
+                        assert_eq!(
+                            original.execute(&[x, 0], 1).unwrap().value,
+                            expected as u64 & width.mask()
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "{checked} slice-projected quotient/remainder observations with independent signed word oracles"
+    );
+}

@@ -7,6 +7,7 @@ mod support {
     pub mod native;
     #[path = "../../examples/programs/mod.rs"]
     pub mod programs;
+    pub mod projections;
     pub mod signed_reciprocals;
     pub mod word_reciprocals;
 }

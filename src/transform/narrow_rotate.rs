@@ -282,6 +282,11 @@ impl Matcher {
 }
 
 fn and_mask(expression: &Expr, mask: u64) -> Option<&Expr> {
+    if let Expr::Unary(crate::model::ir::UnaryOp::Extract { start: 0, width }, base) = expression
+        && width.mask() == mask
+    {
+        return Some(base);
+    }
     let Expr::Binary(BinaryOp::And, a, b) = expression else {
         return None;
     };

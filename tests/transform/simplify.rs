@@ -421,3 +421,39 @@ fn seeded_expression_trees_match_the_original_ir_interpreter() {
         "3072 seeded trees: original, nested extensions and total division; original nodes {before} -> {after}; 23 boundary register vectors, three memory layouts, two instruction limits"
     );
 }
+
+#[test]
+fn projection_composition_keeps_load_order_faults_lazy_arms_and_full_words() {
+    fn replace(e: &Expr, value: &Expr) -> Expr {
+        match e {
+            Expr::Register(_) => value.clone(),
+            Expr::Const(_) => e.clone(),
+            Expr::Unary(op, e) => Expr::unary(*op, replace(e, value)),
+            Expr::Binary(op, a, b) => Expr::binary(*op, replace(a, value), replace(b, value)),
+            _ => unreachable!(),
+        }
+    }
+    let inputs = boundary_inputs();
+    let mut changed = 0;
+    let mut checked = 0;
+    for (_, e) in crate::support::projections::cases() {
+        changed += usize::from(simplify(&e) != e);
+        for value in [
+            r(0),
+            Expr::load(r(2), Width::U64),
+            b(
+                B::Add,
+                Expr::load(r(2), Width::U8),
+                Expr::load(b(B::Add, r(2), c(1)), Width::U64),
+            ),
+            Expr::select(r(1), Expr::load(r(2), Width::U64), r(0)),
+        ] {
+            check(&replace(&e, &value), &inputs);
+            checked += inputs.len() * 6;
+        }
+    }
+    assert!(changed > 100, "projection algebra must be exercised");
+    println!(
+        "{checked} full-state projection observations, {changed} scalar candidates simplified"
+    );
+}

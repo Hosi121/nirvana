@@ -201,3 +201,59 @@ fn all_static_slices_have_universal_checks_and_replayed_offset_mutants() {
         "{equal} universal static-slice equivalences; 3 IR-replayed offset/signedness SAT controls"
     );
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn projection_rewrites_match_universal_words_and_replayed_clipping_mutants() {
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/projection-rewrites");
+    std::fs::create_dir_all(&root).unwrap();
+    let save = |name: &str, a: &Expr, b: &Expr| {
+        let query = verify::pure_query(a, b).unwrap();
+        std::fs::write(
+            root.join(format!("{name}.smt2")),
+            format!("{}(check-sat)\n", query.smt2()),
+        )
+        .unwrap();
+        let verdict = solver.check_query(&query);
+        std::fs::write(root.join(format!("{name}.out")), format!("{verdict:?}\n")).unwrap();
+        verdict
+    };
+    let mut proved = 0;
+    for (name, before) in crate::support::projections::cases() {
+        let after = nirvana::simplify::simplify(&before);
+        assert_eq!(
+            save(&name, &before, &after),
+            Verdict::EquivalentUnderModel,
+            "{name}"
+        );
+        proved += 1;
+    }
+    let slice = |start, width, value| Expr::unary(U::Extract { start, width }, value);
+    for (name, before, bad) in [
+        (
+            "dropped-inner-clip",
+            slice(0, Width::U16, slice(8, Width::U8, r(0))),
+            slice(8, Width::U16, r(0)),
+        ),
+        (
+            "dropped-sign-fill",
+            slice(8, Width::U8, unary(Width::U8, r(0))),
+            slice(8, Width::U8, r(0)),
+        ),
+        (
+            "dropped-output-clip",
+            Expr::binary(B::And, slice(0, Width::U8, r(0)), c(256)),
+            Expr::binary(B::And, r(0), c(256)),
+        ),
+    ] {
+        let Verdict::Counterexample(w) = save(name, &before, &bad) else {
+            panic!("missing replayed {name}")
+        };
+        assert_ne!(w.before, w.after);
+    }
+    println!(
+        "{proved} universal actual projection rewrites, 3 replayed clipping/sign-fill mutants"
+    );
+}

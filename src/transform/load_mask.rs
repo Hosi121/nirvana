@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::model::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg};
+use crate::model::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, UnaryOp};
 
 pub const MAX_REGISTERS: usize = 65_536;
 pub const MAX_INSTRUCTIONS: usize = 32_768;
@@ -188,6 +188,13 @@ fn proposed_reads(
 
 fn mask_register(expression: &Expr) -> Option<(Reg, u64)> {
     match expression {
+        Expr::Unary(UnaryOp::Extract { start: 0, width }, value) => {
+            if let Expr::Register(reg) = **value {
+                Some((reg, width.mask()))
+            } else {
+                None
+            }
+        }
         Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
             (Expr::Register(reg), Expr::Const(mask)) | (Expr::Const(mask), Expr::Register(reg)) => {
                 Some((*reg, *mask))
@@ -465,15 +472,18 @@ pub fn validate(
                     let Expr::Register(temp) = b.value else {
                         return Err(LoadMaskError::UnsupportedChange);
                     };
-                    let Expr::Binary(BinaryOp::And, left, right) = &a.value else {
-                        return Err(LoadMaskError::UnsupportedChange);
-                    };
-                    let mask = match (&**left, &**right) {
-                        (Expr::Register(read), Expr::Const(mask))
-                        | (Expr::Const(mask), Expr::Register(read))
-                            if *read == temp =>
-                        {
-                            *mask
+                    let mask = match &a.value {
+                        Expr::Binary(BinaryOp::And, left, right) => match (&**left, &**right) {
+                            (Expr::Register(read), Expr::Const(mask))
+                            | (Expr::Const(mask), Expr::Register(read))
+                                if *read == temp =>
+                            {
+                                *mask
+                            }
+                            _ => return Err(LoadMaskError::UnsupportedChange),
+                        },
+                        Expr::Unary(UnaryOp::Extract { start: 0, width }, value) if matches!(&**value, Expr::Register(read) if *read == temp) => {
+                            width.mask()
                         }
                         _ => return Err(LoadMaskError::UnsupportedChange),
                     };

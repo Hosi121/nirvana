@@ -3,7 +3,7 @@
 //! No register/dataflow or C-storage equality is assumed. Both occurrences of
 //! the dividend must be structurally identical, and an existing independent
 //! division certificate must cover the raw quotient expression.
-use crate::model::ir::{BinaryOp, Expr};
+use crate::model::ir::{BinaryOp, Expr, UnaryOp};
 use crate::{transform::division_expr, transform::narrow_division_expr};
 
 pub const MAX_NODES: usize = 4096;
@@ -114,6 +114,7 @@ fn validate_inner(expression: &Expr, view: &RemainderView<'_>) -> Option<()> {
         return None;
     }
     let (difference, result_mask) = match expression {
+        Expr::Unary(UnaryOp::Extract { start: 0, width }, body) => (&**body, Some(width.mask())),
         Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
             (body, Expr::Const(mask)) | (Expr::Const(mask), body) => (body, Some(*mask)),
             _ => (expression, None),
@@ -127,6 +128,7 @@ fn validate_inner(expression: &Expr, view: &RemainderView<'_>) -> Option<()> {
         return None;
     }
     let (product, product_mask) = match &**raw_product {
+        Expr::Unary(UnaryOp::Extract { start: 0, width }, body) => (&**body, Some(width.mask())),
         Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
             (body, Expr::Const(mask)) | (Expr::Const(mask), body) => (body, Some(*mask)),
             _ => (&**raw_product, None),
@@ -217,6 +219,7 @@ fn validate_inner(expression: &Expr, view: &RemainderView<'_>) -> Option<()> {
 
 fn clipped(expression: &Expr) -> (&Expr, Option<u64>) {
     match expression {
+        Expr::Unary(UnaryOp::Extract { start: 0, width }, body) => (body, Some(width.mask())),
         Expr::Binary(BinaryOp::And, a, b) => match (&**a, &**b) {
             (body, Expr::Const(mask)) | (Expr::Const(mask), body) => (body, Some(*mask)),
             _ => (expression, None),

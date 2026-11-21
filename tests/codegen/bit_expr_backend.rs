@@ -172,7 +172,7 @@ fn actual_rotate_and_bswap_helpers_keep_full_memory_return_and_first_fault() {
                     for helper in ["nirvana_rol16(", "nirvana_rol32(", "nirvana_ror8("] {
                         assert_eq!(
                             body.contains(helper),
-                            original_optimization == "-O2",
+                            original_optimization == "-O2" || helper == "nirvana_rol32(",
                             "masked narrow idiom scope: {name}{original_optimization}, views={recover_objects}: {helper}\n{body}",
                         );
                     }

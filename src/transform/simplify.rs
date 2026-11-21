@@ -3,7 +3,7 @@
 //! Every rule is non-expanding. Rules that remove repeated operands or change
 //! their order require load-free operands; Select keeps its lazy evaluation.
 
-use crate::model::ir::{BinaryOp as B, Expr};
+use crate::model::ir::{BinaryOp as B, Expr, UnaryOp as U};
 
 pub fn node_count(expression: &Expr) -> usize {
     match expression {
@@ -129,6 +129,49 @@ fn rewrite(expression: &Expr) -> Option<Expr> {
                 }
                 if start >= 64 && pure(value) {
                     return Some(Expr::Const(0));
+                }
+                // Both projections evaluate their operand exactly once. A
+                // low-word projection composes even when the operand can fault.
+                if let Expr::Unary(
+                    U::Extract {
+                        start: inner_start,
+                        width: inner_width,
+                    },
+                    inner,
+                ) = &**value
+                {
+                    if start == 0 {
+                        return Some(Expr::unary(
+                            U::Extract {
+                                start: *inner_start,
+                                width: width.min(*inner_width),
+                            },
+                            (**inner).clone(),
+                        ));
+                    }
+                    if u32::from(start) + width.bits() <= inner_width.bits() {
+                        return Some(Expr::unary(
+                            U::Extract {
+                                start: inner_start.saturating_add(start),
+                                width,
+                            },
+                            (**inner).clone(),
+                        ));
+                    }
+                }
+                if let Expr::Unary(U::SignExtend(from), inner) = &**value
+                    && u32::from(start) + width.bits() <= from.bits()
+                {
+                    return Some(Expr::unary(*op, (**inner).clone()));
+                }
+                if start == 0
+                    && let Expr::Binary(B::And, a, b) = &**value
+                {
+                    for (inner, mask) in [(&**a, constant(b)), (&**b, constant(a))] {
+                        if mask.is_some_and(|m| m & width.mask() == width.mask()) {
+                            return Some(Expr::unary(*op, inner.clone()));
+                        }
+                    }
                 }
                 return None;
             }
@@ -284,6 +327,17 @@ fn rewrite_binary(op: B, left: &Expr, right: &Expr) -> Option<Expr> {
             }
         }
         _ => {}
+    }
+    if op == B::And {
+        for (slice, mask) in [(left, b), (right, a)] {
+            if let (Expr::Unary(U::Extract { start: 0, width }, value), Some(mask)) = (slice, mask)
+            {
+                if width.mask() & !mask == 0 {
+                    return Some(slice.clone());
+                }
+                return Some(binary(B::And, value, &Expr::Const(mask & width.mask())));
+            }
+        }
     }
     if op == B::Or {
         for (less, equal) in [(left, right), (right, left)] {

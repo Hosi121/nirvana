@@ -22,9 +22,16 @@ pub(super) fn collect(
     for block in graph.blocks() {
         for (id, node) in block.nodes() {
             work.spend(1)?;
-            let crate::dataflow::value_graph::ValueNode::Binary(B::And, ..) = node else {
+            if !matches!(
+                node,
+                crate::dataflow::value_graph::ValueNode::Binary(B::And, ..)
+                    | crate::dataflow::value_graph::ValueNode::Unary(
+                        UnaryOp::Extract { start: 0, .. },
+                        _
+                    )
+            ) {
                 continue;
-            };
+            }
             let Some(view) = word::recognize_value(block, id, work)? else {
                 continue;
             };

@@ -519,7 +519,7 @@ fn actual_candidates(opt: &str) -> Vec<Expr> {
 }
 
 #[test]
-fn actual_o2_word_lane_retains_its_explicit_mask_and_o0_conservatively_declines() {
+fn actual_o2_word_lane_retains_its_explicit_bound_and_o0_conservatively_declines() {
     let found = actual_candidates("-O2");
     assert_eq!(found.len(), 2);
     for expression in &found {
@@ -534,7 +534,16 @@ fn actual_o2_word_lane_retains_its_explicit_mask_and_o0_conservatively_declines(
             ),
             (0xffff_ffff, 0xcccc_cccd, 35)
         );
-        assert!(matches!(view.value, Expr::Binary(B::And, ..)));
+        assert!(matches!(
+            view.value,
+            Expr::Unary(
+                ir::UnaryOp::Extract {
+                    start: 0,
+                    width: Width::U32
+                },
+                _
+            )
+        ));
     }
     assert!(actual_candidates("-O0").is_empty());
 }
@@ -618,5 +627,41 @@ fn c11_low_product_and_borrowed_masked_division_match_ir_oracles_with_ubsan() {
     println!(
         "C11 O0/O2 x UBSan off/on: {} exact scalar before/after/oracle comparisons",
         expected.len() * CASES.len() * 2 * 4
+    );
+}
+
+#[test]
+fn explicit_slices_supply_bounds_without_assuming_an_input_type() {
+    let mut checked = 0;
+    for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        for start in [0, 1, 7, 8, 16, 31, 32, 63, 64, 255] {
+            let value = Expr::unary(ir::UnaryOp::Extract { start, width }, r(0));
+            let maximum = width.mask() & u64::MAX.checked_shr(u32::from(start)).unwrap_or(0);
+            for case in CASES.into_iter().take(3) {
+                for commute in [false, true] {
+                    let expression = raw(value.clone(), case.m, case.s, commute);
+                    let candidate = recognize(&expression);
+                    if maximum > case.mask {
+                        continue;
+                    }
+                    let view =
+                        candidate.expect("a tighter slice preserves the division certificate");
+                    assert!(validate(&expression, &view));
+                    assert_eq!((view.divisor, view.evidence.maximum), (case.d, maximum));
+                    assert!(std::ptr::eq(view.value, operand(&expression)));
+                    for x in VALUES {
+                        let input = evaluate(&value, &[x]);
+                        assert_eq!(evaluate(&expression, &[x]), input / case.d);
+                        checked += 1;
+                    }
+                    let mut stale = view;
+                    stale.evidence.maximum ^= 1;
+                    assert!(!validate(&expression, &stale));
+                }
+            }
+        }
+    }
+    println!(
+        "{checked} explicit-slice reciprocal observations across all word widths and boundary positions"
     );
 }

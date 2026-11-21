@@ -34,6 +34,11 @@ pub(super) fn validate<S: Source>(s: &S, e: S::Key, v: &WordView<S::Key>, work: 
     })
 }
 fn root<S: Source>(s: &S, e: S::Key) -> Option<(Width, S::Key)> {
+    if let Node::Unary(U::Extract { start: 0, width }, low) = s.node(e)?
+        && width != Width::U64
+    {
+        return Some((width, low));
+    }
     let (a, b) = binary(s, e, B::And)?;
     for (low, mask) in [(a, b), (b, a)] {
         for width in [Width::U8, Width::U16, Width::U32] {
@@ -240,6 +245,7 @@ fn project<S: Source>(s: &S, mut e: S::Key, width: Width, work: &mut Work) -> Op
         work.spend()?;
         e = match s.node(e)? {
             Node::Unary(U::SignExtend(w), v) if w.bits() >= width.bits() => v,
+            Node::Unary(U::Extract { start: 0, width: w }, v) if w.bits() >= width.bits() => v,
             Node::Binary(B::And, a, b)
                 if number(s, b).is_some_and(|n| n & width.mask() == width.mask()) =>
             {

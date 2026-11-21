@@ -291,6 +291,48 @@ fn replay(
 }
 
 #[test]
+fn low_slices_fold_into_checked_loads_and_shifted_slices_decline() {
+    use ir::UnaryOp;
+    let mut compared = 0;
+    for width in [Width::U8, Width::U16, Width::U32] {
+        let original = replace(&basic(Width::U64, width.mask()), |rows| {
+            rows[1].assignments[1].value = Expr::unary(UnaryOp::Extract { start: 0, width }, r(2));
+        });
+        let candidate = propose(&original, &[Reg(0), Reg(1)]).unwrap();
+        assert_eq!(
+            validate(&original, &candidate, &[Reg(0), Reg(1)])
+                .unwrap()
+                .folds[0]
+                .mask,
+            width.mask()
+        );
+        for address in [0x1000, 0x1001, 0x1078, 0x107f, 0x0fff, u64::MAX] {
+            for fill in [0, 0x80, 0xff] {
+                replay(
+                    &original,
+                    &candidate,
+                    &[Reg(0), Reg(1)],
+                    &[address, 0x1008, 0xdead, 0x1010, 1, 0, 0],
+                    &[fill; 128],
+                );
+                compared += 1;
+            }
+        }
+        let shifted = replace(&original, |rows| {
+            rows[1].assignments[1].value = Expr::unary(UnaryOp::Extract { start: 1, width }, r(2));
+        });
+        assert!(propose(&shifted, &[Reg(0), Reg(1)]).is_none());
+        assert!(validate(&shifted, &candidate, &[Reg(0), Reg(1)]).is_err());
+        let wrong_mask = replace(&candidate, |rows| {
+            rows[0].assignments[1].value =
+                b(B::And, Expr::load(r(0), Width::U64), c(width.mask() >> 1));
+        });
+        assert!(validate(&original, &wrong_mask, &[Reg(0), Reg(1)]).is_err());
+    }
+    println!("{compared} slice/load-mask event, RAM, live-register and first-fault replays");
+}
+
+#[test]
 fn masks_stay_at_load_sites_and_preserve_faults_prior_stores_and_lazy_work() {
     let addresses = [0x1000, 0x1001, 0x1078, 0x107f, 0x0fff, u64::MAX];
     let memory: Vec<_> = (0..128usize).map(|i| (i * 29 + 7) as u8).collect();

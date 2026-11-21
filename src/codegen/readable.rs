@@ -264,18 +264,30 @@ fn stored_value(mut value: &Expr, width: Width) -> &Expr {
     if idioms::preserve_mask(value) {
         return value;
     }
-    while let Expr::Binary(BinaryOp::And, left, right) = value {
-        if let Expr::Const(mask) = **right
-            && mask & width.mask() == width.mask()
-        {
-            value = left;
-        } else if let Expr::Const(mask) = **left
-            && mask & width.mask() == width.mask()
-        {
-            value = right;
-        } else {
-            break;
-        }
+    loop {
+        value = match value {
+            Expr::Unary(
+                crate::model::ir::UnaryOp::Extract {
+                    start: 0,
+                    width: from,
+                },
+                inner,
+            ) if *from >= width => inner,
+            Expr::Binary(BinaryOp::And, left, right) => {
+                if let Expr::Const(mask) = **right
+                    && mask & width.mask() == width.mask()
+                {
+                    left
+                } else if let Expr::Const(mask) = **left
+                    && mask & width.mask() == width.mask()
+                {
+                    right
+                } else {
+                    break;
+                }
+            }
+            _ => break,
+        };
     }
     value
 }
