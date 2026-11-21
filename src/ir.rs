@@ -299,6 +299,7 @@ pub struct Snapshot {
     pub registers: Vec<u64>,
     pub memory_base: u64,
     pub memory: Vec<u8>,
+    pub memory_layout: Option<crate::memory::Layout>,
     /// Instructions started, including an instruction which faulted midway.
     pub trace: Vec<Address>,
     /// Current/faulting instruction, or the next attempted step on suspension.
@@ -365,6 +366,7 @@ pub enum ExecutionError {
     RegisterCount { expected: usize, actual: usize },
     StepLimit,
     MemoryAccess { address: u64, width: Width },
+    MemoryLayout,
 }
 
 impl fmt::Display for ExecutionError {
@@ -374,6 +376,9 @@ impl fmt::Display for ExecutionError {
                 write!(f, "expected {expected} input registers, got {actual}")
             }
             Self::StepLimit => f.write_str("instruction step limit exhausted"),
+            Self::MemoryLayout => {
+                f.write_str("memory base or backing size disagrees with sparse layout")
+            }
             Self::MemoryAccess { address, width } => write!(
                 f,
                 "out-of-bounds {}-byte memory access at {address:#x}",
@@ -391,23 +396,48 @@ pub(crate) struct Machine {
     remaining: usize,
     memory: Vec<u8>,
     memory_base: u64,
+    memory_layout: Option<crate::memory::Layout>,
     instruction: Option<Address>,
 }
 
 impl Machine {
-    pub(crate) fn checked_bytes(&self, address: u64, width: usize) -> Option<&[u8]> {
-        if width != 0 {
-            address.checked_add(u64::try_from(width - 1).ok()?)?;
+    pub(crate) fn checked_range(
+        &self,
+        address: u64,
+        width: usize,
+        access: AccessKind,
+    ) -> Option<usize> {
+        crate::memory::View {
+            base: self.memory_base,
+            bytes: &self.memory,
+            layout: self.memory_layout.as_ref(),
         }
-        let offset = usize::try_from(address.checked_sub(self.memory_base)?).ok()?;
+        .offset(
+            address,
+            width,
+            match access {
+                AccessKind::Read => crate::memory::READ,
+                AccessKind::Write => crate::memory::WRITE,
+            },
+        )
+    }
+    pub(crate) fn set_memory_layout(
+        &mut self,
+        layout: &crate::memory::Layout,
+    ) -> Result<(), ExecutionError> {
+        if layout.size() != self.memory.len() || layout.regions()[0].address != self.memory_base {
+            return Err(ExecutionError::MemoryLayout);
+        }
+        self.memory_layout = Some(layout.clone());
+        Ok(())
+    }
+    pub(crate) fn checked_bytes(&self, address: u64, width: usize) -> Option<&[u8]> {
+        let offset = self.checked_range(address, width, AccessKind::Read)?;
         self.memory.get(offset..offset.checked_add(width)?)
     }
 
     pub(crate) fn checked_bytes_mut(&mut self, address: u64, width: usize) -> Option<&mut [u8]> {
-        if width != 0 {
-            address.checked_add(u64::try_from(width - 1).ok()?)?;
-        }
-        let offset = usize::try_from(address.checked_sub(self.memory_base)?).ok()?;
+        let offset = self.checked_range(address, width, AccessKind::Write)?;
         self.memory.get_mut(offset..offset.checked_add(width)?)
     }
     pub fn new(count: usize, input: &[u64], limit: usize) -> Result<Self, ExecutionError> {
@@ -423,6 +453,7 @@ impl Machine {
             remaining: limit,
             memory: Vec::new(),
             memory_base: 0,
+            memory_layout: None,
             instruction: None,
         })
     }
@@ -441,22 +472,7 @@ impl Machine {
     }
 
     fn offset(&self, address: u64, width: Width, access: AccessKind) -> Result<usize, MemoryFault> {
-        if address.checked_add(width.bytes() as u64 - 1).is_none() {
-            return Err(MemoryFault {
-                access,
-                address,
-                width,
-            });
-        }
-        let offset = address
-            .checked_sub(self.memory_base)
-            .and_then(|value| usize::try_from(value).ok());
-        offset
-            .filter(|&offset| {
-                offset
-                    .checked_add(width.bytes())
-                    .is_some_and(|end| end <= self.memory.len())
-            })
+        self.checked_range(address, width.bytes(), access)
             .ok_or(MemoryFault {
                 access,
                 address,
@@ -528,6 +544,7 @@ impl Machine {
             trace: self.trace,
             memory: self.memory,
             memory_base: self.memory_base,
+            memory_layout: self.memory_layout,
             instruction: self.instruction,
         }
     }

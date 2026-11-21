@@ -212,7 +212,7 @@ static inline unsigned nv_posix_call(struct nv_module *s, const char *name) {
         return nv_posix_finish(s, (uint64_t)(int64_t)count, saved_errno, count < 0);
     } else { /* puts: the whitelist above makes this branch exhaustive. */
         const uint64_t offset = nv_check(s, a0, 1, 1);
-        const size_t available = (size_t)(s->size - offset);
+        const size_t available = (size_t)NV_GUEST_REMAINING(s, a0);
         const char *string = (const char *)(s->memory + offset);
         const char *terminator = (const char *)memchr(string, 0, available);
         FILE *stream;

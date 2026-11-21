@@ -145,11 +145,10 @@ fn lift_binary(mut binary: BinaryImage) -> Result<Module, ModuleError> {
     let root = errno_address
         .checked_sub(16)
         .ok_or_else(|| error("root stack address underflows"))?;
-    let offset = usize::try_from(
-        root.checked_sub(binary.image.memory_base)
-            .ok_or_else(|| error("root stack lies outside image"))?,
-    )
-    .map_err(|_| error("root offset exceeds host"))?;
+    let offset = binary
+        .image
+        .memory_offset(root, 8)
+        .ok_or_else(|| error("root stack lies outside image"))?;
     binary
         .image
         .memory
@@ -157,8 +156,8 @@ fn lift_binary(mut binary: BinaryImage) -> Result<Module, ModuleError> {
         .ok_or_else(|| error("root stack lies outside image"))?
         .copy_from_slice(&ROOT_RETURN.to_le_bytes());
     Ok(Module {
-        image: binary.image,
         program: Program {
+            memory_layout: binary.image.memory_layout.clone(),
             instructions,
             imports,
             functions,
@@ -166,6 +165,7 @@ fn lift_binary(mut binary: BinaryImage) -> Result<Module, ModuleError> {
             entry,
             errno_address,
         },
+        image: binary.image,
         rejected_functions: rejected.into_values().collect(),
         jump_tables,
         jump_table_diagnostics,
@@ -176,12 +176,10 @@ fn lift_binary(mut binary: BinaryImage) -> Result<Module, ModuleError> {
 fn imports(binary: &BinaryImage) -> Result<Vec<Import>, ModuleError> {
     let mut imports = BTreeMap::<u64, String>::new();
     for slot in &binary.imports {
-        let offset = usize::try_from(
-            slot.address
-                .checked_sub(binary.image.memory_base)
-                .ok_or_else(|| error("import field outside image"))?,
-        )
-        .map_err(|_| error("import offset exceeds host"))?;
+        let offset = binary
+            .image
+            .memory_offset(slot.address, 8)
+            .ok_or_else(|| error("import field outside image"))?;
         let bytes = binary
             .image
             .memory
@@ -190,8 +188,7 @@ fn imports(binary: &BinaryImage) -> Result<Vec<Import>, ModuleError> {
         let value = u64::from_le_bytes(bytes.try_into().unwrap());
         let value = u64::try_from(i128::from(value) - i128::from(slot.addend))
             .map_err(|_| error("canonical import address overflows"))?;
-        let end = binary.image.memory_base + binary.image.memory.len() as u64;
-        if (binary.image.memory_base..end).contains(&value) || value == ROOT_RETURN {
+        if binary.image.memory_offset(value, 1).is_some() || value == ROOT_RETURN {
             return Err(error(
                 "canonical import target aliases guest RAM or root return",
             ));
@@ -302,8 +299,10 @@ fn lift_function_inner(
     let end = base
         .checked_add(function.size)
         .ok_or_else(|| error("function range overflow"))?;
-    let start = usize::try_from(base - binary.image.memory_base)
-        .map_err(|_| error("function offset exceeds host"))?;
+    let start = binary
+        .image
+        .memory_offset(base, function.size as usize)
+        .ok_or_else(|| error("function outside RAM"))?;
     let bytes = binary
         .image
         .memory
@@ -476,11 +475,10 @@ fn lift_function_inner(
                 continue;
             }
             searches_left -= 1;
-            let search = crate::jump_tables::discover_cfg(
+            let search = crate::jump_tables::discover_cfg_mapped(
                 &originals,
                 branch.address,
-                binary.image.memory_base,
-                &binary.image.memory,
+                binary.image.memory_view(),
                 base..end,
             );
             if search.reached_limit {

@@ -86,6 +86,9 @@ impl Program {
             memory,
             limits.instructions,
         )?;
+        if let Some(layout) = self.memory_layout() {
+            machine.set_memory_layout(layout)?;
+        }
         let mut pc = pc;
         let mut imports = 0usize;
         let result = (|| -> Result<u64, Status> {
@@ -182,7 +185,7 @@ impl Program {
                                 access: memory.access,
                             };
                             if machine
-                                .checked_bytes(address, memory.width as usize)
+                                .checked_range(address, memory.width as usize, memory.access)
                                 .is_none()
                             {
                                 return Err(Status::Fault(observation));

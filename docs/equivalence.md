@@ -135,6 +135,17 @@ RETとimportからの復帰は実際のゲストstackから戻り先をLoadし�
 単一関数と同じ通常RAMの規則を使います。
 IR/Cの比較では、全レジスタ・全RAM・fault・PC・命令開始数を照合します。
 
+moduleで連続画像が16 MiBを超える入力には、`module-sparse-ram-calls-v1`を使います。
+`LinkedImage.memory_layout`と`Program::memory_layout()`がゲストの範囲・権限・packed backing内のoffsetを保持します。
+実データとruntime領域の合計に16 MiBの上限を適用し、離れた範囲の間にはRAMを確保しません。
+各Load／Storeはアクセス全幅と必要なR/W権限を検査し、穴や権限境界を跨ぐ失敗では、その命令の先行効果だけを残します。
+隣接する領域が全byteの権限を満たす場合は、跨いだアクセスを許します。Cの文字列走査も同じ境界で止まります。
+初期化・コードの読取り・GOT・ジャンプテーブルも仮想アドレスを保持したままoffsetへ変換します。
+Snapshotはpacked byte列とmappingを両方保持し、観測器はmappingの違いも比較します。
+このprofileは[ELF PT_LOAD](https://gabi.xinuos.com/elf/07-pheader.html)の`p_memsz`単位の範囲と`p_flags`を使います。
+Linuxのpage丸め・RELRO・CPU固有の権限拡張・実行中のmprotectは、page単位のprofileへ追加する対象です。
+faultは部分状態付き停止として返し、signal frameの構築・handlerへの移転・sigreturnは次の環境モデルで扱います。
+
 リンク済み画像の`stdin/stdout/stderr`は、8-byteポインタ変数とopaque handleを持つ明示的なbindingです。
 COPY先と同名のGOT参照は同じ変数を共有し、別名経由の書換えも共通RAMへ反映します。
 このprofileが定める初期値と、stream handleの解釈を担う外部adapterを組み合わせて実行します。

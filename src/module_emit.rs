@@ -27,7 +27,7 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
     // module's call/return dispatch or ordered lifted assignments.
     let expressions = Expressions::new(program.shape());
     let mut code = String::from("#define _POSIX_C_SOURCE 200809L\n");
-    code.push_str(runtime_header());
+    code.push_str(&runtime_header(module));
     // Keep this helper unconditional: all expressions, including transfer and
     // vector guard expressions, can use the ordinary IR multiply operation.
     code.push_str(MULTIPLY_HELPER);
@@ -164,8 +164,28 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
     Ok(code)
 }
 
-pub(crate) fn runtime_header() -> &'static str {
-    RUNTIME
+pub(crate) fn runtime_header(module: &Module) -> String {
+    let mut code = format!("/* execution profile: {} */\n", module.program.model_id());
+    if let Some(layout) = &module.image.memory_layout {
+        writeln!(
+            code,
+            "#define NV_SPARSE_REGION_COUNT {}",
+            layout.regions().len()
+        )
+        .unwrap();
+        code.push_str("#define NV_SPARSE_REGIONS {");
+        for region in layout.regions() {
+            write!(
+                code,
+                "{{UINT64_C({}),UINT64_C({}),UINT64_C({}),{}}},",
+                region.address, region.size, region.offset, region.permissions
+            )
+            .unwrap();
+        }
+        code.push_str("}\n");
+    }
+    code.push_str(RUNTIME);
+    code
 }
 
 pub(crate) fn divide_statement(
@@ -295,6 +315,15 @@ fn image_layout(module: &Module) -> Result<(u64, u64, u64), String> {
     let size = u64::try_from(module.image.memory.len())
         .map_err(|_| "guest image length does not fit u64")?;
     let base = module.image.memory_base;
+    if module.image.memory_layout.as_ref() != program.memory_layout()
+        || module
+            .image
+            .memory_layout
+            .as_ref()
+            .is_some_and(|layout| layout.size() != size as usize)
+    {
+        return Err("image and program memory layouts disagree".into());
+    }
     base.checked_add(size)
         .ok_or("guest image address range overflows")?;
     let root_sp = module
@@ -306,7 +335,7 @@ fn image_layout(module: &Module) -> Result<(u64, u64, u64), String> {
         ("root return slot", root_sp),
         ("errno slot", program.errno_address()),
     ] {
-        if address < base || size < 8 || address - base > size - 8 {
+        if module.image.memory_offset(address, 8).is_none() {
             return Err(format!("{name} lies outside the guest image"));
         }
     }

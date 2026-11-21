@@ -749,6 +749,7 @@ fn initial_string_views_are_bounded_escaped_and_leave_mutable_ram_authoritative(
     let mut memory = vec![0; SIZE];
     memory[16..16 + text.len()].copy_from_slice(text);
     let image = nirvana::loader::LinkedImage {
+        memory_layout: None,
         memory_base: BASE,
         memory,
         function: nirvana::elf::FunctionImage {

@@ -29,6 +29,10 @@ pub enum Comparison {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Difference {
+    MemoryMappings {
+        left: Option<crate::memory::Layout>,
+        right: Option<crate::memory::Layout>,
+    },
     Status {
         left: RunStatus,
         right: RunStatus,
@@ -103,6 +107,11 @@ impl Contract {
             Some(Difference::Status {
                 left: left.status.clone(),
                 right: right.status.clone(),
+            })
+        } else if left.state.memory_layout != right.state.memory_layout {
+            Some(Difference::MemoryMappings {
+                left: left.state.memory_layout.clone(),
+                right: right.state.memory_layout.clone(),
             })
         } else if left.state.memory_base != right.state.memory_base
             || left.state.memory.len() != right.state.memory.len()

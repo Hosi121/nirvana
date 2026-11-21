@@ -8,6 +8,7 @@ fn report() -> Report {
             registers: vec![7, 8],
             memory_base: 4096,
             memory: vec![1, 2],
+            memory_layout: None,
             trace: vec![0, 1],
             instruction: Some(1),
         },
@@ -93,5 +94,31 @@ fn fault_observations_keep_prior_ram_and_output() {
     assert!(matches!(
         Contract::return_memory_output().compare(&left, &right),
         Comparison::Counterexample(Difference::Core(_))
+    ));
+}
+
+#[test]
+fn identical_bytes_with_different_virtual_permissions_are_distinct_states() {
+    let mut left = report();
+    let mut right = left.clone();
+    let layout = |permissions| {
+        nirvana::memory::Layout::new(
+            vec![nirvana::memory::Region {
+                address: 4096,
+                size: 2,
+                offset: 0,
+                permissions,
+            }],
+            2,
+        )
+        .unwrap()
+    };
+    left.state.memory_layout = Some(layout(6));
+    right.state.memory_layout = Some(layout(4));
+    assert!(matches!(
+        Contract::return_memory_output().compare(&left, &right),
+        Comparison::Counterexample(Difference::Core(
+            nirvana::observe::Difference::MemoryMappings { .. }
+        ))
     ));
 }

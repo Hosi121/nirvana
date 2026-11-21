@@ -13,6 +13,7 @@ pub use run::{Environment, ExternalContext, RejectImports};
 pub const REGISTER_COUNT: usize = 80;
 pub const ROOT_RETURN: u64 = u64::MAX;
 pub const MODEL_ID: &str = "module-normal-ram-calls-v2";
+pub const SPARSE_MODEL_ID: &str = "module-sparse-ram-calls-v1";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Target {
@@ -85,8 +86,19 @@ pub struct Program {
     shape: crate::ir::Program,
     entry: u64,
     errno_address: u64,
+    memory_layout: Option<crate::memory::Layout>,
 }
 impl Program {
+    pub fn memory_layout(&self) -> Option<&crate::memory::Layout> {
+        self.memory_layout.as_ref()
+    }
+    pub fn model_id(&self) -> &'static str {
+        if self.memory_layout.is_some() {
+            SPARSE_MODEL_ID
+        } else {
+            MODEL_ID
+        }
+    }
     pub fn instructions(&self) -> &[Instruction] {
         &self.instructions
     }

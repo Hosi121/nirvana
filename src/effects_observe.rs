@@ -64,7 +64,12 @@ impl Contract {
         // Borrow state directly rather than copying RAM to adapt report types.
         let a = &left.state;
         let b = &right.state;
-        let difference = if a.memory_base != b.memory_base || a.memory.len() != b.memory.len() {
+        let difference = if a.memory_layout != b.memory_layout {
+            Some(CoreDifference::MemoryMappings {
+                left: a.memory_layout.clone(),
+                right: b.memory_layout.clone(),
+            })
+        } else if a.memory_base != b.memory_base || a.memory.len() != b.memory.len() {
             Some(CoreDifference::MemoryLayout {
                 left_base: a.memory_base,
                 right_base: b.memory_base,

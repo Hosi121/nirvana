@@ -188,7 +188,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
         }
     }
     let mut code = String::from("#define _POSIX_C_SOURCE 200809L\n");
-    code.push_str(runtime_header());
+    code.push_str(&runtime_header(module));
     code.push_str(MULTIPLY_HELPER);
     if module
         .program
@@ -895,7 +895,7 @@ impl Renderer<'_> {
     }
 
     fn plt_import(&self, slot: u64) -> Option<&crate::module_outline::ImportPlan> {
-        let offset = usize::try_from(slot.checked_sub(self.module.image.memory_base)?).ok()?;
+        let offset = self.module.image.memory_offset(slot, 8)?;
         let value = u64::from_le_bytes(
             self.module
                 .image

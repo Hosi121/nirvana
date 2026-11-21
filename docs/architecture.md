@@ -26,6 +26,9 @@ PLT経由のCALLは、戻り先Store後にGOTを読む独立したtarget形式�
 命令予算・現在位置・全レジスタを保持するため、純粋IR向けの不要代入除去とは個別の経路を使います。
 
 `module_ir`は複数の関数とimportをまとめ、CALLの戻り先StoreとRETのLoadを明示します。
+大きな疎な画像には、`memory::Layout`で検査した仮想範囲・権限とpacked backingを使います。
+ローダの初期化、命令抽出、GOT、表の探索、Rust実行器とCのアクセス検査は、この対応表を通して元のアドレスを保ちます。
+連続画像の通常RAM profileと疎な画像のprofileは、`Program::model_id()`と生成Cの先頭で識別できます。
 動的な呼出し先・戻り先は、共通のゲストRAMと登録した命令位置を使ってdispatchします。
 スカラー命令は既存の実行器とlifterを共有し、ベクトル命令にはアクセス全幅とalignmentの事前検査を付けます。
 moduleの画像には64-byteのTLS領域を置き、`FS:0x28`の64-bit MOV・ALU sourceを、そのguard slotへの通常のLoadへ変換します。

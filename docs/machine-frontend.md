@@ -19,6 +19,8 @@ PLTの照合はENDBR64・BND付きJMPも対象とし、実際のfunction import�
 ライブラリAPIの`linked_elf::LinkedOptions`ではPIEのbiasとstack容量を指定できます。
 単一関数の`effects-*`は整数処理と`puts`モデルを扱い、追加の呼出しは位置付きで報告します。
 `module-*`は複数の関数を読み、内部CALL・間接CALL・RETとPOSIX importを扱います。
+連続配置が16 MiBを超える場合は疎な範囲表を使い、実データ・TLS・stackの合計に同じ16 MiB上限を適用します。
+疎な画像の穴・権限・途中停止の契約は[実行モデル](equivalence.md)にあります。
 入口は既定の`main`、`--symbol NAME`、または`--entry ADDRESS`で指定します。
 `--entry`はリンク時の仮想アドレスで、PIEのbiasはローダが加算します。
 正のサイズを持つ関数シンボルを優先し、strip後のELFにはマッピングを照合した`.eh_frame`のFDE範囲を使います。

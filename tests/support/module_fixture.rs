@@ -25,12 +25,15 @@ pub(crate) fn prepare_with_state(
     assert_eq!(registers.len(), 80);
     registers[7] = state_address(module);
     let mut memory = module.image.memory.clone();
-    let offset = (state_address(module) - module.image.memory_base) as usize;
+    let offset = module
+        .image
+        .memory_offset(state_address(module), 32)
+        .unwrap();
     for (i, word) in case.input.iter().enumerate() {
         memory[offset + i * 8..offset + i * 8 + 8].copy_from_slice(&word.to_le_bytes());
     }
     if let Some((address, value, width)) = case.patch {
-        let offset = (address - module.image.memory_base) as usize;
+        let offset = module.image.memory_offset(address, width).unwrap();
         memory[offset..offset + width].copy_from_slice(&value.to_le_bytes()[..width]);
     }
     (registers, memory)
@@ -59,7 +62,10 @@ pub(crate) fn expected_with_state(
         )
         .unwrap();
     let memory = &report.state.memory;
-    let offset = (state_address(module) - module.image.memory_base) as usize;
+    let offset = module
+        .image
+        .memory_offset(state_address(module), 32)
+        .unwrap();
     let mut result = vec![report.state.registers[0]];
     for i in 0..4 {
         result.push(u64::from_le_bytes(
@@ -116,6 +122,12 @@ fn harness(code: &str, module: &Module, initial: Option<&[u64]>) -> String {
 #undef main
 #include <assert.h>
 #include <inttypes.h>
+static void nv_test_patch(struct nv_module *s,uint64_t address,uint64_t value,uint64_t width) {{
+    assert(width<=8);
+    if(setjmp(s->jump)!=0)abort();
+    uint64_t offset=nv_check(s,address,width,0);
+    for(unsigned j=0;j<width;++j)s->memory[offset+j]=(uint8_t)(value>>(j*8));
+}}
 int main(void) {{
     uint64_t in[4],budget,pc,patch,value,width;
     while(scanf("%" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64,
@@ -125,7 +137,7 @@ int main(void) {{
         s->r[7]=UINT64_C({state});s->pc=pc;s->instructions_left=budget;s->imports_left=0;
         uint64_t offset=UINT64_C({offset});
         for(unsigned i=0;i<4;++i)for(unsigned j=0;j<8;++j)s->memory[offset+i*8+j]=(uint8_t)(in[i]>>(j*8));
-        if(width) {{assert(width<=8 && patch>=s->base && patch-s->base+width<=s->size);for(unsigned j=0;j<width;++j)s->memory[patch-s->base+j]=(uint8_t)(value>>(j*8));}}
+        if(width) nv_test_patch(s,patch,value,width);
         unsigned status=nv_run(s);
         uint64_t hash=UINT64_C(14695981039346656037);
         for(uint64_t i=0;i<s->size;++i)hash=(hash^s->memory[i])*UINT64_C(1099511628211);
@@ -140,7 +152,10 @@ int main(void) {{
 }}
 "#,
         state = state_address(module),
-        offset = state_address(module) - module.image.memory_base
+        offset = module
+            .image
+            .memory_offset(state_address(module), 32)
+            .unwrap()
     )
 }
 

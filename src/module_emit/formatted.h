@@ -14,6 +14,9 @@
 #ifndef NV_GUEST_STDIN
 #define NV_GUEST_STDIN(s) ((void)(s), stdin)
 #endif
+#ifndef NV_GUEST_REMAINING
+#define NV_GUEST_REMAINING(s,a) ((s)->size - nv_check((s),(a),1,1))
+#endif
 #define NV_FORMAT_LIMIT 4096
 #define NV_FORMAT_OUTPUT_LIMIT 65536
 #define NV_FORMAT_CONVERSIONS 32
@@ -46,7 +49,7 @@ static inline const char *nv_format_string(struct nv_module *s, uint64_t address
     const char *bytes, *zero;
     if (maximum == 0) { *length = 0; return ""; }
     offset = nv_check(s, address, 1, 1);
-    available = (size_t)(s->size - offset);
+    available = (size_t)NV_GUEST_REMAINING(s, address);
     count = available < maximum ? available : maximum;
     bytes = (const char *)(s->memory + offset);
     zero = (const char *)memchr(bytes, 0, count);

@@ -29,6 +29,24 @@ pub fn discover_cfg(
     memory: &[u8],
     function: Range<u64>,
 ) -> ContextSearch {
+    discover_cfg_mapped(
+        instructions,
+        branch,
+        crate::memory::View {
+            base: memory_base,
+            bytes: memory,
+            layout: None,
+        },
+        function,
+    )
+}
+
+pub fn discover_cfg_mapped(
+    instructions: &[DecodedInstruction],
+    branch: u64,
+    memory: crate::memory::View<'_>,
+    function: Range<u64>,
+) -> ContextSearch {
     let mut result = ContextSearch::default();
     if instructions.len() > MAX_GRAPH {
         result.reached_limit = true;
@@ -103,8 +121,7 @@ pub fn discover_cfg(
         if !extended {
             result.paths += 1;
             let context: Vec<_> = path.iter().rev().map(|pc| graph[pc]).collect();
-            if let Some(candidate) = discover_path(&context, memory_base, memory, function.clone())
-            {
+            if let Some(candidate) = discover_path(&context, memory, function.clone()) {
                 merge(&mut result.candidates, candidate);
             }
         }

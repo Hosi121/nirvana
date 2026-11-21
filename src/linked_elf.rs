@@ -84,7 +84,7 @@ impl BinaryImage {
             }) {
                 return None;
             }
-            let start = usize::try_from(address.checked_sub(self.image.memory_base)?).ok()?;
+            let start = self.image.memory_offset(address, size as usize)?;
             self.image
                 .memory
                 .get(start..start.checked_add(size as usize)?)
@@ -944,7 +944,10 @@ fn load_selected(
     let stack_start = aligned(end(original_end, options.load_bias)?)?;
     let memory_end = aligned(end(stack_start, stack_size)?)?;
     let memory_size = memory_end - memory_base;
-    if memory_size > MAX_MEMORY {
+    let mapped_size = loads
+        .iter()
+        .try_fold(stack_size, |sum, s| end(sum, s.memory))?;
+    if memory_size > MAX_MEMORY && (!module_tls || mapped_size > MAX_MEMORY) {
         return Err(BinaryError::Limit(
             "guest image including stack exceeds 16 MiB",
         ));
@@ -981,7 +984,43 @@ fn load_selected(
         data_end
     })?;
     let memory_end = aligned(end(stack_start, stack_size)?)?;
-    let memory_size = memory_end - memory_base;
+    let dense_size = memory_end - memory_base;
+    let memory_layout = if module_tls && dense_size > MAX_MEMORY {
+        let mut regions = Vec::new();
+        let mut offset = 0usize;
+        for segment in &mapping.loads {
+            regions.push(crate::memory::Region {
+                address: segment.address + options.load_bias,
+                size: segment.memory,
+                offset,
+                permissions: (segment.flags & 7) as u8,
+            });
+            offset = offset
+                .checked_add(
+                    usize::try_from(segment.memory).map_err(|_| invalid("segment exceeds host"))?,
+                )
+                .ok_or_else(|| invalid("backing size overflow"))?;
+        }
+        let runtime_base = end(original_end, options.load_bias)?;
+        let runtime_size = memory_end - runtime_base;
+        regions.push(crate::memory::Region {
+            address: runtime_base,
+            size: runtime_size,
+            offset,
+            permissions: 6,
+        });
+        let size = offset
+            .checked_add(
+                usize::try_from(runtime_size).map_err(|_| invalid("runtime exceeds host"))?,
+            )
+            .ok_or_else(|| invalid("backing size overflow"))?;
+        Some(crate::memory::Layout::new(regions, size).map_err(invalid)?)
+    } else {
+        None
+    };
+    let memory_size = memory_layout
+        .as_ref()
+        .map_or(dense_size, |l| l.size() as u64);
     if memory_size > MAX_MEMORY {
         return Err(BinaryError::Limit("runtime data and stack exceed 16 MiB"));
     }
@@ -1139,8 +1178,27 @@ fn load_selected(
         }));
     }
     let mut memory = vec![0; memory_size as usize];
+    let image_offset = |address: u64, width: usize| -> Result<usize> {
+        if let Some(layout) = &memory_layout {
+            layout
+                .offset(address, width, 0)
+                .ok_or_else(|| invalid("address outside sparse image"))
+        } else {
+            let offset = usize::try_from(
+                address
+                    .checked_sub(memory_base)
+                    .ok_or_else(|| invalid("address below image"))?,
+            )
+            .map_err(|_| invalid("offset exceeds host"))?;
+            offset
+                .checked_add(width)
+                .filter(|&end| end <= memory_size as usize)
+                .map(|_| offset)
+                .ok_or_else(|| invalid("range outside image"))
+        }
+    };
     for segment in &mapping.loads {
-        let start = (segment.address - original_base) as usize;
+        let start = image_offset(segment.address + options.load_bias, segment.files as usize)?;
         memory[start..start + segment.files as usize].copy_from_slice(range(
             object,
             segment.offset,
@@ -1148,21 +1206,24 @@ fn load_selected(
         )?);
     }
     for (offset, value) in patches {
-        memory[offset as usize..offset as usize + 8].copy_from_slice(&value.to_le_bytes());
+        let offset = image_offset(end(memory_base, offset)?, 8)?;
+        memory[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     for binding in &external_data {
-        let offset = usize::try_from(binding.address - memory_base)
-            .map_err(|_| invalid("external data offset exceeds host"))?;
+        let offset = image_offset(binding.address, 8)?;
         memory
             .get_mut(offset..offset + 8)
             .ok_or_else(|| invalid("external data outside guest image"))?
             .copy_from_slice(&binding.handle.to_le_bytes());
     }
     if let Some(tls) = &thread_local {
-        let offset = (tls.base - memory_base + crate::x86::FS_GUARD_OFFSET) as usize;
+        let offset = image_offset(tls.base + crate::x86::FS_GUARD_OFFSET, 8)?;
         memory[offset..offset + 8].copy_from_slice(&0x6e69_7276_616e_6100_u64.to_le_bytes());
     }
-    let function_start = (selected.address - original_base) as usize;
+    let function_start = image_offset(
+        end(selected.address, options.load_bias)?,
+        selected.size as usize,
+    )?;
     let function = FunctionImage {
         name: selected.name,
         address: end(selected.address, options.load_bias)?,
@@ -1184,6 +1245,7 @@ fn load_selected(
         image: LinkedImage {
             memory_base,
             memory,
+            memory_layout,
             function,
             sections: loaded_sections,
             puts_address: memory_end,

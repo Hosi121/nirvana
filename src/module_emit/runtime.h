@@ -12,6 +12,14 @@
 #define NV_IMPORT_LIMIT UINT64_C(10000)
 #endif
 
+#ifndef NV_SPARSE_REGION_COUNT
+#define NV_SPARSE_REGION_COUNT 0
+#endif
+#if NV_SPARSE_REGION_COUNT
+struct nv_memory_region { uint64_t address,size,offset; unsigned permissions; };
+static const struct nv_memory_region nv_regions[NV_SPARSE_REGION_COUNT] = NV_SPARSE_REGIONS;
+#endif
+
 struct nv_module {
     uint64_t r[80];
     uint8_t *memory;
@@ -23,6 +31,34 @@ struct nv_module {
 };
 
 static inline uint64_t nv_check(struct nv_module *s,uint64_t address,uint64_t width,unsigned access) {
+#if NV_SPARSE_REGION_COUNT
+    const unsigned permissions=access==0 ? 0 : access==1 ? 4 : 2;
+    if(width && address>UINT64_MAX-width) goto nv_bad;
+    for(unsigned i=0;i<NV_SPARSE_REGION_COUNT;++i) {
+        const struct nv_memory_region *r=&nv_regions[i];
+        const uint64_t end=r->address+r->size;
+        uint64_t offset,covered;
+        if(address<r->address) break;
+        if(width==0 && address<=end) {
+            offset=r->offset+(address-r->address);
+            if(offset<=s->size) return offset;
+            break;
+        }
+        if(address>=end) continue;
+        offset=r->offset+(address-r->address); covered=address;
+        if(offset>s->size || width>s->size-offset) break;
+        for(unsigned j=i;j<NV_SPARSE_REGION_COUNT;++j) {
+            r=&nv_regions[j];
+            if(r->address>covered || (r->permissions&permissions)!=permissions) break;
+            covered=r->address+r->size;
+            if(address+width<=covered) return offset;
+        }
+        break;
+    }
+nv_bad:
+    s->status=1; s->fault_address=address; s->fault_width=width; s->fault_access=access;
+    longjmp(s->jump,1);
+#else
     /* Subtract only after establishing the lower bound. This permits an empty
        range at the one-past address while rejecting all wrapping ranges. */
     if(address<s->base || width>s->size || address-s->base>s->size-width ||
@@ -31,7 +67,32 @@ static inline uint64_t nv_check(struct nv_module *s,uint64_t address,uint64_t wi
         longjmp(s->jump,1);
     }
     return address-s->base;
+#endif
 }
+
+static inline uint64_t nv_available(struct nv_module *s,uint64_t address,unsigned access) {
+    uint64_t offset=nv_check(s,address,1,access);
+#if NV_SPARSE_REGION_COUNT
+    const unsigned permissions=access==1 ? 4 : 2;
+    (void)offset;
+    for(unsigned i=0;i<NV_SPARSE_REGION_COUNT;++i) {
+        const struct nv_memory_region *r=&nv_regions[i];
+        if(address>=r->address && address<r->address+r->size) {
+            uint64_t end=r->address+r->size;
+            for(unsigned j=i+1;j<NV_SPARSE_REGION_COUNT;++j) {
+                r=&nv_regions[j];
+                if(r->address!=end || (r->permissions&permissions)!=permissions) break;
+                end=r->address+r->size;
+            }
+            return end-address;
+        }
+    }
+    return 0; /* nv_check established a containing accessible region. */
+#else
+    return s->size-offset;
+#endif
+}
+#define NV_GUEST_REMAINING(s,a) nv_available((s),(a),1)
 static inline uint64_t nv_read(struct nv_module *s,uint64_t address,unsigned width) {
     if(width!=1 && width!=2 && width!=4 && width!=8) {
         s->status=1; s->fault_address=address; s->fault_width=width; s->fault_access=1;

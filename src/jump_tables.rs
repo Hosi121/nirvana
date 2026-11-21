@@ -10,6 +10,7 @@ mod context;
 pub(crate) use context::merge as merge_candidate;
 pub use context::{
     ContextSearch, MAX_CONTEXT_INSTRUCTIONS, MAX_CONTEXT_PATHS, MAX_CONTEXT_WORK, discover_cfg,
+    discover_cfg_mapped,
 };
 
 pub const MAX_WINDOW: usize = 24;
@@ -651,13 +652,20 @@ pub fn discover(
             return None;
         }
     }
-    discover_path(window, memory_base, memory, function)
+    discover_path(
+        window,
+        crate::memory::View {
+            base: memory_base,
+            bytes: memory,
+            layout: None,
+        },
+        function,
+    )
 }
 
 fn discover_path(
     path: &[DecodedInstruction],
-    memory_base: u64,
-    memory: &[u8],
+    memory: crate::memory::View<'_>,
     function: std::ops::Range<u64>,
 ) -> Option<Candidate> {
     let register = |r: Register| {
@@ -795,16 +803,7 @@ fn discover_path(
         let Some(address) = table.checked_add((index * width.bytes()) as u64) else {
             break;
         };
-        let Some(offset) = address
-            .checked_sub(memory_base)
-            .and_then(|n| usize::try_from(n).ok())
-        else {
-            break;
-        };
-        let Some(bytes) = offset
-            .checked_add(width.bytes())
-            .and_then(|end| memory.get(offset..end))
-        else {
+        let Some(bytes) = memory.read(address, width.bytes()) else {
             break;
         };
         let mut raw = [0u8; 8];

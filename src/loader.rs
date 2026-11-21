@@ -76,6 +76,8 @@ pub struct ThreadLocalImage {
 pub struct LinkedImage {
     pub memory_base: u64,
     pub memory: Vec<u8>,
+    /// Some for packed sparse images; None retains the normal contiguous RAM profile.
+    pub memory_layout: Option<crate::memory::Layout>,
     pub function: FunctionImage,
     pub sections: Vec<LoadedSection>,
     pub puts_address: u64,
@@ -83,6 +85,19 @@ pub struct LinkedImage {
     pub stack_pointer: u64,
     pub external_data: Vec<ExternalDataBinding>,
     pub thread_local: Option<ThreadLocalImage>,
+}
+
+impl LinkedImage {
+    pub fn memory_view(&self) -> crate::memory::View<'_> {
+        crate::memory::View {
+            base: self.memory_base,
+            bytes: &self.memory,
+            layout: self.memory_layout.as_ref(),
+        }
+    }
+    pub fn memory_offset(&self, address: u64, width: usize) -> Option<usize> {
+        self.memory_view().offset(address, width, 0)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -359,6 +374,7 @@ pub fn link(object: &[u8], symbol: &str, options: LoadOptions) -> Result<LinkedI
     };
     Ok(LinkedImage {
         memory_base: options.base,
+        memory_layout: None,
         memory,
         function,
         sections: placements.into_iter().flatten().collect(),
