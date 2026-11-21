@@ -34,7 +34,13 @@ fn linux_posix_bridge_obeys_checked_guest_abi_at_o0_and_o2() {
     let source = scratch.0.join("posix.c");
     std::fs::write(
         &source,
-        [PRELUDE, include_str!("../src/module_emit/posix.h"), HARNESS].concat(),
+        [
+            PRELUDE,
+            include_str!("../src/module_emit/formatted.h"),
+            include_str!("../src/module_emit/posix.h"),
+            HARNESS,
+        ]
+        .concat(),
     )
     .unwrap();
     for optimization in ["-O0", "-O2"] {

@@ -12,6 +12,7 @@ use crate::module_ir::{Instruction, Module, REGISTER_COUNT, ROOT_RETURN, Target}
 
 const RUNTIME: &str = include_str!("module_emit/runtime.h");
 const POSIX: &str = include_str!("module_emit/posix.h");
+const FORMATTED: &str = include_str!("module_emit/formatted.h");
 
 /// Lower a module to a self-contained C11 executable with bounded execution.
 /// The module's original instruction bytes are data, never host code.
@@ -228,6 +229,24 @@ pub(crate) fn posix_header(module: &Module) -> String {
         code.push_str("    (void)s; return stdout;\n");
     }
     code.push_str("}\n");
+    code.push_str("#define NV_GUEST_STDIN(s) nv_guest_stdin(s)\nstatic inline FILE *nv_guest_stdin(struct nv_module *s) {\n");
+    if let Some(stdin) = module
+        .image
+        .external_data
+        .iter()
+        .find(|b| b.stream == StandardStream::Stdin)
+    {
+        writeln!(
+            code,
+            "    if(nv_read(s,UINT64_C({}),8)==UINT64_C({})) return stdin;\n    return NULL;",
+            stdin.address, stdin.handle
+        )
+        .unwrap();
+    } else {
+        code.push_str("    (void)s; return stdin;\n");
+    }
+    code.push_str("}\n");
+    code.push_str(FORMATTED);
     code.push_str(POSIX);
     code
 }

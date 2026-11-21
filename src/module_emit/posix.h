@@ -80,12 +80,25 @@ static inline unsigned nv_posix_call(struct nv_module *s, const char *name) {
         strcmp(name, "close") && strcmp(name, "__errno_location") &&
         strcmp(name, "htons") && strcmp(name, "ntohs") &&
         strcmp(name, "htonl") && strcmp(name, "ntohl") &&
-        strcmp(name, "puts"))
+        strcmp(name, "puts") && strcmp(name, "putchar") &&
+        strcmp(name, "printf") && strcmp(name, "sprintf") &&
+        strcmp(name, "snprintf") && strcmp(name, "scanf") &&
+        strcmp(name, "__isoc99_scanf") && strcmp(name, "__printf_chk") &&
+        strcmp(name, "__sprintf_chk") && strcmp(name, "__snprintf_chk"))
         return nv_posix_unsupported(s);
 
     (void)nv_check(s, s->errno_address, 4, 2);
     entry_errno = (int32_t)(uint32_t)nv_read(s, s->errno_address, 4);
     errno = entry_errno;
+
+    if (!strcmp(name, "printf") || !strcmp(name, "sprintf") ||
+        !strcmp(name, "snprintf") || !strcmp(name, "scanf") ||
+        !strcmp(name, "__isoc99_scanf") || !strcmp(name, "putchar") ||
+        !strcmp(name, "__printf_chk") || !strcmp(name, "__sprintf_chk") ||
+        !strcmp(name, "__snprintf_chk")) {
+        if (!nv_formatted_call(s, name, &result)) return 0;
+        return nv_posix_finish(s, (uint32_t)result, errno, result < 0);
+    }
 
     if (!strcmp(name, "__errno_location"))
         return nv_posix_finish(s, s->errno_address, errno, 0);

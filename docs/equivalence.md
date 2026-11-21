@@ -174,6 +174,20 @@ socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを
 sockaddrは128 byte、pollは65536要素、setsockoptは送受信timeoutのtimevalを扱います。
 HTTP比較の観測はstatus・headers・body・接続終了・プロセス終了です。各実行のportとfdはOSが割り当てます。
 
+書式付きI/Oは[`formatted.h`](../src/module_emit/formatted.h)で共通化しています。
+SysVの整数／pointer引数を6個のGP registerと、calleeの`RSP+8`以降のstack slotから読みます。
+`printf/sprintf/snprintf`は`diuoxX`・`c`・`s`・`%%`、整数の`hh/h/l/ll`、幅・精度と`*`を扱います。
+`scanf/__isoc99_scanf`は整数の`diuoxX`、同じ幅修飾、field幅、空白・literal・`%%`を扱い、代入数・EOF・部分成功を保持します。
+全書式を検査してからI/Oへ進み、scanfの各destinationはその変換の直前に検査します。先のStoreが後のstack引数を書き換えた場合も再Loadします。
+各変換は型を合わせたホストlibc呼出しへ渡し、ゲストpointerは検査済みRAM内のhost pointerへ変換します。
+`snprintf`は切詰め・NUL・本来の出力長を区別し、capacity 0ではdestinationへアクセスしません。
+`putchar`と`printf`はゲストstdout binding、`scanf`はゲストstdin bindingを参照します。
+`__printf_chk/__sprintf_chk/__snprintf_chk`も対応する引数位置を使い、object size条件を検査します。
+fortifyの条件違反は外部効果前のunsupportedとして扱い、SIGABRTの再現はsignal profileの対象です。
+このprofileはC locale、対象整数型の範囲内の入力、重ならないformat／出力bufferを前提にします。
+書式は4,096 byte、出力は65,536 byte、変換は32個までです。上限、浮動小数点、位置指定、`%n`、入力の抑制・文字列変換はunsupportedとして保持します。
+仕様の根拠は[SysVの可変長引数](https://gitlab.com/x86-psABIs/x86-64-ABI/-/blob/master/x86-64-ABI/low-level-sys-info.tex)、glibcの[出力書式](https://sourceware.org/glibc/manual/latest/html_node/Output-Conversion-Syntax.html)・[整数入力](https://sourceware.org/glibc/manual/latest/html_node/Numeric-Input-Conversions.html)・[fortify](https://sourceware.org/glibc/manual/latest/html_node/Source-Fortification.html)です。
+
 `module-readable-c`も同じmoduleモデルを使います。
 構造ASTの全Stepから始めた次命令・条件・代入を独立検査します。
 描画後のCは、途中PCへの再入を含む具体状態で比較します。
