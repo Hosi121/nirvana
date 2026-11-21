@@ -1,7 +1,8 @@
 //! Recover values saved to memory without removing their checked reloads.
 //!
-//! Every reaching byte agrees on a slice of one SSA value. A value captured once in
-//! a block visited at most once from entry can replace uses of its successful reload. Original
+//! Reaching bytes agree on a slice of an SSA value or one pure Store RHS.
+//! A value captured in a block visited at most once from entry can replace uses
+//! of its successful reload. Original
 //! registers, memory effects, source PCs and instruction budgets are retained;
 //! equivalence projects away the additional internal capture registers.
 use crate::dataflow::ssa::{
@@ -17,9 +18,21 @@ mod single_visit;
 mod verify;
 const MAX_CAPTURES: usize = 256;
 
+#[derive(Clone, Copy)]
+enum RecoveryPolicy {
+    Source,
+    Stored,
+    Local,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum SavedValue {
+    Register(ValueId),
+    Stored(Site),
+}
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Key {
-    value: ValueId,
+    value: SavedValue,
     start: u8,
     width: Width,
 }
@@ -31,15 +44,19 @@ struct CapturePoint {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Capture {
-    value: ValueId,
+    value: SavedValue,
     point: CapturePoint,
-    source: Reg,
+    source: Option<Reg>,
 }
 impl Capture {
-    fn expression(self) -> Expr {
-        // Preserve the full value so its capture can share storage with the
-        // source. A narrow memory word is projected at each replaced read.
-        Expr::Register(self.source)
+    fn expression(self, context: &analyze::Context<'_>) -> Option<Expr> {
+        match self.value {
+            SavedValue::Register(_) => Some(Expr::Register(self.source?)),
+            SavedValue::Stored(site) => {
+                let value = &context.assignment(site)?.value;
+                (!value.uses_memory()).then(|| value.clone())
+            }
+        }
     }
 }
 fn word(key: Key, value: Expr) -> Expr {
@@ -78,18 +95,38 @@ pub struct MemoryValuePlan {
 impl MemoryValuePlan {
     pub fn analyze(source: &Program) -> Option<Self> {
         let context = analyze::Context::new(source)?;
-        // Prefer the original word behind pure SSA producers. A bounded or
-        // unsupported derivation can retain the local, directly stored value.
-        [true, false]
+        // Keep coverage first, then share a saved word across the most views.
+        // Each complete candidate is checked; equal costs retain source words.
+        let mut best: Option<Self> = None;
+        for policy in [
+            RecoveryPolicy::Source,
+            RecoveryPolicy::Stored,
+            RecoveryPolicy::Local,
+        ] {
+            let Some(plan) = Self::analyze_context(source, &context, policy, true) else {
+                continue;
+            };
+            let cost = |p: &Self| (usize::MAX - p.evidence.proved_loads, p.captures.len());
+            if best.as_ref().is_none_or(|old| cost(&plan) < cost(old)) {
+                best = Some(plan);
+            }
+        }
+        best
+    }
+    /// Retain the register-only alternative for final C cost comparison.
+    pub(crate) fn analyze_registers(source: &Program) -> Option<Self> {
+        let context = analyze::Context::new(source)?;
+        [RecoveryPolicy::Source, RecoveryPolicy::Local]
             .into_iter()
-            .find_map(|expand| Self::analyze_context(source, &context, expand))
+            .find_map(|policy| Self::analyze_context(source, &context, policy, false))
     }
     fn analyze_context(
         source: &Program,
         context: &analyze::Context<'_>,
-        expand: bool,
+        policy: RecoveryPolicy,
+        allow_stored: bool,
     ) -> Option<Self> {
-        let (proofs, captures) = analyze::collect(context, expand)?;
+        let (proofs, captures) = analyze::collect(context, policy, allow_stored)?;
         let mut plan = Self {
             source_registers: source.register_count(),
             evidence: MemoryValueEvidence {

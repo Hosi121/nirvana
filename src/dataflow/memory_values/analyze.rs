@@ -51,9 +51,33 @@ impl<'a> Context<'a> {
             .assignments
             .get(site.assignment?)
     }
-    pub fn capture(&self, value: ValueId) -> Option<Capture> {
+    pub fn capture(&self, value: SavedValue) -> Option<Capture> {
         let entry = self.source.cfg().block(self.source.cfg().entry()).start;
-        let (source, point, block) = match *self.graph.values.get(value.0)? {
+        let SavedValue::Register(register_value) = value else {
+            let SavedValue::Stored(site) = value else {
+                unreachable!()
+            };
+            let assignment = self.assignment(site)?;
+            if assignment.value.uses_memory()
+                || !matches!(
+                    assignment.destination,
+                    crate::model::ir::Place::Memory { .. }
+                )
+            {
+                return None;
+            }
+            let &(block, _) = self.points.get(&site)?;
+            let block = self.source.cfg().block_at(self.graph.blocks[block].start)?;
+            return self.single_visit[block.index()].then_some(Capture {
+                value,
+                point: CapturePoint {
+                    instruction: site.instruction,
+                    after: site.assignment,
+                },
+                source: None,
+            });
+        };
+        let (source, point, block) = match *self.graph.values.get(register_value.0)? {
             Definition::Initial { register } => (
                 register,
                 CapturePoint {
@@ -88,7 +112,7 @@ impl<'a> Context<'a> {
         self.single_visit[id.index()].then_some(Capture {
             value,
             point,
-            source,
+            source: Some(source),
         })
     }
     pub fn root_class(&self, site: Site) -> Option<ValueId> {
@@ -99,12 +123,21 @@ impl<'a> Context<'a> {
         site: Site,
         width: Width,
         writers: &[ReachingWriter],
-        prefer_expand: bool,
+        policy: RecoveryPolicy,
+        allow_stored: bool,
         budget: &mut Budget,
     ) -> Option<Key> {
+        if allow_stored
+            && matches!(policy, RecoveryPolicy::Stored)
+            && let Some(key) = self.stored_key(width, writers, budget)
+            && self.capture(key.value).is_some()
+            && self.root_class(site).is_some()
+        {
+            return Some(key);
+        }
         for expand in [true, false]
             .into_iter()
-            .filter(|expand| prefer_expand || !expand)
+            .filter(|expand| !matches!(policy, RecoveryPolicy::Local) || !expand)
         {
             if let Some(key) = self.byte_key(width, writers, expand, budget)
                 && self.capture(key.value).is_some()
@@ -113,7 +146,45 @@ impl<'a> Context<'a> {
                 return Some(key);
             }
         }
-        None
+        if !allow_stored {
+            return None;
+        }
+        self.stored_key(width, writers, budget)
+            .filter(|key| self.capture(key.value).is_some() && self.root_class(site).is_some())
+    }
+    fn stored_key(
+        &self,
+        width: Width,
+        writers: &[ReachingWriter],
+        budget: &mut Budget,
+    ) -> Option<Key> {
+        let mut key = None;
+        for byte in 0..width.bytes() {
+            let mut found = false;
+            for writer in writers {
+                for source in 0..writer.width.bytes() {
+                    budget.spend(1).ok()?;
+                    if writer.sources[byte] & (1 << source) == 0 {
+                        continue;
+                    }
+                    let start = source.checked_sub(byte)?.checked_mul(8)? as u8;
+                    let candidate = Key {
+                        value: SavedValue::Stored(writer.site),
+                        start,
+                        width,
+                    };
+                    if key.is_some_and(|old| old != candidate) {
+                        return None;
+                    }
+                    key = Some(candidate);
+                    found = true;
+                }
+            }
+            if !found {
+                return None;
+            }
+        }
+        key
     }
     fn byte_key(
         &self,
@@ -135,7 +206,7 @@ impl<'a> Context<'a> {
                         super::projection::stored_byte(self, writer.site, source, expand, budget)?;
                     let start = start.checked_sub((byte * 8) as u8)?;
                     let candidate = Key {
-                        value,
+                        value: SavedValue::Register(value),
                         start,
                         width,
                     };
@@ -156,13 +227,14 @@ impl<'a> Context<'a> {
 }
 pub(super) fn collect(
     context: &Context<'_>,
-    prefer_expand: bool,
+    policy: RecoveryPolicy,
+    allow_stored: bool,
 ) -> Option<(Vec<LoadProof>, Vec<Capture>)> {
     let mut budget = Budget::new();
     let mut proofs = Vec::new();
     let mut classes = BTreeMap::new();
     for (site, width, writers) in context.loads.bindings() {
-        let key = context.load_key(site, width, writers, prefer_expand, &mut budget);
+        let key = context.load_key(site, width, writers, policy, allow_stored, &mut budget);
         // Matching spends one unit at a time. A failed match must not hide
         // exhaustion and publish bindings collected earlier in the pass.
         budget.spend(1).ok()?;

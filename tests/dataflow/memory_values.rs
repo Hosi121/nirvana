@@ -41,7 +41,7 @@ fn compare_at(source: &Program, candidate: &Program, pointer_register: usize) ->
                 initial[pointer_register] = pointer;
                 let mut extended = initial.clone();
                 extended.resize(candidate.register_count(), 0xdead_beef_1234_5678);
-                for memory in [[0; 32], [0xa5; 32]] {
+                for memory in [[0; 64], [0xa5; 64]] {
                     for limit in [0, 1, 2, 3, 4, 8, 16, 32] {
                         let expected = source
                             .run_with_memory(&initial, 4096, &memory, limit)
@@ -256,7 +256,7 @@ fn stable_input_identity_crosses_memory_phis_clobbers_and_loop_reloads() {
 }
 
 #[test]
-fn cyclic_producers_entry_backedges_and_non_preserving_word_wrappers_decline() {
+fn cyclic_producers_decline_and_pure_wrappers_capture_their_actual_value() {
     use nirvana::ir::{BinaryOp as B, UnaryOp as U};
     let changing = Program::new(
         0,
@@ -303,8 +303,10 @@ fn cyclic_producers_entry_backedges_and_non_preserving_word_wrappers_decline() {
         let mut changed = source.instructions().to_vec();
         changed[0].assignments[0].value = value;
         let changed = Program::new(0, 4, changed).unwrap();
-        assert!(MemoryValuePlan::analyze(&changed).is_none());
         assert!(old.lower(&changed).is_none());
+        let plan = MemoryValuePlan::analyze(&changed).expect("capture the changed pure expression");
+        assert_eq!(plan.evidence().snapshot_values, 1);
+        compare_at(&changed, &plan.lower(&changed).unwrap(), 3);
     }
 }
 
@@ -541,7 +543,7 @@ fn may_alias_byte_writers_keep_one_value_and_different_values_decline() {
     assert!(plan.lower(&other).is_none());
 }
 #[test]
-fn insert_store_bytes_select_the_right_ssa_read_and_mixed_whole_words_decline() {
+fn insert_store_bytes_and_mixed_whole_words_keep_their_actual_source_values() {
     use nirvana::ir::BinaryOp as B;
     let mut checked = 0;
     for start in [0, 8] {
@@ -585,7 +587,11 @@ fn insert_store_bytes_select_the_right_ssa_read_and_mixed_whole_words_decline() 
             checked += compare(&source, &candidate);
             let mut mixed = source.instructions().to_vec();
             mixed[1].assignments[0].value = Expr::load(r(7), Width::U16);
-            assert!(MemoryValuePlan::analyze(&Program::new(0, 8, mixed).unwrap()).is_none());
+            let mixed = Program::new(0, 8, mixed).unwrap();
+            let plan =
+                MemoryValuePlan::analyze(&mixed).expect("capture the whole pure Insert expression");
+            assert_eq!(plan.evidence().snapshot_values, 1);
+            checked += compare(&mixed, &plan.lower(&mixed).unwrap());
         }
     }
     println!(
@@ -707,4 +713,26 @@ fn values_created_after_loops_are_captured_once_and_backedges_reject_the_plan() 
         assert!(plan.lower(&cyclic).is_none());
     }
     println!("{checked} post-loop capture full-state/fault/budget observations");
+}
+
+#[test]
+fn a_pure_store_expression_is_saved_once_after_success_and_faulting_rhs_declines() {
+    let mut checked = 0;
+    for source in crate::support::byte_values::stored_expression_programs() {
+        let plan = MemoryValuePlan::analyze(&source).expect("pure saved expression");
+        assert_eq!(plan.evidence().snapshot_values, 1);
+        assert_eq!(plan.evidence().proved_loads, 2);
+        let candidate = plan.lower(&source).unwrap();
+        checked += compare(&source, &candidate);
+        let mut rows = source.instructions().to_vec();
+        rows[1].assignments[0].value = b(
+            nirvana::ir::BinaryOp::Add,
+            Expr::load(r(7), Width::U64),
+            r(0),
+        );
+        let effectful = Program::new(0, 8, rows).unwrap();
+        assert!(MemoryValuePlan::analyze(&effectful).is_none());
+        assert!(plan.lower(&effectful).is_none());
+    }
+    println!("{checked} pure-Store capture full-register/RAM/PC/fault/budget observations");
 }

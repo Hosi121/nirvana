@@ -37,41 +37,38 @@ fn emit_reduced_c(
     reduced: ReducedFunction,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
-    let candidate = match emit_reduced_choice(&reduced, options, true) {
-        Ok(candidate) => candidate,
-        Err(_) => return emit_reduced_choice(&reduced, options, false),
-    };
-    if candidate.memory_values.is_none() {
-        return Ok(candidate);
+    use prepare::MemoryRecovery;
+    let mut best = emit_reduced_choice(&reduced, options, MemoryRecovery::Disabled);
+    // Compare complete renders: more proved loads can require more C storage.
+    // Keep the baseline on ties and preserve the previous register-only choice.
+    for recovery in [MemoryRecovery::Registers, MemoryRecovery::StoredExpressions] {
+        if let Ok(candidate) = emit_reduced_choice(&reduced, options, recovery)
+            && best
+                .as_ref()
+                .map_or(true, |old| render_cost(&candidate) < render_cost(old))
+        {
+            best = Ok(candidate);
+        }
     }
-    let Ok(original) = emit_reduced_choice(&reduced, options, false) else {
-        return Ok(candidate);
-    };
-    // Variable count is the primary readability cost. Equal counts prefer a
-    // shorter function body, then fewer helper/declaration bytes. Keep the
-    // complete baseline when a proved value rewrite costs more to render.
-    let cost = |output: &ReadableC| {
-        (
-            output.locals.len(),
-            output
-                .code
-                .split_once("uint64_t nirvana_readable(")
-                .map_or(output.code.len(), |(_, body)| body.len()),
-            output.code.len(),
-        )
-    };
-    Ok(if cost(&candidate) < cost(&original) {
-        candidate
-    } else {
-        original
-    })
+    best
 }
+fn render_cost(output: &ReadableC) -> (usize, usize, usize) {
+    (
+        output.locals.len(),
+        output
+            .code
+            .split_once("uint64_t nirvana_readable(")
+            .map_or(output.code.len(), |(_, body)| body.len()),
+        output.code.len(),
+    )
+}
+
 fn emit_reduced_choice(
     reduced: &ReducedFunction,
     options: ReadableOptions,
-    use_memory_values: bool,
+    memory_recovery: prepare::MemoryRecovery,
 ) -> Result<ReadableC, ReadableError> {
-    let prepared = prepare::prepare(reduced.program(), reduced.parameters(), use_memory_values)?;
+    let prepared = prepare::prepare(reduced.program(), reduced.parameters(), memory_recovery)?;
     let renamed = matches!(prepared.web_recovery, WebRecovery::Applied { .. });
     match emit_prepared_c(reduced, options, prepared) {
         Ok(output) => Ok(output),
@@ -80,7 +77,7 @@ fn emit_reduced_choice(
                 reduced.program(),
                 reduced.parameters(),
                 WebRecovery::RenderingFallback(error),
-                use_memory_values,
+                memory_recovery,
             )?;
             emit_prepared_c(reduced, options, fallback)
         }

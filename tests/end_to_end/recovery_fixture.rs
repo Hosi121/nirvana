@@ -249,6 +249,34 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                     "one full word replaces separate byte temporaries"
                 );
             }
+            if optimization == "-O2" && name == "loop-saved-value" {
+                let evidence = output
+                    .memory_values
+                    .expect("saved pure expression after the loop");
+                assert_eq!(evidence.snapshot_values, 1);
+                assert!(evidence.proved_loads >= 2);
+                assert_eq!(
+                    output.locals.len(),
+                    5,
+                    "byte views share the post-loop expression"
+                );
+            }
+            if optimization == "-O0"
+                && matches!(
+                    name,
+                    "unsigned-div-three"
+                        | "unsigned-div-five"
+                        | "unsigned-div-seven"
+                        | "unsigned-div-nine"
+                        | "unsigned-div-fifteen"
+                        | "unsigned-div-large"
+                )
+            {
+                assert!(
+                    output.locals.len() <= 3,
+                    "retain the register-only recovery alternative for {name}"
+                );
+            }
             let indexed_reads: usize = output
                 .object_views
                 .iter()

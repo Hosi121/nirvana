@@ -26,15 +26,18 @@ pub(super) fn mapping(
     }
     Some(result)
 }
-pub(super) fn capture_map(plan: &MemoryValuePlan) -> BTreeMap<CapturePoint, Vec<Assignment>> {
+pub(super) fn capture_map(
+    plan: &MemoryValuePlan,
+    context: &Context<'_>,
+) -> Option<BTreeMap<CapturePoint, Vec<Assignment>>> {
     let mut result = BTreeMap::<_, Vec<_>>::new();
     for (index, capture) in plan.captures.iter().enumerate() {
         result.entry(capture.point).or_default().push(Assignment {
             destination: Reg(plan.source_registers + index).into(),
-            value: capture.expression(),
+            value: capture.expression(context)?,
         });
     }
-    result
+    Some(result)
 }
 pub(super) fn construct(
     source: &Program,
@@ -46,7 +49,7 @@ pub(super) fn construct(
         return None;
     }
     let mapping = mapping(plan, context)?;
-    let captures = capture_map(plan);
+    let captures = capture_map(plan, context)?;
     let mut instructions = Vec::with_capacity(source.instructions().len());
     let mut count = 0;
     let mut budget = Budget::new();

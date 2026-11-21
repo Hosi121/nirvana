@@ -8,6 +8,7 @@ enum Bit {
     Unknown,
     Literal(bool),
     Register(ValueId, u8),
+    Stored(Site, u8),
 }
 type Word = [Bit; 64];
 fn opaque(value: ValueId) -> Word {
@@ -89,51 +90,22 @@ impl Values {
         if u32::from(key.start) + key.width.bits() > 64 {
             return Ok(false);
         }
-        let expected = self.values.word(context, key.value, budget, 0)?;
+        let expected = match key.value {
+            SavedValue::Register(value) => self.values.word(context, value, budget, 0)?,
+            SavedValue::Stored(site) => self.stored(context, site, budget)?,
+        };
         for byte in 0..key.width.bytes() {
             let mut found = false;
             for writer in writers {
                 budget.spend(1)?;
-                if let std::collections::btree_map::Entry::Vacant(entry) =
-                    self.stores.entry(writer.site)
+                let assignment = context
+                    .assignment(writer.site)
+                    .ok_or(invalid("byte origin store"))?;
+                if !matches!(assignment.destination, Place::Memory { width, .. } if width == writer.width)
                 {
-                    let point = context
-                        .point(writer.site)
-                        .ok_or(invalid("byte origin point"))?;
-                    let assignment = context
-                        .assignment(writer.site)
-                        .ok_or(invalid("byte origin store"))?;
-                    let Place::Memory { address, width } = &assignment.destination else {
-                        return Err(invalid("byte origin destination"));
-                    };
-                    if *width != writer.width {
-                        return Err(invalid("byte origin source width"));
-                    }
-                    let mut cursor = 0;
-                    expression(
-                        address,
-                        context,
-                        point,
-                        &mut cursor,
-                        budget,
-                        &mut self.values,
-                        0,
-                    )?;
-                    let value = expression(
-                        &assignment.value,
-                        context,
-                        point,
-                        &mut cursor,
-                        budget,
-                        &mut self.values,
-                        0,
-                    )?;
-                    if cursor != point.reads.len() {
-                        return Err(invalid("byte origin read count"));
-                    }
-                    entry.insert(value);
+                    return Err(invalid("byte origin source width"));
                 }
-                let word = self.stores.get(&writer.site).unwrap();
+                let word = self.stored(context, writer.site, budget)?;
                 for source in 0..writer.width.bytes() {
                     if writer.sources[byte] & (1 << source) == 0 {
                         continue;
@@ -155,6 +127,55 @@ impl Values {
             }
         }
         Ok(true)
+    }
+    fn stored(
+        &mut self,
+        context: &Context<'_>,
+        site: Site,
+        budget: &mut Budget,
+    ) -> Result<Word, SsaError> {
+        budget.spend(1)?;
+        if let Some(word) = self.stores.get(&site) {
+            return Ok(*word);
+        }
+        let point = context.point(site).ok_or(invalid("byte origin point"))?;
+        let assignment = context
+            .assignment(site)
+            .ok_or(invalid("byte origin store"))?;
+        let Place::Memory { address, .. } = &assignment.destination else {
+            return Err(invalid("byte origin destination"));
+        };
+        let mut cursor = 0;
+        expression(
+            address,
+            context,
+            point,
+            &mut cursor,
+            budget,
+            &mut self.values,
+            0,
+        )?;
+        let mut word = expression(
+            &assignment.value,
+            context,
+            point,
+            &mut cursor,
+            budget,
+            &mut self.values,
+            0,
+        )?;
+        if cursor != point.reads.len() {
+            return Err(invalid("byte origin read count"));
+        }
+        // A pure Store RHS can be captured after this exact Store succeeds.
+        // Distinct Store expressions retain distinct opaque result bits.
+        for (bit, origin) in word.iter_mut().enumerate() {
+            if *origin == Bit::Unknown {
+                *origin = Bit::Stored(site, bit as u8);
+            }
+        }
+        self.stores.insert(site, word);
+        Ok(word)
     }
 }
 fn constant(word: &Word) -> Option<u64> {

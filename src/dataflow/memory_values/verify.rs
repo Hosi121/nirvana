@@ -24,7 +24,7 @@ pub(super) fn plan(
     }
     let mut keys = BTreeSet::new();
     for &capture in &plan.captures {
-        if context.aliases.get(capture.value.0) != Some(&capture.value)
+        if matches!(capture.value, SavedValue::Register(value) if context.aliases.get(value.0) != Some(&value))
             || context.capture(capture.value) != Some(capture)
             || !keys.insert(capture.value)
         {
@@ -79,7 +79,8 @@ pub(super) fn check(
         return Err(invalid("memory value candidate layout"));
     }
     let mapping = rewrite::mapping(plan, context).ok_or(invalid("memory value mapping"))?;
-    let captures = rewrite::capture_map(plan);
+    let captures =
+        rewrite::capture_map(plan, context).ok_or(invalid("memory value capture expression"))?;
     let mut count = 0;
     for (original, actual) in source.instructions().iter().zip(candidate.instructions()) {
         budget.spend(1)?;
@@ -422,7 +423,7 @@ mod byte_mutants {
             let mut key = plan.proofs[0].key;
             if wrong_source {
                 let id=context.graph.values.iter().position(|definition|matches!(definition,Definition::Initial{register} if *register==Reg(7))).unwrap();
-                key.value = context.aliases[id];
+                key.value = SavedValue::Register(context.aliases[id]);
             } else {
                 key.start = 8;
             }
@@ -446,5 +447,71 @@ mod byte_mutants {
                 .unwrap();
             assert_ne!(expected.value, wrong.value);
         }
+    }
+}
+
+#[cfg(test)]
+mod stored_mutants {
+    use super::*;
+    use crate::model::ir::{BinaryOp as B, IrInstruction};
+    #[test]
+    fn opaque_results_of_distinct_store_expressions_are_not_equal() {
+        let r = |n| Expr::Register(Reg(n));
+        let source = Program::new(
+            0,
+            8,
+            vec![IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![
+                    Assignment {
+                        destination: Place::Memory {
+                            address: r(7),
+                            width: Width::U64,
+                        },
+                        value: Expr::binary(B::Add, r(0), r(1)),
+                    },
+                    Assignment {
+                        destination: Place::Memory {
+                            address: Expr::binary(B::Add, r(7), Expr::Const(16)),
+                            width: Width::U64,
+                        },
+                        value: Expr::binary(B::Mul, r(0), r(1)),
+                    },
+                    Assignment {
+                        destination: Reg(2).into(),
+                        value: Expr::load(Expr::binary(B::Add, r(7), Expr::Const(1)), Width::U16),
+                    },
+                ],
+                control: Control::Return(r(2)),
+            }],
+        )
+        .unwrap();
+        let context = Context::new(&source).unwrap();
+        let mut plan = MemoryValuePlan::analyze(&source).unwrap();
+        assert!(matches!(plan.proofs[0].key.value, SavedValue::Stored(_)));
+        let wrong = SavedValue::Stored(Site {
+            instruction: 0,
+            assignment: Some(1),
+        });
+        plan.proofs[0].key.value = wrong;
+        plan.captures[0] = context.capture(wrong).unwrap();
+        let (candidate, _) = rewrite::construct(&source, &plan, &context).unwrap();
+        assert!(matches!(
+            check(&source, &plan, &candidate, &context),
+            Err(SsaError::Malformed("memory value store identity"))
+        ));
+        let mut initial = vec![0; 8];
+        initial[0] = 256;
+        initial[1] = 2;
+        initial[7] = 4096;
+        let before = source
+            .execute_with_memory(&initial, 4096, &[0; 32], 1)
+            .unwrap();
+        initial.resize(candidate.register_count(), u64::MAX);
+        let after = candidate
+            .execute_with_memory(&initial, 4096, &[0; 32], 1)
+            .unwrap();
+        assert_ne!(before.value, after.value);
     }
 }

@@ -190,6 +190,7 @@ pub fn programs() -> Vec<Program> {
     let mut result = vec![shifted, split, inserted, may, phi, looped, transformed];
     result.extend(producer_programs());
     result.extend(after_loop_programs());
+    result.extend(stored_expression_programs());
     result
 }
 
@@ -257,4 +258,53 @@ pub fn after_loop_programs() -> Vec<Program> {
             ])
         })
         .collect()
+}
+
+/// A single saved pure expression supplies several later byte views.
+pub fn stored_expression_programs() -> Vec<Program> {
+    [
+        b(B::Add, r(0), r(1)),
+        b(B::Mul, r(0), r(1)),
+        b(B::Xor, r(0), r(1)),
+        b(
+            B::Insert {
+                start: 8,
+                width: Width::U8,
+            },
+            r(0),
+            r(6),
+        ),
+        b(B::SDiv, r(0), r(1)),
+        Expr::select(r(6), b(B::Add, r(0), r(1)), b(B::Sub, r(0), r(1))),
+    ]
+    .into_iter()
+    .map(|value| {
+        program(vec![
+            ins(
+                0,
+                vec![
+                    set(0, load(0, Width::U64)),
+                    set(1, load(8, Width::U64)),
+                    set(6, load(16, Width::U64)),
+                ],
+                Control::Next,
+            ),
+            ins(
+                1,
+                vec![
+                    store(32, Width::U64, value),
+                    set(0, c(0)),
+                    set(1, c(0)),
+                    set(6, c(0)),
+                ],
+                Control::Next,
+            ),
+            ins(
+                2,
+                vec![set(2, load(33, Width::U16)), set(3, load(37, Width::U8))],
+                Control::Return(b(B::Add, r(2), r(3))),
+            ),
+        ])
+    })
+    .collect()
 }

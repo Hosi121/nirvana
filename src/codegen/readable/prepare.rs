@@ -9,6 +9,13 @@ use crate::transform::reduce::ReductionError;
 
 use super::{WebRecovery, webs};
 
+#[derive(Clone, Copy)]
+pub(super) enum MemoryRecovery {
+    Disabled,
+    Registers,
+    StoredExpressions,
+}
+
 pub(super) struct PreparedFunction {
     pub program: Program,
     pub widths: ValueWidths,
@@ -52,16 +59,16 @@ fn checked_display<E>(
 pub(super) fn prepare(
     original: &Program,
     parameters: &[Reg],
-    use_memory_values: bool,
+    memory_recovery: MemoryRecovery,
 ) -> Result<PreparedFunction, ReductionError> {
     let selected = webs::select(original);
     let renamed = matches!(selected.recovery, WebRecovery::Applied { .. });
-    match prepare_selected(original, parameters, selected, use_memory_values) {
+    match prepare_selected(original, parameters, selected, memory_recovery) {
         Err(error) if renamed => prepare_original(
             original,
             parameters,
             WebRecovery::RenderingFallback(super::ReadableError::Reduction(error)),
-            use_memory_values,
+            memory_recovery,
         ),
         result => result,
     }
@@ -71,13 +78,13 @@ pub(super) fn prepare_original(
     original: &Program,
     parameters: &[Reg],
     recovery: WebRecovery,
-    use_memory_values: bool,
+    memory_recovery: MemoryRecovery,
 ) -> Result<PreparedFunction, ReductionError> {
     prepare_selected(
         original,
         parameters,
         webs::keep_original(original, recovery),
-        use_memory_values,
+        memory_recovery,
     )
 }
 
@@ -85,7 +92,7 @@ fn prepare_selected(
     original: &Program,
     parameters: &[Reg],
     selected: webs::SelectedWebs,
-    use_memory_values: bool,
+    memory_recovery: MemoryRecovery,
 ) -> Result<PreparedFunction, ReductionError> {
     let input = selected.program.as_ref().unwrap_or(original);
     let masked = crate::transform::load_mask::propose(input, parameters).and_then(|candidate| {
@@ -134,24 +141,30 @@ fn prepare_selected(
         Some((p, w, s, e)) => (p, w, s, Some(e)),
         None => (program, widths, structure, None),
     };
-    let memory = use_memory_values
-        .then(|| crate::dataflow::memory_values::MemoryValuePlan::analyze(&program))
-        .flatten()
-        .and_then(|plan| {
-            let lowered = plan.lower(&program)?;
-            let bounds = ValueWidths::analyze(&lowered);
-            let width = |reg| {
-                if parameters.contains(&reg) {
-                    Width::U64
-                } else {
-                    bounds.width(reg)
-                }
-            };
-            // Reload identities can expose equal pure operands. Normalize
-            // before dependency/allocation analysis and strict C diagnostics.
-            let displayed = presentation_program(&lowered, &width).ok()?;
-            checked_display(displayed, structure.is_ok(), plan.evidence())
-        });
+    let memory = match memory_recovery {
+        MemoryRecovery::Disabled => None,
+        MemoryRecovery::Registers => {
+            crate::dataflow::memory_values::MemoryValuePlan::analyze_registers(&program)
+        }
+        MemoryRecovery::StoredExpressions => {
+            crate::dataflow::memory_values::MemoryValuePlan::analyze(&program)
+        }
+    }
+    .and_then(|plan| {
+        let lowered = plan.lower(&program)?;
+        let bounds = ValueWidths::analyze(&lowered);
+        let width = |reg| {
+            if parameters.contains(&reg) {
+                Width::U64
+            } else {
+                bounds.width(reg)
+            }
+        };
+        // Reload identities can expose equal pure operands. Normalize
+        // before dependency/allocation analysis and strict C diagnostics.
+        let displayed = presentation_program(&lowered, &width).ok()?;
+        checked_display(displayed, structure.is_ok(), plan.evidence())
+    });
     let (program, widths, structure, memory_values) = match memory {
         Some((p, w, s, e)) => (p, w, s, Some(e)),
         None => (program, widths, structure, None),
