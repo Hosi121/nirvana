@@ -47,7 +47,7 @@ strip入力の数値入口は、[eh_frame](../src/binary/eh_frame.rs)のFDE範�
 候補には読取り位置・範囲の根拠・未探索の残余を保持します。実行時の間接移転は現在のRAMからtargetを評価し、発見済みPCへdispatchします。
 
 [effects](../src/model/effects.rs)は`puts`の外部結果入力を、[module_ir](../src/model/module_ir.rs)は複数関数とimportを扱います。
-CALLの戻り先Store、PLT targetのLoad、RET、DIV/IDIV、STOSの部分進捗を明示し、faultと命令予算を同じ順序で処理します。
+CALLの戻り先Store、PLT targetのLoad、RET、DIV/IDIV、STOS・MOVSの部分進捗を明示し、faultと命令予算を同じ順序で処理します。
 POSIXアダプタはゲスト構造体とホストABIを変換します。TLS guardとstream handleの規則は実行モデルにあります。
 
 ## CFGの構造化
@@ -81,7 +81,7 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 別々の入力pointerとstackの間にもmay-aliasを保ちます。対象は関数入口から正常に継続した経路です。
 解析グラフの構築と書込み元の照会は個別の予算を持ち、未判定の理由をレポートへ残します。
 
-[module_values](../src/dataflow/module_values.rs)はCALL・DIV・STOSを順序付きイベントに写します。
+[module_values](../src/dataflow/module_values.rs)はCALL・DIV・STOS・MOVSを順序付きイベントに写します。
 [call_footprint](../src/dataflow/call_footprint.rs)の閉じた正常復帰要約を使える場合は保存レジスタの値IDを継続し、未知の結果には新しいIDを付けます。
 レジスタの保存とRAMの保存は個別に判断します。CALLと未知のメモリ効果はMemorySSAの境界になります。
 
@@ -110,5 +110,5 @@ Loadのスナップショット、保存位置、全命令の代入順も採用�
 残るtargetはdispatcherへ渡します。通常CALLはCの呼出しを使い、深い再帰や想定外の戻り先ではゲストPCから再開します。
 
 [module_local_plan](../src/dataflow/module_local_plan.rs)は局所値と元の代入を照合し、各レジスタ書込みをゲスト状態へ反映します。
-途中PCと成功したCALL/DIV/STOSの後には、生存値を実レジスタから復元します。
+途中PCと成功したCALL/DIV/STOS/MOVSの後には、生存値を実レジスタから復元します。
 検査や資源上限に達した関数はレジスタ形式を使い、理由を出力へ記録します。

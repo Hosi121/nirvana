@@ -62,10 +62,16 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
             .checked_add(u64::from(instruction.size()))
             .ok_or("instruction end address overflows")?;
         match instruction {
-            Instruction::StoreString { width, repeat, .. } => {
+            Instruction::StoreString { width, repeat, .. }
+            | Instruction::MoveString { width, repeat, .. } => {
+                let operation = if matches!(instruction, Instruction::MoveString { .. }) {
+                    "nv_movs"
+                } else {
+                    "nv_stos"
+                };
                 writeln!(
                     code,
-                    "            nv_stos(s,{},{});",
+                    "            {operation}(s,{},{});",
                     width.bytes(),
                     u8::from(*repeat)
                 )

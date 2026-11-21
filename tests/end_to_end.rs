@@ -14,6 +14,8 @@ mod support {
 
 #[path = "end_to_end/algorithm_fixtures.rs"]
 mod algorithm_fixtures;
+#[path = "end_to_end/block_copy.rs"]
+mod block_copy;
 #[path = "end_to_end/dispatch_programs.rs"]
 mod dispatch_programs;
 #[path = "end_to_end/divide_compiler.rs"]

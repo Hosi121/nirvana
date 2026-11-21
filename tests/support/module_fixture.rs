@@ -107,7 +107,7 @@ pub(crate) fn expected_with_state(
     assert_eq!(result.len(), 94);
     (result, report.status)
 }
-fn harness(code: &str, module: &Module, initial: Option<&[u64]>) -> String {
+fn harness(code: &str, module: &Module, initial: Option<&[u64]>, full_memory: bool) -> String {
     let mut initialization = String::new();
     if let Some(registers) = initial {
         assert_eq!(registers.len(), 80);
@@ -115,6 +115,16 @@ fn harness(code: &str, module: &Module, initial: Option<&[u64]>) -> String {
             writeln!(initialization, "s->r[{i}]=UINT64_C({value});").unwrap();
         }
     }
+    let memory_check = if full_memory {
+        r#"for(uint64_t offset=0;offset<s->size;offset+=8) {
+            uint64_t expected;
+            assert(scanf("%" SCNx64,&expected)==1);
+            for(unsigned byte=0;byte<8 && offset+byte<s->size;++byte)
+                assert(s->memory[offset+byte]==(uint8_t)(expected>>(byte*8)));
+        }"#
+    } else {
+        ""
+    };
     format!(
         r#"
 #define main nv_generated_entry
@@ -139,6 +149,7 @@ int main(void) {{
         for(unsigned i=0;i<4;++i)for(unsigned j=0;j<8;++j)s->memory[offset+i*8+j]=(uint8_t)(in[i]>>(j*8));
         if(width) nv_test_patch(s,patch,value,width);
         unsigned status=nv_run(s);
+        {memory_check}
         uint64_t hash=UINT64_C(14695981039346656037);
         for(uint64_t i=0;i<s->size;++i)hash=(hash^s->memory[i])*UINT64_C(1099511628211);
         printf("%" PRIu64,s->r[0]);
@@ -222,10 +233,75 @@ pub(crate) fn check_generated_with_state(
     depths: &[u32],
     initial: Option<&[u64]>,
 ) -> usize {
+    check_generated_options(
+        module,
+        cases,
+        expected_rows,
+        directory,
+        GeneratedOptions {
+            sanitize,
+            depths,
+            initial,
+            memory: None,
+        },
+    )
+}
+
+/// Compare every backing byte in addition to the standard state row.
+/// Expected memory is streamed as words after each case's input header.
+pub(crate) fn check_generated_with_memory(
+    module: &Module,
+    cases: &[Case],
+    expected_rows: &[Vec<u64>],
+    memories: &[Vec<u8>],
+    directory: &Path,
+    initial: &[u64],
+) -> usize {
+    assert_eq!(cases.len(), memories.len());
+    assert!(
+        memories
+            .iter()
+            .all(|m| m.len() == module.image.memory.len())
+    );
+    check_generated_options(
+        module,
+        cases,
+        expected_rows,
+        directory,
+        GeneratedOptions {
+            sanitize: true,
+            depths: &[64],
+            initial: Some(initial),
+            memory: Some(memories),
+        },
+    )
+}
+
+struct GeneratedOptions<'a> {
+    sanitize: bool,
+    depths: &'a [u32],
+    initial: Option<&'a [u64]>,
+    memory: Option<&'a [Vec<u8>]>,
+}
+
+fn check_generated_options(
+    module: &Module,
+    cases: &[Case],
+    expected_rows: &[Vec<u64>],
+    directory: &Path,
+    options: GeneratedOptions<'_>,
+) -> usize {
+    let GeneratedOptions {
+        sanitize,
+        depths,
+        initial,
+        memory,
+    } = options;
     assert!(!depths.is_empty());
+    assert_eq!(cases.len(), expected_rows.len());
     let mut generated_cases = 0;
     let mut text = String::new();
-    for case in cases {
+    for (index, case) in cases.iter().enumerate() {
         let (address, value, width) = case.patch.unwrap_or((0, 0, 0));
         writeln!(
             text,
@@ -241,6 +317,14 @@ pub(crate) fn check_generated_with_state(
             width
         )
         .unwrap();
+        if let Some(memories) = memory {
+            for bytes in memories[index].chunks(8) {
+                let mut word = [0; 8];
+                word[..bytes.len()].copy_from_slice(bytes);
+                write!(text, "{:x} ", u64::from_le_bytes(word)).unwrap();
+            }
+            text.push('\n');
+        }
     }
     let modes = [
         ("core", nirvana::module_emit::emit_c(module).unwrap()),
@@ -257,7 +341,7 @@ pub(crate) fn check_generated_with_state(
     ];
     for (mode, code) in modes {
         let source = directory.join(format!("{mode}.c"));
-        std::fs::write(&source, harness(&code, module, initial)).unwrap();
+        std::fs::write(&source, harness(&code, module, initial, memory.is_some())).unwrap();
         for generated_opt in ["-O0", "-O2"] {
             for &depth in if mode == "core" { &depths[..1] } else { depths } {
                 let binary = directory.join(format!("{mode}{generated_opt}-{depth}"));

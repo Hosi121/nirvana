@@ -34,6 +34,7 @@ pub enum EffectKind {
     CallStack,
     Call,
     StringStore,
+    StringMove,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

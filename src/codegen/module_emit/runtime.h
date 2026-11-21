@@ -110,12 +110,21 @@ static inline void nv_write(struct nv_module *s,uint64_t address,unsigned width,
     uint64_t offset=nv_check(s,address,width,2);
     for(unsigned i=0;i<width;++i) s->memory[offset+i]=(uint8_t)(value>>(i*8));
 }
-static inline void nv_stos(struct nv_module *s,unsigned width,unsigned repeat) {
+static inline void nv_string_transfer(struct nv_module *s,unsigned width,unsigned repeat,unsigned copy) {
     while(!repeat || s->r[1]!=0) {
-        nv_write(s,s->r[7],width,s->r[0]);
-        if(s->r[29]&1) s->r[7]-=width; else s->r[7]+=width;
+        uint64_t value=copy?nv_read(s,s->r[6],width):s->r[0];
+        nv_write(s,s->r[7],width,value);
+        uint64_t delta=(s->r[29]&1)?UINT64_C(0)-width:width;
+        s->r[7]+=delta;
+        if(copy) s->r[6]+=delta;
         if(repeat) --s->r[1]; else break;
     }
+}
+static inline void nv_stos(struct nv_module *s,unsigned width,unsigned repeat) {
+    nv_string_transfer(s,width,repeat,0);
+}
+static inline void nv_movs(struct nv_module *s,unsigned width,unsigned repeat) {
+    nv_string_transfer(s,width,repeat,1);
 }
 struct nirvana_memory { struct nv_module *state; };
 static inline uint64_t nirvana_offset(struct nirvana_memory *m,uint64_t address,uint64_t width) {

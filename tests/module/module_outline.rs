@@ -67,7 +67,9 @@ fn check_plan(module: &Module, plan: &Plan) {
             assert!(all_addresses.insert(instruction.address));
             match source[&instruction.address] {
                 Instruction::Core(original) => assert_eq!(instruction, original),
-                Instruction::Divide { size, .. } | Instruction::StoreString { size, .. } => {
+                Instruction::Divide { size, .. }
+                | Instruction::StoreString { size, .. }
+                | Instruction::MoveString { size, .. } => {
                     assert_eq!(instruction.size, *size);
                     assert!(instruction.assignments.is_empty());
                     assert_eq!(instruction.control, Control::Next);

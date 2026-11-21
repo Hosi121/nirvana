@@ -38,6 +38,11 @@ pub enum BoundaryKind {
         width: Width,
         repeat: bool,
     },
+    MoveString {
+        continuation: u64,
+        width: Width,
+        repeat: bool,
+    },
     Call {
         continuation: u64,
     },
@@ -381,13 +386,22 @@ impl Projection<'_> {
         let address = instruction.address();
         let mut assignments = Vec::new();
         let control = match instruction {
-            Instruction::StoreString { width, repeat, .. } => {
+            Instruction::StoreString { width, repeat, .. }
+            | Instruction::MoveString { width, repeat, .. } => {
+                let copy = matches!(instruction, Instruction::MoveString { .. });
                 let mut inputs = vec![
-                    Reg(crate::binary::x86::RAX),
+                    Reg(if copy {
+                        crate::binary::x86::RSI
+                    } else {
+                        crate::binary::x86::RAX
+                    }),
                     Reg(crate::binary::x86::RDI),
                     Reg(crate::binary::x86::DF),
                 ];
                 let mut outputs = vec![Reg(crate::binary::x86::RDI)];
+                if copy {
+                    outputs.push(Reg(crate::binary::x86::RSI));
+                }
                 if *repeat {
                     inputs.push(Reg(crate::binary::x86::RCX));
                     outputs.push(Reg(crate::binary::x86::RCX));
@@ -406,15 +420,21 @@ impl Projection<'_> {
                 }
                 let continuation = address
                     .checked_add(u64::from(instruction.size()))
-                    .ok_or("string store continuation overflow")?;
-                self.boundaries.push((
-                    address,
+                    .ok_or("string transfer continuation overflow")?;
+                let kind = if copy {
+                    BoundaryKind::MoveString {
+                        continuation,
+                        width: *width,
+                        repeat: *repeat,
+                    }
+                } else {
                     BoundaryKind::StoreString {
                         continuation,
                         width: *width,
                         repeat: *repeat,
-                    },
-                ));
+                    }
+                };
+                self.boundaries.push((address, kind));
                 Control::Jump(continuation)
             }
             Instruction::Divide {
@@ -687,7 +707,9 @@ fn analyze_function(
             .and_then(|p| boundaries.get_mut(&p.site.instruction))
         {
             let preserved = match boundary.kind {
-                BoundaryKind::Divide { .. } | BoundaryKind::StoreString { .. } => None,
+                BoundaryKind::Divide { .. }
+                | BoundaryKind::StoreString { .. }
+                | BoundaryKind::MoveString { .. } => None,
                 _ => match boundary.call_contract {
                     Some(CallContract::Closed { callee }) => Some(
                         &summaries
@@ -769,6 +791,11 @@ fn memory_values(
                 instruction: address,
                 phase: Phase::After,
                 kind: EffectKind::StringStore,
+            }),
+            Instruction::MoveString { .. } => effects.push(Effect {
+                instruction: address,
+                phase: Phase::After,
+                kind: EffectKind::StringMove,
             }),
             _ => {}
         }

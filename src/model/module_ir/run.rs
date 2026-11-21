@@ -121,23 +121,39 @@ impl Program {
                         repeat,
                         size,
                         ..
+                    }
+                    | Instruction::MoveString {
+                        width,
+                        repeat,
+                        size,
+                        ..
                     } => {
+                        let copy =
+                            matches!(self.instructions()[index], Instruction::MoveString { .. });
                         machine.step(pc, &[]).map_err(stop)?;
                         while !repeat || machine.registers[crate::binary::x86::RCX] != 0 {
+                            let value = if copy {
+                                machine
+                                    .load(machine.registers[crate::binary::x86::RSI], *width)
+                                    .map_err(fault)?
+                            } else {
+                                machine.registers[RAX]
+                            };
                             machine
-                                .store(
-                                    machine.registers[crate::binary::x86::RDI],
-                                    *width,
-                                    machine.registers[RAX],
-                                )
+                                .store(machine.registers[crate::binary::x86::RDI], *width, value)
                                 .map_err(fault)?;
                             let step = width.bytes() as u64;
+                            let delta = if machine.registers[crate::binary::x86::DF] & 1 == 0 {
+                                step
+                            } else {
+                                step.wrapping_neg()
+                            };
                             machine.registers[crate::binary::x86::RDI] =
-                                if machine.registers[crate::binary::x86::DF] & 1 == 0 {
-                                    machine.registers[crate::binary::x86::RDI].wrapping_add(step)
-                                } else {
-                                    machine.registers[crate::binary::x86::RDI].wrapping_sub(step)
-                                };
+                                machine.registers[crate::binary::x86::RDI].wrapping_add(delta);
+                            if copy {
+                                machine.registers[crate::binary::x86::RSI] =
+                                    machine.registers[crate::binary::x86::RSI].wrapping_add(delta);
+                            }
                             if *repeat {
                                 machine.registers[crate::binary::x86::RCX] -= 1;
                             } else {

@@ -48,7 +48,7 @@ FDEは関数の一部の場合もあるため、合成名`sub_ADDRESS`を持つ�
 初期guardと通常RAMを介した書換えの規則は[実行モデル](equivalence.md)にあります。
 `module-*`は8/16/32/64-bitのDIV/IDIVを、sourceのLoadとdivide error（#DE）を持つ命令として実行します。
 商・剰余・部分レジスタと停止位置の規則は[実行モデル](equivalence.md)にあります。
-`module-*`のSTOSは8/16/32/64-bit、REP、CLD／STDを扱い、途中faultまでの書込みとcount・pointerの進捗を保持します。
+`module-*`のSTOS・MOVSは8/16/32/64-bit、REP（F3）、CLD／STDを扱い、64-bitのアドレスとcountを使います。途中faultまでの書込みとcount・pointerの進捗を保持します。
 仕様は[Intel SDM Vol.1 §18.3.1](https://cdrdv2-public.intel.com/843827/253665-sdm-vol-1-dec-24.pdf)と、[命令リファレンス](https://cdrdv2-public.intel.com/782156/325383-sdm-vol-2abcd.pdf)を参照してください。
 CMOVのメモリsourceは、条件の真偽にかかわらず読み込みます。
 RETではRSPを進め、RAXを対象関数の返り値として実行を終えます。
@@ -102,7 +102,7 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 命令・import予算は`NV_INSTRUCTION_LIMIT`・`NV_IMPORT_LIMIT`で指定します。[HTTP fixture](../tests/fixtures/http-server/README.md)に全体の実行例があります。
 
 `module-readable-c`は名前付き関数と構造AST、`module-locals-c`はさらに生存範囲で共有した`v_N`の局所変数を使います。
-途中PCからの再入、成功したCALL/DIV/STOS後の値復元、レジスタ形式への関数単位のfallbackは[設計](architecture.md#cの描画と途中再開)にあります。
+途中PCからの再入、成功したCALL/DIV/STOS/MOVS後の値復元、レジスタ形式への関数単位のfallbackは[設計](architecture.md#cの描画と途中再開)にあります。
 変数数・復元数を標準エラーへ、fallback理由をCのコメントへ出力します。
 
 strip入力の範囲読取りはCIE v1/v3、32-bitレコード長、絶対／PC相対の対応ポインタ表現を扱います。

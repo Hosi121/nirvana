@@ -41,7 +41,7 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
             Definition::Opaque { effect, previous } => {
                 write!(out, "\"opaque\",\"instruction\":{},\"phase\":\"{}\",\"effect\":\"{}\",\"previous\":{}",
                     effect.instruction, if effect.phase == Phase::Before { "before" } else { "after" },
-                    match effect.kind { EffectKind::CallStack => "call-stack", EffectKind::Call => "call", EffectKind::StringStore => "string-store" },previous.0).unwrap();
+                    match effect.kind { EffectKind::CallStack => "call-stack", EffectKind::Call => "call", EffectKind::StringStore => "string-store", EffectKind::StringMove => "string-move" },previous.0).unwrap();
             }
         }
         out.push('}');

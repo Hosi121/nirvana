@@ -192,7 +192,7 @@ fn function_plan(
             budget.scan(&assignment.value)?;
         }
         let control = match instruction {
-            Instruction::StoreString { .. } => Control::Jump(
+            Instruction::StoreString { .. } | Instruction::MoveString { .. } => Control::Jump(
                 instruction
                     .address()
                     .checked_add(u64::from(instruction.size()))
@@ -429,27 +429,46 @@ fn function_plan(
                 after: Vec::new(),
             };
             let mut seen = vec![false; assignments(instruction).len()];
-            if let Instruction::StoreString { width, repeat, .. } = instruction {
+            if let Instruction::StoreString { width, repeat, .. }
+            | Instruction::MoveString { width, repeat, .. } = instruction
+            {
+                let copy = matches!(instruction, Instruction::MoveString { .. });
                 budget.spend(16)?;
                 let boundary = values
                     .boundaries()
                     .binary_search_by_key(&address, |b| b.address)
                     .ok()
                     .map(|i| &values.boundaries()[i]);
-                let expected = module_values::BoundaryKind::StoreString {
-                    continuation: address + u64::from(instruction.size()),
-                    width: *width,
-                    repeat: *repeat,
+                let continuation = address + u64::from(instruction.size());
+                let expected = if copy {
+                    module_values::BoundaryKind::MoveString {
+                        continuation,
+                        width: *width,
+                        repeat: *repeat,
+                    }
+                } else {
+                    module_values::BoundaryKind::StoreString {
+                        continuation,
+                        width: *width,
+                        repeat: *repeat,
+                    }
                 };
                 if boundary.is_none_or(|b| b.kind != expected) {
                     return Err("module local string boundary contract mismatch".into());
                 }
                 let mut inputs = vec![
-                    Reg(crate::binary::x86::RAX),
+                    Reg(if copy {
+                        crate::binary::x86::RSI
+                    } else {
+                        crate::binary::x86::RAX
+                    }),
                     Reg(crate::binary::x86::RDI),
                     Reg(crate::binary::x86::DF),
                 ];
                 let mut outputs = vec![Reg(crate::binary::x86::RDI)];
+                if copy {
+                    outputs.push(Reg(crate::binary::x86::RSI));
+                }
                 if *repeat {
                     inputs.push(Reg(crate::binary::x86::RCX));
                     outputs.push(Reg(crate::binary::x86::RCX));
@@ -644,6 +663,7 @@ fn function_plan(
                     Instruction::Transfer { link: Some(_), .. }
                         | Instruction::Divide { .. }
                         | Instruction::StoreString { .. }
+                        | Instruction::MoveString { .. }
                 ) {
                     for binding in
                         bindings(&live_block.live_out, &demand, &current, graph, plan, budget)?
@@ -861,13 +881,15 @@ fn validate_observation(
             Instruction::Transfer { .. }
             | Instruction::Return { .. }
             | Instruction::Divide { .. }
-            | Instruction::StoreString { .. },
+            | Instruction::StoreString { .. }
+            | Instruction::MoveString { .. },
             Some(PointRole::Input { register }),
         ) => Some(Expr::Register(*register)),
         (
             Instruction::Transfer { link: Some(_), .. }
             | Instruction::Divide { .. }
-            | Instruction::StoreString { .. },
+            | Instruction::StoreString { .. }
+            | Instruction::MoveString { .. },
             Some(PointRole::OpaqueOutput { register }),
         ) => {
             if !point.reads.is_empty() || point.definition.is_none() || register.0 >= RAW {
@@ -987,7 +1009,9 @@ fn append_edges(
             Control::Next => append(next, None)?,
             Control::Return(_) => {}
         },
-        Instruction::Vector(_) | Instruction::StoreString { .. } => append(next, None)?,
+        Instruction::Vector(_)
+        | Instruction::StoreString { .. }
+        | Instruction::MoveString { .. } => append(next, None)?,
         Instruction::Divide { .. } => append(next, None)?,
         Instruction::Transfer {
             link: Some(link), ..

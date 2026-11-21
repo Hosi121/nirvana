@@ -277,8 +277,8 @@ fn preflight(source: &[Instruction], registers: usize, work: &mut Work) -> Resul
     }
     for instruction in source {
         let assignments = match instruction {
-            Instruction::StoreString { .. } => {
-                return Err("call footprint string store requires a checked summary".into());
+            Instruction::StoreString { .. } | Instruction::MoveString { .. } => {
+                return Err("call footprint string transfer requires a checked summary".into());
             }
             Instruction::Divide { .. } => {
                 return Err("call footprint division effect requires a checked summary".into());
@@ -333,8 +333,8 @@ fn project(
         };
         work.charge(point_count, "projection")?;
         let (assignments, control) = match instruction {
-            Instruction::StoreString { .. } => {
-                return Err("call footprint string store requires a checked summary".into());
+            Instruction::StoreString { .. } | Instruction::MoveString { .. } => {
+                return Err("call footprint string transfer requires a checked summary".into());
             }
             Instruction::Divide { .. } => {
                 return Err("call footprint division effect requires a checked summary".into());
@@ -418,8 +418,8 @@ fn local_source(
             let instruction = &source[index];
             let address = instruction.address();
             let assignments = match instruction {
-                Instruction::StoreString { .. } => {
-                    return Err("call footprint string store requires a checked summary".into());
+                Instruction::StoreString { .. } | Instruction::MoveString { .. } => {
+                    return Err("call footprint string transfer requires a checked summary".into());
                 }
                 Instruction::Divide { .. } => {
                     return Err("call footprint division effect requires a checked summary".into());

@@ -31,6 +31,14 @@ pub enum Instruction {
         width: crate::model::ir::Width,
         repeat: bool,
     },
+    /// Read one source element, write it, then commit both pointers and count.
+    /// Repeated copies retain completed elements and the original PC on fault.
+    MoveString {
+        address: u64,
+        size: u32,
+        width: crate::model::ir::Width,
+        repeat: bool,
+    },
     Divide {
         address: u64,
         size: u32,
@@ -57,6 +65,7 @@ impl Instruction {
             Self::Core(i) => i.address,
             Self::Transfer { address, .. }
             | Self::StoreString { address, .. }
+            | Self::MoveString { address, .. }
             | Self::Return { address, .. }
             | Self::Divide { address, .. } => *address,
             Self::Vector(i) => i.address,
@@ -67,6 +76,7 @@ impl Instruction {
             Self::Core(i) => i.size,
             Self::Transfer { size, .. }
             | Self::StoreString { size, .. }
+            | Self::MoveString { size, .. }
             | Self::Return { size, .. }
             | Self::Divide { size, .. } => *size,
             Self::Vector(i) => i.size,

@@ -213,7 +213,8 @@ fn shape(instruction: &Instruction) -> IrInstruction {
     };
     match instruction {
         Instruction::Core(i) => i.clone(),
-        Instruction::StoreString { address, size, .. } => IrInstruction {
+        Instruction::StoreString { address, size, .. }
+        | Instruction::MoveString { address, size, .. } => IrInstruction {
             address: *address,
             size: *size,
             assignments: vec![],
@@ -439,6 +440,14 @@ fn lift_function_inner(
                                     repeat,
                                 }
                             }
+                            x86::StringOperation::Move { width, repeat } => {
+                                Instruction::MoveString {
+                                    address,
+                                    size: u32::from(string.size),
+                                    width,
+                                    repeat,
+                                }
+                            }
                         };
                         (
                             instruction,
@@ -495,7 +504,8 @@ fn lift_function_inner(
                 }
                 Instruction::Vector(_)
                 | Instruction::Divide { .. }
-                | Instruction::StoreString { .. } => pending.push(next),
+                | Instruction::StoreString { .. }
+                | Instruction::MoveString { .. } => pending.push(next),
                 _ => {}
             }
             charge(&instruction, nodes)?;
@@ -510,8 +520,13 @@ fn lift_function_inner(
         let originals: Vec<_> = decoded
             .values()
             .filter_map(|(i, original)| {
-                (!matches!(i, Instruction::Vector(_) | Instruction::StoreString { .. }))
-                    .then_some(*original)
+                (!matches!(
+                    i,
+                    Instruction::Vector(_)
+                        | Instruction::StoreString { .. }
+                        | Instruction::MoveString { .. }
+                ))
+                .then_some(*original)
             })
             .collect();
         for branch in originals

@@ -194,6 +194,10 @@ RDIとREP時のRCXには未知の新しい値を割り当て、ほかの生存�
 局所変数の適用時には元命令の幅・REP・継続先と解析イベントを独立に照合します。呼出し要約では反復Storeをopaqueなメモリ効果として扱います。
 仕様は[Intel SDM Vol.2のREP／STOS](https://cdrdv2-public.intel.com/835757/325383-sdm-vol-2abcd.pdf)を基準にし、native oracleで幅・方向・flag・page fault時の進捗を検査します。
 
+MOVSも同じ幅・方向・REPの規則を使い、要素ごとにRSIの全幅をLoadし、RDIの全幅をStoreしてから両pointerとcountを更新します。
+重なる領域では、その時点のRAMから要素を読みます。途中faultでは成功した要素と更新済みのレジスタを保ち、元のMOVSのPCで停止します。解析用SSAはRSI・RDI・DF・REP時のRCXを入力とし、pointerとcountの出力に新しい値IDを付けます。
+命令の意味は[Intel SDM Vol.2B MOVS／REP](https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf#page=112)に基づきます。
+
 CのPOSIXアダプタはLinux x86-64の、有効なbufferを持つ呼出しを対象とします。
 socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを型に合わせて変換します。
 成功した出力はerrnoと重なっていても保持し、失敗した呼出しではerrnoを更新します。

@@ -47,7 +47,7 @@ fn canonical_stores_direction_and_rejected_prefixes_are_explicit() {
         &[0xf0, 0xab],
         &[0xf3, 0xf3, 0xab],
         &[0x48, 0xf3, 0xab],
-        &[0xf3, 0xa4],
+        &[0xf2, 0xa4],
     ] {
         assert!(x86::decode_string_at(bytes, 0).is_err());
     }

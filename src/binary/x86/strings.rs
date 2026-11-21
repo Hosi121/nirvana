@@ -1,4 +1,4 @@
-//! Canonical long-mode STOS and direction-flag forms, decoded for module IR.
+//! Canonical long-mode string transfers and direction-flag forms for module IR.
 use super::DecodeError;
 use crate::model::ir::Width;
 
@@ -6,6 +6,7 @@ use crate::model::ir::Width;
 pub enum StringOperation {
     Direction(bool),
     Store { width: Width, repeat: bool },
+    Move { width: Width, repeat: bool },
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StringInstruction {
@@ -49,14 +50,20 @@ pub fn decode_string_at(bytes: &[u8], address: u64) -> Result<StringInstruction,
             wide = rex & 8 != 0;
             at += 1;
         }
-        let width = match bytes.get(at) {
-            Some(0xaa) => Width::U8,
-            Some(0xab) if wide => Width::U64,
-            Some(0xab) if short => Width::U16,
-            Some(0xab) => Width::U32,
+        let opcode = bytes.get(at).copied().ok_or_else(error)?;
+        let width = match opcode {
+            0xa4 | 0xaa => Width::U8,
+            0xa5 | 0xab if wide => Width::U64,
+            0xa5 | 0xab if short => Width::U16,
+            0xa5 | 0xab => Width::U32,
             _ => return Err(error()),
         };
-        (at + 1, StringOperation::Store { width, repeat })
+        let operation = if opcode == 0xa4 || opcode == 0xa5 {
+            StringOperation::Move { width, repeat }
+        } else {
+            StringOperation::Store { width, repeat }
+        };
+        (at + 1, operation)
     };
     address.checked_add(size as u64).ok_or_else(error)?;
     Ok(StringInstruction {

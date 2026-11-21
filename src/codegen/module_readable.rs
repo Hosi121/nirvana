@@ -627,6 +627,11 @@ impl Renderer<'_> {
                 inner,
                 &format!("nv_stos(s,{},{});", width.bytes(), u8::from(*repeat)),
             ),
+            Instruction::MoveString { width, repeat, .. } => line(
+                code,
+                inner,
+                &format!("nv_movs(s,{},{});", width.bytes(), u8::from(*repeat)),
+            ),
             Instruction::Divide { .. } => crate::codegen::module_emit::divide_statement(
                 code,
                 expressions,
@@ -893,6 +898,7 @@ impl Renderer<'_> {
             },
             Instruction::Vector(_)
             | Instruction::StoreString { .. }
+            | Instruction::MoveString { .. }
             | Instruction::Divide { .. }
             | Instruction::Transfer { link: Some(_), .. } => line(code, indent, &destination(next)),
             Instruction::Return { .. } | Instruction::Transfer { link: None, .. } => {

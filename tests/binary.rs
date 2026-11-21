@@ -38,6 +38,8 @@ mod x86_bt;
 mod x86_double_shift;
 #[path = "binary/x86_movbe.rs"]
 mod x86_movbe;
+#[path = "binary/x86_movs.rs"]
+mod x86_movs;
 #[path = "binary/x86_mul.rs"]
 mod x86_mul;
 #[path = "binary/x86_rotate.rs"]
