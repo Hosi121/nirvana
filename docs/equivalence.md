@@ -40,6 +40,11 @@ Storeの処理順は次のとおりです。
 CPUのページ権限・その他の例外・MMIO・並行実行は今後の拡張対象です。
 関数境界と命令集合は[機械語フロントエンド](machine-frontend.md)を参照してください。
 
+x86の暗黙MUL/IMULは8/16/32/64-bitの入力を乗算し、2倍幅の積を保持します。8-bitはAX、他の幅はDX:AX・EDX:EAX・RDX:RAXへ書き込みます。
+16-bit以下は対応する部分だけを更新し、32-bitの宛先はゼロ拡張します。IMULのCF/OFは積が符号付きの元の幅に収まるとき0、それ以外は1です。
+未定義のZF/SF/PFには従前値を選ぶモデルを使い、後続条件への使用可否はフラグ検査で管理します。
+仕様は[Intel SDM Vol.2A IMUL](https://cdrdv2-public.intel.com/789581/325383-sdm-vol-2abcd.pdf#page=611)を参照してください。
+
 ## 実行API
 
 `Program`・`StructuredFunction`・`ReducedFunction`の`run_with_memory`は、

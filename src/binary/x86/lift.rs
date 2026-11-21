@@ -154,7 +154,9 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
         Operation::Unary {
             kind: Unary::Neg, ..
         } => (0, ALL, 0),
-        Operation::Imul { .. } | Operation::Mul { .. } => (0, F_CF | F_OF, F_ZF | F_SF | F_PF),
+        Operation::Imul { .. } | Operation::Mul { .. } | Operation::SignedMul { .. } => {
+            (0, F_CF | F_OF, F_ZF | F_SF | F_PF)
+        }
         Operation::Divide { .. } => (0, 0, ALL),
         // BT defines CF, preserves ZF, and leaves OF/SF/PF undefined.
         Operation::BitTest { .. } => (0, F_CF, F_OF | F_SF | F_PF),
@@ -397,6 +399,54 @@ impl Lifter {
             Operand::Immediate(_) => unreachable!("decoded writable destination"),
         }
     }
+    // Signed 128-bit product of sign-extended operands. The high word uses
+    // unsigned multiplication plus two's-complement correction, shared by
+    // explicit and implicit IMUL. CF/OF test representability in one operand.
+    fn signed_product(&mut self, left: Expr, right: Expr, width: Width) {
+        self.set(A, sext(left, width));
+        self.set(V, sext(right, width));
+        self.set(LOW, b(B::Mul, r(A), r(V)));
+        self.set(
+            HIGH,
+            sub(
+                sub(b(B::UMulHigh, r(A), r(V)), b(B::Mul, bit(r(A), 63), r(V))),
+                b(B::Mul, bit(r(V), 63), r(A)),
+            ),
+        );
+        self.set(RESULT, mask(r(LOW), width));
+        self.set(
+            CF,
+            or(
+                ne(r(LOW), sext(r(RESULT), width)),
+                ne(r(HIGH), sub(k(0), bit(r(RESULT), width.bits() - 1))),
+            ),
+        );
+        self.set(OF, r(CF));
+    }
+
+    fn write_product(&mut self, width: Width, high: Expr) {
+        let accumulator = Register {
+            index: RAX as u8,
+            width: if width == Width::U8 {
+                Width::U16
+            } else {
+                width
+            },
+            shift: 0,
+        };
+        self.write_register(accumulator, r(LOW));
+        if width != Width::U8 {
+            self.write_register(
+                Register {
+                    index: RDX as u8,
+                    width,
+                    shift: 0,
+                },
+                high,
+            );
+        }
+    }
+
     fn parity(&mut self) -> Expr {
         self.set(PARITY, xor(r(RESULT), b(B::Shr, r(RESULT), k(4))));
         self.set(PARITY, xor(r(PARITY), b(B::Shr, r(PARITY), k(2))));
@@ -806,26 +856,17 @@ impl Lifter {
                 );
                 self.set(CF, ne(r(HIGH), k(0)));
                 self.set(OF, r(CF));
-                let accumulator = Register {
-                    index: RAX as u8,
-                    width: if width == Width::U8 {
-                        Width::U16
-                    } else {
-                        width
-                    },
-                    shift: 0,
+                self.write_product(width, r(HIGH));
+            }
+            Operation::SignedMul { source } => {
+                let width = source.width().unwrap();
+                self.signed_product(r(RAX), self.read(source), width);
+                let high = if width == Width::U64 {
+                    r(HIGH)
+                } else {
+                    b(B::Shr, r(LOW), k(u64::from(width.bits())))
                 };
-                self.write_register(accumulator, r(LOW));
-                if width != Width::U8 {
-                    self.write_register(
-                        Register {
-                            index: RDX as u8,
-                            width,
-                            shift: 0,
-                        },
-                        r(HIGH),
-                    );
-                }
+                self.write_product(width, high);
             }
             Operation::Imul {
                 destination,
@@ -833,25 +874,7 @@ impl Lifter {
                 right,
             } => {
                 let width = destination.width;
-                self.set(A, sext(self.read(left), width));
-                self.set(V, sext(self.read(right), width));
-                self.set(LOW, b(B::Mul, r(A), r(V)));
-                self.set(
-                    HIGH,
-                    sub(
-                        sub(b(B::UMulHigh, r(A), r(V)), b(B::Mul, bit(r(A), 63), r(V))),
-                        b(B::Mul, bit(r(V), 63), r(A)),
-                    ),
-                );
-                self.set(RESULT, mask(r(LOW), width));
-                self.set(
-                    CF,
-                    or(
-                        ne(r(LOW), sext(r(RESULT), width)),
-                        ne(r(HIGH), sub(k(0), bit(r(RESULT), width.bits() - 1))),
-                    ),
-                );
-                self.set(OF, r(CF));
+                self.signed_product(self.read(left), self.read(right), width);
                 self.write_register(destination, r(RESULT));
             }
             Operation::Exchange { left, right } => {

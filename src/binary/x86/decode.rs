@@ -131,6 +131,10 @@ pub enum Operation {
     Mul {
         source: Operand,
     },
+    /// Signed implicit-accumulator full product, F6/F7 /5.
+    SignedMul {
+        source: Operand,
+    },
     /// Reference/module decoding: DIV/IDIV has a checked #DE outcome.
     Divide {
         source: Operand,
@@ -689,6 +693,9 @@ impl Decoder<'_> {
                         destination,
                     },
                     4 => Operation::Mul {
+                        source: destination,
+                    },
+                    5 => Operation::SignedMul {
                         source: destination,
                     },
                     6 | 7 if self.policy == DecodePolicy::ReferenceInspection => {

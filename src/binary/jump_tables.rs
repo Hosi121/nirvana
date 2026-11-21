@@ -739,6 +739,7 @@ fn discover_path(
             Operation::BitTest { base, index } => register(base) && operand(index),
             Operation::Exchange { left, right } => operand(left) && register(right),
             Operation::Mul { source }
+            | Operation::SignedMul { source }
             | Operation::Divide { source, .. }
             | Operation::Push(source)
             | Operation::IndirectCall(source)

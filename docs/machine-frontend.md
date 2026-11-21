@@ -33,7 +33,7 @@ FDEは関数の一部の場合もあるため、合成名`sub_ADDRESS`を持つ�
 | 命令群 | 対応形式 |
 | --- | --- |
 | 移動とアドレス | 8/16/32/64-bit MOV、MOVZX/MOVSX/MOVSXD、CBW/CWDE/CDQE、CWD/CDQ/CQO、LEA、XCHG |
-| 整数演算 | 算術・bit演算・シフト・ROL/ROR、即値SHLD/SHRD、暗黙オペランドのunsigned MUL、明示オペランドのIMUL |
+| 整数演算 | 算術・bit演算・シフト・ROL/ROR、即値SHLD/SHRD、暗黙オペランドのMUL・IMUL、明示オペランドのIMUL |
 | 条件と分岐 | 直接JMP/Jcc、SETcc、CMOVcc |
 | スタックと境界 | 64-bit PUSH/POP/LEAVE、RET |
 | byte/bit操作 | 32/64-bit BSWAP、16/32/64-bitレジスタのBT |
@@ -59,7 +59,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 | --- | --- |
 | コード画像 | PE、関数境界の推定、汎用的なリンク・import解決 |
 | 関数間制御 | 関数境界の推定、呼出し規約・プロトタイプの回復、追加の外部効果 |
-| 命令と環境 | SIMD、暗黙オペランドのIMUL、memory BT・BTS/BTR/BTC、FS/GS base、追加のCPU例外 |
+| 命令と環境 | SIMD、memory BT・BTS/BTR/BTC、FS/GS base、追加のCPU例外 |
 
 ## CLI
 

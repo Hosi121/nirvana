@@ -422,7 +422,7 @@ fn transfer(state: &mut State, node: &Node, produced: Option<usize>, values: &Va
             kill(state, left);
             state[usize::from(right.index)] = None;
         }
-        Operation::Mul { .. } => {
+        Operation::Mul { .. } | Operation::SignedMul { .. } => {
             state[x86::RAX] = None;
             state[x86::RDX] = None;
         }

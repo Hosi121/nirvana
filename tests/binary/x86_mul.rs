@@ -64,7 +64,7 @@ fn memory_code(width: Width, base: u8) -> Vec<u8> {
 }
 
 #[test]
-fn decodes_only_unsigned_mul_with_implicit_width_and_correct_byte_register_bank() {
+fn decodes_unsigned_mul_with_implicit_width_and_correct_byte_register_bank() {
     for width in WIDTHS {
         for index in 0..16 {
             let bytes = register_code(width, index, false);
@@ -163,7 +163,7 @@ fn decodes_only_unsigned_mul_with_implicit_width_and_correct_byte_register_bank(
         (Width::U64, Some(12), Some(9), 8, -32)
     );
     for opcode in [0xf6, 0xf7] {
-        for group in [1u8, 5, 6, 7] {
+        for group in [1u8, 6, 7] {
             assert!(x86::decode_at(&[opcode, 0xc0 | (group << 3)], 0).is_err());
         }
         for bytes in [
@@ -182,6 +182,16 @@ fn decodes_only_unsigned_mul_with_implicit_width_and_correct_byte_register_bank(
 
 fn product(width: Width, accumulator: u64, high: u64, source: u64) -> (u64, u64, u64) {
     let wide = u128::from(accumulator & width.mask()) * u128::from(source & width.mask());
+    product_state(width, accumulator, high, wide, (wide >> width.bits()) != 0)
+}
+
+fn product_state(
+    width: Width,
+    accumulator: u64,
+    high: u64,
+    wide: u128,
+    overflow: bool,
+) -> (u64, u64, u64) {
     let upper = ((wide >> width.bits()) as u64) & width.mask();
     let low = wide as u64;
     let (accumulator, high) = match width {
@@ -193,7 +203,7 @@ fn product(width: Width, accumulator: u64, high: u64, source: u64) -> (u64, u64,
         Width::U32 => (low & 0xffff_ffff, upper),
         Width::U64 => (low, upper),
     };
-    (accumulator, high, u64::from(upper != 0))
+    (accumulator, high, u64::from(overflow))
 }
 
 fn registers(accumulator: u64, high: u64, source: u64, pattern: u64) -> Vec<u64> {
@@ -214,7 +224,23 @@ fn registers(accumulator: u64, high: u64, source: u64, pattern: u64) -> Vec<u64>
 }
 
 fn assert_result(width: Width, input: &[u64], source: u64, actual: &nirvana::ir::Execution) {
-    let (ax, dx, overflow) = product(width, input[x86::RAX], input[x86::RDX], source);
+    assert_product_result(
+        width,
+        input,
+        source,
+        actual,
+        product(width, input[x86::RAX], input[x86::RDX], source),
+    );
+}
+
+fn assert_product_result(
+    width: Width,
+    input: &[u64],
+    source: u64,
+    actual: &nirvana::ir::Execution,
+    expected: (u64, u64, u64),
+) {
+    let (ax, dx, overflow) = expected;
     for (i, before) in input.iter().copied().enumerate().take(16) {
         let expected = match i {
             x86::RAX => ax,
@@ -268,17 +294,18 @@ fn full_products_and_partial_destination_rules_hold_for_every_register_source() 
 #[cfg(target_arch = "x86_64")]
 fn native_register(
     width: Width,
-    index: u8,
-    high8: bool,
+    form: (u8, bool),
     ax: u64,
     dx: u64,
     source: u64,
     seed: u64,
+    signed: bool,
 ) -> (u64, u64, u64, u64, u64) {
+    let (index, high8) = form;
     use std::arch::asm;
     let (mut ax, mut dx, mut cx, mut ext) = (ax, dx, source, source);
     let flags: u64;
-    macro_rules! instruction {($op:literal)=>{unsafe{asm!("push {seed}","popfq",$op,"pushfq","pop r11",seed=in(reg)seed,inout("rax")ax,inout("rdx")dx,inout("rcx")cx,inout("r8")ext,lateout("r11")flags);}};}
+    macro_rules! instruction {($op:literal)=>{{if signed {unsafe{asm!("push {seed}","popfq",concat!("i", $op),"pushfq","pop r11",seed=in(reg)seed,inout("rax")ax,inout("rdx")dx,inout("rcx")cx,inout("r8")ext,lateout("r11")flags);}}else{unsafe{asm!("push {seed}","popfq",$op,"pushfq","pop r11",seed=in(reg)seed,inout("rax")ax,inout("rdx")dx,inout("rcx")cx,inout("r8")ext,lateout("r11")flags);}}}};}
     match (width, index, high8) {
         (Width::U8, 0, false) => instruction!("mul al"),
         (Width::U8, 0, true) => instruction!("mul ah"),
@@ -342,12 +369,12 @@ fn native_mul_matches_u128_and_ir_for_flags_accumulator_high_aliases_and_rex_sou
                         let expected = product(width, input[x86::RAX], input[x86::RDX], source);
                         let (ax, dx, cx, ext, flags) = native_register(
                             width,
-                            index,
-                            high8,
+                            (index, high8),
                             input[x86::RAX],
                             input[x86::RDX],
                             right,
                             seed(pattern),
+                            false,
                         );
                         assert_eq!(
                             (ax, dx, flags & 1),
@@ -404,11 +431,12 @@ fn native_memory(
     dx: u64,
     address: u64,
     seed: u64,
+    signed: bool,
 ) -> (u64, u64, u64) {
     use std::arch::asm;
     let (mut ax, mut dx) = (ax, dx);
     let flags: u64;
-    macro_rules! instruction {($op:literal)=>{unsafe{asm!("push {seed}","popfq",$op,"pushfq","pop r11",seed=in(reg)seed,inout("rax")ax,inout("rdx")dx,in("rcx")address,in("r8")address,lateout("r11")flags);}};}
+    macro_rules! instruction {($op:literal)=>{{if signed {unsafe{asm!("push {seed}","popfq",concat!("i", $op),"pushfq","pop r11",seed=in(reg)seed,inout("rax")ax,inout("rdx")dx,in("rcx")address,in("r8")address,lateout("r11")flags);}}else{unsafe{asm!("push {seed}","popfq",$op,"pushfq","pop r11",seed=in(reg)seed,inout("rax")ax,inout("rdx")dx,in("rcx")address,in("r8")address,lateout("r11")flags);}}}};}
     match (width, base) {
         (Width::U8, 0) => instruction!("mul byte ptr [rax]"),
         (Width::U8, 2) => instruction!("mul byte ptr [rdx]"),
@@ -482,6 +510,7 @@ fn memory_mul_loads_once_and_native_uses_the_old_aliasing_accumulator_or_high_ad
                             input[x86::RDX],
                             pointer,
                             seed(pattern),
+                            false,
                         );
                         assert_eq!((ax, dx, flags & 1), expected);
                         assert_eq!((flags >> 11) & 1, expected.2);
@@ -656,3 +685,6 @@ fn actual_unsigned_constant_division_o0_o2_lifts_and_matches_native_and_rust() {
         );
     }
 }
+
+#[path = "x86_mul/signed.rs"]
+mod signed;
