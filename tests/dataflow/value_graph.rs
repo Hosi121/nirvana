@@ -167,6 +167,9 @@ fn pure_dag_values_agree_with_ir_execution_after_each_write() {
                     B::UMulHigh => ((a as u128 * b as u128) >> 64) as u64,
                     B::SMulHigh => ((i128::from(a as i64) * i128::from(b as i64)) >> 64) as u64,
                     B::AShr => ((a as i64) >> (b & 63)) as u64,
+                    B::UDiv | B::URem | B::SDiv | B::SRem => {
+                        crate::support::ir::division_value(op, a, b)
+                    }
                 }
             }
             ValueNode::CapturedLoad(_) => panic!("pure oracle"),
@@ -187,6 +190,12 @@ fn pure_dag_values_agree_with_ir_execution_after_each_write() {
         B::Ult,
         B::Ule,
         B::UMulHigh,
+        B::SMulHigh,
+        B::AShr,
+        B::UDiv,
+        B::URem,
+        B::SDiv,
+        B::SRem,
     ] {
         assignments.push(set(2, Expr::binary(op, r(1), r(4))));
         assignments.push(set(3, Expr::select(r(5), r(2), r(0))));

@@ -86,7 +86,9 @@ impl Printer<'_> {
                     divisor,
                     bits,
                 } => {
-                    let literal = if divisor < 0 {
+                    let literal = if divisor == i64::MIN {
+                        "INT64_MIN".to_owned()
+                    } else if divisor < 0 {
                         format!("-INT64_C({})", divisor.unsigned_abs())
                     } else {
                         format!("INT64_C({divisor})")
@@ -104,7 +106,9 @@ impl Printer<'_> {
                     value,
                     divisor,
                 } => {
-                    let literal = if divisor < 0 {
+                    let literal = if divisor == i64::MIN {
+                        "INT64_MIN".to_owned()
+                    } else if divisor < 0 {
                         format!("-INT64_C({})", divisor.unsigned_abs())
                     } else {
                         format!("INT64_C({divisor})")
@@ -266,7 +270,13 @@ impl Printer<'_> {
                     BinaryOp::Add => ("+", 10),
                     BinaryOp::Sub => ("-", 10),
                     BinaryOp::Mul => ("*", 11),
-                    BinaryOp::UMulHigh | BinaryOp::SMulHigh | BinaryOp::AShr => unreachable!(),
+                    BinaryOp::UMulHigh
+                    | BinaryOp::SMulHigh
+                    | BinaryOp::AShr
+                    | BinaryOp::UDiv
+                    | BinaryOp::URem
+                    | BinaryOp::SDiv
+                    | BinaryOp::SRem => unreachable!(),
                 };
                 let comparison = matches!(
                     op,
@@ -642,6 +652,21 @@ impl Printer<'_> {
                 .zip(self.names.get(&b.0))
                 .is_some_and(|(a, b)| a == b)
         };
+        // Direct total-IR operations admit C compounds when the literal
+        // divisor is nonzero. Both operands still denote current storage.
+        if let Expr::Binary(op @ (BinaryOp::UDiv | BinaryOp::URem), left, right) = value
+            && let Expr::Register(source) = **left
+            && let Expr::Const(divisor) = **right
+            && divisor != 0
+            && same(destination, source)
+        {
+            return Some(format!(
+                "{} {}= {};",
+                self.register(destination),
+                if *op == BinaryOp::UDiv { "/" } else { "%" },
+                self.expression(right).text
+            ));
+        }
         // Arithmetic proof precedes compound extraction, which would otherwise
         // hide the whole subtraction behind `x -= quotient * divisor`.
         if crate::transform::signed_division_expr::recognize_remainder(value).is_some() {

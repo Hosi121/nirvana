@@ -2,7 +2,7 @@
 //!
 //! A snapshot captures a pure numerator at its original high-product definition.
 //! Selected division/remainder expressions refer to that immutable value ID.
-//! Lowering produces ordinary executable IR with certified reciprocal kernels:
+//! Lowering produces ordinary executable quotient and remainder operations:
 //! every subsequent analysis sees all actual reads, including extended lifetimes.
 //! The executable input and all its memory operations remain separate and intact.
 
@@ -230,7 +230,7 @@ impl ExpressionPlan {
                 }
                 let mut target = original.clone();
                 if let Some(selection) = self.selection(point) {
-                    target.value = lower_expression(source, self, selection, &mut work)?;
+                    target.value = lower_expression(self, selection, &mut work)?;
                 }
                 lowered.assignments.push(target);
             }
@@ -310,7 +310,7 @@ fn verify_lowering(source: &Program, plan: &ExpressionPlan, candidate: &Program)
                 return None;
             }
             if let Some(selection) = plan.selection(point) {
-                let expected = lower_expression(source, plan, selection, &mut work)?;
+                let expected = lower_expression(plan, selection, &mut work)?;
                 if actual.value != expected {
                     return None;
                 }
@@ -426,55 +426,18 @@ fn validate_plan(source: &Program, plan: &ExpressionPlan, work: &mut Work) -> Op
     used.iter().all(|&v| v).then_some(())
 }
 
-fn lower_expression(
-    source: &Program,
-    plan: &ExpressionPlan,
-    selection: &Selection,
-    work: &mut Work,
-) -> Option<Expr> {
-    let (id, _) = selection.expression.parts();
+fn lower_expression(plan: &ExpressionPlan, selection: &Selection, work: &mut Work) -> Option<Expr> {
+    let (id, divisor) = selection.expression.parts();
     let value = plan.values.get(id.0)?;
     let operand = match value.storage {
         Some(storage) => Expr::Register(storage),
         None => clone_pure(&value.expression, work)?,
     };
-    let quotient = match selection.proof {
-        Proof::Quotient(fact) | Proof::Remainder { quotient: fact, .. } => Expr::binary(
-            B::Shr,
-            Expr::binary(
-                B::UMulHigh,
-                Expr::Const(fact.certificate.multiplier),
-                operand.clone(),
-            ),
-            Expr::Const(u64::from(fact.certificate.shift)),
-        ),
-        Proof::Context(proof) => clone_pure(
-            &at(
-                source,
-                Point {
-                    instruction: proof.definition_instruction,
-                    assignment: proof.definition_assignment,
-                },
-            )?
-            .value,
-            work,
-        )?,
+    let op = match selection.expression {
+        ArithmeticExpression::UnsignedDivide { .. } => B::UDiv,
+        ArithmeticExpression::UnsignedRemainder { .. } => B::URem,
     };
-    match selection.expression {
-        ArithmeticExpression::UnsignedDivide { divisor, .. } => {
-            let view = crate::transform::division_expr::recognize(&quotient)?;
-            (view.divisor == divisor).then_some(quotient)
-        }
-        ArithmeticExpression::UnsignedRemainder { divisor, .. } => {
-            let expression = Expr::binary(
-                B::Sub,
-                operand,
-                Expr::binary(B::Mul, quotient, Expr::Const(divisor)),
-            );
-            let view = crate::transform::remainder_expr::recognize(&expression)?;
-            (view.divisor == divisor).then_some(expression)
-        }
-    }
+    Some(Expr::binary(op, operand, Expr::Const(divisor)))
 }
 fn clone_pure(expression: &Expr, work: &mut Work) -> Option<Expr> {
     value_graph::pure(expression, work)?.then(|| expression.clone())

@@ -235,18 +235,7 @@ fn binary(expression: &Expr, expected: B) -> Option<(&Expr, &Expr)> {
     }
 }
 
-pub const DIVIDE_HELPER: &str = r#"
-static inline uint64_t nirvana_sdiv64(uint64_t value, int64_t divisor) {
-    uint64_t d = (uint64_t)divisor;
-    uint64_t magnitude = (value >> 63) ? UINT64_C(0) - value : value;
-    uint64_t denominator = divisor < 0 ? UINT64_C(0) - d : d;
-    uint64_t q = magnitude / denominator;
-    return ((value >> 63) ^ (d >> 63)) ? UINT64_C(0) - q : q;
-}
-"#;
-
-pub const REMAINDER_HELPER: &str = r#"
-static inline uint64_t nirvana_srem64(uint64_t value, int64_t divisor) {
-    return value - nirvana_sdiv64(value,divisor) * (uint64_t)divisor;
-}
-"#;
+// Compatibility exports; the C backend owns portable integer definitions.
+pub use crate::codegen::emit::integer::{
+    SIGNED_DIVIDE_HELPER as DIVIDE_HELPER, SIGNED_REMAINDER_HELPER as REMAINDER_HELPER,
+};

@@ -135,6 +135,9 @@ impl Oracle {
                         ((i128::from(a as i64) * i128::from(z as i64)) >> 64) as u64
                     }
                     BinaryOp::AShr => ((a as i64) >> (z & 63)) as u64,
+                    BinaryOp::UDiv | BinaryOp::URem | BinaryOp::SDiv | BinaryOp::SRem => {
+                        crate::support::ir::division_value(*op, a, z)
+                    }
                     BinaryOp::And => a & z,
                     BinaryOp::Or => a | z,
                     BinaryOp::Xor => a ^ z,
@@ -372,6 +375,10 @@ fn native_binary_and_umul_high_reads_are_left_to_right() {
         BinaryOp::UMulHigh,
         BinaryOp::SMulHigh,
         BinaryOp::AShr,
+        BinaryOp::UDiv,
+        BinaryOp::URem,
+        BinaryOp::SDiv,
+        BinaryOp::SRem,
         BinaryOp::Shl,
         BinaryOp::Eq,
     ] {

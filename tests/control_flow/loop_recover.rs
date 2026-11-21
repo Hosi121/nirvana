@@ -146,6 +146,9 @@ fn expression(value: &Expr, registers: &[u64]) -> u64 {
                 BinaryOp::UMulHigh => ((u128::from(a) * u128::from(z)) >> 64) as u64,
                 BinaryOp::SMulHigh => ((i128::from(a as i64) * i128::from(z as i64)) >> 64) as u64,
                 BinaryOp::AShr => ((a as i64) >> (z & 63)) as u64,
+                BinaryOp::UDiv | BinaryOp::URem | BinaryOp::SDiv | BinaryOp::SRem => {
+                    crate::support::ir::division_value(*op, a, z)
+                }
             }
         }
     }

@@ -240,29 +240,13 @@ fn linear(
 }
 
 pub(super) fn lower(equation: Equation, input: Reg) -> Expr {
-    let r = || Expr::Register(input);
-    let c = Expr::Const;
-    let b = |op, a, b| Expr::binary(op, a, b);
-    let e = equation.evidence;
-    let mut high = b(B::SMulHigh, r(), c(e.multiplier));
-    if e.multiplier >> 63 != 0 {
-        high = b(B::Add, high, r());
-    }
-    let estimate = if e.shift == 0 {
-        high
-    } else {
-        b(B::AShr, high, c(u64::from(e.shift)))
+    let op = match equation.kind {
+        ArithmeticKind::SignedDivide64 => B::SDiv,
+        ArithmeticKind::SignedRemainder64 => B::SRem,
     };
-    let sign = b(B::AShr, r(), c(63));
-    let q = if equation.divisor < 0 {
-        b(B::Sub, sign, estimate)
-    } else {
-        b(B::Sub, estimate, sign)
-    };
-    match equation.kind {
-        ArithmeticKind::SignedDivide64 => q,
-        ArithmeticKind::SignedRemainder64 => {
-            b(B::Sub, r(), b(B::Mul, q, c(equation.divisor as u64)))
-        }
-    }
+    Expr::binary(
+        op,
+        Expr::Register(input),
+        Expr::Const(equation.divisor as u64),
+    )
 }

@@ -213,6 +213,9 @@ fn bits(
                 BinaryOp::Mul => (left_bits + right_bits).min(64),
                 BinaryOp::UMulHigh => (left_bits + right_bits).saturating_sub(64),
                 BinaryOp::SMulHigh => 64,
+                BinaryOp::UDiv => quotient_bits(left_bits, constant_divisor(right)),
+                BinaryOp::URem | BinaryOp::SRem => left_bits,
+                BinaryOp::SDiv => 64,
                 BinaryOp::AShr if left_bits == 64 => 64,
                 BinaryOp::Shl | BinaryOp::Shr if left_bits == 0 => 0,
                 BinaryOp::Shl | BinaryOp::Shr if right_bits == 0 => left_bits,
@@ -227,4 +230,25 @@ fn bits(
             }
         }
     })
+}
+
+pub(crate) fn constant_divisor(e: &Expr) -> Option<u64> {
+    if let Expr::Const(n) = e {
+        Some(*n)
+    } else {
+        None
+    }
+}
+/// Monotonic unsigned quotient upper bound. A zero divisor
+/// follows the total bit-vector contract; dynamic divisors may also be zero.
+pub(crate) fn quotient_bits(input: u8, divisor: Option<u64>) -> u8 {
+    let Some(d) = divisor.filter(|n| *n != 0) else {
+        return 64;
+    };
+    let maximum = if input == 0 {
+        0
+    } else {
+        u64::MAX >> (64 - input)
+    };
+    (64 - (maximum / d).leading_zeros()) as u8
 }

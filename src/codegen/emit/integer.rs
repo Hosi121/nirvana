@@ -58,11 +58,39 @@ static inline uint64_t nirvana_ashr64(uint64_t value, uint64_t count) {
 }
 "#;
 
+const UNSIGNED_DIVIDE_HELPER: &str = r#"
+static inline uint64_t nirvana_udiv64(uint64_t value, uint64_t divisor) {
+    return divisor == UINT64_C(0) ? UINT64_MAX : value / divisor;
+}
+"#;
+const UNSIGNED_REMAINDER_HELPER: &str = r#"
+static inline uint64_t nirvana_urem64(uint64_t value, uint64_t divisor) {
+    return divisor == UINT64_C(0) ? value : value % divisor;
+}
+"#;
+pub const SIGNED_DIVIDE_HELPER: &str = r#"
+static inline uint64_t nirvana_sdiv64(uint64_t value, uint64_t divisor) {
+    uint64_t magnitude = (value >> 63) ? UINT64_C(0) - value : value;
+    uint64_t denominator = (divisor >> 63) ? UINT64_C(0) - divisor : divisor;
+    uint64_t q = denominator == UINT64_C(0) ? UINT64_MAX : magnitude / denominator;
+    return ((value ^ divisor) >> 63) ? UINT64_C(0) - q : q;
+}
+"#;
+pub const SIGNED_REMAINDER_HELPER: &str = r#"
+static inline uint64_t nirvana_srem64(uint64_t value, uint64_t divisor) {
+    return value - nirvana_sdiv64(value,divisor) * divisor;
+}
+"#;
+
 pub(crate) fn helper_name(op: BinaryOp) -> Option<&'static str> {
     match op {
         BinaryOp::UMulHigh => Some("nirvana_umul_high"),
         BinaryOp::SMulHigh => Some("nirvana_smul_high"),
         BinaryOp::AShr => Some("nirvana_ashr64"),
+        BinaryOp::UDiv => Some("nirvana_udiv64"),
+        BinaryOp::URem => Some("nirvana_urem64"),
+        BinaryOp::SDiv => Some("nirvana_sdiv64"),
+        BinaryOp::SRem => Some("nirvana_srem64"),
         _ => None,
     }
 }
@@ -78,6 +106,18 @@ fn definitions(used: impl Fn(BinaryOp) -> bool) -> String {
     }
     if used(BinaryOp::AShr) {
         out.push_str(SHIFT_HELPER);
+    }
+    if used(BinaryOp::UDiv) {
+        out.push_str(UNSIGNED_DIVIDE_HELPER);
+    }
+    if used(BinaryOp::URem) {
+        out.push_str(UNSIGNED_REMAINDER_HELPER);
+    }
+    if used(BinaryOp::SDiv) || used(BinaryOp::SRem) {
+        out.push_str(SIGNED_DIVIDE_HELPER);
+    }
+    if used(BinaryOp::SRem) {
+        out.push_str(SIGNED_REMAINDER_HELPER);
     }
     out
 }

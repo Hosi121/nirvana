@@ -280,7 +280,24 @@ fn possible(op: B, left: u64, right: u64, count: Option<u64>) -> u64 {
         B::Sub => u64::MAX,
         B::Mul => left.checked_mul(right).map_or(u64::MAX, low_mask),
         B::UMulHigh => low_mask(((u128::from(left) * u128::from(right)) >> 64) as u64),
-        B::SMulHigh => u64::MAX,
+        B::SMulHigh | B::SDiv => u64::MAX,
+        B::SRem => {
+            if left >> 63 == 0 {
+                low_mask(left)
+            } else {
+                u64::MAX
+            }
+        }
+        B::UDiv => count
+            .filter(|n| *n != 0)
+            .map_or(u64::MAX, |n| low_mask(left / n)),
+        B::URem => count.map_or(low_mask(left), |n| {
+            if n == 0 {
+                left
+            } else {
+                low_mask(left.min(n - 1))
+            }
+        }),
         B::AShr if left >> 63 != 0 => u64::MAX,
         B::Shl => count.map_or(if left == 0 { 0 } else { u64::MAX }, |count| {
             left.wrapping_shl((count & 63) as u32)

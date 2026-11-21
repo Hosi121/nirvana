@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{MAX_SLOTS, spend};
 use crate::control_flow::structure::Node;
-use crate::model::ir::{Expr, Place, Reg};
+use crate::model::ir::{BinaryOp as B, Expr, Place, Reg};
 
 // The caller already validated the complete AST and every expression. This
 // separate work/map budget can fail without losing any canonical old role.
@@ -106,7 +106,9 @@ pub(super) fn quotients(
                         expression_nodes.checked_mul(3)?.checked_add(128)?,
                     )?;
                     let mut division =
-                        crate::transform::division_expr::recognize(&assignment.value).is_some();
+                        matches!(assignment.value, Expr::Binary(B::UDiv | B::SDiv, ..))
+                            || crate::transform::division_expr::recognize(&assignment.value)
+                                .is_some();
                     // The reciprocal-add recognizer may recheck three copies
                     // of its dividend. Charge its extra bounded scans first.
                     if !division

@@ -12,6 +12,8 @@ mod support {
 
 #[path = "model/call_preservation.rs"]
 mod call_preservation;
+#[path = "model/division_ops.rs"]
+mod division_ops;
 #[path = "model/effects.rs"]
 mod effects;
 #[path = "model/effects_observe.rs"]

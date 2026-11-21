@@ -201,6 +201,10 @@ pub(crate) fn binary_term(op: &BinaryOp, l: &str, r: &str) -> String {
                 BinaryOp::And => "bvand",
                 BinaryOp::Or => "bvor",
                 BinaryOp::Xor => "bvxor",
+                BinaryOp::UDiv => "bvudiv",
+                BinaryOp::URem => "bvurem",
+                BinaryOp::SDiv => "bvsdiv",
+                BinaryOp::SRem => "bvsrem",
                 _ => unreachable!(),
             };
             format!("({op} {l} {r})")

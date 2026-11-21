@@ -72,6 +72,9 @@ fn eval(e: &Expr, v: &[u64]) -> u64 {
                 B::UMulHigh => ((a as u128 * z as u128) >> 64) as u64,
                 B::SMulHigh => ((i128::from(a as i64) * i128::from(z as i64)) >> 64) as u64,
                 B::AShr => ((a as i64) >> (z & 63)) as u64,
+                B::UDiv | B::URem | B::SDiv | B::SRem => {
+                    crate::support::ir::division_value(*op, a, z)
+                }
                 B::And => a & z,
                 B::Or => a | z,
                 B::Xor => a ^ z,

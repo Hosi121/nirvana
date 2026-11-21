@@ -1,6 +1,6 @@
 //! Pure expression views and definitions for the selected C layout.
 use crate::codegen::emit::integer;
-use crate::model::ir::Expr;
+use crate::model::ir::{BinaryOp as B, Expr};
 use crate::transform::add_division_expr;
 use crate::transform::bit_expr::{self, BitKind};
 use crate::transform::division_expr;
@@ -38,6 +38,26 @@ pub(super) enum View<'a> {
 }
 
 pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
+    if let Expr::Binary(op, value, divisor) = expression
+        && let Expr::Const(d) = **divisor
+    {
+        match op {
+            B::UDiv if d != 0 => return Some(View::Divide { value, divisor: d }),
+            B::URem if d != 0 => return Some(View::Remainder { value, divisor: d }),
+            B::SDiv | B::SRem => {
+                return Some(View::Signed {
+                    name: if *op == B::SDiv {
+                        "nirvana_sdiv64"
+                    } else {
+                        "nirvana_srem64"
+                    },
+                    value,
+                    divisor: d as i64,
+                });
+            }
+            _ => {}
+        }
+    }
     if let Some(view) = word_signed_division::recognize(expression) {
         return Some(View::WordSigned {
             name: match view.operation {
@@ -120,12 +140,6 @@ pub(super) fn definitions(code: &str) -> String {
     }
     if code.contains("nirvana_srem_word(") {
         definitions.push_str(word_signed_division::REMAINDER_HELPER);
-    }
-    if code.contains("nirvana_sdiv64(") || code.contains("nirvana_srem64(") {
-        definitions.push_str(signed_division_expr::DIVIDE_HELPER);
-    }
-    if code.contains("nirvana_srem64(") {
-        definitions.push_str(signed_division_expr::REMAINDER_HELPER);
     }
     let mut include = |name: &str, definition: &str| {
         if code.contains(&format!("{name}(")) {

@@ -65,6 +65,9 @@ fn observe(expression: &Expr, input: &[u64], reads: &mut Vec<usize>) -> u64 {
                 B::UMulHigh => ((u128::from(left) * u128::from(right)) >> 64) as u64,
                 B::SMulHigh => ((i128::from(left as i64) * i128::from(right as i64)) >> 64) as u64,
                 B::AShr => ((left as i64) >> (right & 63)) as u64,
+                B::UDiv | B::URem | B::SDiv | B::SRem => {
+                    crate::support::ir::division_value(*op, left, right)
+                }
             }
         }
         Expr::Load { .. } => panic!("test oracle expects pure expressions"),

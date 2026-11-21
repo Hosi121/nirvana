@@ -249,7 +249,13 @@ impl Expressions {
                     BinaryOp::Ne => "!=",
                     BinaryOp::Ult => "<",
                     BinaryOp::Ule => "<=",
-                    BinaryOp::UMulHigh | BinaryOp::SMulHigh | BinaryOp::AShr => unreachable!(),
+                    BinaryOp::UMulHigh
+                    | BinaryOp::SMulHigh
+                    | BinaryOp::AShr
+                    | BinaryOp::UDiv
+                    | BinaryOp::URem
+                    | BinaryOp::SDiv
+                    | BinaryOp::SRem => unreachable!(),
                 };
                 if matches!(op, BinaryOp::Shl | BinaryOp::Shr) {
                     right = format!("({right} & UINT64_C(63))");

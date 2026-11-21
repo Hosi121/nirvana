@@ -9,6 +9,8 @@ mod support {
 
 #[path = "verification/block_verification.rs"]
 mod block_verification;
+#[path = "verification/division_ops.rs"]
+mod division_ops;
 #[path = "verification/exhaustive.rs"]
 mod exhaustive;
 #[path = "verification/integer_ops.rs"]

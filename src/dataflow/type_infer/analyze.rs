@@ -248,6 +248,12 @@ fn expr_bits(
                 }
                 B::UMulHigh => a.saturating_add(b).saturating_sub(64),
                 B::SMulHigh => 64,
+                B::UDiv => crate::dataflow::value_width::quotient_bits(
+                    a,
+                    crate::dataflow::value_width::constant_divisor(right),
+                ),
+                B::URem | B::SRem => a,
+                B::SDiv => 64,
                 B::Eq | B::Ne | B::Ult | B::Ule => 1,
             }
         }

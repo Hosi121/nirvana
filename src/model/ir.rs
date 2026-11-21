@@ -30,6 +30,16 @@ pub enum BinaryOp {
     SMulHigh,
     /// Sign-filling right shift; the count is masked with 63.
     AShr,
+    /// Total SMT-LIB unsigned quotient; zero divisor yields all one bits.
+    UDiv,
+    /// Total unsigned remainder; zero divisor yields the dividend.
+    URem,
+    /// Total signed quotient, truncated toward zero. MIN/-1 wraps to MIN;
+    /// division by zero yields 1 for a negative input and all ones otherwise.
+    SDiv,
+    /// Total signed remainder; its sign follows the dividend. A zero divisor
+    /// yields the dividend. Hardware divide faults live in module effects.
+    SRem,
 }
 
 impl BinaryOp {
@@ -52,6 +62,28 @@ impl BinaryOp {
             Self::Ule => u64::from(left <= right),
             Self::UMulHigh => ((u128::from(left) * u128::from(right)) >> 64) as u64,
             Self::SMulHigh => ((i128::from(left as i64) * i128::from(right as i64)) >> 64) as u64,
+            Self::UDiv => left.checked_div(right).unwrap_or(u64::MAX),
+            Self::URem => {
+                if right == 0 {
+                    left
+                } else {
+                    left % right
+                }
+            }
+            Self::SDiv => {
+                if right == 0 {
+                    if left >> 63 != 0 { 1 } else { u64::MAX }
+                } else {
+                    (i128::from(left as i64) / i128::from(right as i64)) as u64
+                }
+            }
+            Self::SRem => {
+                if right == 0 {
+                    left
+                } else {
+                    (i128::from(left as i64) % i128::from(right as i64)) as u64
+                }
+            }
         }
     }
 }

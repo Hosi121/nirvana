@@ -248,6 +248,9 @@ impl Concrete<'_> {
                         ((i128::from(left as i64) * i128::from(right as i64)) >> 64) as u64
                     }
                     BinaryOp::AShr => ((left as i64) >> (right & 63)) as u64,
+                    BinaryOp::UDiv | BinaryOp::URem | BinaryOp::SDiv | BinaryOp::SRem => {
+                        crate::support::ir::division_value(*op, left, right)
+                    }
                 }
             }
         })

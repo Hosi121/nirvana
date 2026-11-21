@@ -1,7 +1,7 @@
 use nirvana::ir::{BinaryOp as B, Control, ExecutionError, Expr, IrInstruction, Program, Width};
 use nirvana::simplify::{node_count, simplify};
 
-const OPERATORS: [B; 15] = [
+const OPERATORS: [B; 19] = [
     B::Add,
     B::Sub,
     B::Mul,
@@ -17,6 +17,10 @@ const OPERATORS: [B; 15] = [
     B::UMulHigh,
     B::SMulHigh,
     B::AShr,
+    B::UDiv,
+    B::URem,
+    B::SDiv,
+    B::SRem,
 ];
 const BOUNDARIES: [u64; 23] = [
     0,
@@ -356,10 +360,43 @@ fn with_extensions(expression: &Expr, seed: &mut u64) -> Expr {
     }
 }
 
+fn with_divisions(expression: &Expr, seed: &mut u64) -> Expr {
+    let expression = match expression {
+        Expr::Unary(op, v) => Expr::unary(*op, with_divisions(v, seed)),
+        Expr::Binary(op, a, z) => b(*op, with_divisions(a, seed), with_divisions(z, seed)),
+        Expr::Load { address, width } => Expr::load(with_divisions(address, seed), *width),
+        Expr::Select {
+            condition,
+            taken,
+            not_taken,
+        } => Expr::select(
+            with_divisions(condition, seed),
+            with_divisions(taken, seed),
+            with_divisions(not_taken, seed),
+        ),
+        e => e.clone(),
+    };
+    if next(seed) & 3 != 0 {
+        return expression;
+    }
+    let op = [B::UDiv, B::URem, B::SDiv, B::SRem][(next(seed) & 3) as usize];
+    let denominator = match next(seed) % 7 {
+        0 => c(0),
+        1 => c(1),
+        2 => c(u64::MAX),
+        3 => c(1 << 63),
+        4 => r(1),
+        5 => Expr::load(r(2), Width::U64),
+        _ => c(next(seed)),
+    };
+    b(op, expression, denominator)
+}
+
 #[test]
 fn seeded_expression_trees_match_the_original_ir_interpreter() {
     let mut seed = 0x792c_48a9_1234_cdef;
     let mut extension_seed = 0x9f71_b382_65ca_4de0;
+    let mut division_seed = 0x5639_4338_87d2_eec1;
     let inputs = boundary_inputs();
     let mut before = 0;
     let mut after = 0;
@@ -369,9 +406,10 @@ fn seeded_expression_trees_match_the_original_ir_interpreter() {
         after += node_count(&simplify(&expression));
         check(&expression, &inputs);
         check(&with_extensions(&expression, &mut extension_seed), &inputs);
+        check(&with_divisions(&expression, &mut division_seed), &inputs);
     }
     assert!(after < before);
     println!(
-        "1024 original seeded trees plus 1024 trees with nested extensions: original nodes {before} -> {after}; 23 boundary register vectors, three memory layouts, two instruction limits"
+        "3072 seeded trees: original, nested extensions and total division; original nodes {before} -> {after}; 23 boundary register vectors, three memory layouts, two instruction limits"
     );
 }

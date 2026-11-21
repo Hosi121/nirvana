@@ -105,7 +105,9 @@ fn render(expr: &Expr, register: &impl Fn(Reg) -> String) -> Rendered {
                 B::Add => ("+", 9),
                 B::Sub => ("-", 9),
                 B::Mul => ("*", 10),
-                B::UMulHigh | B::SMulHigh | B::AShr => unreachable!(),
+                B::UMulHigh | B::SMulHigh | B::AShr | B::UDiv | B::URem | B::SDiv | B::SRem => {
+                    unreachable!()
+                }
             };
             let left = render(left, register).binary_operand(*op, precedence, false);
             let right = if matches!(op, B::Shl | B::Shr) {

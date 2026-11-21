@@ -76,6 +76,65 @@ fn constants_and_loads_choose_the_smallest_fitting_unsigned_storage() {
 }
 
 #[test]
+fn division_storage_bounds_cover_zero_divisors_and_narrow_remainders() {
+    fn storage(maximum: u64) -> Width {
+        if maximum <= u8::MAX as u64 {
+            Width::U8
+        } else if maximum <= u16::MAX as u64 {
+            Width::U16
+        } else if maximum <= u32::MAX as u64 {
+            Width::U32
+        } else {
+            Width::U64
+        }
+    }
+    for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        for op in [
+            BinaryOp::UDiv,
+            BinaryOp::URem,
+            BinaryOp::SDiv,
+            BinaryOp::SRem,
+        ] {
+            for divisor in [
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(256),
+                Some(1 << 63),
+                Some(u64::MAX),
+                None,
+            ] {
+                let value = binary(
+                    op,
+                    binary(BinaryOp::And, r(0), c(width.mask())),
+                    divisor.map_or_else(|| r(1), c),
+                );
+                let p = program(3, vec![i(0, vec![set(2, value)], Control::Return(r(2)))]);
+                let inferred = ValueWidths::analyze(&p).width(Reg(2));
+                let maximum = match (op, divisor) {
+                    (BinaryOp::UDiv, Some(d)) if d != 0 => width.mask() / d,
+                    (BinaryOp::UDiv, _) | (BinaryOp::SDiv, _) => u64::MAX,
+                    _ => width.mask(),
+                };
+                assert_eq!(inferred, storage(maximum), "{op:?}/{width:?}/{divisor:?}");
+                for x in [0, 1, 127, 128, 255, 256, 0x7fff_ffff, 0x8000_0000, u64::MAX] {
+                    for d in [0, 1, 3, 256, 1 << 63, u64::MAX] {
+                        let expected = crate::support::ir::division_value(
+                            op,
+                            x & width.mask(),
+                            divisor.unwrap_or(d),
+                        );
+                        assert_eq!(p.execute(&[x, d, 0], 1).unwrap().value, expected);
+                        assert_eq!(expected & !inferred.mask(), 0);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn all_writes_count_even_when_a_later_narrow_value_is_the_only_read() {
     let p = program(
         1,

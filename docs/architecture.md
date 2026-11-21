@@ -44,6 +44,7 @@ strip入力の数値入口は、[eh_frame](../src/binary/eh_frame.rs)のFDE範�
 [x86](../src/binary/x86/mod.rs)は直接辺から命令を発見し、部分レジスタ・フラグ・評価順を実行IRへ展開します。
 符号付き上位積と算術右シフトは`SMulHigh`・`AShr`として保持し、レジスタのbit列に対する演算として解釈します。これにより、後段はu64の補正式を再認識せず演算の関係を追えます。
 符号拡張は`UnaryOp::SignExtend(Width)`で入力幅を保持します。SSA・値グラフ・メモリの参照位置もこの単項演算を通じて追跡し、Cへはunsignedだけで計算するhelperとして下ろします。
+証明済みの商・剰余は`UDiv`・`URem`・`SDiv`・`SRem`へ下ろし、後続の幅推論と割当てでも演算の意味を保持します。これらの全域bit-vector演算は[SMT-LIBの定義](https://smt-lib.org/logics-all.shtml#QF_BV)に従い、Cではunsigned演算と明示した境界処理で実装します。
 [word_signed_division](../src/transform/word_signed_division.rs)は8/16/32-bitへの射影と符号付き積を区別し、定数除算・剰余を復元します。数値証明を64-bit版と共有し、右シフトには符号拡張と観測幅の条件を確認します。生成する結果は上位bitがゼロのwordで、後続の符号拡張も保持します。
 [jump_tables](../src/binary/jump_tables.rs)は先行CFGの経路文脈、copy、stack退避、比較とmaskから表候補を求め、追加デコードと交互に進めます。
 候補には読取り位置・範囲の根拠・未探索の残余を保持します。実行時の間接移転は現在のRAMからtargetを評価し、発見済みPCへdispatchします。
