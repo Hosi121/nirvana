@@ -119,6 +119,10 @@ impl Encoder {
             return Err(UnknownReason::ResourceLimit);
         }
         let term = match expression {
+            Expr::Unary(op, value) => {
+                let value = self.expression(value, depth + 1)?;
+                unary_term(op, &value)
+            }
             Expr::Const(value) => return Ok(format!("#x{value:016x}")),
             Expr::Register(Reg(index)) => {
                 if *index >= 4096 {
@@ -148,6 +152,19 @@ impl Encoder {
         self.definitions
             .push(format!("(define-fun {name} () (_ BitVec 64) {term})\n"));
         Ok(name)
+    }
+}
+
+pub(crate) fn unary_term(op: &crate::model::ir::UnaryOp, value: &str) -> String {
+    let crate::model::ir::UnaryOp::SignExtend(width) = op;
+    if *width == crate::model::ir::Width::U64 {
+        value.to_owned()
+    } else {
+        format!(
+            "((_ sign_extend {}) ((_ extract {} 0) {value}))",
+            64 - width.bits(),
+            width.bits() - 1
+        )
     }
 }
 

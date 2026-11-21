@@ -112,6 +112,7 @@ fn dependencies(expression: &Expr) -> BTreeSet<usize> {
             Expr::Register(reg) => {
                 result.insert(reg.0);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, z) => pending.extend([&**a, &**z]),
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {
@@ -471,6 +472,7 @@ fn actual_signed_fixtures_keep_native_ir_results_and_only_explicit_raw_candidate
                     return;
                 }
                 match expression {
+                    Expr::Unary(_, value) => visit(value, counts),
                     Expr::Binary(_, a, z) => {
                         visit(a, counts);
                         visit(z, counts);

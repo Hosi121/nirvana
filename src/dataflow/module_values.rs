@@ -279,6 +279,7 @@ impl Projection<'_> {
                 return Err("module value expression limit".into());
             }
             match e {
+                Expr::Unary(_, value) => pending.push((value, depth + 1)),
                 Expr::Register(reg) if reg.0 >= self.guest_registers => {
                     return Err("invalid module value register".into());
                 }

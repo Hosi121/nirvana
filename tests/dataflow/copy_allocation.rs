@@ -55,6 +55,7 @@ fn inputs(count: usize, prefix: &[u64]) -> Vec<u64> {
 fn rewrite(expression: &Expr, register: &impl Fn(Reg) -> Reg) -> Expr {
     match expression {
         Expr::Const(_) => expression.clone(),
+        Expr::Unary(op, value) => Expr::unary(*op, rewrite(value, register)),
         Expr::Register(reg) => Expr::Register(register(*reg)),
         Expr::Binary(op, x, y) => b(*op, rewrite(x, register), rewrite(y, register)),
         Expr::Load { address, width } => Expr::load(rewrite(address, register), *width),

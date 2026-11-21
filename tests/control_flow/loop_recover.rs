@@ -109,6 +109,9 @@ enum Flow {
 }
 fn expression(value: &Expr, registers: &[u64]) -> u64 {
     match value {
+        Expr::Unary(op, value) => {
+            crate::support::ir::unary_value(*op, expression(value, registers))
+        }
         Expr::Const(value) => *value,
         Expr::Register(reg) => registers[reg.0],
         Expr::Select {

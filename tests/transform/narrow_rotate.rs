@@ -133,6 +133,7 @@ fn whole_u64_values_match_independent_narrow_rust_rotates_without_width_assumpti
 fn exact_raw_values_are_borrowed_and_pure_dependencies_are_retained() {
     fn registers(e: &Expr, into: &mut BTreeSet<usize>) {
         match e {
+            Expr::Unary(_, value) => registers(value, into),
             Expr::Register(r) => {
                 into.insert(r.0);
             }

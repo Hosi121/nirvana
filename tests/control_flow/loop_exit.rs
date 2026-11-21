@@ -184,6 +184,9 @@ impl Machine {
         self.tick()?;
         Ok(match value {
             Expr::Const(value) => *value,
+            Expr::Unary(op, value) => {
+                crate::support::ir::unary_value(*op, self.expression(value, point)?)
+            }
             Expr::Register(reg) => self.registers[reg.0],
             Expr::Binary(op, a, z) => {
                 let a = self.expression(a, point)?;

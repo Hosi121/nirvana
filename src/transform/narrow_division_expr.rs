@@ -178,6 +178,7 @@ fn bounded_pure(expression: &Expr) -> Option<()> {
         match expression {
             Expr::Const(_) | Expr::Register(_) => {}
             Expr::Load { .. } => return None,
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Select {
                 condition,

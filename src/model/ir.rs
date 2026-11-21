@@ -56,12 +56,30 @@ impl BinaryOp {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Width {
     U8,
     U16,
     U32,
     U64,
+}
+
+/// Total operations on a single 64-bit bit pattern. Width is part of the
+/// operation, independent of any source-language type assigned to its input.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum UnaryOp {
+    SignExtend(Width),
+}
+
+impl UnaryOp {
+    pub fn evaluate(self, value: u64) -> u64 {
+        match self {
+            Self::SignExtend(width) => {
+                let sign = 1u64 << (width.bits() - 1);
+                ((value & width.mask()) ^ sign).wrapping_sub(sign)
+            }
+        }
+    }
 }
 
 impl Width {
@@ -85,6 +103,7 @@ impl Width {
 pub enum Expr {
     Const(u64),
     Register(Reg),
+    Unary(UnaryOp, Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Load {
         address: Box<Expr>,
@@ -98,6 +117,9 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn unary(op: UnaryOp, value: Self) -> Self {
+        Self::Unary(op, Box::new(value))
+    }
     pub fn binary(op: BinaryOp, left: Self, right: Self) -> Self {
         Self::Binary(op, Box::new(left), Box::new(right))
     }
@@ -120,6 +142,7 @@ impl Expr {
         Ok(match self {
             Self::Const(value) => *value,
             Self::Register(Reg(index)) => machine.registers[*index],
+            Self::Unary(op, value) => op.evaluate(value.evaluate(machine)?),
             Self::Load { address, width } => machine.load(address.evaluate(machine)?, *width)?,
             Self::Select {
                 condition,
@@ -144,6 +167,7 @@ impl Expr {
         match self {
             Self::Const(_) => None,
             Self::Register(reg) => (reg.0 >= count).then_some(*reg),
+            Self::Unary(_, value) => value.invalid_register(count),
             Self::Binary(_, left, right) => left
                 .invalid_register(count)
                 .or_else(|| right.invalid_register(count)),
@@ -162,6 +186,7 @@ impl Expr {
     pub(crate) fn uses_memory(&self) -> bool {
         match self {
             Self::Load { .. } => true,
+            Self::Unary(_, value) => value.uses_memory(),
             Self::Binary(_, left, right) => left.uses_memory() || right.uses_memory(),
             Self::Select {
                 condition,
@@ -174,6 +199,7 @@ impl Expr {
 
     pub(crate) fn uses_operator(&self, operator: BinaryOp) -> bool {
         match self {
+            Self::Unary(_, value) => value.uses_operator(operator),
             Self::Binary(op, left, right) => {
                 *op == operator || left.uses_operator(operator) || right.uses_operator(operator)
             }
@@ -186,6 +212,26 @@ impl Expr {
                 condition.uses_operator(operator)
                     || taken.uses_operator(operator)
                     || not_taken.uses_operator(operator)
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn uses_unary_operator(&self, operator: UnaryOp) -> bool {
+        match self {
+            Self::Unary(op, value) => *op == operator || value.uses_unary_operator(operator),
+            Self::Binary(_, a, b) => {
+                a.uses_unary_operator(operator) || b.uses_unary_operator(operator)
+            }
+            Self::Load { address, .. } => address.uses_unary_operator(operator),
+            Self::Select {
+                condition,
+                taken,
+                not_taken,
+            } => {
+                condition.uses_unary_operator(operator)
+                    || taken.uses_unary_operator(operator)
+                    || not_taken.uses_unary_operator(operator)
             }
             _ => false,
         }
@@ -714,6 +760,19 @@ impl Program {
             }) || match &instruction.control {
                 Control::Branch { condition, .. } => condition.uses_operator(operator),
                 Control::Return(value) => value.uses_operator(operator),
+                _ => false,
+            }
+        })
+    }
+
+    pub fn uses_unary_operator(&self, operator: UnaryOp) -> bool {
+        self.instructions.iter().any(|instruction| {
+            instruction.assignments.iter().any(|assignment| {
+                assignment.value.uses_unary_operator(operator)
+                    || matches!(&assignment.destination, Place::Memory { address, .. } if address.uses_unary_operator(operator))
+            }) || match &instruction.control {
+                Control::Branch { condition, .. } => condition.uses_unary_operator(operator),
+                Control::Return(value) => value.uses_unary_operator(operator),
                 _ => false,
             }
         })

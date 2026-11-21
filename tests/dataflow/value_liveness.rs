@@ -333,6 +333,7 @@ fn oracle(source: &Program, graph: &SsaFunction, result: &Liveness) {
 
 fn read_registers(expr: &Expr, reads: &mut Vec<usize>) {
     match expr {
+        Expr::Unary(_, value) => read_registers(value, reads),
         Expr::Const(_) => (),
         Expr::Register(Reg(r)) => reads.push(*r),
         Expr::Binary(_, a, b) => {

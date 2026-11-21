@@ -269,6 +269,7 @@ impl Work {
             }
             match e {
                 Expr::Load { .. } => return None,
+                Expr::Unary(_, value) => pending.push((value, depth + 1)),
                 Expr::Binary(_, a, b) => {
                     pending.extend([(a.as_ref(), depth + 1), (b.as_ref(), depth + 1)])
                 }
@@ -293,6 +294,7 @@ impl Work {
             match (a, b) {
                 (Expr::Const(a), Expr::Const(b)) if a == b => {}
                 (Expr::Register(a), Expr::Register(b)) if a == b => {}
+                (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => pending.push((x, y)),
                 (Expr::Binary(a, al, ar), Expr::Binary(b, bl, br)) if a == b => {
                     pending.extend([(al.as_ref(), bl.as_ref()), (ar.as_ref(), br.as_ref())])
                 }

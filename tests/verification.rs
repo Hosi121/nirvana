@@ -14,5 +14,7 @@ mod exhaustive;
 mod integer_ops;
 #[path = "verification/recovery_verification.rs"]
 mod recovery_verification;
+#[path = "verification/unary_ops.rs"]
+mod unary_ops;
 #[path = "verification/verification.rs"]
 mod verification;

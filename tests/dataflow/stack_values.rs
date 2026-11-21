@@ -202,6 +202,9 @@ impl Concrete<'_> {
     fn eval(&mut self, expression: &Expr, pc: u64, assignment: usize) -> Result<u64, MemoryFault> {
         Ok(match expression {
             Expr::Const(value) => *value,
+            Expr::Unary(op, value) => {
+                crate::support::ir::unary_value(*op, self.eval(value, pc, assignment)?)
+            }
             Expr::Register(reg) => self.registers[reg.0],
             Expr::Load { address, width } => {
                 let address = self.eval(address, pc, assignment)?;

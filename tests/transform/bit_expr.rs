@@ -327,6 +327,7 @@ fn actual_four_fixture_presentations_contain_pure_matchable_operands() {
                     return;
                 }
                 match value {
+                    Expr::Unary(_, value) => visit(value, counts),
                     Expr::Binary(_, a, z) => {
                         visit(a, counts);
                         visit(z, counts);

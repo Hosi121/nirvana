@@ -125,6 +125,7 @@ fn bounded(source: &Program) -> bool {
         }
         remaining -= 1;
         match e {
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             Expr::Select {

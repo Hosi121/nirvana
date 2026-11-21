@@ -118,6 +118,7 @@ fn bounded(program: &Program, parameters: &[Reg], work: &mut Work) -> Result<usi
                 }
                 match expression {
                     Expr::Const(_) | Expr::Register(_) => {}
+                    Expr::Unary(_, value) => pending.push((value, depth + 1)),
                     Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
                     Expr::Load { address, .. } => pending.push((address, depth + 1)),
                     Expr::Select {
@@ -171,6 +172,7 @@ fn proposed_reads(
                 value.reads = value.reads.saturating_add(1).min(2);
                 value.assignment_read = point;
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {
@@ -210,6 +212,7 @@ fn wrappable_load(expression: &Expr, work: &mut Work) -> Result<bool, LoadMaskEr
         }
         match expression {
             Expr::Select { .. } => return Ok(false),
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             _ => {}
@@ -326,6 +329,7 @@ fn same(a: &Expr, b: &Expr, work: &mut Work) -> Result<bool, LoadMaskError> {
         match (a, b) {
             (Expr::Const(a), Expr::Const(b)) if a == b => {}
             (Expr::Register(a), Expr::Register(b)) if a == b => {}
+            (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => pending.push((x, y)),
             (Expr::Binary(a, al, ar), Expr::Binary(b, bl, br)) if a == b => {
                 pending.extend([(&**al, &**bl), (&**ar, &**br)])
             }
@@ -538,6 +542,7 @@ pub fn validate(
                         *reads = reads.saturating_add(1).min(2);
                     }
                 }
+                Expr::Unary(_, value) => pending.push(value),
                 Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
                 Expr::Load { address, .. } => pending.push(address),
                 Expr::Select {

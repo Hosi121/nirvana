@@ -99,6 +99,10 @@ impl Project<'_, '_> {
     fn expression(&mut self, expr: &Expr, depth: usize) -> Option<(Expr, bool)> {
         self.spend(depth)?;
         Some(match expr {
+            Expr::Unary(op, value) => {
+                let (value, load) = self.expression(value, depth + 1)?;
+                (Expr::unary(*op, value), load)
+            }
             Expr::Const(value) => (Expr::Const(*value), false),
             Expr::Register(reg) => (Expr::Register(self.reg(*reg)), false),
             Expr::Binary(op, a, b) => {

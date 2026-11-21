@@ -101,6 +101,7 @@ impl Oracle {
     fn expr(&mut self, expr: &Expr) -> Result<u64, MemoryFault> {
         Ok(match expr {
             Expr::Const(value) => *value,
+            Expr::Unary(op, value) => crate::support::ir::unary_value(*op, self.expr(value)?),
             Expr::Register(reg) => self.registers[reg.0],
             Expr::Load { address, width } => {
                 let address = self.expr(address)?;

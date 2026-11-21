@@ -51,6 +51,7 @@ fn prefix(base: u64, memory_len: usize) -> Vec<Assignment> {
 
 fn has_load(expression: &Expr) -> bool {
     match expression {
+        Expr::Unary(_, value) => has_load(value),
         Expr::Load { .. } => true,
         Expr::Const(_) | Expr::Register(_) => false,
         Expr::Binary(_, left, right) => has_load(left) || has_load(right),

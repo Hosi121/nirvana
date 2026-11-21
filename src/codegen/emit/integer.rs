@@ -1,5 +1,37 @@
 //! Portable C11 implementations of total 64-bit bit-vector operations.
-use crate::model::ir::{BinaryOp, Program};
+use crate::model::ir::{BinaryOp, Program, UnaryOp, Width};
+
+const EXTEND_HELPERS: [(Width, &str, &str); 4] = [
+    (
+        Width::U8,
+        "nirvana_sext8",
+        "\nstatic inline uint64_t nirvana_sext8(uint64_t value) { return ((value & UINT64_C(255)) ^ UINT64_C(128)) - UINT64_C(128); }\n",
+    ),
+    (
+        Width::U16,
+        "nirvana_sext16",
+        "\nstatic inline uint64_t nirvana_sext16(uint64_t value) { return ((value & UINT64_C(65535)) ^ UINT64_C(32768)) - UINT64_C(32768); }\n",
+    ),
+    (
+        Width::U32,
+        "nirvana_sext32",
+        "\nstatic inline uint64_t nirvana_sext32(uint64_t value) { return ((value & UINT64_C(4294967295)) ^ UINT64_C(2147483648)) - UINT64_C(2147483648); }\n",
+    ),
+    (
+        Width::U64,
+        "nirvana_sext64",
+        "\nstatic inline uint64_t nirvana_sext64(uint64_t value) { return value; }\n",
+    ),
+];
+
+pub(crate) fn unary_helper_name(op: UnaryOp) -> &'static str {
+    let UnaryOp::SignExtend(width) = op;
+    EXTEND_HELPERS
+        .iter()
+        .find(|(w, _, _)| *w == width)
+        .unwrap()
+        .1
+}
 
 pub(crate) const MULTIPLY_HELPER: &str = r#"
 static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {
@@ -52,14 +84,28 @@ fn definitions(used: impl Fn(BinaryOp) -> bool) -> String {
 
 pub(crate) fn append_helpers(program: &Program, code: &mut String) {
     code.push_str(&definitions(|op| program.uses_operator(op)));
+    for (width, _, definition) in EXTEND_HELPERS {
+        if program.uses_unary_operator(UnaryOp::SignExtend(width)) {
+            code.push_str(definition);
+        }
+    }
 }
 
 /// Module effects can carry expressions outside their scalar shape metadata.
 pub(crate) fn append_module_helpers(code: &mut String) {
     code.push_str(&definitions(|_| true));
+    for (_, _, definition) in EXTEND_HELPERS {
+        code.push_str(definition);
+    }
 }
 
 /// Readable expression selection can eliminate an operation's last use.
 pub(crate) fn selected_helpers(code: &str) -> String {
-    definitions(|op| code.contains(&format!("{}(", helper_name(op).unwrap())))
+    let mut out = definitions(|op| code.contains(&format!("{}(", helper_name(op).unwrap())));
+    for (_, name, definition) in EXTEND_HELPERS {
+        if code.contains(&format!("{name}(")) {
+            out.push_str(definition);
+        }
+    }
+    out
 }

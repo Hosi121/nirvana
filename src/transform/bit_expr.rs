@@ -123,6 +123,7 @@ impl Matcher {
             match expression {
                 Expr::Const(_) | Expr::Register(_) => {}
                 Expr::Load { .. } => return None,
+                Expr::Unary(_, value) => pending.push((value, depth + 1)),
                 Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
                 Expr::Select {
                     condition,
@@ -144,6 +145,7 @@ impl Matcher {
             match (a, b) {
                 (Expr::Const(a), Expr::Const(b)) if a == b => {}
                 (Expr::Register(a), Expr::Register(b)) if a == b => {}
+                (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => pending.push((x, y)),
                 (Expr::Binary(a, al, ar), Expr::Binary(b, bl, br)) if a == b => {
                     pending.extend([(&**al, &**bl), (&**ar, &**br)])
                 }

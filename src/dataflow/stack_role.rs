@@ -335,6 +335,7 @@ impl Projection<'_> {
     fn expression(&self, value: &Expr, site: Option<Site>, budget: &mut Budget) -> Option<Expr> {
         budget.take(1)?;
         Some(match value {
+            Expr::Unary(op, value) => Expr::unary(*op, self.expression(value, site, budget)?),
             Expr::Register(reg) => Expr::Register(self.reg(*reg)),
             Expr::Const(_) => value.clone(),
             Expr::Load { .. } => {
@@ -436,6 +437,7 @@ fn validate_expr(value: &Expr, count: usize, depth: usize, budget: &mut Budget) 
     budget.take(1)?;
     match value {
         Expr::Register(reg) if reg.0 >= count => return None,
+        Expr::Unary(_, value) => validate_expr(value, count, depth + 1, budget)?,
         Expr::Binary(_, a, b) => {
             validate_expr(a, count, depth + 1, budget)?;
             validate_expr(b, count, depth + 1, budget)?;

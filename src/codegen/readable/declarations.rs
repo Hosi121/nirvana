@@ -188,6 +188,9 @@ fn unique_sites(nodes: &[Node], budget: &mut Budget) -> Option<BTreeMap<Point, b
                 }
                 match expression {
                     Expr::Const(_) | Expr::Register(_) => {}
+                    Expr::Unary(_, value) => {
+                        push(&mut pending, budget, Item::Expression(value, depth + 1))?
+                    }
                     Expr::Load { address, .. } => {
                         push(&mut pending, budget, Item::Expression(address, depth + 1))?
                     }
@@ -227,6 +230,7 @@ fn reads<'a>(
         budget.work()?;
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Register(reg) => {
                 if let Some(name) = names.get(&reg.0) {
                     seen.insert(name.as_str());

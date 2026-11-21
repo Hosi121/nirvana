@@ -180,6 +180,7 @@ fn scan(expr: &Expr, regs: usize, nodes: &mut usize, budget: &mut Budget) -> Res
         match e {
             Expr::Register(r) if r.0 >= regs => return Err(SsaError::Malformed("read register")),
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**b, depth + 1), (&**a, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             Expr::Select {

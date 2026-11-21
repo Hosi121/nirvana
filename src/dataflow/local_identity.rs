@@ -127,6 +127,7 @@ fn expression(expression: &Expr, work: &mut usize) -> Option<()> {
         }
         match expr {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => {
                 pending.push((b, depth + 1));
                 pending.push((a, depth + 1));
@@ -178,6 +179,7 @@ fn connect(
 ) -> Option<()> {
     spend(work)?;
     match expr {
+        Expr::Unary(_, value) => connect(value, color, destination, indices, groups, work)?,
         Expr::Register(reg) => {
             if let Some(&(source_color, source)) = indices.get(&reg.0)
                 && source_color == color

@@ -116,7 +116,10 @@ impl CellBindings {
                         copies[source].push(index);
                     }
                 }
-                Expr::Const(_) | Expr::Binary(_, _, _) | Expr::Select { .. } => {}
+                Expr::Const(_)
+                | Expr::Unary(_, _)
+                | Expr::Binary(_, _, _)
+                | Expr::Select { .. } => {}
             }
         }
         // Each copy has one predecessor. Only seeded forward paths are
@@ -225,6 +228,7 @@ fn validate_expression(
         }
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Register(reg) => {
                 if reg.0 >= program.register_count() {
                     return None;
@@ -260,6 +264,7 @@ fn pure_address(root: &Expr, work: &mut Work) -> Option<bool> {
         nodes = nodes.checked_add(1)?;
         match expression {
             Expr::Load { .. } => return Some(false),
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, left, right) => pending.extend([right.as_ref(), left.as_ref()]),
             Expr::Select {
                 condition,

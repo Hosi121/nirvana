@@ -185,6 +185,7 @@ fn post_test_expression_bounds(
             return None;
         }
         match value {
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             Expr::Select {
@@ -272,6 +273,7 @@ fn header_expression(expression: &Expr) -> bool {
         }
         match expression {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, left, right) => {
                 pending.push((right, depth + 1));
                 pending.push((left, depth + 1));

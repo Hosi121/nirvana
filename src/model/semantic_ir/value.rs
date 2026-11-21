@@ -32,6 +32,9 @@ pub(super) fn snapshot(
         }
         Some(match block.node(id)? {
             ValueNode::Constant(n) => Expr::Const(n),
+            ValueNode::Unary(op, value) => {
+                Expr::unary(op, build(block, value, regs, depth + 1, work)?)
+            }
             ValueNode::Binary(op, a, b) => Expr::binary(
                 op,
                 build(block, a, regs, depth + 1, work)?,
@@ -87,6 +90,9 @@ pub(super) fn rewrite(
     Some(match e {
         Expr::Const(n) => Expr::Const(*n),
         Expr::Register(reg) => Expr::Register(*reg),
+        Expr::Unary(op, value) => {
+            Expr::unary(*op, rewrite(value, block, point, plan, work, replaced)?)
+        }
         Expr::Binary(op, a, b) => Expr::binary(
             *op,
             rewrite(a, block, point, plan, work, replaced)?,
@@ -136,6 +142,9 @@ pub(super) fn verify(
     match (source, target) {
         (Expr::Const(a), Expr::Const(b)) if a == b => {}
         (Expr::Register(a), Expr::Register(b)) if a == b => {}
+        (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => {
+            verify(x, y, block, point, plan, work, replaced)?
+        }
         (Expr::Binary(a, al, ar), Expr::Binary(b, bl, br)) if a == b => {
             verify(al, bl, block, point, plan, work, replaced)?;
             verify(ar, br, block, point, plan, work, replaced)?;

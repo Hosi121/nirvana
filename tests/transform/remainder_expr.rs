@@ -64,6 +64,7 @@ fn rem(
 }
 fn eval(e: &Expr, rs: &[u64]) -> u64 {
     match e {
+        Expr::Unary(op, value) => crate::support::ir::unary_value(*op, eval(value, rs)),
         Expr::Const(x) => *x,
         Expr::Register(r) => rs[r.0],
         Expr::Select {
@@ -109,6 +110,7 @@ fn deps(e: &Expr) -> BTreeSet<usize> {
             Expr::Register(r) => {
                 out.insert(r.0);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {
@@ -595,6 +597,7 @@ fn actual_o2_fixture_exposes_one_u32_remainder_and_no_materialized_u64_remainder
             return;
         }
         match e {
+            Expr::Unary(_, value) => visit(value, count),
             Expr::Binary(_, a, b) => {
                 visit(a, count);
                 visit(b, count)

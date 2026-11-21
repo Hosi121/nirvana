@@ -105,6 +105,7 @@ impl Replay<'_> {
     ) -> Result<(), ()> {
         match expr {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => self.child(site, operand, value, path, PathEdge::Unary)?,
             Expr::Binary(_, left, right) => {
                 self.child(site, operand, left, path, PathEdge::Left)?;
                 self.child(site, operand, right, path, PathEdge::Right)?;

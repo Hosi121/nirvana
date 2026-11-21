@@ -191,6 +191,7 @@ fn identities_and_coefficient_combining_do_not_assume_no_overflow() {
 
 fn loads(expression: &Expr, output: &mut Vec<(Expr, Width)>) {
     match expression {
+        Expr::Unary(_, value) => loads(value, output),
         Expr::Load { address, width } => {
             loads(address, output);
             output.push(((**address).clone(), *width));
@@ -329,9 +330,36 @@ fn generated(seed: &mut u64, depth: usize) -> Expr {
     }
 }
 
+fn with_extensions(expression: &Expr, seed: &mut u64) -> Expr {
+    let expression = match expression {
+        Expr::Unary(op, value) => Expr::unary(*op, with_extensions(value, seed)),
+        Expr::Binary(op, a, b) => {
+            Expr::binary(*op, with_extensions(a, seed), with_extensions(b, seed))
+        }
+        Expr::Load { address, width } => Expr::load(with_extensions(address, seed), *width),
+        Expr::Select {
+            condition,
+            taken,
+            not_taken,
+        } => Expr::select(
+            with_extensions(condition, seed),
+            with_extensions(taken, seed),
+            with_extensions(not_taken, seed),
+        ),
+        value => value.clone(),
+    };
+    if next(seed) & 3 == 0 {
+        let width = [Width::U8, Width::U16, Width::U32, Width::U64][(next(seed) & 3) as usize];
+        Expr::unary(nirvana::ir::UnaryOp::SignExtend(width), expression)
+    } else {
+        expression
+    }
+}
+
 #[test]
 fn seeded_expression_trees_match_the_original_ir_interpreter() {
     let mut seed = 0x792c_48a9_1234_cdef;
+    let mut extension_seed = 0x9f71_b382_65ca_4de0;
     let inputs = boundary_inputs();
     let mut before = 0;
     let mut after = 0;
@@ -340,9 +368,10 @@ fn seeded_expression_trees_match_the_original_ir_interpreter() {
         before += node_count(&expression);
         after += node_count(&simplify(&expression));
         check(&expression, &inputs);
+        check(&with_extensions(&expression, &mut extension_seed), &inputs);
     }
     assert!(after < before);
     println!(
-        "1024 seeded expression trees: {before} -> {after} nodes; 23 boundary register vectors, three memory layouts, two instruction limits"
+        "1024 original seeded trees plus 1024 trees with nested extensions: original nodes {before} -> {after}; 23 boundary register vectors, three memory layouts, two instruction limits"
     );
 }

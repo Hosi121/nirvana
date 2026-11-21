@@ -424,6 +424,7 @@ fn scan(nodes: &[Node], pure: bool, bounds: &mut Bounds, work: &mut Work) -> Res
                         bounds.registers.insert(reg.0);
                     }
                     Expr::Const(_) => {}
+                    Expr::Unary(_, value) => pending.push((value, depth + 1)),
                     Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
                     Expr::Select {
                         condition,
@@ -477,6 +478,19 @@ impl Machine<'_> {
         self.tick()?;
         match value {
             Expr::Const(value) => Ok(Value::constant(*value)),
+            Expr::Unary(op, value) => {
+                let value = self.expression(value)?;
+                if matches!(
+                    op,
+                    crate::model::ir::UnaryOp::SignExtend(crate::model::ir::Width::U64)
+                ) {
+                    Ok(value)
+                } else if value.a == 0 {
+                    Ok(Value::constant(op.evaluate(value.b)))
+                } else {
+                    Err(unsupported("symbolic sign extension is not affine"))
+                }
+            }
             Expr::Register(reg) => self
                 .values
                 .get(&reg.0)

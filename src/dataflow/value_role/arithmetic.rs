@@ -47,6 +47,7 @@ impl<F: Fn(Reg) -> Option<usize>> Scan<'_, F> {
                     }
                 }
                 Expr::Const(_) => {}
+                Expr::Unary(_, value) => pending.push(value),
                 Expr::Binary(_, a, b) => pending.extend([&**b, &**a]),
                 Expr::Load { address, .. } => pending.push(address),
                 Expr::Select {

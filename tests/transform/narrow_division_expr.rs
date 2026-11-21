@@ -161,6 +161,7 @@ fn dependencies(e: &Expr) -> BTreeSet<usize> {
             Expr::Register(Reg(i)) => {
                 set.insert(*i);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
             Expr::Select {
                 condition,
@@ -484,6 +485,7 @@ fn actual_candidates(opt: &str) -> Vec<Expr> {
             return;
         }
         match e {
+            Expr::Unary(_, value) => visit(value, found),
             Expr::Binary(_, a, b) => {
                 visit(a, found);
                 visit(b, found)

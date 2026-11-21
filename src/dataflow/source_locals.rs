@@ -335,6 +335,7 @@ fn expression_rollback(
         )?));
     }
     match expression {
+        Expr::Unary(_, value) => expression_rollback(value, initial, candidate, known, work),
         Expr::Binary(_, a, b) => {
             if let Some(lineage) = expression_rollback(a, initial, candidate, known, work)? {
                 return Some(Some(lineage));
@@ -376,6 +377,9 @@ fn same_pure_expression(
     Some(match (a, b) {
         (Expr::Const(a), Expr::Const(b)) => a == b,
         (Expr::Register(a), Expr::Register(b)) => same_storage(*a, *b, colors),
+        (Expr::Unary(a, x), Expr::Unary(b, y)) => {
+            a == b && same_pure_expression(x, y, colors, work)?
+        }
         (Expr::Binary(op_a, a, b), Expr::Binary(op_b, x, y)) => {
             op_a == op_b
                 && same_pure_expression(a, x, colors, work)?
@@ -413,6 +417,9 @@ fn collapsed_lineage(
 ) -> Option<usize> {
     work.spend(1)?;
     match (a, b) {
+        (Expr::Unary(_, a), Expr::Unary(_, b)) => {
+            collapsed_lineage(a, b, initial, candidate, known, work)
+        }
         (Expr::Register(a), Expr::Register(b))
             if same_storage(*a, *b, candidate) && !same_storage(*a, *b, initial) =>
         {

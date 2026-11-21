@@ -84,6 +84,7 @@ impl Budget {
                 Expr::Register(r) if r.0 >= RAW => {
                     return Err("invalid module local source register".into());
                 }
+                Expr::Unary(_, value) => pending.push((value, depth + 1)),
                 Expr::Binary(_, a, b) => pending.extend([(&**b, depth + 1), (&**a, depth + 1)]),
                 Expr::Load { address, .. } => pending.push((address, depth + 1)),
                 Expr::Select {
@@ -743,6 +744,7 @@ fn dense_names(locals: &mut Locals, budget: &mut Budget) -> Result<(), String> {
                 budget.spend(1)?;
                 match expression {
                     Expr::Register(r) => rename(r)?,
+                    Expr::Unary(_, value) => pending.push(value),
                     Expr::Binary(_, a, b) => pending.extend([&mut **a, &mut **b]),
                     Expr::Load { address, .. } => pending.push(address),
                     Expr::Select {
@@ -816,6 +818,7 @@ impl Reads<'_> {
         self.budget.spend(1)?;
         Ok(match e {
             Expr::Const(v) => Expr::Const(*v),
+            Expr::Unary(op, value) => Expr::unary(*op, self.expression(value)?),
             Expr::Register(register) => {
                 let read = self
                     .point
@@ -911,6 +914,7 @@ fn validate_observation(
             budget.spend(1)?;
             match e {
                 Expr::Register(r) => expected.push(*r),
+                Expr::Unary(_, value) => pending.push(value),
                 Expr::Binary(_, a, b) => pending.extend([&**b, &**a]),
                 Expr::Load { address, .. } => pending.push(address),
                 Expr::Select {
@@ -1040,6 +1044,7 @@ fn collect_used(
             Expr::Register(r) if r.0 >= RAW => {
                 used.insert(r.0 - RAW);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**b, &**a]),
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {

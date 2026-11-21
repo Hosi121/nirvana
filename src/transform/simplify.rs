@@ -8,6 +8,7 @@ use crate::model::ir::{BinaryOp as B, Expr};
 pub fn node_count(expression: &Expr) -> usize {
     match expression {
         Expr::Const(_) | Expr::Register(_) => 1,
+        Expr::Unary(_, value) => 1usize.saturating_add(node_count(value)),
         Expr::Load { address, .. } => 1usize.saturating_add(node_count(address)),
         Expr::Binary(_, left, right) => 1usize
             .saturating_add(node_count(left))
@@ -28,6 +29,7 @@ pub fn node_count(expression: &Expr) -> usize {
 pub fn simplify(expression: &Expr) -> Expr {
     let mut result = match expression {
         Expr::Const(_) | Expr::Register(_) => expression.clone(),
+        Expr::Unary(op, value) => Expr::unary(*op, simplify(value)),
         Expr::Load { address, width } => Expr::load(simplify(address), *width),
         Expr::Binary(op, left, right) => Expr::binary(*op, simplify(left), simplify(right)),
         Expr::Select {
@@ -57,6 +59,7 @@ pub fn simplify(expression: &Expr) -> Expr {
 fn pure(expression: &Expr) -> bool {
     match expression {
         Expr::Const(_) | Expr::Register(_) => true,
+        Expr::Unary(_, value) => pure(value),
         Expr::Load { .. } => false,
         Expr::Binary(_, left, right) => pure(left) && pure(right),
         Expr::Select {
@@ -116,6 +119,22 @@ fn invert(expression: &Expr) -> Option<Expr> {
 
 fn rewrite(expression: &Expr) -> Option<Expr> {
     match expression {
+        Expr::Unary(op, value) => {
+            if let Expr::Const(n) = **value {
+                return Some(Expr::Const(op.evaluate(n)));
+            }
+            let crate::model::ir::UnaryOp::SignExtend(width) = *op;
+            if width == crate::model::ir::Width::U64 {
+                return Some((**value).clone());
+            }
+            if let Expr::Unary(crate::model::ir::UnaryOp::SignExtend(inner), value) = &**value {
+                return Some(Expr::unary(
+                    crate::model::ir::UnaryOp::SignExtend(width.min(*inner)),
+                    (**value).clone(),
+                ));
+            }
+            None
+        }
         Expr::Binary(op, left, right) => rewrite_binary(*op, left, right),
         Expr::Select {
             condition,

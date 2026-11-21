@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 
 use crate::control_flow::cfg::Target;
 use crate::model::ir::{BlockExit, BlockReport, Control, Expr, Place, Program, Reg, Width};
-use crate::verification::verify::{Solver, UnknownReason, binary_term, parse_named_values};
+use crate::verification::verify::{
+    Solver, UnknownReason, binary_term, parse_named_values, unary_term,
+};
 
 pub const MODEL_ID: &str = "checked-memory-block-v1";
 const ARRAY: &str = "(Array (_ BitVec 64) (_ BitVec 8))";
@@ -155,6 +157,10 @@ impl Builder {
         }
         Ok(match expression {
             Expr::Const(value) => word(*value),
+            Expr::Unary(op, value) => {
+                let value = self.expression(value, state, guard, depth + 1)?;
+                self.value(unary_term(op, &value))
+            }
             Expr::Register(Reg(index)) => state.registers[*index].clone(),
             Expr::Binary(op, left, right) => {
                 let left = self.expression(left, state, guard, depth + 1)?;
@@ -463,6 +469,7 @@ impl Validation {
 fn dependencies(expression: &Expr, registers: &mut Registers) -> bool {
     match expression {
         Expr::Const(_) => false,
+        Expr::Unary(_, value) => dependencies(value, registers),
         Expr::Register(Reg(index)) => {
             registers.insert(*index);
             false

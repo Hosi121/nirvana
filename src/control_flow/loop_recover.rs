@@ -394,6 +394,7 @@ fn inspect_expression(value: &Expr, depth: usize, budget: &mut Budget) -> Option
         Some(())
     };
     match value {
+        Expr::Unary(_, value) => child(value, depth + 1)?,
         Expr::Binary(_, a, b) => {
             child(a, depth + 1)?;
             child(b, depth + 1)?;

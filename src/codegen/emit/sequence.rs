@@ -210,6 +210,11 @@ impl Expressions {
         match expr {
             Expr::Const(value) => format!("UINT64_C({value})"),
             Expr::Register(reg) => self.register(*reg),
+            Expr::Unary(op, value) => format!(
+                "{}({})",
+                super::integer::unary_helper_name(*op),
+                self.expression(value)
+            ),
             Expr::Load { address, width } => format!(
                 "nirvana_load(&m, {}, {})",
                 self.expression(address),
@@ -265,6 +270,7 @@ fn needs_sequence(root: &Expr) -> bool {
     while let Some(expr) = pending.pop() {
         match expr {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, left, right) => {
                 pending.push(right);
                 pending.push(left);

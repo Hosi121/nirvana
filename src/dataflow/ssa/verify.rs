@@ -141,6 +141,7 @@ fn check_reads(
                 }
                 *cursor += 1;
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, left, right) => pending.extend([&**right, &**left]),
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {

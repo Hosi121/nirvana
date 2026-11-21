@@ -167,6 +167,7 @@ enum Symbol {
     Constant(u64),
     Register(usize),
     Binary(u8, usize, usize),
+    Unary(crate::model::ir::UnaryOp, usize),
     Load(usize, usize),
     Select(usize, usize, usize),
 }
@@ -271,6 +272,10 @@ impl MemoryRecurrence {
         self.spend()?;
         match expression {
             Expr::Const(value) => self.intern(Symbol::Constant(*value)),
+            Expr::Unary(op, value) => {
+                let value = self.expression(value, registers)?;
+                self.intern(Symbol::Unary(*op, value))
+            }
             Expr::Register(reg) => match registers.get(&reg.0) {
                 Some(&value) => Some(value),
                 None => self.intern(Symbol::Register(reg.0)),
@@ -397,6 +402,7 @@ fn registers(expression: &Expr) -> BTreeSet<usize> {
 
 fn children<'a>(expression: &'a Expr, pending: &mut Vec<&'a Expr>) {
     match expression {
+        Expr::Unary(_, value) => pending.push(value),
         Expr::Binary(_, left, right) => pending.extend([&**right, &**left]),
         Expr::Load { address, .. } => pending.push(address),
         Expr::Select {

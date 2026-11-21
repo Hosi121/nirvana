@@ -36,6 +36,10 @@ fn program(count: usize, instructions: Vec<IrInstruction>) -> Program {
 
 fn expression_shape(a: &Expr, z: &Expr) {
     match (a, z) {
+        (Expr::Unary(a, x), Expr::Unary(b, y)) => {
+            assert_eq!(a, b);
+            expression_shape(x, y);
+        }
         (Expr::Register(_), Expr::Register(_)) => {}
         (Expr::Const(a), Expr::Const(z)) => assert_eq!(a, z),
         (Expr::Binary(a, al, ar), Expr::Binary(z, zl, zr)) => {

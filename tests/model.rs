@@ -34,3 +34,5 @@ mod run_reports;
 mod semantic_ir;
 #[path = "model/sparse_memory.rs"]
 mod sparse_memory;
+#[path = "model/unary_ops.rs"]
+mod unary_ops;

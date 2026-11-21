@@ -183,6 +183,7 @@ fn inspect(expression: &Expr, program: &Program, budget: &mut Budget) -> Option<
         }
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => stack.push((value, depth + 1)),
             Expr::Register(register) => {
                 if register.0 >= program.register_count() {
                     return None;
@@ -425,6 +426,7 @@ fn proof_reads(
         budget.work()?;
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Register(register) => live.insert(register.0),
             Expr::Binary(_, left, right) => {
                 pending.push(left);

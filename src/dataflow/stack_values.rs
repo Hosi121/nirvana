@@ -338,6 +338,7 @@ fn validate_expression(
         }
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Register(reg) => {
                 if reg.0 >= registers {
                     return None;
@@ -423,6 +424,7 @@ impl Collector<'_> {
             nodes = nodes.checked_add(1)?;
             match expression {
                 Expr::Load { .. } => return Some(None),
+                Expr::Unary(_, value) => pending.push(value),
                 Expr::Binary(_, left, right) => {
                     pending.push(right);
                     pending.push(left);
@@ -474,6 +476,7 @@ impl Collector<'_> {
                     }
                 }
                 Visit::Expression(expression) => match expression {
+                    Expr::Unary(_, value) => pending.push(Visit::Expression(value)),
                     Expr::Load { address, width } => {
                         pending.push(Visit::Load(address, *width));
                         pending.push(Visit::Expression(address));

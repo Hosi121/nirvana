@@ -694,6 +694,7 @@ fn charge(instruction: &Instruction, remaining: &mut usize) -> Result<(), Module
             .checked_sub(1)
             .ok_or_else(|| error("module syntax node limit exceeded"))?;
         match expression {
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => {
                 pending.push((a, depth + 1));
                 pending.push((b, depth + 1));

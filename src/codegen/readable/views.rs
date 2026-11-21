@@ -438,6 +438,7 @@ fn memory_sites(program: &Program) -> Option<Vec<MemorySite<'_>>> {
         }
         match expr {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => expression(value, point, depth + 1, result)?,
             Expr::Binary(_, a, b) => {
                 expression(a, point, depth + 1, result)?;
                 expression(b, point, depth + 1, result)?;
@@ -649,6 +650,7 @@ pub(super) fn rendered_reads(program: &Program, views: Option<&MemoryViews>) -> 
     ) {
         match expr {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => read(value, point, views, result),
             Expr::Register(reg) => {
                 result.insert(reg.0);
             }

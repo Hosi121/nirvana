@@ -288,6 +288,7 @@ fn validate_syntax(count: usize, instructions: &[Instruction]) -> Result<(), Bui
             }
             match expression {
                 Expr::Const(_) => {}
+                Expr::Unary(_, value) => expressions.push((value, depth + 1)),
                 Expr::Register(register) => check_register(*register)?,
                 Expr::Binary(_, left, right) => {
                     expressions.push((left, depth + 1));
@@ -328,6 +329,7 @@ fn discard(instructions: Vec<Instruction>) {
     }
     while let Some(expression) = expressions.pop() {
         match expression {
+            Expr::Unary(_, value) => expressions.push(*value),
             Expr::Binary(_, left, right) => {
                 expressions.push(*left);
                 expressions.push(*right);

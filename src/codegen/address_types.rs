@@ -283,6 +283,18 @@ impl Walker<'_, '_> {
         cursor: &mut usize,
     ) -> Option<()> {
         match expression {
+            Expr::Unary(op, value) => self.child(
+                value,
+                if matches!(op, crate::model::ir::UnaryOp::SignExtend(Width::U64)) {
+                    demand
+                } else {
+                    Demand::Scalar
+                },
+                part,
+                path,
+                PathEdge::Unary,
+                cursor,
+            )?,
             Expr::Register(register) => {
                 let read = self.point.reads.get(*cursor)?;
                 if read.register != *register {
@@ -343,5 +355,6 @@ fn edge(edge: PathEdge) -> u8 {
         PathEdge::Condition => 3,
         PathEdge::Taken => 4,
         PathEdge::NotTaken => 5,
+        PathEdge::Unary => 6,
     }
 }

@@ -73,6 +73,7 @@ fn inputs(d: u64) -> Vec<u64> {
 }
 fn eval(expr: &Expr, registers: &[u64]) -> u64 {
     match expr {
+        Expr::Unary(op, value) => crate::support::ir::unary_value(*op, eval(value, registers)),
         Expr::Const(x) => *x,
         Expr::Register(r) => registers[r.0],
         Expr::Binary(op, a, z) => {
@@ -118,6 +119,7 @@ fn deps(expr: &Expr) -> BTreeSet<usize> {
             Expr::Register(r) => {
                 result.insert(r.0);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, z) => pending.extend([&**a, &**z]),
             Expr::Select {
                 condition,
@@ -526,6 +528,7 @@ fn actual_division_fixture_keeps_native_ir_results_and_adopts_only_pure_reduced_
             return;
         }
         match e {
+            Expr::Unary(_, value) => visit(value, views),
             Expr::Binary(_, a, z) => {
                 visit(a, views);
                 visit(z, views)

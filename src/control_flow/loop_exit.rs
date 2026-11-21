@@ -147,6 +147,7 @@ fn expression(value: &Expr, bounds: &mut Bounds, work: &mut Work) -> Option<()> 
         }
         match value {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             Expr::Select {
@@ -237,6 +238,7 @@ fn pure(value: &Expr, work: &mut Work) -> Option<()> {
         work.spend()?;
         match value {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
             Expr::Select {
                 condition,

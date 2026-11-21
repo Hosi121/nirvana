@@ -93,8 +93,7 @@ fn sext(value: Expr, width: Width) -> Expr {
     if width == Width::U64 {
         value
     } else {
-        let sign = k(1 << (width.bits() - 1));
-        sub(xor(mask(value, width), sign.clone()), sign)
+        Expr::unary(crate::model::ir::UnaryOp::SignExtend(width), value)
     }
 }
 

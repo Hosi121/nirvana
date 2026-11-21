@@ -133,6 +133,7 @@ fn validate(expression: &Expr, first_temporary: usize) -> Result<(), SequenceErr
         }
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1, load_ancestors)),
             Expr::Register(register) => {
                 if register.0 >= first_temporary {
                     return Err(SequenceError::RegisterCollision {
@@ -188,6 +189,10 @@ impl Builder {
     fn expression(&mut self, expression: &Expr) -> Result<(Vec<Evaluation>, Expr), SequenceError> {
         match expression {
             Expr::Const(_) | Expr::Register(_) => Ok((vec![], expression.clone())),
+            Expr::Unary(op, value) => {
+                let (steps, value) = self.expression(value)?;
+                Ok((steps, Expr::unary(*op, value)))
+            }
             Expr::Binary(operator, left, right) => {
                 let (mut steps, left) = self.expression(left)?;
                 let (right_steps, right) = self.expression(right)?;
@@ -268,6 +273,7 @@ pub(crate) fn validate_program(program: &Program) -> Result<(), SequenceError> {
             }
             match expr {
                 Expr::Const(_) | Expr::Register(_) => {}
+                Expr::Unary(_, value) => pending.push((value, depth + 1, ancestors)),
                 Expr::Binary(_, left, right) => {
                     pending.push((right, depth + 1, ancestors));
                     pending.push((left, depth + 1, ancestors));

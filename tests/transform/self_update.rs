@@ -84,6 +84,7 @@ fn nodes(expr: &Expr) -> usize {
     while let Some(expr) = pending.pop() {
         count += 1;
         match expr {
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => {
                 pending.push(a);
                 pending.push(b);

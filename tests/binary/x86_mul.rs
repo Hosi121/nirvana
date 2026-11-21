@@ -461,6 +461,7 @@ fn native_memory(
 
 fn loads(expression: &Expr) -> usize {
     match expression {
+        Expr::Unary(_, value) => loads(value),
         Expr::Load { address, .. } => 1 + loads(address),
         Expr::Binary(_, a, b) => loads(a) + loads(b),
         Expr::Select {

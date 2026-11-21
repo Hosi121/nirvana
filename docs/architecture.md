@@ -43,6 +43,7 @@ strip入力の数値入口は、[eh_frame](../src/binary/eh_frame.rs)のFDE範�
 
 [x86](../src/binary/x86/mod.rs)は直接辺から命令を発見し、部分レジスタ・フラグ・評価順を実行IRへ展開します。
 符号付き上位積と算術右シフトは`SMulHigh`・`AShr`として保持し、レジスタのbit列に対する演算として解釈します。これにより、後段はu64の補正式を再認識せず演算の関係を追えます。
+符号拡張は`UnaryOp::SignExtend(Width)`で入力幅を保持します。SSA・値グラフ・メモリの参照位置もこの単項演算を通じて追跡し、Cへはunsignedだけで計算するhelperとして下ろします。
 [jump_tables](../src/binary/jump_tables.rs)は先行CFGの経路文脈、copy、stack退避、比較とmaskから表候補を求め、追加デコードと交互に進めます。
 候補には読取り位置・範囲の根拠・未探索の残余を保持します。実行時の間接移転は現在のRAMからtargetを評価し、発見済みPCへdispatchします。
 

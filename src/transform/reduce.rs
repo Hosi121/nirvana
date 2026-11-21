@@ -153,6 +153,7 @@ impl ReducedFunction {
 fn reads(expression: &Expr, live: &mut Live) {
     match expression {
         Expr::Const(_) => {}
+        Expr::Unary(_, value) => reads(value, live),
         Expr::Register(reg) => {
             live.insert(reg.0);
         }
@@ -234,6 +235,7 @@ fn liveness(program: &Program) -> (Vec<Live>, Vec<Live>) {
 fn map_expr(expression: &Expr, lookup: &impl Fn(usize) -> Option<Expr>) -> Expr {
     match expression {
         Expr::Const(_) => expression.clone(),
+        Expr::Unary(op, value) => Expr::unary(*op, map_expr(value, lookup)),
         Expr::Register(reg) => lookup(reg.0).unwrap_or_else(|| expression.clone()),
         Expr::Binary(op, left, right) => {
             Expr::binary(*op, map_expr(left, lookup), map_expr(right, lookup))

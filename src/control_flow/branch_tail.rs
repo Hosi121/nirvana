@@ -138,6 +138,9 @@ fn measure(nodes: &[Node]) -> Option<usize> {
                 }
                 match expression {
                     Expr::Const(_) | Expr::Register(_) => {}
+                    Expr::Unary(_, value) => {
+                        push(&mut pending, &mut count, Item::Expression(value, depth + 1))?
+                    }
                     Expr::Load { address, .. } => push(
                         &mut pending,
                         &mut count,

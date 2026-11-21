@@ -5,7 +5,7 @@
 //! gets its own opaque captured value, even in a lazy select arm. Nothing here
 //! substitutes, duplicates, or evaluates a memory operation. Values from
 //! different blocks must never be compared.
-use crate::model::ir::{BinaryOp, Control, Expr, Place, Program, Reg};
+use crate::model::ir::{BinaryOp, Control, Expr, Place, Program, Reg, UnaryOp};
 use std::collections::BTreeMap;
 
 pub const MAX_REGISTERS: usize = 4096;
@@ -27,6 +27,7 @@ pub struct Point {
 pub enum ValueNode {
     Initial(Reg),
     Constant(u64),
+    Unary(UnaryOp, ValueId),
     Binary(BinaryOp, ValueId, ValueId),
     Select(ValueId, ValueId, ValueId),
     /// Unique syntax occurrence, not an address or an expression to replay.
@@ -62,6 +63,7 @@ pub struct ValueGraph {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Key {
     Constant(u64),
+    Unary(UnaryOp, ValueId),
     Binary(u8, ValueId, ValueId),
     Select(ValueId, ValueId, ValueId),
 }
@@ -253,6 +255,10 @@ impl BlockValues {
         work.spend(1)?;
         // The iterative preflight has already bounded all recursive depths.
         let (key, node) = match e {
+            Expr::Unary(op, value) => {
+                let value = self.expression(value, current, intern, remaining, work, point)?;
+                (Key::Unary(*op, value), ValueNode::Unary(*op, value))
+            }
             Expr::Register(reg) => return current.get(reg.0).copied(),
             Expr::Const(n) => (Key::Constant(*n), ValueNode::Constant(*n)),
             Expr::Load { .. } => {
@@ -301,6 +307,13 @@ impl BlockValues {
     ) -> Option<Option<ValueId>> {
         work.spend(1)?;
         let key = match e {
+            Expr::Unary(op, value) => Key::Unary(
+                *op,
+                match self.value_of(value, point, work)? {
+                    Some(v) => v,
+                    None => return Some(None),
+                },
+            ),
             Expr::Register(reg) => return Some(self.value_before(*reg, point)),
             Expr::Const(value) => Key::Constant(*value),
             Expr::Binary(op, a, b) => Key::Binary(
@@ -378,6 +391,7 @@ fn bounded(e: &Expr, regs: usize, nodes: &mut usize, work: &mut Work) -> Option<
         match e {
             Expr::Register(r) if r.0 >= regs => return None,
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             Expr::Select {
@@ -405,6 +419,7 @@ pub(crate) fn pure(e: &Expr, work: &mut Work) -> Option<bool> {
         }
         match e {
             Expr::Load { .. } => return Some(false),
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Select {
                 condition,

@@ -327,6 +327,17 @@ fn abstract_value(
 ) -> Result<Values> {
     work.spend()?;
     let value = match expression {
+        Expr::Unary(op, value) => match abstract_value(value, facts, work)? {
+            Values::Finite(values) => {
+                let mut mapped = BTreeSet::new();
+                for value in values {
+                    work.spend()?;
+                    mapped.insert(op.evaluate(value));
+                }
+                Values::Finite(mapped)
+            }
+            Values::Unknown => Values::Unknown,
+        },
         Expr::Const(value) => Values::constant(*value),
         Expr::Register(reg) => facts.get(&reg.0).cloned().unwrap_or(Values::Unknown),
         Expr::Load { .. } => Values::Unknown,
@@ -569,6 +580,7 @@ fn scan(nodes: &[Node], pure: bool, bounds: &mut Bounds, work: &mut Work) -> Res
                     return Err(unavailable("expressions/depth"));
                 }
                 match expression {
+                    Expr::Unary(_, value) => pending.push((value, depth + 1)),
                     Expr::Register(reg) => {
                         uses.reads.insert(reg.0);
                         bounds.registers.insert(reg.0);
@@ -626,6 +638,7 @@ impl Machine<'_> {
         self.tick()?;
         Ok(match expression {
             Expr::Const(value) => *value,
+            Expr::Unary(op, value) => op.evaluate(self.expression(value)?),
             Expr::Register(reg) => *self
                 .values
                 .get(&reg.0)

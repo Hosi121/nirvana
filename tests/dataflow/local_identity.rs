@@ -223,6 +223,7 @@ fn invalid_inputs_and_whole_input_limits_never_return_partial_identities() {
 
 fn rewrite(expr: &Expr, map: &impl Fn(Reg) -> Reg) -> Expr {
     match expr {
+        Expr::Unary(op, value) => Expr::unary(*op, rewrite(value, map)),
         Expr::Const(_) => expr.clone(),
         Expr::Register(reg) => Expr::Register(map(*reg)),
         Expr::Binary(op, a, z) => b(*op, rewrite(a, map), rewrite(z, map)),

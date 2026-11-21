@@ -326,6 +326,18 @@ fn evaluate(
     }
     budget.spend(1)?;
     let evaluated = match expression {
+        Expr::Unary(op, value) => {
+            let value = evaluate(value, registers, memory, budget, depth + 1)?;
+            let mapped = match (op, value.value) {
+                (_, Some(Value::Constant(n))) => Some(Value::Constant(op.evaluate(n))),
+                (crate::model::ir::UnaryOp::SignExtend(Width::U64), v) => v,
+                _ => None,
+            };
+            Evaluated {
+                value: mapped,
+                pure: value.pure,
+            }
+        }
         Expr::Const(value) => Evaluated {
             value: Some(Value::Constant(*value)),
             pure: true,
@@ -438,6 +450,7 @@ impl Collector<'_> {
         self.budget.spend(1)?;
         match expression {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => self.expression(value, depth + 1)?,
             Expr::Binary(_, left, right) => {
                 self.expression(left, depth + 1)?;
                 self.expression(right, depth + 1)?;

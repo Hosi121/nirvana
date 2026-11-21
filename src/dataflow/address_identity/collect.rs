@@ -173,6 +173,7 @@ fn pure(expr: &Expr, depth: usize, budget: &mut Budget) -> Result<bool, ()> {
     }
     Ok(match expr {
         Expr::Const(_) | Expr::Register(_) => true,
+        Expr::Unary(_, value) => pure(value, depth + 1, budget)?,
         Expr::Binary(BinaryOp::Add | BinaryOp::Sub, a, b) => {
             pure(a, depth + 1, budget)? && pure(b, depth + 1, budget)?
         }
@@ -317,6 +318,28 @@ impl Collector<'_> {
             return Err(());
         }
         Ok(match expr {
+            Expr::Unary(op, value) => {
+                let value = self.child(
+                    value,
+                    PathEdge::Unary,
+                    point,
+                    cursor,
+                    path,
+                    operand,
+                    emit,
+                    depth,
+                )?;
+                match (*op, value) {
+                    (
+                        crate::model::ir::UnaryOp::SignExtend(crate::model::ir::Width::U64),
+                        value,
+                    ) => value,
+                    (op, Some(Affine { offset, terms })) if terms.is_empty() => {
+                        Some(Affine::constant(op.evaluate(offset)))
+                    }
+                    _ => None,
+                }
+            }
             Expr::Const(n) => Some(Affine::constant(*n)),
             Expr::Register(register) => {
                 let read = point.reads.get(*cursor).ok_or(())?;

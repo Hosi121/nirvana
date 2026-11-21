@@ -167,6 +167,7 @@ fn visit(
         work.spend(1)?;
         match expr {
             Expr::Register(reg) => register(*reg, work)?,
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => {
                 pending.push(b);
                 pending.push(a);
@@ -198,6 +199,7 @@ fn validate(program: &Program) -> Option<()> {
             }
             nodes = nodes.checked_sub(1)?;
             match expr {
+                Expr::Unary(_, value) => pending.push((value, depth + 1)),
                 Expr::Binary(_, a, b) => {
                     pending.push((b, depth + 1));
                     pending.push((a, depth + 1));
@@ -551,6 +553,7 @@ fn rename(
 ) -> Option<Expr> {
     work.spend(1)?;
     Some(match expr {
+        Expr::Unary(op, value) => Expr::unary(*op, rename(value, state, indices, names, work)?),
         Expr::Register(reg) => {
             let reaching = &state[*indices.get(&reg.0)?];
             let target = names[*reaching.first()?];

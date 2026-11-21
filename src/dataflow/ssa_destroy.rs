@@ -418,6 +418,7 @@ impl Reads<'_> {
     fn expression(&mut self, expression: &Expr) -> Result<Expr, String> {
         Ok(match expression {
             Expr::Const(value) => Expr::Const(*value),
+            Expr::Unary(op, value) => Expr::unary(*op, self.expression(value)?),
             Expr::Register(register) => {
                 let read = self.point.reads.get(self.at).ok_or("missing SSA read")?;
                 self.at += 1;

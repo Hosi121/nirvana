@@ -161,6 +161,7 @@ impl Builder<'_> {
         while let Some(e) = pending.pop() {
             self.spend(1)?;
             match e {
+                Expr::Unary(_, value) => pending.push(value),
                 Expr::Binary(op, a, b) => {
                     if matches!(op, B::Eq | B::Ne) {
                         for (value, other) in [(&**a, &**b), (&**b, &**a)] {

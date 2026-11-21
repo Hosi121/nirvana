@@ -75,6 +75,7 @@ fn paths(path: &[PathEdge]) -> String {
                 PathEdge::Condition => "\"condition\"",
                 PathEdge::Taken => "\"taken\"",
                 PathEdge::NotTaken => "\"not_taken\"",
+                PathEdge::Unary => "\"unary\"",
             })
             .collect::<Vec<_>>()
             .join(",")

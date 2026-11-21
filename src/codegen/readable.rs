@@ -218,6 +218,7 @@ fn needs_sequence(expression: &Expr) -> bool {
     while let Some(expr) = pending.pop() {
         match expr {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Load { address, .. } => {
                 loads += 1;
                 if loads > 1 {

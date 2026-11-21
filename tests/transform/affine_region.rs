@@ -94,6 +94,9 @@ fn ir_value(value: Expr, input: &[u64]) -> u64 {
 }
 fn expression(value: &Expr, registers: &BTreeMap<usize, u64>) -> u64 {
     match value {
+        Expr::Unary(op, value) => {
+            crate::support::ir::unary_value(*op, expression(value, registers))
+        }
         Expr::Const(value) => *value,
         Expr::Register(reg) => registers[&reg.0],
         Expr::Select {

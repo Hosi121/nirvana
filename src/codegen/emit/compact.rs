@@ -50,6 +50,11 @@ fn render(expr: &Expr, register: &impl Fn(Reg) -> String) -> Rendered {
     match expr {
         Expr::Const(value) => Rendered::atom(format!("UINT64_C({value})")),
         Expr::Register(reg) => Rendered::atom(register(*reg)),
+        Expr::Unary(op, value) => Rendered::atom(format!(
+            "{}({})",
+            super::integer::unary_helper_name(*op),
+            render(value, register).code
+        )),
         Expr::Load { address, width } => Rendered::atom(format!(
             "nirvana_load(&m, {}, {})",
             render(address, register).code,

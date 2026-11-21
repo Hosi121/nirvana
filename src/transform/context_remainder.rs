@@ -463,6 +463,7 @@ fn registers(e: &Expr, work: &mut Work) -> Option<BTreeSet<usize>> {
             Expr::Register(r) => {
                 out.insert(r.0);
             }
+            Expr::Unary(_, value) => s.push(value),
             Expr::Const(_) => {}
             Expr::Binary(_, a, b) => s.extend([&**a, &**b]),
             Expr::Load { address, .. } => s.push(address),
@@ -490,6 +491,7 @@ fn bounded_expression(e: &Expr, count: usize, nodes: &mut usize, work: &mut Work
         }
         match e {
             Expr::Register(r) if r.0 >= count => return None,
+            Expr::Unary(_, value) => s.push((value, d + 1)),
             Expr::Const(_) | Expr::Register(_) => {}
             Expr::Binary(_, a, b) => s.extend([(&**a, d + 1), (&**b, d + 1)]),
             Expr::Load { address, .. } => s.push((address, d + 1)),
@@ -545,6 +547,7 @@ fn same(a: &Expr, b: &Expr, w: &mut Work) -> Option<bool> {
         match (a, b) {
             (Expr::Const(a), Expr::Const(b)) if a == b => {}
             (Expr::Register(a), Expr::Register(b)) if a == b => {}
+            (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => s.push((x, y)),
             (Expr::Binary(a, al, ar), Expr::Binary(b, bl, br)) if a == b => {
                 s.extend([(&**al, &**bl), (&**ar, &**br)])
             }

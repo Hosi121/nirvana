@@ -142,6 +142,9 @@ fn pure_dag_values_agree_with_ir_execution_after_each_write() {
         match block.node(id).unwrap() {
             ValueNode::Initial(reg) => input[reg.0],
             ValueNode::Constant(n) => n,
+            ValueNode::Unary(op, value) => {
+                crate::support::ir::unary_value(op, eval(block, value, input))
+            }
             ValueNode::Select(c, t, n) => {
                 eval(block, if eval(block, c, input) != 0 { t } else { n }, input)
             }

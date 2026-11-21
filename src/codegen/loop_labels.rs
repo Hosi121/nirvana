@@ -225,6 +225,7 @@ fn expression(value: &Expr, remaining: &mut usize, work: &mut Work) -> Option<()
             return None;
         }
         match value {
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, a, b) => pending.extend([(&**a, depth + 1), (&**b, depth + 1)]),
             Expr::Load { address, .. } => pending.push((address, depth + 1)),
             Expr::Select {

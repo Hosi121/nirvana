@@ -21,6 +21,7 @@ fn nodes(expression: &Expr) -> usize {
         count += 1;
         match expression {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, left, right) => {
                 pending.push(right);
                 pending.push(left);
@@ -46,6 +47,7 @@ fn load_widths(expression: &Expr) -> Vec<Width> {
     while let Some(expression) = pending.pop() {
         match expression {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, left, right) => {
                 pending.push(right);
                 pending.push(left);

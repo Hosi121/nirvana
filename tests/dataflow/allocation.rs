@@ -42,6 +42,7 @@ fn relabeled(p: &Program, allocation: &LocalAllocation) -> Program {
     fn expression(expr: &Expr, map: &impl Fn(Reg) -> Reg) -> Expr {
         match expr {
             Expr::Const(_) => expr.clone(),
+            Expr::Unary(op, value) => Expr::unary(*op, expression(value, map)),
             Expr::Register(reg) => Expr::Register(map(*reg)),
             Expr::Binary(op, left, right) => b(*op, expression(left, map), expression(right, map)),
             Expr::Load { address, width } => load(expression(address, map), *width),

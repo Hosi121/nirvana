@@ -56,6 +56,7 @@ fn remap(program: &Program, mapping: &[(Reg, usize)]) -> Program {
     fn expression(value: &Expr, name: &impl Fn(Reg) -> Reg) -> Expr {
         match value {
             Expr::Const(value) => c(*value),
+            Expr::Unary(op, value) => Expr::unary(*op, expression(value, name)),
             Expr::Register(reg) => Expr::Register(name(*reg)),
             Expr::Binary(op, left, right) => {
                 binary(*op, expression(left, name), expression(right, name))

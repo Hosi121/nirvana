@@ -46,6 +46,7 @@ fn remap(program: &Program, mapping: &[(Reg, usize)]) -> Program {
     fn expression(value: &Expr, name: &impl Fn(Reg) -> Reg) -> Expr {
         match value {
             Expr::Const(_) => value.clone(),
+            Expr::Unary(op, value) => Expr::unary(*op, expression(value, name)),
             Expr::Register(reg) => Expr::Register(name(*reg)),
             Expr::Binary(op, a, z) => b(*op, expression(a, name), expression(z, name)),
             Expr::Load { address, width } => Expr::load(expression(address, name), *width),

@@ -48,6 +48,7 @@ fn extended_oracle(x: u64, m: u64, s: u32) -> u64 {
 }
 fn eval(e: &Expr, v: &[u64]) -> u64 {
     match e {
+        Expr::Unary(op, value) => crate::support::ir::unary_value(*op, eval(value, v)),
         Expr::Const(x) => *x,
         Expr::Register(r) => v[r.0],
         Expr::Select {
@@ -542,6 +543,7 @@ fn actual_divide_seven_fixture_is_exposed_after_reduction_without_changing_ir() 
                 Expr::Register(r) => {
                     out.insert(r.0);
                 }
+                Expr::Unary(_, value) => s.push(value),
                 Expr::Binary(_, a, b) => s.extend([&**a, &**b]),
                 Expr::Select {
                     condition,
@@ -563,6 +565,7 @@ fn actual_divide_seven_fixture_is_exposed_after_reduction_without_changing_ir() 
             return;
         }
         match e {
+            Expr::Unary(_, value) => visit(value, count),
             Expr::Binary(_, a, b) => {
                 visit(a, count);
                 visit(b, count)

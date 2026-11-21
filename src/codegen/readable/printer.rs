@@ -127,6 +127,14 @@ impl Printer<'_> {
             };
         }
         match expr {
+            Expr::Unary(op, value) => atom(
+                format!(
+                    "{}({})",
+                    crate::codegen::emit::integer::unary_helper_name(*op),
+                    self.expression_at(value, point).text
+                ),
+                true,
+            ),
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
             Expr::Const(value) => atom(format!("UINT64_C(0x{value:x})"), true),
             Expr::Register(reg) => atom(
@@ -1104,6 +1112,7 @@ impl Printer<'_> {
                         }
                     }
                     Expr::Const(_) => {}
+                    Expr::Unary(_, value) => pending.push(value),
                     Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
                     Expr::Load { address, .. } => pending.push(address),
                     Expr::Select {

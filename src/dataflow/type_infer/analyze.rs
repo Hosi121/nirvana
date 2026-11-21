@@ -176,6 +176,10 @@ fn expr_bits(
 ) -> Option<u8> {
     budget.spend(1).ok()?;
     Some(match expr {
+        Expr::Unary(crate::model::ir::UnaryOp::SignExtend(width), value) => {
+            let bits = expr_bits(value, point, bits, cursor, budget)?;
+            if bits < width.bits() as u8 { bits } else { 64 }
+        }
         Expr::Const(n) => (64 - n.leading_zeros()) as u8,
         Expr::Register(r) => {
             let entry = point.reads.get(*cursor)?;
@@ -264,6 +268,7 @@ fn mark(
                 let id = *map.get(&r.0)?;
                 facts[id.0].direct_uses = facts[id.0].direct_uses.union(flag);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**b, &**a]),
             Expr::Load { address, .. } => pending.push(address),
             Expr::Select {
@@ -284,6 +289,7 @@ fn walk_uses(
 ) -> Option<()> {
     budget.spend(1).ok()?;
     match expr {
+        Expr::Unary(_, value) => walk_uses(value, map, facts, budget)?,
         Expr::Binary(op, a, b) => {
             match op {
                 B::Ult | B::Ule => {

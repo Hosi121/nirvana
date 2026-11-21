@@ -55,6 +55,7 @@ fn validate(expression: &Expr, remaining: &mut usize, depth: usize) -> Option<()
     *remaining = remaining.checked_sub(1)?;
     match expression {
         Expr::Const(_) | Expr::Register(_) => Some(()),
+        Expr::Unary(_, value) => validate(value, remaining, depth + 1),
         Expr::Binary(_, left, right) => {
             validate(left, remaining, depth + 1)?;
             validate(right, remaining, depth + 1)
@@ -139,6 +140,7 @@ fn collect(
 fn has_register(expression: &Expr) -> bool {
     match expression {
         Expr::Register(_) => true,
+        Expr::Unary(_, value) => has_register(value),
         Expr::Binary(_, left, right) => has_register(left) || has_register(right),
         _ => false,
     }

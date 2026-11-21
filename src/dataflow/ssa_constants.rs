@@ -302,6 +302,10 @@ fn evaluate(
 ) -> Result<(State, bool), SsaError> {
     budget.spend(1)?;
     Ok(match expr {
+        Expr::Unary(op, value) => {
+            let (value, pure) = evaluate(value, point, states, cursor, budget)?;
+            (unary(*op, value), pure)
+        }
         Expr::Const(n) => (State::Known(*n), true),
         Expr::Register(_) => (read(expr, point, states, cursor)?, true),
         Expr::Load { address, .. } => {
@@ -332,6 +336,13 @@ fn binary(op: B, a: State, b: State) -> State {
         _ => State::Bottom,
     }
 }
+
+fn unary(op: crate::model::ir::UnaryOp, value: State) -> State {
+    match value {
+        State::Known(n) => State::Known(op.evaluate(n)),
+        other => other,
+    }
+}
 fn select(c: State, t: State, n: State) -> State {
     match c {
         State::Known(0) => n,
@@ -350,6 +361,10 @@ fn rewrite(
 ) -> Result<(Expr, State, bool), SsaError> {
     budget.spend(1)?;
     let (mapped, value, pure) = match expr {
+        Expr::Unary(op, value) => {
+            let (value, state, pure) = rewrite(value, point, values, cursor, budget)?;
+            (Expr::unary(*op, value), unary(*op, state), pure)
+        }
         Expr::Const(n) => (expr.clone(), State::Known(*n), true),
         Expr::Register(_) => {
             let entry = point
@@ -527,6 +542,9 @@ fn check_expr(
         return Ok(usize::from(source != candidate));
     }
     match (source, candidate) {
+        (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => {
+            check_expr(x, y, point, states, cursor, budget)
+        }
         (Expr::Register(a), Expr::Register(b)) if a == b => {
             read(source, point, states, cursor)?;
             Ok(0)

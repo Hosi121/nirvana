@@ -364,6 +364,7 @@ fn reads(
             }
             Expr::Const(_) => {}
             Expr::Load { address, .. } => pending.push(address),
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, left, right) => pending.extend([&**right, &**left]),
             Expr::Select {
                 condition,
@@ -430,6 +431,7 @@ fn expression_bounds(
         }
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Register(reg) => {
                 active.insert(reg.0);
             }

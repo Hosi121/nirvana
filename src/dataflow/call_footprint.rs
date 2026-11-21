@@ -118,6 +118,7 @@ impl Work {
 
 fn children<'a>(e: &'a Expr, depth: usize, pending: &mut Vec<(&'a Expr, usize)>) {
     match e {
+        Expr::Unary(_, value) => pending.push((value, depth + 1)),
         Expr::Binary(_, a, b) => {
             pending.push((b, depth + 1));
             pending.push((a, depth + 1));

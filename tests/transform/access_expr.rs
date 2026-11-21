@@ -27,6 +27,9 @@ fn program(expression: &Expr) -> Program {
 // syntax reads below additionally check the arms which this input did not take.
 fn observe(expression: &Expr, input: &[u64], reads: &mut Vec<usize>) -> u64 {
     match expression {
+        Expr::Unary(op, value) => {
+            crate::support::ir::unary_value(*op, observe(value, input, reads))
+        }
         Expr::Const(value) => *value,
         Expr::Register(Reg(id)) => {
             reads.push(*id);
@@ -70,6 +73,7 @@ fn observe(expression: &Expr, input: &[u64], reads: &mut Vec<usize>) -> u64 {
 
 fn syntax_reads(expression: &Expr, reads: &mut Vec<usize>) {
     match expression {
+        Expr::Unary(_, value) => syntax_reads(value, reads),
         Expr::Register(Reg(id)) => reads.push(*id),
         Expr::Const(_) => {}
         Expr::Binary(_, left, right) => {
@@ -395,6 +399,7 @@ fn drop_iteratively(expression: Expr) {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {
+            Expr::Unary(_, value) => pending.push(*value),
             Expr::Binary(_, left, right) => pending.extend([*left, *right]),
             Expr::Load { address, .. } => pending.push(*address),
             Expr::Select {

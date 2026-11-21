@@ -424,6 +424,7 @@ fn bounded_expression(
             return Err(ValidationError::ResourceLimit);
         }
         match expression {
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, left, right) => {
                 pending.extend([(left.as_ref(), depth + 1), (right.as_ref(), depth + 1)]);
             }

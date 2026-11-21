@@ -129,6 +129,9 @@ impl Observer {
     fn value(&mut self, e: &Expr, point: (u64, usize)) -> Result<u64, MemoryFault> {
         Ok(match e {
             Expr::Const(n) => *n,
+            Expr::Unary(op, value) => {
+                crate::support::ir::unary_value(*op, self.value(value, point)?)
+            }
             Expr::Register(reg) => self.registers[reg.0],
             Expr::Select {
                 condition,

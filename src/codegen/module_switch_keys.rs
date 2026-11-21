@@ -285,6 +285,7 @@ fn pure(expression: &Expr) -> Result<(), String> {
         }
         match e {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Register(r) if r.0 < REGISTER_COUNT => {}
             Expr::Binary(_, a, b) => {
                 pending.push(a);

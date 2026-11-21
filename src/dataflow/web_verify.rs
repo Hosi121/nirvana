@@ -374,6 +374,7 @@ fn paired(old: &Expr, new: &Expr, reads: &mut Vec<Pair>, pc: Option<u64>) -> Res
     let mut pending = vec![(old, new)];
     while let Some((old, new)) = pending.pop() {
         match (old, new) {
+            (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => pending.push((x, y)),
             (Expr::Const(a), Expr::Const(b)) if a == b => {}
             (Expr::Register(a), Expr::Register(b)) => reads.push((a.0, b.0)),
             (Expr::Binary(a, x, y), Expr::Binary(b, u, v)) if a == b => {
@@ -464,6 +465,7 @@ fn expression_bounds(
         }
         match expression {
             Expr::Const(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Register(reg) => {
                 registers.insert(reg.0);
             }

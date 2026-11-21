@@ -346,6 +346,7 @@ fn reads(
     budget.spend(1)?;
     match expr {
         Expr::Register(reg) => visit(*reg)?,
+        Expr::Unary(_, value) => reads(value, budget, visit)?,
         Expr::Const(_) => {}
         Expr::Binary(_, left, right) => {
             reads(left, budget, visit)?;

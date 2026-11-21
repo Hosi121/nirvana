@@ -221,6 +221,7 @@ fn substitute(
 ) -> Option<Expr> {
     Some(match expression {
         Expr::Const(value) => Expr::Const(*value),
+        Expr::Unary(op, value) => canonical(Expr::unary(*op, substitute(value, facts, slot)?)),
         Expr::Register(reg) => {
             let slot = slot(*reg)?;
             facts
@@ -320,6 +321,7 @@ fn initialized_latch(
         slot: &impl Fn(Reg) -> Option<usize>,
     ) -> Option<Expr> {
         Some(match expression {
+            Expr::Unary(op, value) => Expr::unary(*op, replace(value, replacements, slot)?),
             Expr::Register(reg) => {
                 Expr::Register(replacements.get(&slot(*reg)?).copied().unwrap_or(*reg))
             }
@@ -368,6 +370,7 @@ fn raw_slots(expression: &Expr, slot: &impl Fn(Reg) -> Option<usize>) -> Option<
 
 fn children<'a>(expression: &'a Expr, pending: &mut Vec<&'a Expr>) {
     match expression {
+        Expr::Unary(_, value) => pending.push(value),
         Expr::Binary(_, left, right) => pending.extend([&**right, &**left]),
         Expr::Load { address, .. } => pending.push(address),
         Expr::Select {

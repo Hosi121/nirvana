@@ -476,6 +476,7 @@ fn reads(
     budget.spend(1)?;
     match expression {
         Expr::Const(_) => {}
+        Expr::Unary(_, value) => reads(value, indices, uses, budget, depth + 1)?,
         Expr::Register(reg) => {
             if let Some(&index) = indices.get(&reg.0) {
                 uses.insert(index);

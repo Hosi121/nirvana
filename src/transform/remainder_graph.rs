@@ -392,6 +392,7 @@ fn raw_registers(e: &Expr, work: &mut Work) -> Option<Vec<Reg>> {
             Expr::Register(r) => {
                 ids.insert(r.0);
             }
+            Expr::Unary(_, value) => pending.push(value),
             Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
             Expr::Select {
                 condition,

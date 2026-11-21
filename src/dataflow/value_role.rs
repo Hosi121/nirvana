@@ -117,6 +117,7 @@ fn validate_expr(expr: &Expr, depth: usize, remaining: &mut usize) -> Option<()>
     spend(remaining, 1)?;
     match expr {
         Expr::Const(_) | Expr::Register(_) => {}
+        Expr::Unary(_, value) => validate_expr(value, depth + 1, remaining)?,
         Expr::Binary(_, a, b) => {
             validate_expr(a, depth + 1, remaining)?;
             validate_expr(b, depth + 1, remaining)?;
@@ -264,6 +265,7 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
     fn data_expression(&mut self, expr: &Expr, data: &mut BTreeSet<usize>) -> Option<()> {
         spend(&mut self.work, 1)?;
         match expr {
+            Expr::Unary(_, value) => self.data_expression(value, data)?,
             Expr::Register(reg) => {
                 if let Some(slot) = (self.slot)(*reg)
                     && self.roles.get(&slot) == Some(&Some(ValueRole::Address))
@@ -327,6 +329,7 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
     fn expression(&mut self, expr: &Expr) -> Option<()> {
         spend(&mut self.work, 1)?;
         match expr {
+            Expr::Unary(_, value) => self.expression(value)?,
             Expr::Load { address, .. } => {
                 self.address_use(address)?;
                 self.expression(address)?;
@@ -628,6 +631,7 @@ impl<F: Fn(Reg) -> Option<usize>> Analysis<'_, F> {
                         stale.push(destination);
                         break;
                     }
+                    Expr::Unary(_, value) => pending.push(value),
                     Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
                     Expr::Load { address, .. } => pending.push(address),
                     Expr::Select {

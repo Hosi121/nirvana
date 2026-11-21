@@ -5,7 +5,7 @@
 //! Arithmetic remains modulo 2^64. No load is discarded, duplicated, reordered,
 //! or moved across a lazy select, even when its successful value is known zero.
 
-use crate::model::ir::{BinaryOp as B, Expr, Reg, Width};
+use crate::model::ir::{BinaryOp as B, Expr, Reg, UnaryOp, Width};
 
 const MAX_NODES: usize = 65_536;
 const MAX_DEPTH: usize = 128;
@@ -30,6 +30,7 @@ fn bounded(expression: &Expr) -> bool {
         }
         match expression {
             Expr::Const(_) | Expr::Register(_) => {}
+            Expr::Unary(_, value) => pending.push((value, depth + 1)),
             Expr::Binary(_, left, right) => {
                 pending.push((right, depth + 1));
                 pending.push((left, depth + 1));
@@ -75,6 +76,32 @@ impl Value {
 
 fn visit(expression: &Expr, width: &impl Fn(Reg) -> Width) -> Value {
     match expression {
+        Expr::Unary(op, value) => {
+            let value = visit(value, width);
+            if value.pure
+                && let Some(n) = value.number()
+            {
+                return Value::constant(op.evaluate(n));
+            }
+            let UnaryOp::SignExtend(from) = *op;
+            if from == Width::U64 {
+                return value;
+            }
+            let sign = 1u64 << (from.bits() - 1);
+            if value.possible & !from.mask() == 0 && value.possible & sign == 0 {
+                return value;
+            }
+            let possible = if value.possible & sign != 0 {
+                (value.possible & from.mask()) | !from.mask()
+            } else {
+                value.possible & from.mask()
+            };
+            Value {
+                expression: Expr::unary(*op, value.expression),
+                possible,
+                pure: value.pure,
+            }
+        }
         Expr::Const(value) => Value::constant(*value),
         Expr::Register(reg) => Value {
             expression: Expr::Register(*reg),
@@ -273,6 +300,7 @@ fn fold(op: B, left: u64, right: u64) -> u64 {
 fn copy_iterative(expression: &Expr) -> Expr {
     enum Task<'a> {
         Visit(&'a Expr),
+        Unary(UnaryOp),
         Binary(B),
         Load(Width),
         Select,
@@ -284,6 +312,10 @@ fn copy_iterative(expression: &Expr) -> Expr {
             Task::Visit(expression) => match expression {
                 Expr::Const(value) => built.push(Expr::Const(*value)),
                 Expr::Register(reg) => built.push(Expr::Register(*reg)),
+                Expr::Unary(op, value) => {
+                    pending.push(Task::Unary(*op));
+                    pending.push(Task::Visit(value));
+                }
                 Expr::Binary(op, left, right) => {
                     pending.push(Task::Binary(*op));
                     pending.push(Task::Visit(right));
@@ -308,6 +340,10 @@ fn copy_iterative(expression: &Expr) -> Expr {
                 let right = built.pop().expect("visited right operand");
                 let left = built.pop().expect("visited left operand");
                 built.push(Expr::binary(op, left, right));
+            }
+            Task::Unary(op) => {
+                let value = built.pop().expect("visited unary operand");
+                built.push(Expr::unary(op, value));
             }
             Task::Load(width) => {
                 let address = built.pop().expect("visited load address");
