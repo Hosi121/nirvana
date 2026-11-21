@@ -620,6 +620,11 @@ impl Renderer<'_> {
             }
         }
         match instruction {
+            Instruction::StoreString { width, repeat, .. } => line(
+                code,
+                inner,
+                &format!("nv_stos(s,{},{});", width.bytes(), u8::from(*repeat)),
+            ),
             Instruction::Divide { .. } => crate::module_emit::divide_statement(
                 code,
                 expressions,
@@ -885,6 +890,7 @@ impl Renderer<'_> {
                 Control::Return(_) => return Err("module Core cannot contain Return".to_owned()),
             },
             Instruction::Vector(_)
+            | Instruction::StoreString { .. }
             | Instruction::Divide { .. }
             | Instruction::Transfer { link: Some(_), .. } => line(code, indent, &destination(next)),
             Instruction::Return { .. } | Instruction::Transfer { link: None, .. } => {

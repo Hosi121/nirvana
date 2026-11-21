@@ -178,6 +178,13 @@ sourceが0、または商が出力幅に収まらない場合は`Status::DivideE
 このためRAM fault・#DEでの停止は、局所変数の更新より先に起こります。
 解析用SSAでは結果を未知として区別し、除算以外のレジスタの値追跡を継続します。
 
+moduleのSTOSは8/16/32/64-bitとREP、CLD／STDを扱います。方向フラグは専用slot `x86::DF`に保持します。
+REPは一命令として予算を消費し、各Storeの成功後にRDIとRCXを更新します。
+count 0ではメモリを参照せず、途中faultでは書込み済みprefix・残りcount・次の書込み先と元のPCを保持します。
+STOSの5つの算術flagは保持し、64-bitのアドレスとcountを使います。
+実行器は要素ごとの検査を行い、SSA・呼出し要約は繰返しStoreをopaqueとしてレジスタ表現へ退避します。
+仕様は[Intel SDM Vol.2のREP／STOS](https://cdrdv2-public.intel.com/835757/325383-sdm-vol-2abcd.pdf)を基準にし、native oracleで幅・方向・flag・page fault時の進捗を検査します。
+
 CのPOSIXアダプタはLinux x86-64の、有効なbufferを持つ呼出しを対象とします。
 socket類の整数返り値、ssize_t、sockaddr、socklen、pollfd、timevalを型に合わせて変換します。
 成功した出力はerrnoと重なっていても保持し、失敗した呼出しではerrnoを更新します。

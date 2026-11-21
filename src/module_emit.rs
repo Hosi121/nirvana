@@ -64,6 +64,16 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
             .checked_add(u64::from(instruction.size()))
             .ok_or("instruction end address overflows")?;
         match instruction {
+            Instruction::StoreString { width, repeat, .. } => {
+                writeln!(
+                    code,
+                    "            nv_stos(s,{},{});",
+                    width.bytes(),
+                    u8::from(*repeat)
+                )
+                .unwrap();
+                set_pc(&mut code, next);
+            }
             Instruction::Divide { .. } => {
                 divide_statement(&mut code, &expressions, instruction, 3, "return s->status;")?;
                 set_pc(&mut code, next);

@@ -192,6 +192,9 @@ fn function_plan(
             budget.scan(&assignment.value)?;
         }
         let control = match instruction {
+            Instruction::StoreString { .. } => {
+                return Err("string stores require explicit repeated memory SSA effects".into());
+            }
             Instruction::Divide { source, .. } => {
                 budget.scan(source)?;
                 Control::Jump(
@@ -919,7 +922,7 @@ fn append_edges(
             Control::Next => append(next, None)?,
             Control::Return(_) => {}
         },
-        Instruction::Vector(_) => append(next, None)?,
+        Instruction::Vector(_) | Instruction::StoreString { .. } => append(next, None)?,
         Instruction::Divide { .. } => append(next, None)?,
         Instruction::Transfer {
             link: Some(link), ..

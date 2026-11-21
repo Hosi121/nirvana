@@ -25,6 +25,12 @@ pub enum Target {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Instruction {
     Core(IrInstruction),
+    StoreString {
+        address: u64,
+        size: u32,
+        width: crate::ir::Width,
+        repeat: bool,
+    },
     Divide {
         address: u64,
         size: u32,
@@ -50,6 +56,7 @@ impl Instruction {
         match self {
             Self::Core(i) => i.address,
             Self::Transfer { address, .. }
+            | Self::StoreString { address, .. }
             | Self::Return { address, .. }
             | Self::Divide { address, .. } => *address,
             Self::Vector(i) => i.address,
@@ -58,9 +65,10 @@ impl Instruction {
     pub fn size(&self) -> u32 {
         match self {
             Self::Core(i) => i.size,
-            Self::Transfer { size, .. } | Self::Return { size, .. } | Self::Divide { size, .. } => {
-                *size
-            }
+            Self::Transfer { size, .. }
+            | Self::StoreString { size, .. }
+            | Self::Return { size, .. }
+            | Self::Divide { size, .. } => *size,
             Self::Vector(i) => i.size,
         }
     }

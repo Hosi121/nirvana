@@ -212,6 +212,12 @@ fn shape(instruction: &Instruction) -> IrInstruction {
     };
     match instruction {
         Instruction::Core(i) => i.clone(),
+        Instruction::StoreString { address, size, .. } => IrInstruction {
+            address: *address,
+            size: *size,
+            assignments: vec![],
+            control: Control::Next,
+        },
         Instruction::Divide {
             address,
             size,
@@ -408,14 +414,47 @@ fn lift_function_inner(
                     (instruction, original)
                 }
                 Err(scalar) => {
-                    let vector = x86::decode_vector_at(source, address)
-                        .map_err(|vector| error(format!("{scalar}; vector fallback: {vector}")))?;
-                    let original = DecodedInstruction {
-                        address,
-                        size: vector.size as u8,
-                        operation: Operation::Nop,
-                    };
-                    (Instruction::Vector(vector), original)
+                    if let Ok(string) = x86::decode_string_at(source, address) {
+                        let instruction = match string.operation {
+                            x86::StringOperation::Direction(backwards) => {
+                                Instruction::Core(IrInstruction {
+                                    address,
+                                    size: u32::from(string.size),
+                                    assignments: vec![Assignment {
+                                        destination: Reg(x86::DF).into(),
+                                        value: Expr::Const(u64::from(backwards)),
+                                    }],
+                                    control: Control::Next,
+                                })
+                            }
+                            x86::StringOperation::Store { width, repeat } => {
+                                Instruction::StoreString {
+                                    address,
+                                    size: u32::from(string.size),
+                                    width,
+                                    repeat,
+                                }
+                            }
+                        };
+                        (
+                            instruction,
+                            DecodedInstruction {
+                                address,
+                                size: string.size,
+                                operation: Operation::Nop,
+                            },
+                        )
+                    } else {
+                        let vector = x86::decode_vector_at(source, address).map_err(|vector| {
+                            error(format!("{scalar}; vector fallback: {vector}"))
+                        })?;
+                        let original = DecodedInstruction {
+                            address,
+                            size: vector.size as u8,
+                            operation: Operation::Nop,
+                        };
+                        (Instruction::Vector(vector), original)
+                    }
                 }
             };
             let next = address + u64::from(instruction.size());
@@ -450,7 +489,9 @@ fn lift_function_inner(
                         pending.push(*next);
                     }
                 }
-                Instruction::Vector(_) | Instruction::Divide { .. } => pending.push(next),
+                Instruction::Vector(_)
+                | Instruction::Divide { .. }
+                | Instruction::StoreString { .. } => pending.push(next),
                 _ => {}
             }
             charge(&instruction, nodes)?;
@@ -464,7 +505,10 @@ fn lift_function_inner(
         // Vector placeholders carry flag metadata only; they are context barriers.
         let originals: Vec<_> = decoded
             .values()
-            .filter_map(|(i, original)| (!matches!(i, Instruction::Vector(_))).then_some(*original))
+            .filter_map(|(i, original)| {
+                (!matches!(i, Instruction::Vector(_) | Instruction::StoreString { .. }))
+                    .then_some(*original)
+            })
             .collect();
         for branch in originals
             .iter()

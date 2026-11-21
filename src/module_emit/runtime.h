@@ -110,6 +110,13 @@ static inline void nv_write(struct nv_module *s,uint64_t address,unsigned width,
     uint64_t offset=nv_check(s,address,width,2);
     for(unsigned i=0;i<width;++i) s->memory[offset+i]=(uint8_t)(value>>(i*8));
 }
+static inline void nv_stos(struct nv_module *s,unsigned width,unsigned repeat) {
+    while(!repeat || s->r[1]!=0) {
+        nv_write(s,s->r[7],width,s->r[0]);
+        if(s->r[29]&1) s->r[7]-=width; else s->r[7]+=width;
+        if(repeat) --s->r[1]; else break;
+    }
+}
 struct nirvana_memory { struct nv_module *state; };
 static inline uint64_t nirvana_offset(struct nirvana_memory *m,uint64_t address,uint64_t width) {
     return nv_check(m->state,address,width,2);

@@ -144,6 +144,12 @@ fn recover_structured(
 
 fn shape_instruction(instruction: &Instruction, end: u64) -> IrInstruction {
     match instruction {
+        Instruction::StoreString { address, size, .. } => IrInstruction {
+            address: *address,
+            size: *size,
+            assignments: vec![],
+            control: Control::Next,
+        },
         Instruction::Divide { address, size, .. } => IrInstruction {
             address: *address,
             size: *size,

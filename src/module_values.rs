@@ -350,6 +350,9 @@ impl Projection<'_> {
         let address = instruction.address();
         let mut assignments = Vec::new();
         let control = match instruction {
+            Instruction::StoreString { .. } => {
+                return Err("string stores require explicit repeated memory SSA effects".into());
+            }
             Instruction::Divide {
                 source,
                 width,

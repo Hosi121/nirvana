@@ -9,6 +9,7 @@ mod decode;
 pub mod divide;
 mod effects;
 mod lift;
+mod strings;
 mod tls;
 mod vector;
 
@@ -21,6 +22,7 @@ pub use effects::{EffectLiftError, lift_effects};
 pub(crate) use lift::check_effect_flags;
 pub(crate) use lift::lift_instruction;
 pub use lift::{LiftError, lift};
+pub use strings::{StringInstruction, StringOperation, decode_string_at};
 pub use tls::{FS_GUARD_OFFSET, decode_fs_guard_at};
 pub use vector::{VectorInstruction, VectorMemory, decode_vector_at};
 
@@ -37,4 +39,6 @@ pub const ZF: usize = 17;
 pub const SF: usize = 18;
 pub const OF: usize = 19;
 pub const PF: usize = 20;
+// Scalar temporaries occupy 21..=28; direction is an architectural bit.
+pub const DF: usize = 29;
 pub const REGISTER_COUNT: usize = 32;

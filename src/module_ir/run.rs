@@ -116,6 +116,36 @@ impl Program {
                     .binary_search_by_key(&pc, Instruction::address)
                     .map_err(|_| Status::UnknownTarget(pc))?;
                 match &self.instructions()[index] {
+                    Instruction::StoreString {
+                        width,
+                        repeat,
+                        size,
+                        ..
+                    } => {
+                        machine.step(pc, &[]).map_err(stop)?;
+                        while !repeat || machine.registers[crate::x86::RCX] != 0 {
+                            machine
+                                .store(
+                                    machine.registers[crate::x86::RDI],
+                                    *width,
+                                    machine.registers[RAX],
+                                )
+                                .map_err(fault)?;
+                            let step = width.bytes() as u64;
+                            machine.registers[crate::x86::RDI] =
+                                if machine.registers[crate::x86::DF] & 1 == 0 {
+                                    machine.registers[crate::x86::RDI].wrapping_add(step)
+                                } else {
+                                    machine.registers[crate::x86::RDI].wrapping_sub(step)
+                                };
+                            if *repeat {
+                                machine.registers[crate::x86::RCX] -= 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        pc += u64::from(*size);
+                    }
                     Instruction::Divide {
                         source,
                         width,
