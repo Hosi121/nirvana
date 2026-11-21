@@ -47,6 +47,7 @@ pub mod loop_labels;
 pub mod loop_recover;
 pub mod loop_shape;
 pub mod memory;
+pub mod memory_ssa;
 pub mod module_emit;
 pub mod module_ir;
 pub mod module_local_plan;

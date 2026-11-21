@@ -183,6 +183,7 @@ struct Collector<'a> {
     graph: &'a SsaFunction,
     aliases: &'a [ValueId],
     bits: &'a [u8],
+    opaque: &'a std::collections::BTreeSet<Site>,
     assignments: BTreeMap<Site, (&'a Expr, &'a PointValues)>,
     memo: Vec<Option<Affine>>,
     visiting: Vec<bool>,
@@ -205,6 +206,7 @@ impl Collector<'_> {
         }
         self.visiting[id.0] = true;
         let form = match self.graph.values.get(id.0).ok_or(())? {
+            Definition::Assignment { site, .. } if self.opaque.contains(site) => Affine::atom(id),
             Definition::Assignment { site, .. } => {
                 let (expr, point) = *self.assignments.get(site).ok_or(())?;
                 if pure(expr, 1, &mut self.budget)? {
@@ -430,6 +432,22 @@ pub(super) fn collect_with_bounds(
     aliases: &[ValueId],
     bits: &[u8],
 ) -> Option<Vec<MemoryAccess>> {
+    collect_with_opaque(
+        source,
+        graph,
+        aliases,
+        bits,
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+pub(super) fn collect_with_opaque(
+    source: &Program,
+    graph: &SsaFunction,
+    aliases: &[ValueId],
+    bits: &[u8],
+    opaque: &std::collections::BTreeSet<Site>,
+) -> Option<Vec<MemoryAccess>> {
     ssa::validate(source, graph).ok()?;
     if bits.len() != graph.values.len() || bits.iter().any(|&n| n > 64) {
         return None;
@@ -442,6 +460,7 @@ pub(super) fn collect_with_bounds(
         graph,
         aliases,
         bits,
+        opaque,
         assignments: BTreeMap::new(),
         memo: vec![None; graph.values.len()],
         visiting: vec![false; graph.values.len()],

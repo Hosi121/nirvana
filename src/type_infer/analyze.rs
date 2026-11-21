@@ -67,6 +67,14 @@ fn root(parent: &mut [usize], mut id: usize, budget: &mut Budget) -> Option<usiz
     Some(id)
 }
 fn aliases(source: &Program, graph: &SsaFunction) -> Option<Vec<ValueId>> {
+    aliases_except(source, graph, &std::collections::BTreeSet::new())
+}
+
+pub(super) fn aliases_except(
+    source: &Program,
+    graph: &SsaFunction,
+    opaque: &std::collections::BTreeSet<Site>,
+) -> Option<Vec<ValueId>> {
     let mut budget = Budget::new();
     let points = points(graph);
     let mut parent: Vec<_> = (0..graph.values.len()).collect();
@@ -74,6 +82,7 @@ fn aliases(source: &Program, graph: &SsaFunction) -> Option<Vec<ValueId>> {
     for (index, definition) in graph.values.iter().enumerate() {
         budget.spend(1).ok()?;
         if let Definition::Assignment { site, .. } = definition
+            && !opaque.contains(site)
             && matches!(rhs(source, *site)?, Expr::Register(_))
         {
             let input = points.get(site)?.reads.first()?.value.0;

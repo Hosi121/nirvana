@@ -1,0 +1,358 @@
+use std::collections::BTreeSet;
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+use nirvana::ir::{
+    AccessKind, Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, RunStatus,
+    Width,
+};
+use nirvana::memory_ssa::{self, Alias, Analysis, Definition, MemoryId};
+use nirvana::ssa::SsaFunction;
+
+fn r(n: usize) -> Expr {
+    Expr::Register(Reg(n))
+}
+fn c(n: u64) -> Expr {
+    Expr::Const(n)
+}
+fn add(a: Expr, n: u64) -> Expr {
+    Expr::binary(BinaryOp::Add, a, c(n))
+}
+fn set(n: usize, value: Expr) -> Assignment {
+    Assignment {
+        destination: Reg(n).into(),
+        value,
+    }
+}
+fn store(address: Expr, width: Width, tag: u8) -> Assignment {
+    Assignment {
+        destination: Place::Memory { address, width },
+        value: c(u64::from(tag) * 0x0101010101010101),
+    }
+}
+fn ins(address: u64, assignments: Vec<Assignment>, control: Control) -> IrInstruction {
+    IrInstruction {
+        address,
+        size: 1,
+        assignments,
+        control,
+    }
+}
+fn analyze(instructions: Vec<IrInstruction>) -> (Program, Analysis) {
+    let program = Program::new(instructions[0].address, 4, instructions).unwrap();
+    let graph = SsaFunction::build(&program).unwrap();
+    let before = program.instructions().to_vec();
+    let result = memory_ssa::analyze(&program, &graph).unwrap();
+    assert_eq!(program.instructions(), before);
+    (program, result)
+}
+fn writers(analysis: &Analysis, instruction: u64) -> BTreeSet<u64> {
+    let access = analysis
+        .accesses()
+        .iter()
+        .position(|a| a.source.site.instruction == instruction && a.source.kind == AccessKind::Read)
+        .unwrap();
+    analysis
+        .queries()
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|q| q.access == access)
+        .unwrap()
+        .candidates
+        .iter()
+        .map(|c| match &analysis.definitions()[c.definition.0] {
+            Definition::Initial => 0,
+            Definition::Store { access, .. } => {
+                analysis.accesses()[*access].source.site.instruction
+            }
+            other => panic!("unexpected candidate: {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn disjoint_full_partial_and_unknown_alias_writes_keep_the_right_history() {
+    let (_, a) = analyze(vec![
+        ins(100, vec![store(r(0), Width::U64, 1)], Control::Next),
+        ins(101, vec![store(add(r(0), 8), Width::U64, 2)], Control::Next),
+        ins(
+            102,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Next,
+        ),
+        ins(103, vec![store(r(1), Width::U8, 3)], Control::Next),
+        ins(
+            104,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Next,
+        ),
+        ins(105, vec![store(add(r(0), 7), Width::U16, 4)], Control::Next),
+        ins(
+            106,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Next,
+        ),
+        ins(107, vec![store(r(0), Width::U64, 5)], Control::Next),
+        ins(
+            108,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Return(r(2)),
+        ),
+    ]);
+    assert_eq!(writers(&a, 102), BTreeSet::from([100]));
+    assert_eq!(writers(&a, 104), BTreeSet::from([100, 103]));
+    assert_eq!(writers(&a, 106), BTreeSet::from([100, 103, 105]));
+    assert_eq!(writers(&a, 108), BTreeSet::from([107]));
+    assert!(
+        a.queries().as_ref().unwrap()[0]
+            .candidates
+            .iter()
+            .all(|c| c.alias == Alias::Exact)
+    );
+}
+
+#[test]
+fn concrete_byte_tags_never_introduce_a_writer_missing_from_the_candidates() {
+    let (program, a) = analyze(vec![
+        ins(100, vec![store(r(0), Width::U64, 1)], Control::Next),
+        ins(101, vec![store(r(1), Width::U16, 2)], Control::Next),
+        ins(102, vec![store(add(r(0), 7), Width::U8, 3)], Control::Next),
+        ins(
+            103,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Return(r(2)),
+        ),
+    ]);
+    let candidates = writers(&a, 103);
+    for p in 32..=48 {
+        for q in 24..=64 {
+            let result = program
+                .run_with_memory(&[p, q, 0, 0], 0, &[0; 128], 20)
+                .unwrap();
+            let RunStatus::Returned(value) = result.status else {
+                panic!("{result:?}");
+            };
+            for tag in value.to_le_bytes() {
+                let writer = match tag {
+                    0 => 0,
+                    1 => 100,
+                    2 => 101,
+                    3 => 102,
+                    _ => panic!("unexpected byte tag"),
+                };
+                assert!(candidates.contains(&writer), "p={p} q={q} tag={tag}");
+            }
+        }
+    }
+}
+
+#[test]
+fn diamond_phis_keep_both_writers_and_the_virtual_initial_path() {
+    for write_false in [false, true] {
+        let (_, a) = analyze(vec![
+            ins(
+                100,
+                vec![],
+                Control::Branch {
+                    condition: r(2),
+                    target: 110,
+                },
+            ),
+            ins(
+                101,
+                if write_false {
+                    vec![store(r(0), Width::U64, 1)]
+                } else {
+                    vec![]
+                },
+                Control::Jump(120),
+            ),
+            ins(110, vec![store(r(0), Width::U64, 2)], Control::Jump(120)),
+            ins(
+                120,
+                vec![set(3, Expr::load(r(0), Width::U64))],
+                Control::Return(r(3)),
+            ),
+        ]);
+        assert_eq!(
+            writers(&a, 120),
+            BTreeSet::from([if write_false { 101 } else { 0 }, 110])
+        );
+        let block = a.blocks().iter().find(|b| b.start == 120).unwrap();
+        let Definition::Phi { inputs, .. } = &a.definitions()[block.entry.0] else {
+            panic!()
+        };
+        assert_eq!(
+            inputs.iter().map(|i| i.predecessor).collect::<Vec<_>>(),
+            vec![Some(101), Some(110)]
+        );
+    }
+}
+
+#[test]
+fn loop_carried_addresses_do_not_confuse_equal_ssa_names_with_equal_iterations() {
+    for delta in [0, 8] {
+        let (program, a) = analyze(vec![
+            ins(
+                100,
+                vec![set(2, Expr::load(r(0), Width::U64))],
+                Control::Next,
+            ),
+            ins(
+                101,
+                vec![store(add(r(0), delta), Width::U64, 1)],
+                Control::Next,
+            ),
+            ins(
+                102,
+                vec![set(0, add(r(0), 8)), set(1, add(r(1), u64::MAX))],
+                Control::Next,
+            ),
+            ins(
+                103,
+                vec![],
+                Control::Branch {
+                    condition: r(1),
+                    target: 100,
+                },
+            ),
+            ins(104, vec![], Control::Return(r(2))),
+        ]);
+        assert_eq!(writers(&a, 100), BTreeSet::from([0, 101]));
+        let Definition::Phi { inputs, .. } = &a.definitions()[a.blocks()[0].entry.0] else {
+            panic!()
+        };
+        assert!(
+            inputs
+                .iter()
+                .any(|i| i.predecessor.is_none() && i.memory == MemoryId(0))
+        );
+        for count in 1..=4 {
+            let result = program
+                .run_with_memory(&[32, count, 0, 0], 0, &[0; 128], 100)
+                .unwrap();
+            let RunStatus::Returned(value) = result.status else {
+                panic!("{result:?}")
+            };
+            for tag in value.to_le_bytes() {
+                assert!(writers(&a, 100).contains(&if tag == 0 { 0 } else { 101 }));
+            }
+        }
+    }
+}
+
+#[test]
+fn nested_address_rhs_and_lazy_reads_keep_the_original_store_order() {
+    let (_, a) = analyze(vec![ins(
+        100,
+        vec![Assignment {
+            destination: Place::Memory {
+                address: Expr::load(c(32), Width::U64),
+                width: Width::U64,
+            },
+            value: Expr::select(
+                r(0),
+                Expr::load(c(64), Width::U64),
+                Expr::load(c(u64::MAX), Width::U64),
+            ),
+        }],
+        Control::Return(Expr::load(c(64), Width::U64)),
+    )]);
+    let accesses = a.accesses();
+    assert_eq!(
+        accesses.iter().map(|a| a.source.kind).collect::<Vec<_>>(),
+        vec![
+            AccessKind::Read,
+            AccessKind::Read,
+            AccessKind::Read,
+            AccessKind::Write,
+            AccessKind::Read
+        ]
+    );
+    assert!(
+        accesses[..4]
+            .iter()
+            .all(|a| a.incoming == accesses[0].incoming)
+    );
+    assert_eq!(accesses[4].incoming, accesses[3].definition.unwrap());
+    assert!(
+        accesses[1]
+            .source
+            .path
+            .contains(&nirvana::type_infer::PathEdge::Taken)
+    );
+    assert!(
+        accesses[2]
+            .source
+            .path
+            .contains(&nirvana::type_infer::PathEdge::NotTaken)
+    );
+}
+
+#[test]
+fn modular_offsets_and_register_versions_do_not_invent_object_separation() {
+    let (_, a) = analyze(vec![
+        ins(
+            100,
+            vec![store(add(r(0), u64::MAX - 7), Width::U64, 1)],
+            Control::Next,
+        ),
+        ins(
+            101,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Next,
+        ),
+        ins(102, vec![set(0, r(1))], Control::Next),
+        ins(
+            103,
+            vec![set(2, Expr::load(r(0), Width::U64))],
+            Control::Return(r(2)),
+        ),
+    ]);
+    assert_eq!(writers(&a, 101), BTreeSet::from([0]));
+    assert_eq!(writers(&a, 103), BTreeSet::from([0, 100]));
+}
+
+#[test]
+fn query_exhaustion_keeps_the_graph_and_reports_no_partial_candidate_set() {
+    let mut code = Vec::new();
+    for i in 0..600 {
+        code.push(ins(
+            100 + i,
+            vec![store(c(32), Width::U8, 1)],
+            Control::Next,
+        ));
+    }
+    for i in 0..600 {
+        code.push(ins(
+            700 + i,
+            vec![set(0, Expr::load(c(32), Width::U64))],
+            if i == 599 {
+                Control::Return(r(0))
+            } else {
+                Control::Next
+            },
+        ));
+    }
+    let (p, a) = analyze(code);
+    assert!(
+        a.queries()
+            .as_ref()
+            .unwrap_err()
+            .contains("candidate storage limit")
+    );
+    assert_eq!(a.accesses().len(), 1200);
+    let mut malformed = SsaFunction::build(&p).unwrap();
+    malformed.blocks[0].points[0].site.instruction = 0;
+    assert!(memory_ssa::analyze(&p, &malformed).is_err());
+    let json = a.to_json().unwrap();
+    let mut child=Command::new("python3").args(["-c","import json,sys; r=json.load(sys.stdin); assert r['schema']=='nirvana-memory-ssa-v1'; assert r['queries']['status']=='unavailable'; assert 'reads' not in r['queries']; assert len(r['accesses'])==1200"]).stdin(Stdio::piped()).spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(json.as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+}

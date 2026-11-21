@@ -149,6 +149,24 @@ pub fn validate_bounds(source: &Program, graph: &SsaFunction, bits: &[u8]) -> bo
     analyze::validate_bounds(source, graph, bits)
 }
 
+/// Exact modular access identities with fresh, uninterpreted effect outputs.
+/// All bit hulls are 64: analysis placeholders supply no numeric facts.
+pub(crate) fn ordered_memory_accesses(
+    source: &Program,
+    graph: &SsaFunction,
+    opaque: &std::collections::BTreeSet<Site>,
+) -> Option<Vec<MemoryAccess>> {
+    crate::ssa::validate(source, graph).ok()?;
+    let aliases = analyze::aliases_except(source, graph, opaque)?;
+    address::collect_with_opaque(
+        source,
+        graph,
+        &aliases,
+        &vec![64; graph.values.len()],
+        opaque,
+    )
+}
+
 impl TypeAnalysis {
     /// A bounded JSON inspection report; interpretations remain candidates.
     pub fn to_json(&self) -> Option<String> {
