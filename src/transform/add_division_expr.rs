@@ -3,6 +3,7 @@
 //! Match ((X - t) >> 1) + t, then >> S, with t=UMulHigh(X,M).
 //! Neither X-t nor the compensated sum wraps: 0<=t<=X and
 //! t+floor((X-t)/2)<=X. No executable IR or dependency is changed.
+use super::reciprocal_bounds::Reciprocal;
 use crate::model::ir::{BinaryOp, Expr};
 pub const MAX_NODES: usize = 4096;
 pub const MAX_DEPTH: usize = 128;
@@ -81,37 +82,17 @@ pub fn recognize(expression: &Expr) -> Option<AddDivisionView<'_>> {
         }
         let reciprocal = (1_u128 << 64).checked_add(u128::from(multiplier))?;
         let power = 1_u128.checked_shl(65 + shift as u32)?;
-        let divisor = (power / reciprocal).checked_add(u128::from(power % reciprocal != 0))?;
-        let Ok(divisor) = u64::try_from(divisor) else {
+        let Some(reciprocal) = Reciprocal::infer(reciprocal, power) else {
             continue;
         };
-        if divisor < 2 {
-            continue;
-        }
-        let excess = reciprocal
-            .checked_mul(u128::from(divisor))?
-            .checked_sub(power)?;
-        if excess >= u128::from(divisor) {
-            continue;
-        }
-        let d = u128::from(divisor);
-        let largest_quotient = u128::from(u64::MAX).checked_div(d)?;
-        let terminal_remainder = u128::from(u64::MAX).checked_rem(d)?;
-        let full_interval = largest_quotient
-            .checked_sub(1)?
-            .checked_mul(excess)?
-            .checked_add(reciprocal.checked_mul(d.checked_sub(1)?)?)?;
-        let terminal_interval = largest_quotient
-            .checked_mul(excess)?
-            .checked_add(reciprocal.checked_mul(terminal_remainder)?)?;
-        let upper_bound = full_interval.max(terminal_interval);
+        let upper_bound = reciprocal.exact_bound(u64::MAX)?;
         let view = AddDivisionView {
             value,
-            divisor,
+            divisor: reciprocal.divisor,
             evidence: AddDivisionEvidence {
                 multiplier,
                 shift: shift as u32,
-                excess: u64::try_from(excess).ok()?,
+                excess: reciprocal.excess,
                 upper_bound,
             },
         };
@@ -195,29 +176,10 @@ fn validate_inner(expression: &Expr, view: &AddDivisionView<'_>) -> Option<()> {
     }
     let h = (1_u128 << 64).checked_add(u128::from(evidence.multiplier))?;
     let p = 1_u128.checked_shl(65 + evidence.shift)?;
-    let d = u128::from(view.divisor);
-    if p.checked_add(h - 1)? / h != d {
-        return None;
-    }
-    let e = h.checked_mul(d)?.checked_sub(p)?;
-    if e >= d || e != u128::from(evidence.excess) {
-        return None;
-    }
-    // Independently partition the reachable domain into all full quotient
-    // intervals and its final, possibly partial, interval.
-    let q = u128::from(u64::MAX).checked_div(d)?;
-    let r = u128::from(u64::MAX).checked_rem(d)?;
-    let before_terminal = q
-        .checked_sub(1)?
-        .checked_mul(e)?
-        .checked_add(h.checked_mul(d.checked_sub(1)?)?)?;
-    let at_terminal = q.checked_mul(e)?.checked_add(h.checked_mul(r)?)?;
-    let upper = if before_terminal > at_terminal {
-        before_terminal
-    } else {
-        at_terminal
-    };
-    (upper == evidence.upper_bound && upper < p).then_some(())
+    let reciprocal = Reciprocal::check(h, p, view.divisor)?;
+    let upper = reciprocal.exact_bound(u64::MAX)?;
+    (reciprocal.excess == evidence.excess && upper == evidence.upper_bound && upper < p)
+        .then_some(())
 }
 fn half_difference(e: &Expr) -> Option<(&Expr, &Expr)> {
     let Expr::Binary(BinaryOp::Shr, difference, count) = e else {

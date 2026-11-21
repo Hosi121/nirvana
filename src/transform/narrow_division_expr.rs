@@ -5,6 +5,7 @@
 //! no facts. A checked product bound proves that the IR's low multiply is the
 //! full unsigned product before the quotient/error certificate is applied.
 
+use super::reciprocal_bounds::Reciprocal;
 use crate::model::ir::{BinaryOp, Expr};
 
 pub const MAX_NODES: usize = 4096;
@@ -67,28 +68,18 @@ pub fn recognize(expression: &Expr) -> Option<NarrowDivisionView<'_>> {
         if product_bound > u128::from(u64::MAX) {
             continue;
         }
-        let divisor = (power / m).checked_add(u128::from(power % m != 0))?;
-        let Ok(divisor) = u64::try_from(divisor) else {
+        let Some(reciprocal) = Reciprocal::infer(m, power) else {
             continue;
         };
-        if divisor < 2 {
-            continue;
-        }
-        let excess = m.checked_mul(u128::from(divisor))?.checked_sub(power)?;
-        if excess >= u128::from(divisor) {
-            continue;
-        }
-        let error_bound = u128::from(maximum / divisor)
-            .checked_mul(excess)?
-            .checked_add(m.checked_mul(u128::from(divisor - 1))?)?;
+        let error_bound = reciprocal.conservative_bound(maximum)?;
         let view = NarrowDivisionView {
             value,
-            divisor,
+            divisor: reciprocal.divisor,
             evidence: NarrowDivisionEvidence {
                 maximum,
                 multiplier,
                 shift: shift as u32,
-                excess: u64::try_from(excess).ok()?,
+                excess: reciprocal.excess,
                 product_bound,
                 error_bound,
             },
@@ -155,32 +146,13 @@ pub fn validate(expression: &Expr, view: &NarrowDivisionView<'_>) -> bool {
     let Some(power) = 1_u128.checked_shl(evidence.shift) else {
         return false;
     };
-    let d = u128::from(view.divisor);
-    let Some(ceil_numerator) = power.checked_add(m - 1) else {
+    let Some(reciprocal) = Reciprocal::check(m, power, view.divisor) else {
         return false;
     };
-    if ceil_numerator / m != d {
-        return false;
-    }
-    let Some(product) = m.checked_mul(d) else {
+    let Some(error) = reciprocal.conservative_bound(maximum) else {
         return false;
     };
-    let Some(excess) = product.checked_sub(power) else {
-        return false;
-    };
-    if excess >= d || excess != u128::from(evidence.excess) {
-        return false;
-    }
-    let Some(quotient_error) = (u128::from(maximum) / d).checked_mul(excess) else {
-        return false;
-    };
-    let Some(remainder_error) = m.checked_mul(d - 1) else {
-        return false;
-    };
-    let Some(error) = quotient_error.checked_add(remainder_error) else {
-        return false;
-    };
-    error == evidence.error_bound && error < power
+    reciprocal.excess == evidence.excess && error == evidence.error_bound && error < power
 }
 
 fn explicit_maximum(value: &Expr) -> Option<u64> {

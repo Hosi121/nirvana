@@ -15,6 +15,7 @@ pub mod indexed;
 pub mod load_mask;
 pub mod narrow_division_expr;
 pub mod narrow_rotate;
+mod reciprocal_bounds;
 pub mod reduce;
 pub mod remainder_expr;
 pub mod remainder_graph;
