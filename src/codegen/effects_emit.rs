@@ -1,5 +1,5 @@
 //! Checked C11 for explicit effect IR, using the same outcome tape as Rust.
-use crate::codegen::emit::{Expressions, MULTIPLY_HELPER, validate_program};
+use crate::codegen::emit::{Expressions, integer, validate_program};
 use crate::model::effects::{CallTarget, Instruction, Program};
 use crate::model::ir::Control;
 use crate::transform::sequence::SequenceError;
@@ -19,9 +19,7 @@ pub fn emit_c(program: &Program) -> Result<String, SequenceError> {
     validate_program(program.shape())?;
     let expressions = Expressions::new(program.shape());
     let mut code = String::from("#include <stdint.h>\n#include <setjmp.h>\n");
-    if program.shape().uses_high_multiply() {
-        code.push_str(MULTIPLY_HELPER);
-    }
+    integer::append_helpers(program.shape(), &mut code);
     code.push_str(runtime_header());
     writeln!(
         code,

@@ -78,11 +78,14 @@ fn render(expr: &Expr, register: &impl Fn(Reg) -> String) -> Rendered {
             ),
             precedence: 1,
         },
-        Expr::Binary(B::UMulHigh, left, right) => Rendered::atom(format!(
-            "nirvana_umul_high({}, {})",
-            render(left, register).code,
-            render(right, register).code
-        )),
+        Expr::Binary(op, left, right) if super::integer::helper_name(*op).is_some() => {
+            Rendered::atom(format!(
+                "{}({}, {})",
+                super::integer::helper_name(*op).unwrap(),
+                render(left, register).code,
+                render(right, register).code
+            ))
+        }
         Expr::Binary(op, left, right) => {
             let (operator, precedence) = match op {
                 B::Or => ("|", 3),
@@ -97,7 +100,7 @@ fn render(expr: &Expr, register: &impl Fn(Reg) -> String) -> Rendered {
                 B::Add => ("+", 9),
                 B::Sub => ("-", 9),
                 B::Mul => ("*", 10),
-                B::UMulHigh => unreachable!(),
+                B::UMulHigh | B::SMulHigh | B::AShr => unreachable!(),
             };
             let left = render(left, register).binary_operand(*op, precedence, false);
             let right = if matches!(op, B::Shl | B::Shr) {

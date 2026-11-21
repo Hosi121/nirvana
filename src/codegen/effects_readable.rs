@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use crate::codegen::effects_emit::{FUNCTION_OPEN, image_initialization, runtime_header};
-use crate::codegen::emit::{Expressions, MULTIPLY_HELPER, validate_program};
+use crate::codegen::emit::{Expressions, integer, validate_program};
 use crate::codegen::loop_labels::LoopLabels;
 use crate::control_flow::structure::{Node, StructureError, StructuredFunction};
 use crate::model::effects::{CallTarget, Instruction, Program};
@@ -50,9 +50,7 @@ pub fn emit_c(program: &Program) -> Result<COutput, SequenceError> {
         }
     }
     let mut code = String::from("#include <stdint.h>\n#include <setjmp.h>\n");
-    if program.shape().uses_high_multiply() {
-        code.push_str(MULTIPLY_HELPER);
-    }
+    integer::append_helpers(program.shape(), &mut code);
     code.push_str(runtime_header());
     writeln!(
         code,

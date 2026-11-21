@@ -1,7 +1,7 @@
 use nirvana::ir::{BinaryOp as B, Control, ExecutionError, Expr, IrInstruction, Program, Width};
 use nirvana::simplify::{node_count, simplify};
 
-const OPERATORS: [B; 13] = [
+const OPERATORS: [B; 15] = [
     B::Add,
     B::Sub,
     B::Mul,
@@ -15,6 +15,8 @@ const OPERATORS: [B; 13] = [
     B::Ult,
     B::Ule,
     B::UMulHigh,
+    B::SMulHigh,
+    B::AShr,
 ];
 const BOUNDARIES: [u64; 23] = [
     0,

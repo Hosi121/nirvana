@@ -1,5 +1,5 @@
 //! Pure expression views and definitions for the selected C layout.
-use crate::codegen::emit::MULTIPLY_HELPER;
+use crate::codegen::emit::integer;
 use crate::model::ir::Expr;
 use crate::transform::add_division_expr;
 use crate::transform::bit_expr::{self, BitKind};
@@ -75,13 +75,12 @@ pub(super) fn preserve_mask(expression: &Expr) -> bool {
 }
 
 pub(super) fn definitions(code: &str) -> String {
-    let mut definitions = String::new();
+    let mut definitions = integer::selected_helpers(code);
     let mut include = |name: &str, definition: &str| {
         if code.contains(&format!("{name}(")) {
             definitions.push_str(definition);
         }
     };
-    include("nirvana_umul_high", MULTIPLY_HELPER);
     for kind in [
         BitKind::Rol64,
         BitKind::Ror64,

@@ -20,6 +20,8 @@ mod effects_observe;
 mod expression_ir;
 #[path = "model/hir.rs"]
 mod hir;
+#[path = "model/integer_ops.rs"]
+mod integer_ops;
 #[path = "model/ir_and_structure.rs"]
 mod ir_and_structure;
 #[path = "model/memory_ir.rs"]

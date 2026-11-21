@@ -205,8 +205,8 @@ impl Printer<'_> {
                 }
                 let l = self.expression_at(left, point);
                 let r = self.expression_at(right, point);
-                if *op == BinaryOp::UMulHigh {
-                    return atom(format!("nirvana_umul_high({}, {})", l.text, r.text), true);
+                if let Some(name) = crate::codegen::emit::integer::helper_name(*op) {
+                    return atom(format!("{name}({}, {})", l.text, r.text), true);
                 }
                 let (symbol, precedence) = match op {
                     BinaryOp::Or => ("|", 4),
@@ -221,7 +221,7 @@ impl Printer<'_> {
                     BinaryOp::Add => ("+", 10),
                     BinaryOp::Sub => ("-", 10),
                     BinaryOp::Mul => ("*", 11),
-                    BinaryOp::UMulHigh => unreachable!(),
+                    BinaryOp::UMulHigh | BinaryOp::SMulHigh | BinaryOp::AShr => unreachable!(),
                 };
                 let comparison = matches!(
                     op,

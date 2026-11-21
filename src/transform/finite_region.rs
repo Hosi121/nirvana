@@ -264,21 +264,7 @@ fn labels(registers: &[Reg], max: usize, resource: &'static str) -> Result<BTree
 }
 
 fn apply(op: BinaryOp, a: u64, b: u64) -> u64 {
-    match op {
-        BinaryOp::Add => a.wrapping_add(b),
-        BinaryOp::Sub => a.wrapping_sub(b),
-        BinaryOp::Mul => a.wrapping_mul(b),
-        BinaryOp::And => a & b,
-        BinaryOp::Or => a | b,
-        BinaryOp::Xor => a ^ b,
-        BinaryOp::Shl => a.wrapping_shl((b & 63) as u32),
-        BinaryOp::Shr => a.wrapping_shr((b & 63) as u32),
-        BinaryOp::Eq => u64::from(a == b),
-        BinaryOp::Ne => u64::from(a != b),
-        BinaryOp::Ult => u64::from(a < b),
-        BinaryOp::Ule => u64::from(a <= b),
-        BinaryOp::UMulHigh => ((u128::from(a) * u128::from(b)) >> 64) as u64,
-    }
+    op.evaluate(a, b)
 }
 
 fn union(a: Values, b: Values) -> Values {

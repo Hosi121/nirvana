@@ -130,6 +130,10 @@ impl Oracle {
                     BinaryOp::Sub => a.wrapping_sub(z),
                     BinaryOp::Mul => a.wrapping_mul(z),
                     BinaryOp::UMulHigh => ((a as u128 * z as u128) >> 64) as u64,
+                    BinaryOp::SMulHigh => {
+                        ((i128::from(a as i64) * i128::from(z as i64)) >> 64) as u64
+                    }
+                    BinaryOp::AShr => ((a as i64) >> (z & 63)) as u64,
                     BinaryOp::And => a & z,
                     BinaryOp::Or => a | z,
                     BinaryOp::Xor => a ^ z,
@@ -365,6 +369,8 @@ fn native_binary_and_umul_high_reads_are_left_to_right() {
     for op in [
         BinaryOp::Add,
         BinaryOp::UMulHigh,
+        BinaryOp::SMulHigh,
+        BinaryOp::AShr,
         BinaryOp::Shl,
         BinaryOp::Eq,
     ] {

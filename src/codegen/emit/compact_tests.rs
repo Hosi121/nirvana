@@ -7,7 +7,7 @@ use crate::model::ir::{Control, IrInstruction, Program};
 use std::fmt::Write;
 use std::process::Command;
 
-const OPS: [B; 13] = [
+const OPS: [B; 15] = [
     B::Add,
     B::Sub,
     B::Mul,
@@ -21,6 +21,8 @@ const OPS: [B; 13] = [
     B::Ult,
     B::Ule,
     B::UMulHigh,
+    B::SMulHigh,
+    B::AShr,
 ];
 
 fn r(id: usize) -> Expr {
@@ -164,12 +166,15 @@ fn compiled_compact_expressions_match_ir_at_unsigned_boundaries() {
         .collect();
     let mut source =
         String::from("#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n");
-    source.push_str(crate::codegen::emit::MULTIPLY_HELPER);
-    for (i, e) in cases.iter().enumerate() {
+    let bodies: Vec<_> = cases.iter().map(printed).collect();
+    source.push_str(&crate::codegen::emit::integer::selected_helpers(
+        &bodies.join("\n"),
+    ));
+    for (i, body) in bodies.iter().enumerate() {
         writeln!(
             source,
             "static uint64_t probe_{i}(const uint64_t *r) {{ (void)r; return {}; }}",
-            printed(e)
+            body
         )
         .unwrap();
     }

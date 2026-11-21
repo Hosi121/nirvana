@@ -6,7 +6,7 @@
 
 use std::fmt::Write;
 
-use crate::codegen::emit::{Expressions, MULTIPLY_HELPER, validate_program};
+use crate::codegen::emit::{Expressions, integer, validate_program};
 use crate::model::ir::{AccessKind, Control};
 use crate::model::module_ir::{Instruction, Module, REGISTER_COUNT, ROOT_RETURN, Target};
 
@@ -28,9 +28,7 @@ pub fn emit_c(module: &Module) -> Result<String, String> {
     let expressions = Expressions::new(program.shape());
     let mut code = String::from("#define _POSIX_C_SOURCE 200809L\n");
     code.push_str(&runtime_header(module));
-    // Keep this helper unconditional: all expressions, including transfer and
-    // vector guard expressions, can use the ordinary IR multiply operation.
-    code.push_str(MULTIPLY_HELPER);
+    integer::append_module_helpers(&mut code);
     if program
         .instructions()
         .iter()

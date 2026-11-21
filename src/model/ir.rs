@@ -1,4 +1,4 @@
-//! An executable, unsigned-64-bit IR for checking control-flow recovery.
+//! An executable, 64-bit bit-vector IR for checking control-flow recovery.
 //! Arithmetic wraps modulo 2^64. Shift counts are masked with 63. Expressions
 //! may read a checked little-endian byte memory. Explicit external calls use
 //! the effect IR in `crate::model::effects` and reuse this core machine.
@@ -26,6 +26,34 @@ pub enum BinaryOp {
     Ult,
     Ule,
     UMulHigh,
+    /// High 64 bits of a signed, full 128-bit product.
+    SMulHigh,
+    /// Sign-filling right shift; the count is masked with 63.
+    AShr,
+}
+
+impl BinaryOp {
+    /// Total scalar semantics on bit patterns. Signed operations interpret
+    /// their operands locally; they do not establish a source-language type.
+    pub fn evaluate(self, left: u64, right: u64) -> u64 {
+        match self {
+            Self::Add => left.wrapping_add(right),
+            Self::Sub => left.wrapping_sub(right),
+            Self::Mul => left.wrapping_mul(right),
+            Self::And => left & right,
+            Self::Or => left | right,
+            Self::Xor => left ^ right,
+            Self::Shl => left.wrapping_shl((right & 63) as u32),
+            Self::Shr => left.wrapping_shr((right & 63) as u32),
+            Self::AShr => ((left as i64) >> (right & 63)) as u64,
+            Self::Eq => u64::from(left == right),
+            Self::Ne => u64::from(left != right),
+            Self::Ult => u64::from(left < right),
+            Self::Ule => u64::from(left <= right),
+            Self::UMulHigh => ((u128::from(left) * u128::from(right)) >> 64) as u64,
+            Self::SMulHigh => ((i128::from(left as i64) * i128::from(right as i64)) >> 64) as u64,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -107,21 +135,7 @@ impl Expr {
             Self::Binary(op, left, right) => {
                 let left = left.evaluate(machine)?;
                 let right = right.evaluate(machine)?;
-                match op {
-                    BinaryOp::Add => left.wrapping_add(right),
-                    BinaryOp::Sub => left.wrapping_sub(right),
-                    BinaryOp::Mul => left.wrapping_mul(right),
-                    BinaryOp::And => left & right,
-                    BinaryOp::Or => left | right,
-                    BinaryOp::Xor => left ^ right,
-                    BinaryOp::Shl => left.wrapping_shl((right & 63) as u32),
-                    BinaryOp::Shr => left.wrapping_shr((right & 63) as u32),
-                    BinaryOp::Eq => u64::from(left == right),
-                    BinaryOp::Ne => u64::from(left != right),
-                    BinaryOp::Ult => u64::from(left < right),
-                    BinaryOp::Ule => u64::from(left <= right),
-                    BinaryOp::UMulHigh => ((u128::from(left) * u128::from(right)) >> 64) as u64,
-                }
+                op.evaluate(left, right)
             }
         })
     }
@@ -158,20 +172,20 @@ impl Expr {
         }
     }
 
-    pub(crate) fn uses_high_multiply(&self) -> bool {
+    pub(crate) fn uses_operator(&self, operator: BinaryOp) -> bool {
         match self {
             Self::Binary(op, left, right) => {
-                *op == BinaryOp::UMulHigh || left.uses_high_multiply() || right.uses_high_multiply()
+                *op == operator || left.uses_operator(operator) || right.uses_operator(operator)
             }
-            Self::Load { address, .. } => address.uses_high_multiply(),
+            Self::Load { address, .. } => address.uses_operator(operator),
             Self::Select {
                 condition,
                 taken,
                 not_taken,
             } => {
-                condition.uses_high_multiply()
-                    || taken.uses_high_multiply()
-                    || not_taken.uses_high_multiply()
+                condition.uses_operator(operator)
+                    || taken.uses_operator(operator)
+                    || not_taken.uses_operator(operator)
             }
             _ => false,
         }
@@ -686,16 +700,20 @@ impl Program {
     }
 
     pub fn uses_high_multiply(&self) -> bool {
+        self.uses_operator(BinaryOp::UMulHigh) || self.uses_operator(BinaryOp::SMulHigh)
+    }
+
+    pub fn uses_operator(&self, operator: BinaryOp) -> bool {
         self.instructions.iter().any(|instruction| {
             instruction.assignments.iter().any(|assignment| {
-                assignment.value.uses_high_multiply()
+                assignment.value.uses_operator(operator)
                     || match &assignment.destination {
-                        Place::Memory { address, .. } => address.uses_high_multiply(),
+                        Place::Memory { address, .. } => address.uses_operator(operator),
                         _ => false,
                     }
             }) || match &instruction.control {
-                Control::Branch { condition, .. } => condition.uses_high_multiply(),
-                Control::Return(value) => value.uses_high_multiply(),
+                Control::Branch { condition, .. } => condition.uses_operator(operator),
+                Control::Return(value) => value.uses_operator(operator),
                 _ => false,
             }
         })

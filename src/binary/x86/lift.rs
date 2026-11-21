@@ -399,20 +399,13 @@ impl Lifter {
             Operand::Immediate(_) => unreachable!("decoded writable destination"),
         }
     }
-    // Signed 128-bit product of sign-extended operands. The high word uses
-    // unsigned multiplication plus two's-complement correction, shared by
-    // explicit and implicit IMUL. CF/OF test representability in one operand.
+    // Signed 128-bit product of sign-extended operands, shared by explicit
+    // and implicit IMUL. CF/OF test representability in one operand.
     fn signed_product(&mut self, left: Expr, right: Expr, width: Width) {
         self.set(A, sext(left, width));
         self.set(V, sext(right, width));
         self.set(LOW, b(B::Mul, r(A), r(V)));
-        self.set(
-            HIGH,
-            sub(
-                sub(b(B::UMulHigh, r(A), r(V)), b(B::Mul, bit(r(A), 63), r(V))),
-                b(B::Mul, bit(r(V), 63), r(A)),
-            ),
-        );
+        self.set(HIGH, b(B::SMulHigh, r(A), r(V)));
         self.set(RESULT, mask(r(LOW), width));
         self.set(
             CF,
@@ -522,17 +515,7 @@ impl Lifter {
         let result = match kind {
             Shift::Left => b(B::Shl, r(A), r(C)),
             Shift::Right => b(B::Shr, r(A), r(C)),
-            Shift::ArithmeticRight => {
-                let extended = sext(r(A), width);
-                Expr::select(
-                    eq(r(C), k(0)),
-                    extended.clone(),
-                    or(
-                        b(B::Shr, extended, r(C)),
-                        b(B::Shl, sub(k(0), sign.clone()), sub(k(64), r(C))),
-                    ),
-                )
-            }
+            Shift::ArithmeticRight => b(B::AShr, sext(r(A), width), r(C)),
         };
         self.set(RESULT, mask(result, width));
         let new_carry = match kind {

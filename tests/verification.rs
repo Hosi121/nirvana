@@ -9,6 +9,8 @@ mod support {
 mod block_verification;
 #[path = "verification/exhaustive.rs"]
 mod exhaustive;
+#[path = "verification/integer_ops.rs"]
+mod integer_ops;
 #[path = "verification/recovery_verification.rs"]
 mod recovery_verification;
 #[path = "verification/verification.rs"]

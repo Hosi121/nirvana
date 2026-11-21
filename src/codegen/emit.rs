@@ -7,6 +7,7 @@ use crate::model::ir::{Control, Program};
 use crate::transform::sequence::SequenceError;
 
 mod compact;
+pub(crate) mod integer;
 mod sequence;
 mod ssa;
 use crate::codegen::loop_labels::LoopLabels;
@@ -14,17 +15,6 @@ use crate::control_flow::structure::{Node, StructureError, StructureStats, Struc
 use crate::control_flow::structure_verify::StructureEvidence;
 pub(crate) use crate::transform::sequence::validate_program;
 pub(crate) use sequence::Expressions;
-
-pub(crate) const MULTIPLY_HELPER: &str = r#"
-static inline uint64_t nirvana_umul_high(uint64_t a, uint64_t b) {
-    uint64_t a0 = a & UINT64_C(0xffffffff), a1 = a >> 32;
-    uint64_t b0 = b & UINT64_C(0xffffffff), b1 = b >> 32;
-    uint64_t low = a0 * b0;
-    uint64_t t = a1 * b0 + (low >> 32);
-    uint64_t middle = (t & UINT64_C(0xffffffff)) + a0 * b1;
-    return a1 * b1 + (t >> 32) + (middle >> 32);
-}
-"#;
 
 pub(crate) const MEMORY_HELPERS: &str = r#"
 #include <stdlib.h>
@@ -60,9 +50,7 @@ pub fn emit_c(program: &Program) -> Result<COutput, SequenceError> {
     validate_program(program)?;
     let expressions = Expressions::new(program);
     let mut code = String::from("#include <stdint.h>\n");
-    if program.uses_high_multiply() {
-        code.push_str(MULTIPLY_HELPER);
-    }
+    integer::append_helpers(program, &mut code);
     if program.uses_memory() {
         code.push_str(MEMORY_HELPERS);
         code.push_str("\nuint64_t nirvana_fn(uint64_t *r, uint8_t *memory, uint64_t base, uint64_t size) {\n    struct nirvana_memory m = {memory, base, size};\n    (void)m;\n    (void)r;\n");

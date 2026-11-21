@@ -32,6 +32,8 @@ fn c_integer_promotions_precedence_and_shift_counts_match_u64_ir() {
         ),
         b(Sub, r(0), b(Sub, r(1), r(2))),
         b(UMulHigh, b(Mul, r(0), r(1)), b(Add, r(2), c(17))),
+        b(SMulHigh, b(Mul, r(0), r(1)), b(Add, r(2), c(17))),
+        b(AShr, b(Sub, r(0), r(1)), r(2)),
     ];
     let values = [0, 1, 2, 31, 63, 64, 65, 1 << 63, u64::MAX];
     for optimization in ["-O0", "-O2"] {

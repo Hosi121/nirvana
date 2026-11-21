@@ -280,21 +280,7 @@ fn apply(op: BinaryOp, x: Value, y: Value) -> Result<Value> {
     use BinaryOp::*;
     if x.a == 0 && y.a == 0 {
         let (a, b) = (x.b, y.b);
-        return Ok(Value::constant(match op {
-            Add => a.wrapping_add(b),
-            Sub => a.wrapping_sub(b),
-            Mul => a.wrapping_mul(b),
-            And => a & b,
-            Or => a | b,
-            Xor => a ^ b,
-            Shl => a.wrapping_shl((b & 63) as u32),
-            Shr => a.wrapping_shr((b & 63) as u32),
-            Eq => u64::from(a == b),
-            Ne => u64::from(a != b),
-            Ult => u64::from(a < b),
-            Ule => u64::from(a <= b),
-            UMulHigh => ((u128::from(a) * u128::from(b)) >> 64) as u64,
-        }));
+        return Ok(Value::constant(op.evaluate(a, b)));
     }
     Ok(match op {
         Add => Value {

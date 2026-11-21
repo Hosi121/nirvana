@@ -216,7 +216,7 @@ fn bitvector_encoding_matches_the_ir_at_integer_boundaries_for_every_operator() 
     let solver = solver();
     let values = [0, 1, 63, 64, 65, 1 << 63, u64::MAX];
     for op in [
-        Add, Sub, Mul, And, Or, Xor, Shl, Shr, Eq, Ne, Ult, Ule, UMulHigh,
+        Add, Sub, Mul, And, Or, Xor, Shl, Shr, Eq, Ne, Ult, Ule, UMulHigh, SMulHigh, AShr,
     ] {
         for left in values {
             for right in values {

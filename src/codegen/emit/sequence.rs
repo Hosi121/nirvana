@@ -228,8 +228,8 @@ impl Expressions {
             Expr::Binary(op, left, right) => {
                 let left = self.expression(left);
                 let mut right = self.expression(right);
-                if *op == BinaryOp::UMulHigh {
-                    return format!("nirvana_umul_high({left}, {right})");
+                if let Some(name) = super::integer::helper_name(*op) {
+                    return format!("{name}({left}, {right})");
                 }
                 let operator = match op {
                     BinaryOp::Add => "+",
@@ -244,7 +244,7 @@ impl Expressions {
                     BinaryOp::Ne => "!=",
                     BinaryOp::Ult => "<",
                     BinaryOp::Ule => "<=",
-                    BinaryOp::UMulHigh => unreachable!(),
+                    BinaryOp::UMulHigh | BinaryOp::SMulHigh | BinaryOp::AShr => unreachable!(),
                 };
                 if matches!(op, BinaryOp::Shl | BinaryOp::Shr) {
                     right = format!("({right} & UINT64_C(63))");

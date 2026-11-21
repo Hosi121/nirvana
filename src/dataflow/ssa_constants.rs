@@ -327,21 +327,7 @@ fn evaluate(
 }
 fn binary(op: B, a: State, b: State) -> State {
     match (a, b) {
-        (State::Known(a), State::Known(b)) => State::Known(match op {
-            B::Add => a.wrapping_add(b),
-            B::Sub => a.wrapping_sub(b),
-            B::Mul => a.wrapping_mul(b),
-            B::And => a & b,
-            B::Or => a | b,
-            B::Xor => a ^ b,
-            B::Shl => a.wrapping_shl((b & 63) as u32),
-            B::Shr => a.wrapping_shr((b & 63) as u32),
-            B::Eq => (a == b) as u64,
-            B::Ne => (a != b) as u64,
-            B::Ult => (a < b) as u64,
-            B::Ule => (a <= b) as u64,
-            B::UMulHigh => ((u128::from(a) * u128::from(b)) >> 64) as u64,
-        }),
+        (State::Known(a), State::Known(b)) => State::Known(op.evaluate(a, b)),
         (State::Unknown, _) | (_, State::Unknown) => State::Unknown,
         _ => State::Bottom,
     }

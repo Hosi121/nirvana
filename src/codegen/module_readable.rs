@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use crate::codegen::emit::{Expressions, MULTIPLY_HELPER, validate_program};
+use crate::codegen::emit::{Expressions, integer, validate_program};
 use crate::codegen::loop_labels::LoopLabels;
 use crate::codegen::module_emit::{
     c_string, comment, image_initialization, posix_header, runtime_header,
@@ -191,7 +191,7 @@ fn render(module: &Module, locals: Option<&module_local_plan::Plan>) -> Result<C
     }
     let mut code = String::from("#define _POSIX_C_SOURCE 200809L\n");
     code.push_str(&runtime_header(module));
-    code.push_str(MULTIPLY_HELPER);
+    integer::append_module_helpers(&mut code);
     if module
         .program
         .instructions()

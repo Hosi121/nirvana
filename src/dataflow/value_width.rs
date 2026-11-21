@@ -208,13 +208,15 @@ fn bits(
                 BinaryOp::Mul if left_bits == 0 || right_bits == 0 => 0,
                 BinaryOp::Mul => (left_bits + right_bits).min(64),
                 BinaryOp::UMulHigh => (left_bits + right_bits).saturating_sub(64),
+                BinaryOp::SMulHigh => 64,
+                BinaryOp::AShr if left_bits == 64 => 64,
                 BinaryOp::Shl | BinaryOp::Shr if left_bits == 0 => 0,
                 BinaryOp::Shl | BinaryOp::Shr if right_bits == 0 => left_bits,
                 BinaryOp::Shl => match right.as_ref() {
                     Expr::Const(shift) => (left_bits + (shift & 63) as u8).min(64),
                     _ => 64,
                 },
-                BinaryOp::Shr => match right.as_ref() {
+                BinaryOp::Shr | BinaryOp::AShr => match right.as_ref() {
                     Expr::Const(shift) => left_bits.saturating_sub((shift & 63) as u8),
                     _ => left_bits,
                 },

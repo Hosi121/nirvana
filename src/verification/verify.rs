@@ -162,16 +162,19 @@ pub(crate) fn binary_term(op: &BinaryOp, l: &str, r: &str) -> String {
             };
             format!("(ite ({op} {l} {r}) #x0000000000000001 #x0000000000000000)")
         }
-        BinaryOp::Shl | BinaryOp::Shr => {
-            let op = if *op == BinaryOp::Shl {
-                "bvshl"
-            } else {
-                "bvlshr"
+        BinaryOp::Shl | BinaryOp::Shr | BinaryOp::AShr => {
+            let op = match op {
+                BinaryOp::Shl => "bvshl",
+                BinaryOp::Shr => "bvlshr",
+                _ => "bvashr",
             };
             format!("({op} {l} (bvand {r} #x000000000000003f))")
         }
         BinaryOp::UMulHigh => format!(
             "((_ extract 127 64) (bvmul ((_ zero_extend 64) {l}) ((_ zero_extend 64) {r})))"
+        ),
+        BinaryOp::SMulHigh => format!(
+            "((_ extract 127 64) (bvmul ((_ sign_extend 64) {l}) ((_ sign_extend 64) {r})))"
         ),
         _ => {
             let op = match op {

@@ -37,6 +37,8 @@ fn native_c_sequences_binary_select_and_nested_address_faults() {
     let expressions = [
         b(BinaryOp::Add, load(r(0)), load(r(1))),
         b(BinaryOp::UMulHigh, load(r(0)), load(r(1))),
+        b(BinaryOp::SMulHigh, load(r(0)), load(r(1))),
+        b(BinaryOp::AShr, load(r(0)), load(r(1))),
         Expr::select(
             Expr::load(r(0), Width::U8),
             b(BinaryOp::Add, load(r(1)), load(c(0x1000))),

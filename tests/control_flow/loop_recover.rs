@@ -141,6 +141,8 @@ fn expression(value: &Expr, registers: &[u64]) -> u64 {
                 BinaryOp::Ult => u64::from(a < z),
                 BinaryOp::Ule => u64::from(a <= z),
                 BinaryOp::UMulHigh => ((u128::from(a) * u128::from(z)) >> 64) as u64,
+                BinaryOp::SMulHigh => ((i128::from(a as i64) * i128::from(z as i64)) >> 64) as u64,
+                BinaryOp::AShr => ((a as i64) >> (z & 63)) as u64,
             }
         }
     }

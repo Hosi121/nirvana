@@ -253,31 +253,19 @@ fn possible(op: B, left: u64, right: u64, count: Option<u64>) -> u64 {
         B::Sub => u64::MAX,
         B::Mul => left.checked_mul(right).map_or(u64::MAX, low_mask),
         B::UMulHigh => low_mask(((u128::from(left) * u128::from(right)) >> 64) as u64),
+        B::SMulHigh => u64::MAX,
+        B::AShr if left >> 63 != 0 => u64::MAX,
         B::Shl => count.map_or(if left == 0 { 0 } else { u64::MAX }, |count| {
             left.wrapping_shl((count & 63) as u32)
         }),
-        B::Shr => count.map_or(low_mask(left), |count| {
+        B::Shr | B::AShr => count.map_or(low_mask(left), |count| {
             left.wrapping_shr((count & 63) as u32)
         }),
     }
 }
 
 fn fold(op: B, left: u64, right: u64) -> u64 {
-    match op {
-        B::Add => left.wrapping_add(right),
-        B::Sub => left.wrapping_sub(right),
-        B::Mul => left.wrapping_mul(right),
-        B::And => left & right,
-        B::Or => left | right,
-        B::Xor => left ^ right,
-        B::Shl => left.wrapping_shl((right & 63) as u32),
-        B::Shr => left.wrapping_shr((right & 63) as u32),
-        B::Eq => u64::from(left == right),
-        B::Ne => u64::from(left != right),
-        B::Ult => u64::from(left < right),
-        B::Ule => u64::from(left <= right),
-        B::UMulHigh => ((u128::from(left) * u128::from(right)) >> 64) as u64,
-    }
+    op.evaluate(left, right)
 }
 
 // Expr's derived Clone is recursive. A rejected input may be deeper than the

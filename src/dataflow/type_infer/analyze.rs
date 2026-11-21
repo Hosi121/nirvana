@@ -234,7 +234,8 @@ fn expr_bits(
                         64
                     }
                 }
-                B::Shr => {
+                B::AShr if a == 64 => 64,
+                B::Shr | B::AShr => {
                     if let Expr::Const(n) = **right {
                         a.saturating_sub((n & 63) as u8)
                     } else {
@@ -242,6 +243,7 @@ fn expr_bits(
                     }
                 }
                 B::UMulHigh => a.saturating_add(b).saturating_sub(64),
+                B::SMulHigh => 64,
                 B::Eq | B::Ne | B::Ult | B::Ule => 1,
             }
         }

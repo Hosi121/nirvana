@@ -162,6 +162,8 @@ fn pure_dag_values_agree_with_ir_execution_after_each_write() {
                     B::Ult => (a < b) as u64,
                     B::Ule => (a <= b) as u64,
                     B::UMulHigh => ((a as u128 * b as u128) >> 64) as u64,
+                    B::SMulHigh => ((i128::from(a as i64) * i128::from(b as i64)) >> 64) as u64,
+                    B::AShr => ((a as i64) >> (b & 63)) as u64,
                 }
             }
             ValueNode::CapturedLoad(_) => panic!("pure oracle"),

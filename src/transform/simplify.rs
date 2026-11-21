@@ -100,21 +100,7 @@ fn binary(op: B, left: &Expr, right: &Expr) -> Expr {
 }
 
 fn fold(op: B, left: u64, right: u64) -> u64 {
-    match op {
-        B::Add => left.wrapping_add(right),
-        B::Sub => left.wrapping_sub(right),
-        B::Mul => left.wrapping_mul(right),
-        B::And => left & right,
-        B::Or => left | right,
-        B::Xor => left ^ right,
-        B::Shl => left.wrapping_shl((right & 63) as u32),
-        B::Shr => left.wrapping_shr((right & 63) as u32),
-        B::Eq => u64::from(left == right),
-        B::Ne => u64::from(left != right),
-        B::Ult => u64::from(left < right),
-        B::Ule => u64::from(left <= right),
-        B::UMulHigh => ((u128::from(left) * u128::from(right)) >> 64) as u64,
-    }
+    op.evaluate(left, right)
 }
 
 fn invert(expression: &Expr) -> Option<Expr> {
