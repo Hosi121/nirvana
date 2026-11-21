@@ -1,7 +1,8 @@
 //! Validated per-bit facts over SSA. Zero/one masks describe bit patterns,
-//! independently of source-language types and signedness annotations.
+//! independently of source-language types and signedness annotations. Exact
+//! reaching stores add scalar dependencies while loads retain their effects.
 use crate::dataflow::ssa::{self, SsaError, SsaEvidence, SsaFunction};
-use crate::dataflow::ssa_facts::{self, Domain};
+use crate::dataflow::ssa_facts::{self, Domain, LoadInputs};
 use crate::model::ir::{BinaryOp as B, Program, UnaryOp, Width};
 mod transfer;
 
@@ -152,6 +153,12 @@ pub struct BitEvidence {
     pub known_values: usize,
     pub constant_values: usize,
     pub replacements: usize,
+    /// Exact root loads linked to reaching stores in the current source.
+    pub memory_loads: usize,
+    /// Reaching store-to-load links, including multiple uses of one store.
+    pub store_load_edges: usize,
+    /// Memory analysis completed within its separate bounds.
+    pub memory_available: bool,
 }
 #[derive(Clone, Debug)]
 pub struct BitPlan {
@@ -180,23 +187,27 @@ impl BitPlan {
             .copied()
             .map(State::Facts)
             .collect::<Vec<_>>();
-        let (candidate, e) = ssa_facts::propose(source, &self.graph, &states)?;
-        Some((candidate, convert(e, &self.values)))
+        let loads = LoadInputs::analyze(source, &self.graph);
+        let (candidate, e) = ssa_facts::propose_with_loads(source, &self.graph, &states, &loads)?;
+        Some((candidate, convert(e, &self.values, &loads)))
     }
 }
 
 /// Reuse a source-bound SSA graph, for example from type or lifetime analysis.
 /// Facts use that graph's value IDs and are checked against the supplied source.
+/// Successful root loads can retain bits shared by every exact reaching store.
 pub fn analyze_values(source: &Program, graph: &SsaFunction) -> Result<Vec<KnownBits>, SsaError> {
     ssa::validate(source, graph)?;
-    let values = ssa_facts::solve::<State>(source, graph)?
+    let loads = LoadInputs::analyze(source, graph);
+    let states = ssa_facts::solve_with_loads::<State>(source, graph, &loads)?;
+    ssa_facts::validate_facts_with_loads(source, graph, &states, &loads)?;
+    let values = states
         .into_iter()
         .map(|s| match s {
             State::Facts(v) => v,
             State::Bottom => KnownBits::UNKNOWN,
         })
         .collect::<Vec<_>>();
-    validate_facts(source, graph, &values)?;
     Ok(values)
 }
 fn states(graph: &SsaFunction, values: &[KnownBits]) -> Result<Vec<State>, SsaError> {
@@ -210,7 +221,9 @@ pub fn validate_facts(
     graph: &SsaFunction,
     values: &[KnownBits],
 ) -> Result<SsaEvidence, SsaError> {
-    ssa_facts::validate_facts(source, graph, &states(graph, values)?)
+    let states = states(graph, values)?;
+    let loads = LoadInputs::analyze(source, graph);
+    ssa_facts::validate_facts_with_loads(source, graph, &states, &loads)
 }
 pub fn validate(
     source: &Program,
@@ -218,14 +231,19 @@ pub fn validate(
     values: &[KnownBits],
     candidate: &Program,
 ) -> Result<BitEvidence, SsaError> {
-    ssa_facts::validate(source, graph, &states(graph, values)?, candidate)
-        .map(|e| convert(e, values))
+    let states = states(graph, values)?;
+    let loads = LoadInputs::analyze(source, graph);
+    ssa_facts::validate_with_loads(source, graph, &states, &loads, candidate)
+        .map(|e| convert(e, values, &loads))
 }
-fn convert(e: ssa_facts::FactEvidence, values: &[KnownBits]) -> BitEvidence {
+fn convert(e: ssa_facts::FactEvidence, values: &[KnownBits], loads: &LoadInputs) -> BitEvidence {
     BitEvidence {
         ssa: e.ssa,
         known_values: values.iter().filter(|v| **v != KnownBits::UNKNOWN).count(),
         constant_values: e.constant_values,
         replacements: e.replacements,
+        memory_loads: loads.len(),
+        store_load_edges: loads.store_edges,
+        memory_available: loads.available,
     }
 }

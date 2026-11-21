@@ -1,6 +1,7 @@
 //! dataflow integration suite.
 #[path = "support"]
 mod support {
+    pub mod bit_invariants;
     #[allow(dead_code)]
     pub mod checked_c;
     pub mod ir;

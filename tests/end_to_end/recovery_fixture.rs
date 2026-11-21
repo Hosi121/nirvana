@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 const BASE: u64 = 0x1000;
 const STATE: usize = 0x1000;
 const MEMORY_SIZE: usize = 0x10000;
-const CASES: [&str; 33] = [
+const CASES: [&str; 34] = [
     "byte-fields",
     "strided-input",
     "selected-alias",
@@ -48,6 +48,7 @@ const CASES: [&str; 33] = [
     "unsigned-div-large",
     "modulo-sum",
     "hoisted-division-loop",
+    "spilled-flags",
 ];
 
 fn inputs() -> Vec<[u64; 4]> {
@@ -219,6 +220,17 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 compact_memory: true,
             };
             let output = readable::emit_readable_c_with_options(&program, options).unwrap();
+            if optimization == "-O0" && name == "spilled-flags" {
+                let bits = output
+                    .known_bits
+                    .expect("spilled flag invariant is adopted");
+                assert!(
+                    bits.memory_available
+                        && bits.memory_loads > 0
+                        && bits.store_load_edges > 0
+                        && bits.replacements > 0
+                );
+            }
             let indexed_reads: usize = output
                 .object_views
                 .iter()

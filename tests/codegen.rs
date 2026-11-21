@@ -1,6 +1,7 @@
 //! codegen integration suite.
 #[path = "support"]
 mod support {
+    pub mod bit_invariants;
     pub mod checked_c;
     pub mod ir;
     pub mod loop_headers;

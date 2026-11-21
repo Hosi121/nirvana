@@ -33,7 +33,7 @@ fn ins(address: u64, assignments: Vec<Assignment>, control: Control) -> IrInstru
         control,
     }
 }
-fn sources() -> [Program; 2] {
+fn sources() -> Vec<(Program, u64)> {
     let diamond = vec![
         ins(
             0,
@@ -102,13 +102,18 @@ fn sources() -> [Program; 2] {
             Control::Jump(1),
         ),
     ];
-    [diamond, looped].map(|i| Program::new(0, 8, i).unwrap())
+    [diamond, looped]
+        .into_iter()
+        .zip([17, 16])
+        .map(|(i, value)| (Program::new(0, 8, i).unwrap(), value))
+        .chain(crate::support::bit_invariants::memory_programs().map(|p| (p, 128)))
+        .collect()
 }
 #[test]
 fn bit_phi_and_loop_invariants_reduce_c_while_preserving_all_ram_and_first_faults() {
     let scratch = native::Scratch::new();
     let mut rows = 0;
-    for (index, source) in sources().into_iter().enumerate() {
+    for (index, (source, returned)) in sources().into_iter().enumerate() {
         let mut text = String::new();
         let mut expected = Vec::new();
         let mut outcomes = [0; 3];
@@ -146,7 +151,7 @@ fn bit_phi_and_loop_invariants_reduce_c_while_preserving_all_ram_and_first_fault
                     let mut row = match report.status {
                         RunStatus::Returned(value) => {
                             outcomes[0] += 1;
-                            assert_eq!(value, if index == 0 { 17 } else { 16 });
+                            assert_eq!(value, returned);
                             vec![0, 0, 0, 0, value]
                         }
                         RunStatus::Fault(f) => {
@@ -188,15 +193,15 @@ fn bit_phi_and_loop_invariants_reduce_c_while_preserving_all_ram_and_first_fault
                 assert!(
                     evidence.replacements > 0 && evidence.known_values > evidence.constant_values
                 );
+                if index >= 2 {
+                    assert!(
+                        evidence.memory_available
+                            && evidence.memory_loads > 0
+                            && evidence.store_load_edges > 0
+                    );
+                }
                 let body = out.code.split("uint64_t nirvana_readable(").nth(1).unwrap();
-                assert!(
-                    body.contains(if index == 0 {
-                        "return 17;"
-                    } else {
-                        "return 16;"
-                    }),
-                    "{body}"
-                );
+                assert!(body.contains(&format!("return {returned};")), "{body}");
                 let path = scratch
                     .0
                     .join(format!("bits-{index}-{coalesce}-{objects}.c"));

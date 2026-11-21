@@ -362,3 +362,133 @@ fn load_bounds_keep_reads_lazy_arms_stores_and_fault_order_at_original_sites() {
     point.reads[0].register = Reg(3);
     assert!(known_bits::validate_facts(&source, &graph, plan.values()).is_err());
 }
+
+#[test]
+fn reaching_store_bits_cross_clobbered_registers_memory_phis_and_loop_carried_writes() {
+    for source in crate::support::bit_invariants::memory_programs() {
+        let plan = BitPlan::analyze(&source).unwrap();
+        let (candidate, evidence) = plan.propose(&source).unwrap();
+        assert!(
+            evidence.memory_available && evidence.memory_loads > 0 && evidence.store_load_edges > 0
+        );
+        assert_eq!(
+            known_bits::validate(&source, plan.graph(), plan.values(), &candidate).unwrap(),
+            evidence
+        );
+        let id = plan
+            .graph()
+            .point(Site {
+                instruction: 4,
+                assignment: Some(0),
+            })
+            .unwrap()
+            .definition
+            .unwrap()
+            .0;
+        assert_eq!(plan.values()[id].one() & 128, 128);
+        assert_ne!(plan.values()[id].number(), Some(128));
+        assert_eq!(
+            candidate.instructions().last().unwrap().control,
+            Control::Return(c(128))
+        );
+        assert!(matches!(
+            candidate.instructions().last().unwrap().assignments[0].value,
+            Expr::Load {
+                width: Width::U16,
+                ..
+            }
+        ));
+        compare(&source, &candidate);
+        let mut bad = candidate.instructions().to_vec();
+        bad.last_mut().unwrap().assignments[0].value = c(128);
+        let bad = Program::new(0, 8, bad).unwrap();
+        assert!(known_bits::validate(&source, plan.graph(), plan.values(), &bad).is_err());
+    }
+}
+
+#[test]
+fn stale_alias_width_and_entry_memory_cannot_justify_reaching_store_bits() {
+    let address = |offset| b(B::Add, r(7), c(offset));
+    let store = |offset, width, value| Assignment {
+        destination: Place::Memory {
+            address: address(offset),
+            width,
+        },
+        value,
+    };
+    let source = program(vec![
+        ins(
+            0,
+            vec![
+                set(1, b(B::Or, b(B::And, r(0), c(15)), c(128))),
+                store(0, Width::U16, r(1)),
+                store(8, Width::U16, c(0)),
+            ],
+            Control::Next,
+        ),
+        ins(
+            1,
+            vec![set(2, Expr::load(r(7), Width::U16))],
+            Control::Return(b(B::And, r(2), c(128))),
+        ),
+    ]);
+    let old = BitPlan::analyze(&source).unwrap();
+    let (candidate, _) = old.propose(&source).unwrap();
+    compare(&source, &candidate);
+    for mode in 0..5 {
+        let mut instructions = source.instructions().to_vec();
+        match mode {
+            0 => {
+                instructions[0].assignments[2].destination = Place::Memory {
+                    address: address(0),
+                    width: Width::U16,
+                }
+            }
+            1 => {
+                instructions[0].assignments[2].destination = Place::Memory {
+                    address: r(6),
+                    width: Width::U16,
+                }
+            }
+            2 => {
+                instructions[0].assignments[2].destination = Place::Memory {
+                    address: address(0),
+                    width: Width::U8,
+                }
+            }
+            3 => {
+                instructions[0].assignments[1].destination = Place::Memory {
+                    address: address(8),
+                    width: Width::U16,
+                }
+            }
+            4 => {
+                instructions[0].assignments[1].destination = Place::Memory {
+                    address: address(0),
+                    width: Width::U8,
+                }
+            }
+            _ => unreachable!(),
+        }
+        let changed = program(instructions);
+        assert!(
+            known_bits::validate_facts(&changed, old.graph(), old.values()).is_err(),
+            "mode {mode}"
+        );
+        assert!(old.propose(&changed).is_none(), "mode {mode}");
+        let fresh = BitPlan::analyze(&changed).unwrap();
+        let id = fresh
+            .graph()
+            .point(Site {
+                instruction: 1,
+                assignment: Some(0),
+            })
+            .unwrap()
+            .definition
+            .unwrap()
+            .0;
+        if mode != 0 {
+            assert_eq!(fresh.values()[id].one() & 128, 0);
+        }
+    }
+}

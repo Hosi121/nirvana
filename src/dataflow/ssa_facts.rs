@@ -6,6 +6,8 @@ use crate::dataflow::ssa::{
 };
 use crate::model::ir::{BinaryOp as B, Control, Expr, Place, Program, UnaryOp, Width};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+mod memory;
+pub(crate) use memory::LoadInputs;
 
 pub(crate) trait Domain: Copy + Eq {
     fn bottom() -> Self;
@@ -39,9 +41,17 @@ pub(crate) fn propose<D: Domain>(
     graph: &SsaFunction,
     values: &[D],
 ) -> Option<(Program, FactEvidence)> {
+    propose_with_loads(source, graph, values, &LoadInputs::default())
+}
+pub(crate) fn propose_with_loads<D: Domain>(
+    source: &Program,
+    graph: &SsaFunction,
+    values: &[D],
+    loads: &LoadInputs,
+) -> Option<(Program, FactEvidence)> {
     let mut budget = Budget::new();
     ssa::preflight(source, &mut budget).ok()?;
-    validate_facts(source, graph, values).ok()?;
+    validate_facts_with_loads(source, graph, values, loads).ok()?;
     let points = point_map(graph);
     let mut instructions = source.instructions().to_vec();
     for ins in &mut instructions {
@@ -88,7 +98,7 @@ pub(crate) fn propose<D: Domain>(
         instructions,
     )
     .ok()?;
-    let evidence = validate(source, graph, values, &candidate).ok()?;
+    let evidence = validate_with_loads(source, graph, values, loads, &candidate).ok()?;
     (evidence.replacements > 0).then_some((candidate, evidence))
 }
 fn point_map(graph: &SsaFunction) -> BTreeMap<Site, &PointValues> {
@@ -114,12 +124,19 @@ fn source_expr(source: &Program, site: Site) -> Result<&Expr, SsaError> {
         .value)
 }
 pub(crate) fn solve<D: Domain>(source: &Program, graph: &SsaFunction) -> Result<Vec<D>, SsaError> {
+    solve_with_loads(source, graph, &LoadInputs::default())
+}
+pub(crate) fn solve_with_loads<D: Domain>(
+    source: &Program,
+    graph: &SsaFunction,
+    loads: &LoadInputs,
+) -> Result<Vec<D>, SsaError> {
     let mut budget = Budget::new();
     ssa::preflight(source, &mut budget)?;
     let points = point_map(graph);
     let mut users = vec![Vec::new(); graph.values.len()];
     for (index, definition) in graph.values.iter().enumerate() {
-        let inputs: Vec<ValueId> = match definition {
+        let mut inputs: Vec<ValueId> = match definition {
             Definition::Initial { .. } => vec![],
             Definition::Phi { inputs, .. } => inputs.iter().map(|p| p.value).collect(),
             Definition::Assignment { site, .. } => points
@@ -130,6 +147,9 @@ pub(crate) fn solve<D: Domain>(source: &Program, graph: &SsaFunction) -> Result<
                 .map(|r| r.value)
                 .collect(),
         };
+        if let Definition::Assignment { site, .. } = definition {
+            inputs.extend_from_slice(loads.dependencies(*site));
+        }
         for id in inputs {
             budget.spend(1)?;
             users
@@ -164,7 +184,9 @@ pub(crate) fn solve<D: Domain>(source: &Program, graph: &SsaFunction) -> Result<
                 if cursor != point.reads.len() {
                     return Err(SsaError::Malformed("SSA constant reads"));
                 }
-                value
+                loads
+                    .value(source, *site, &points, &values, &mut budget)?
+                    .unwrap_or(value)
             }
         };
         let next = values[index].join(value);
@@ -188,6 +210,14 @@ pub(crate) fn validate_facts<D: Domain>(
     source: &Program,
     graph: &SsaFunction,
     values: &[D],
+) -> Result<SsaEvidence, SsaError> {
+    validate_facts_with_loads(source, graph, values, &LoadInputs::default())
+}
+pub(crate) fn validate_facts_with_loads<D: Domain>(
+    source: &Program,
+    graph: &SsaFunction,
+    values: &[D],
+    loads: &LoadInputs,
 ) -> Result<SsaEvidence, SsaError> {
     let evidence = ssa::validate(source, graph)?;
     if values.len() != graph.values.len() {
@@ -232,7 +262,9 @@ pub(crate) fn validate_facts<D: Domain>(
                 if cursor != point.reads.len() {
                     return Err(SsaError::Malformed("constant reads"));
                 }
-                actual
+                loads
+                    .value(source, *site, &points, states, &mut budget)?
+                    .unwrap_or(actual)
             }
         };
         if !claim.follows_from(actual) {
@@ -358,7 +390,16 @@ pub(crate) fn validate<D: Domain>(
     values: &[D],
     candidate: &Program,
 ) -> Result<FactEvidence, SsaError> {
-    let evidence = validate_facts(source, graph, values)?;
+    validate_with_loads(source, graph, values, &LoadInputs::default(), candidate)
+}
+pub(crate) fn validate_with_loads<D: Domain>(
+    source: &Program,
+    graph: &SsaFunction,
+    values: &[D],
+    loads: &LoadInputs,
+    candidate: &Program,
+) -> Result<FactEvidence, SsaError> {
+    let evidence = validate_facts_with_loads(source, graph, values, loads)?;
     let mut budget = Budget::new();
     ssa::preflight(candidate, &mut budget)?;
     if source.register_count() != candidate.register_count()
