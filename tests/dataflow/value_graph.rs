@@ -243,3 +243,37 @@ fn stores_between_loads_do_not_equate_captured_values() {
         (17, 42, 17)
     );
 }
+
+#[test]
+fn control_points_use_final_register_versions_and_keep_load_occurrences_distinct() {
+    let load = Expr::load(r(0), Width::U64);
+    let mut instructions = one(vec![set(1, load.clone()), set(0, c(17)), set(2, r(0))])
+        .instructions()
+        .to_vec();
+    instructions[0].control = Control::Return(Expr::binary(B::Add, r(2), load));
+    let p = Program::new(0, 8, instructions).unwrap();
+    let legacy = ValueGraph::build(&p).unwrap();
+    let extended = ValueGraph::build_with_control(&p).unwrap();
+    let a = legacy.block(0).unwrap();
+    let b = extended.block(0).unwrap();
+    assert_eq!(a.points(), b.points());
+    assert!(a.control().is_none());
+    let control = b.control().unwrap();
+    assert_eq!(control.point, point(3));
+    assert_eq!(b.order(point(3)), Some(3));
+    assert_eq!(b.all_points().count(), 4);
+    assert_eq!(b.value_before(Reg(0), point(3)), b.rhs(point(1)));
+    assert_eq!(b.value_before(Reg(2), point(3)), b.rhs(point(1)));
+    let Some(ValueNode::Binary(B::Add, left, read)) = b.node(control.value) else {
+        panic!()
+    };
+    assert_eq!(Some(left), b.rhs(point(1)));
+    assert_ne!(Some(read), b.rhs(point(0)));
+    assert!(matches!(b.node(read), Some(ValueNode::CapturedLoad(_))));
+    assert_eq!(b.origin(read), Some(point(3)));
+    assert_eq!(b.origin(left), Some(point(1)));
+    assert_eq!(
+        b.nodes().take(a.nodes().count()).collect::<Vec<_>>(),
+        a.nodes().collect::<Vec<_>>()
+    );
+}

@@ -20,6 +20,7 @@ pub struct ValueId(usize);
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Point {
     pub instruction: u64,
+    /// assignments.len() denotes the control expression in control-aware graphs.
     pub assignment: usize,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,6 +51,9 @@ pub struct BlockValues {
     rhs: Vec<Rhs>,
     definitions: Vec<Vec<Definition>>,
     initial: Vec<ValueId>,
+    control: Option<Rhs>,
+    origins: Vec<Option<Point>>,
+    intern: BTreeMap<Key, ValueId>,
 }
 #[derive(Clone, Debug)]
 pub struct ValueGraph {
@@ -75,6 +79,16 @@ impl Work {
 impl ValueGraph {
     /// An exhausted bound declines the entire graph, never a partial result.
     pub fn build(program: &Program) -> Option<Self> {
+        Self::build_mode(program, false)
+    }
+
+    /// Include the final branch/return expression without changing the legacy
+    /// assignment-only points or their value numbering and resource budgets.
+    pub fn build_with_control(program: &Program) -> Option<Self> {
+        Self::build_mode(program, true)
+    }
+
+    fn build_mode(program: &Program, control: bool) -> Option<Self> {
         let mut work = Work::new();
         preflight(program, &mut work)?;
         let mut remaining_nodes = MAX_NODES;
@@ -88,10 +102,13 @@ impl ValueGraph {
                 rhs: Vec::new(),
                 definitions: vec![Vec::new(); program.register_count()],
                 initial: Vec::new(),
+                control: None,
+                origins: Vec::new(),
+                intern: BTreeMap::new(),
             };
             let mut current = Vec::new();
             for index in 0..program.register_count() {
-                let id = out.push(ValueNode::Initial(Reg(index)), &mut remaining_nodes)?;
+                let id = out.push(ValueNode::Initial(Reg(index)), None, &mut remaining_nodes)?;
                 current.push(id);
                 out.initial.push(id);
             }
@@ -109,6 +126,7 @@ impl ValueGraph {
                         &mut intern,
                         &mut remaining_nodes,
                         &mut work,
+                        point,
                     )?;
                     let order = out.rhs.len();
                     out.rhs.push(Rhs { point, value });
@@ -121,7 +139,30 @@ impl ValueGraph {
                         *current.get_mut(reg.0)? = value;
                     }
                 }
+                if control
+                    && let Control::Branch {
+                        condition: value, ..
+                    }
+                    | Control::Return(value) = &ins.control
+                {
+                    let point = Point {
+                        instruction: ins.address,
+                        assignment: ins.assignments.len(),
+                    };
+                    let value = out.expression(
+                        value,
+                        &current,
+                        &mut intern,
+                        &mut remaining_nodes,
+                        &mut work,
+                        point,
+                    )?;
+                    if out.control.replace(Rhs { point, value }).is_some() {
+                        return None;
+                    }
+                }
             }
+            out.intern = intern;
             blocks.push(out);
         }
         blocks.sort_by_key(|b| b.start);
@@ -141,13 +182,37 @@ impl BlockValues {
     pub fn points(&self) -> &[Rhs] {
         &self.rhs
     }
+    pub fn all_points(&self) -> impl Iterator<Item = &Rhs> {
+        self.rhs.iter().chain(self.control.iter())
+    }
+    pub fn control(&self) -> Option<Rhs> {
+        self.control
+    }
+    pub fn nodes(&self) -> impl Iterator<Item = (ValueId, ValueNode)> + '_ {
+        self.nodes
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(i, node)| (ValueId(i), node))
+    }
+    pub fn origin(&self, id: ValueId) -> Option<Point> {
+        self.origins.get(id.0).copied().flatten()
+    }
     pub fn node(&self, id: ValueId) -> Option<ValueNode> {
         self.nodes.get(id.0).copied()
     }
     pub fn order(&self, point: Point) -> Option<usize> {
+        if self.control.is_some_and(|c| c.point == point) {
+            return Some(self.rhs.len());
+        }
         self.rhs.binary_search_by_key(&point, |p| p.point).ok()
     }
     pub fn rhs(&self, point: Point) -> Option<ValueId> {
+        if let Some(c) = self.control
+            && c.point == point
+        {
+            return Some(c.value);
+        }
         Some(self.rhs[self.order(point)?].value)
     }
     pub fn definition_before(&self, reg: Reg, point: Point) -> Option<Definition> {
@@ -164,10 +229,16 @@ impl BlockValues {
                 .map_or(*self.initial.get(reg.0)?, |d| d.value),
         )
     }
-    fn push(&mut self, node: ValueNode, remaining: &mut usize) -> Option<ValueId> {
+    fn push(
+        &mut self,
+        node: ValueNode,
+        origin: Option<Point>,
+        remaining: &mut usize,
+    ) -> Option<ValueId> {
         *remaining = remaining.checked_sub(1)?;
         let id = ValueId(self.nodes.len());
         self.nodes.push(node);
+        self.origins.push(origin);
         Some(id)
     }
     fn expression(
@@ -177,6 +248,7 @@ impl BlockValues {
         intern: &mut BTreeMap<Key, ValueId>,
         remaining: &mut usize,
         work: &mut Work,
+        point: Point,
     ) -> Option<ValueId> {
         work.spend(1)?;
         // The iterative preflight has already bounded all recursive depths.
@@ -186,11 +258,15 @@ impl BlockValues {
             Expr::Load { .. } => {
                 // Do not inspect/reconstruct the address here. Preflight bounds
                 // it, and this unique value denotes the original checked read.
-                return self.push(ValueNode::CapturedLoad(self.nodes.len()), remaining);
+                return self.push(
+                    ValueNode::CapturedLoad(self.nodes.len()),
+                    Some(point),
+                    remaining,
+                );
             }
             Expr::Binary(op, left, right) => {
-                let left = self.expression(left, current, intern, remaining, work)?;
-                let right = self.expression(right, current, intern, remaining, work)?;
+                let left = self.expression(left, current, intern, remaining, work, point)?;
+                let right = self.expression(right, current, intern, remaining, work, point)?;
                 (
                     Key::Binary(*op as u8, left, right),
                     ValueNode::Binary(*op, left, right),
@@ -201,18 +277,64 @@ impl BlockValues {
                 taken,
                 not_taken,
             } => {
-                let c = self.expression(condition, current, intern, remaining, work)?;
-                let t = self.expression(taken, current, intern, remaining, work)?;
-                let n = self.expression(not_taken, current, intern, remaining, work)?;
+                let c = self.expression(condition, current, intern, remaining, work, point)?;
+                let t = self.expression(taken, current, intern, remaining, work, point)?;
+                let n = self.expression(not_taken, current, intern, remaining, work, point)?;
                 (Key::Select(c, t, n), ValueNode::Select(c, t, n))
             }
         };
         if let Some(value) = intern.get(&key) {
             return Some(*value);
         }
-        let value = self.push(node, remaining)?;
+        let value = self.push(node, Some(point), remaining)?;
         intern.insert(key, value);
         Some(value)
+    }
+
+    /// Resolve only pure source syntax under the register versions at a point.
+    /// Loads stay opaque occurrences; their addresses are never reconstructed.
+    pub(crate) fn value_of(
+        &self,
+        e: &Expr,
+        point: Point,
+        work: &mut Work,
+    ) -> Option<Option<ValueId>> {
+        work.spend(1)?;
+        let key = match e {
+            Expr::Register(reg) => return Some(self.value_before(*reg, point)),
+            Expr::Const(value) => Key::Constant(*value),
+            Expr::Binary(op, a, b) => Key::Binary(
+                *op as u8,
+                match self.value_of(a, point, work)? {
+                    Some(v) => v,
+                    None => return Some(None),
+                },
+                match self.value_of(b, point, work)? {
+                    Some(v) => v,
+                    None => return Some(None),
+                },
+            ),
+            Expr::Select {
+                condition,
+                taken,
+                not_taken,
+            } => Key::Select(
+                match self.value_of(condition, point, work)? {
+                    Some(v) => v,
+                    None => return Some(None),
+                },
+                match self.value_of(taken, point, work)? {
+                    Some(v) => v,
+                    None => return Some(None),
+                },
+                match self.value_of(not_taken, point, work)? {
+                    Some(v) => v,
+                    None => return Some(None),
+                },
+            ),
+            Expr::Load { .. } => return Some(None),
+        };
+        Some(self.intern.get(&key).copied())
     }
 }
 
