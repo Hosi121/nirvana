@@ -1,5 +1,5 @@
 use super::*;
-use crate::type_infer::{AddressShape, Operand};
+use crate::address_identity::{AddressShape, Operand};
 use std::fmt::Write;
 
 const MAX_REPORT_BYTES: usize = 16 * 1024 * 1024;

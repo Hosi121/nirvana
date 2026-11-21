@@ -1,6 +1,6 @@
 use super::*;
+use crate::address_identity::ModularAddress;
 use crate::ssa::ValueId;
-use crate::type_infer::ModularAddress;
 
 const MAX_TERMS: usize = 16;
 

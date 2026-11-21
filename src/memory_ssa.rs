@@ -7,10 +7,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::address_identity::MemoryAccess;
 use crate::cfg::Target;
 use crate::ir::{AccessKind, Program};
 use crate::ssa::{Site, SsaFunction};
-use crate::type_infer::MemoryAccess;
 
 mod report;
 mod translate;
@@ -63,7 +63,7 @@ pub struct Access {
     pub incoming: MemoryId,
     pub definition: Option<MemoryId>,
     /// Exact modular identity before edge translation, when representable.
-    pub address: Option<crate::type_infer::ModularAddress>,
+    pub address: Option<crate::address_identity::ModularAddress>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,7 +202,7 @@ pub(crate) fn analyze_with_effects(
             return Err("memory SSA opaque definition mismatch".into());
         }
     }
-    let addresses = crate::type_infer::ordered_memory_addresses(source, graph, opaque)
+    let addresses = crate::address_identity::ordered_memory_addresses(source, graph, opaque)
         .ok_or("memory SSA address/control resource limit")?;
     let accesses = addresses.accesses;
     let mut by_instruction: BTreeMap<u64, Vec<usize>> = BTreeMap::new();

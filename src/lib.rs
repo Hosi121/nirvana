@@ -6,6 +6,7 @@
 
 pub mod access_expr;
 pub mod add_division_expr;
+pub mod address_identity;
 pub mod address_types;
 pub mod affine_region;
 pub mod allocation;

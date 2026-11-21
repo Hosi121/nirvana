@@ -1,5 +1,5 @@
 use super::*;
-use crate::type_infer::ModularAddress;
+use crate::address_identity::ModularAddress;
 
 const MAX_CANDIDATES: usize = 262144;
 const MAX_LOCATIONS_PER_VERSION: usize = 16;
