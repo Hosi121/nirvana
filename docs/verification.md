@@ -92,17 +92,22 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 [除算モデル](../tests/models/division_step.smt2.in)は8/16/32/64-bitの算術lemmaと反例を、[guarded dispatch](../tests/models/guarded_dispatch.smt2)は実target照合の有無による分岐選択の差を検査します。
 [符号付き整数モデル](../tests/models/signed_integer.smt2)は、算術シフトの符号埋めと上位積の2の補数補正を、誤った変換の反例とともに検査します。
 [符号拡張の検査](../tests/verification/unary_ops.rs)は、各幅の補正式と入れ子の拡張を実際のSMTエンコーダで照合し、誤ったゼロ拡張の反例をIRで再実行します。
-同じsuiteで静的bit抽出の全開始位置と各幅を照合し、シフト数のmask・上位byteの位置・符号拡張を取り違えた反例も再実行します。
 [word除算の検査](../tests/verification/word_signed.rs)は、整数モデルで商・剰余を、bit-vectorモデルで幅への射影・右シフトの分割を検査します。[GCC入力](../tests/fixtures/recovery/word-signed-reciprocal.c)は、32-bitの結果と64-bitへ拡張した戻り値をnative・IR・生成Cで比較します。
 [全域商・剰余の検査](../tests/verification/division_ops.rs)は、符号の4通りを合わせて64-bit全入力の定義を照合し、除数ゼロ・±1と誤った変換の反例も検査します。8-bitの復元kernelは実際のIR演算との等式として照合します。
 [word値グラフの検査](../tests/model/semantic_ir/word.rs)は、上位bitを失った分子、レジスタの上書き、符号境界を跨ぐループについて、元レジスタ・RAM・履歴・fault・予算を比較します。[GCC入力](../tests/fixtures/recovery/word-signed-memory.c)もnative・IR・生成Cで比較します。
 [既知bitの検査](../tests/verification/known_bits.rs)は転送規則をSMTで、[dataflow検査](../tests/dataflow/known_bits.rs)は小領域の全列挙・64-bit境界・φとループの不変条件で確認します。設計の参考は[LLVM KnownBits](https://llvm.org/doxygen/structllvm_1_1KnownBits.html)で、Nirvanaの規則は全域の64-bit演算とmaskしたシフト数に対して検査します。
-[メモリbitの補題](../tests/verification/memory_bits.rs)は成功した同幅Store/Load、別byteへの書込み、byteからwordの組立て、共通bitを持つ分岐を配列SMTで検査します。書込み候補の完全性と元のfault順はMemorySSAの検査・IR比較・C再実行で確認し、変更されたalias・幅・初期メモリの反例も含めます。
-[保存値の検査](../tests/dataflow/memory_values.rs)はレジスタの上書き、分岐での保存、ループ内の再読込み、停止位置ごとの元レジスタ全体を比較します。[word射影の補題](../tests/verification/memory_values.rs)は保存時のmask・拡張幅をSMTで照合します。入口からの実行を対象に、追加したレジスタを射影した状態を比較し、実際の候補SSAで保存値の初期化も確認します。
-[byte対応表の検査](../tests/verification/byte_memory.rs)は、実際のMemorySSAが出した候補を独立したSMT配列モデルと比較します。全幅の位置関係、曖昧なアドレス、φの変換を含みます。実行追跡では書込み元IDに加え、そのStoreのどのbyteが読まれたかも照合します。
-[射影の合成則](../tests/verification/unary_ops.rs)は、静的抽出・mask・符号拡張から作った実際の還元候補を全域u64で照合します。[実行比較](../tests/transform/simplify.rs)ではLoadとlazy Selectを同じ式へ入れ、faultと状態を含めて確認します。
-[bit挿入の検査](../tests/verification/bit_insert.rs)は全位置・幅の純粋式と、両operandのLoad・lazy Select・Storeの順序を持つブロックを照合します。未使用operandのfaultを落とした対照例もIRで再実行します。
-[保存値のbyte復元](../tests/verification/memory_values.rs)は、実際の変換候補をchecked-memory-blockモデルで照合します。幅・位置の全contained組合せについて、正常終了時の元レジスタ境界と返り値、RAM、最初のfaultを検査します。一回だけ通るブロックの判定は、4頂点の全有向グラフで独立した到達可能性計算と照合します。ループ終了後の保存や、別レジスタでシフト・mask・Extractした値を分割保存する候補も、実際の変換をSMTで照合します。独立したbit出所検査器には、SSA値と位置を変えた候補も渡します。
+
+| bit・保存値の検査 | 対象と照合方法 |
+| --- | --- |
+| [メモリbit](../tests/verification/memory_bits.rs)・[byte対応表](../tests/verification/byte_memory.rs) | 部分Store、alias、φの書込み候補を配列SMTと実行時の書込み元tagで照合 |
+| [保存値と保存式](../tests/verification/memory_values.rs) | 幅・位置、分割Store、SSA定義、純粋な右辺から作った実際の候補について、返り値・元レジスタ・RAM・最初のfaultを検査 |
+| [保存値の寿命](../tests/dataflow/memory_values.rs)・[不変条件](../src/dataflow/memory_values/stability.rs) | 停止予算ごとの実行比較、捕捉の初期化、循環と不変値の閉じた主張を検査。SMTは1〜4回に展開した反復経路を照合 |
+| [射影](../tests/verification/unary_ops.rs)・[実行比較](../tests/transform/simplify.rs) | 全開始位置・幅と、mask・符号拡張を合成した候補を検査。Load・lazy Selectの状態とfaultも比較 |
+| [bit挿入](../tests/verification/bit_insert.rs) | 全位置・幅の純粋式と、両operandのLoad・Store順序を検査 |
+| [lifterの切詰め](../src/binary/x86/lift/clipping_proofs.rs)・[native比較](../tests/binary/x86.rs) | 実際の構築関数を従来のmaskと照合。幅付きLoad、ネストしたアドレス読込み、nativeとの比較を含む |
+
+保存値の実行比較は入口から始め、追加レジスタを射影した元の状態を照合します。出所検査にはSSA値・位置・反復を取り違えた候補を渡し、SMTの反例もIRで再実行します。一回だけ通るブロックの判定は、4頂点の全有向グラフで独立した到達可能性計算と照合します。
+
 [符号付き逆数除算モデル](../tests/models/signed_reciprocal.smt2.in)は、20種類の正負の除数について、整数上の上位積の正規化・範囲・商・剰余と、誤った係数の反例・最小負数の到達を検査します。
 適用範囲は各モデルの算術・分岐選択と停止済みprefixです。C全体とISAの対応は実行比較でも確認します。
 
@@ -128,11 +133,3 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 cargo build --example inspect_stack_frame --example measure_variables
 python3 tools/measure_source_recovery.py --help
 ```
-
-[保存式の検査](../tests/verification/memory_values.rs)は、加算・積・XOR・部分挿入・除算・条件式の実際の変換を、RAMと最初のfaultを含むSMTモデルで照合します。捕捉する式を変えた候補では反例を再実行します。別々のStoreの未知bitも区別し、捕捉後に利用する値を取り違えた内部planを検査します。
-
-[lifterの切詰め検査](../src/binary/x86/lift/clipping_proofs.rs)は、実際の構築関数が作る式を従来のmaskとSMTで照合します。幅付きLoadとネストしたアドレス読込みも含め、幅の保持とfaultを確認します。機械語のbyte再読込みはnativeとも照合し、直接liftしたIRから保存値の対応を導けることを検査します。
-
-[反復する捕捉](../tests/dataflow/memory_values.rs)は、元レジスタ全体・RAM・PC・faultを各停止予算で比較します。不変値の検査器は、実際のSSA定義と全入力から閉じた主張を確認し、φ・Load・変動する右辺を不変とした候補を退けます。SMTでは実際の変換を1〜4回の反復へ展開した経路を照合し、値を変えた捕捉の反例を再実行します。
-
-出所検査の反復テストは、最後のStoreの値が2、ループ終了後の射影が3になる実行を再現します。同じSSA φに由来することと、同じ反復の値であることを分けて検査します。

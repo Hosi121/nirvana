@@ -24,12 +24,12 @@ CPU実時間やホストのfd番号を含め、何を同一視するかもプロ
 固定された有限状態の機械をそのまま決定不能と呼ぶのは適切ではないが、全状態の列挙を実用的な検査法にはできない。
 検査には適用領域・前提・上限を持たせ、未判定を保持する。
 
-## 確認できる現在地（2026-11-21）
+## 確認できる現在地（2026-11-22）
 
-| 領域 | 基準コミットにある能力と根拠 | 現在の境界 |
+| 領域 | 現在の能力と根拠 | 現在の境界 |
 | --- | --- | --- |
 | 入力 | [ELF reader](../src/binary/elf.rs)、[linked ELF](../src/binary/linked_elf.rs)、[CLI](machine-frontend.md)。ELF64 LEのET_REL/ET_EXEC/ET_DYN、raw bytes、再配置・PLT/GOT・BSS | シンボルまたは数値入口と検査済みFDE範囲を使う。unwind情報に依存しない関数発見、非連続な所属範囲は追加対象 |
-| 命令意味 | [x86](../src/binary/x86/mod.rs)の整数・部分レジスタ・5種のflag。moduleにDIV/IDIV、REP STOS、TLS guard、[限定的なSSE搬送等](../src/binary/x86/vector.rs) | 一般のSIMD演算・浮動小数点、追加の文字列命令、FS/GS、CPU例外は追加対象 |
+| 命令意味 | [x86](../src/binary/x86/mod.rs)の整数・部分レジスタ・5種のflag。moduleにDIV/IDIV、REP STOS/MOVS、TLS guard、[限定的なSSE搬送等](../src/binary/x86/vector.rs) | 一般のSIMD演算・浮動小数点、追加の文字列命令、FS/GS、CPU例外は追加対象 |
 | 関数間実行 | [module IR](../src/model/module_ir.rs)、[HTTP比較](../tests/fixtures/http-server/README.md)。内部・間接CALL、実stackのRET、POSIXアダプタ | ロード直後のモデル画像と限定したLinux環境。stream binding・TLS guard・書式付きI/Oを持つ。起動処理・一般TLS・実libc全体は別の対象 |
 | 間接分岐 | [jump tables](../src/binary/jump_tables.rs)、[input breadth](../tests/end_to_end/input_breadth.rs)。絶対・符号付き相対表から追加命令を発見 | 初期画像の候補は `complete:false`。実行時は現在のRAMを読み、未発見PCでは `UnknownTarget` |
 | 値・型 | [SSA検査](../src/dataflow/ssa/verify.rs)、[MemorySSA](../src/dataflow/memory_ssa.rs)、[module values](../src/dataflow/module_values.rs)、[record候補](../src/dataflow/record_shapes.rs) | 値ID・寿命・保存場所と、元変数・型互換性・実際のaliasは個別の情報。候補宣言は検査付きメモリ実行を変更しない |
@@ -79,6 +79,8 @@ DIV/IDIV・REP STOS・TLS guardの実装と境界比較を足場に、整数の�
 ページ権限・CPU例外、atomic・x86メモリ順序・signal・MMIOは、それぞれ観測契約の拡張として扱う。
 
 ### 3. メモリから値・オブジェクト・型へ上げる
+
+[保存値の復元](../src/dataflow/memory_values.rs)は、SSAのbit射影、部分・分割Store、純粋な保存式と反復中の不変値を扱う。Loadを元の位置に保ち、元レジスタ・RAM・fault・予算を比較する。ここで得る値の対応を、関数間の効果と複合値の回復へ広げる。
 
 レジスタSSAと、byte単位の書込み元・may-aliasを持つMemorySSAを土台に、関数間のメモリ効果とオブジェクト境界を深める。
 [LLVM MemorySSA](https://llvm.org/docs/MemorySSA.html)のdef/use/phiは設計の参考になるが、aliasの正しさやfault順序は別に検査する。
