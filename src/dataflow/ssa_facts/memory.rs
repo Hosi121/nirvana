@@ -1,4 +1,4 @@
-//! Extra SSA dependencies justified by exact reaching stores. Construction
+//! Extra SSA dependencies justified by byte reaching-store provenance. Construction
 //! always uses the current source and graph; bindings are private and immutable.
 //! Loads remain effectful expressions at their original source sites.
 use super::*;
@@ -9,9 +9,17 @@ use crate::model::ir::AccessKind;
 const MAX_INPUTS: usize = 262_144;
 
 #[derive(Clone, Debug)]
+struct Writer {
+    site: Site,
+    width: Width,
+    sources: [u8; 8],
+}
+#[derive(Clone, Debug)]
 struct Load {
     width: Width,
-    writers: Vec<Site>,
+    writers: Vec<Writer>,
+    exact_writers: Vec<Site>,
+    unknown_bytes: u8,
     dependencies: Vec<ValueId>,
 }
 #[derive(Clone, Debug, Default)]
@@ -44,7 +52,6 @@ impl LoadInputs {
                 || access.operand != Operand::Value
                 || !access.path.is_empty()
                 || access.result.is_none()
-                || query.address_widened
                 || query.candidates.is_empty()
             {
                 continue;
@@ -56,35 +63,86 @@ impl LoadInputs {
                 continue;
             }
             let all_bytes = ((1u16 << access.width.bytes()) - 1) as u8;
-            let mut writers = BTreeSet::new();
+            let mut writers = Vec::new();
             let mut dependencies = BTreeSet::new();
-            let mut exact = true;
+            let mut exact = !query.address_widened;
+            let mut unknown_bytes = 0;
+            let mut coverage = 0;
             for clobber in &query.candidates {
                 budget.spend(1).ok()?;
-                if clobber.alias != Alias::Exact || clobber.byte_mask != all_bytes {
-                    exact = false;
-                    break;
+                if clobber.byte_mask == 0
+                    || clobber.byte_mask & !all_bytes != 0
+                    || clobber.unknown_bytes & !clobber.byte_mask != 0
+                {
+                    return None;
                 }
+                coverage |= clobber.byte_mask;
+                unknown_bytes |= clobber.unknown_bytes;
                 let MemoryDefinition::Store { access: store, .. } =
                     memory.definitions().get(clobber.definition.0)?
                 else {
                     exact = false;
-                    break;
+                    unknown_bytes |= clobber.byte_mask;
+                    continue;
                 };
                 let store = &memory.accesses().get(*store)?.source;
                 if store.kind != AccessKind::Write
                     || store.operand != Operand::Destination
                     || !store.path.is_empty()
-                    || store.width != access.width
                 {
-                    exact = false;
-                    break;
+                    return None;
                 }
-                writers.insert(store.site);
+                exact &= clobber.alias == Alias::Exact
+                    && clobber.byte_mask == all_bytes
+                    && clobber.unknown_bytes == 0
+                    && store.width == access.width;
+                let mut sources = clobber.byte_sources;
+                let store_bytes = ((1u16 << store.width.bytes()) - 1) as u8;
+                for (byte, source) in sources.iter_mut().enumerate() {
+                    budget.spend(1).ok()?;
+                    let mask = 1 << byte;
+                    if *source & !store_bytes != 0 || clobber.byte_mask & mask == 0 && *source != 0
+                    {
+                        return None;
+                    }
+                    if clobber.byte_mask & mask != 0
+                        && *source == 0
+                        && clobber.unknown_bytes & mask == 0
+                    {
+                        return None;
+                    }
+                    if clobber.unknown_bytes & mask != 0 {
+                        *source = 0;
+                    }
+                    if exact && byte < access.width.bytes() && *source != mask {
+                        return None;
+                    }
+                }
+                writers.push(Writer {
+                    site: store.site,
+                    width: store.width,
+                    sources,
+                });
                 if retained.checked_add(writers.len())? > limit {
                     return None;
                 }
-                let point = points.get(&store.site)?;
+            }
+            if coverage != all_bytes {
+                return None;
+            }
+            for writer in &mut writers {
+                for (byte, source) in writer.sources.iter_mut().enumerate() {
+                    if unknown_bytes & (1 << byte) != 0 {
+                        *source = 0;
+                    }
+                }
+            }
+            writers.retain(|writer| writer.sources.iter().any(|s| *s != 0));
+            if writers.is_empty() {
+                continue;
+            }
+            for writer in &writers {
+                let point = points.get(&writer.site)?;
                 for read in &point.reads {
                     budget.spend(1).ok()?;
                     dependencies.insert(read.value);
@@ -97,9 +155,6 @@ impl LoadInputs {
                     }
                 }
             }
-            if !exact {
-                continue;
-            }
             retained = retained
                 .checked_add(writers.len())?
                 .checked_add(dependencies.len())?;
@@ -111,7 +166,13 @@ impl LoadInputs {
                 site,
                 Load {
                     width: access.width,
-                    writers: writers.into_iter().collect(),
+                    exact_writers: if exact {
+                        writers.iter().map(|w| w.site).collect()
+                    } else {
+                        Vec::new()
+                    },
+                    writers,
+                    unknown_bytes,
                     dependencies: dependencies.into_iter().collect(),
                 },
             );
@@ -122,9 +183,13 @@ impl LoadInputs {
         self.loads.len()
     }
     pub(crate) fn bindings(&self) -> impl Iterator<Item = (Site, Width, &[Site])> {
-        self.loads
-            .iter()
-            .map(|(&site, load)| (site, load.width, load.writers.as_slice()))
+        self.loads.iter().filter_map(|(&site, load)| {
+            (!load.exact_writers.is_empty()).then_some((
+                site,
+                load.width,
+                load.exact_writers.as_slice(),
+            ))
+        })
     }
     pub(super) fn dependencies(&self, site: Site) -> &[ValueId] {
         self.loads.get(&site).map_or(&[], |load| &load.dependencies)
@@ -140,20 +205,26 @@ impl LoadInputs {
         let Some(load) = self.loads.get(&site) else {
             return Ok(None);
         };
-        let mut result = D::bottom();
-        for &writer in &load.writers {
+        let mut bytes = [D::bottom(); 8];
+        for (index, byte) in bytes.iter_mut().enumerate().take(load.width.bytes()) {
+            if load.unknown_bytes & (1 << index) != 0 {
+                *byte = D::load(Width::U8);
+            }
+        }
+        for writer in &load.writers {
             budget.spend(1)?;
             let point = points
-                .get(&writer)
+                .get(&writer.site)
                 .ok_or(SsaError::Malformed("memory fact store point"))?;
             let index = source
                 .instructions()
-                .binary_search_by_key(&writer.instruction, |i| i.address)
+                .binary_search_by_key(&writer.site.instruction, |i| i.address)
                 .map_err(|_| SsaError::Malformed("memory fact store instruction"))?;
             let assignment = source.instructions()[index]
                 .assignments
                 .get(
                     writer
+                        .site
                         .assignment
                         .ok_or(SsaError::Malformed("memory fact store site"))?,
                 )
@@ -161,7 +232,7 @@ impl LoadInputs {
             let Place::Memory { address, width } = &assignment.destination else {
                 return Err(SsaError::Malformed("memory fact store destination"));
             };
-            if *width != load.width {
+            if *width != writer.width {
                 return Err(SsaError::Malformed("memory fact store width"));
             }
             let mut cursor = 0;
@@ -170,9 +241,29 @@ impl LoadInputs {
             if cursor != point.reads.len() {
                 return Err(SsaError::Malformed("memory fact store reads"));
             }
-            let mask = D::constant(width.mask());
-            budget.spend(D::binary_cost(B::And, value, mask))?;
-            result = result.join(D::binary(B::And, value, mask));
+            for (index, byte) in bytes.iter_mut().enumerate().take(load.width.bytes()) {
+                for source in 0..width.bytes() {
+                    budget.spend(1)?;
+                    if writer.sources[index] & (1 << source) != 0 {
+                        let value = D::unary(
+                            UnaryOp::Extract {
+                                start: (source * 8) as u8,
+                                width: Width::U8,
+                            },
+                            value,
+                        );
+                        *byte = byte.join(value);
+                    }
+                }
+            }
+        }
+        let mut result = D::constant(0);
+        for (index, byte) in bytes.into_iter().enumerate().take(load.width.bytes()) {
+            let count = D::constant((index * 8) as u64);
+            budget.spend(D::binary_cost(B::Shl, byte, count))?;
+            let value = D::binary(B::Shl, byte, count);
+            budget.spend(D::binary_cost(B::Or, result, value))?;
+            result = D::binary(B::Or, result, value);
         }
         Ok(Some(result))
     }

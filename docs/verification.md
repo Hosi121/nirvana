@@ -99,6 +99,7 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 [既知bitの検査](../tests/verification/known_bits.rs)は転送規則をSMTで、[dataflow検査](../tests/dataflow/known_bits.rs)は小領域の全列挙・64-bit境界・φとループの不変条件で確認します。設計の参考は[LLVM KnownBits](https://llvm.org/doxygen/structllvm_1_1KnownBits.html)で、Nirvanaの規則は全域の64-bit演算とmaskしたシフト数に対して検査します。
 [メモリbitの補題](../tests/verification/memory_bits.rs)は成功した同幅Store/Load、別byteへの書込み、byteからwordの組立て、共通bitを持つ分岐を配列SMTで検査します。書込み候補の完全性と元のfault順はMemorySSAの検査・IR比較・C再実行で確認し、変更されたalias・幅・初期メモリの反例も含めます。
 [保存値の検査](../tests/dataflow/memory_values.rs)はレジスタの上書き、分岐での保存、ループ内の再読込み、停止位置ごとの元レジスタ全体を比較します。[word射影の補題](../tests/verification/memory_values.rs)は保存時のmask・拡張幅をSMTで照合します。入口からの実行を対象に、追加したレジスタを射影した状態を比較し、実際の候補SSAで保存値の初期化も確認します。
+[byte対応表の検査](../tests/verification/byte_memory.rs)は、実際のMemorySSAが出した候補を独立したSMT配列モデルと比較します。全幅の位置関係、曖昧なアドレス、φの変換を含みます。実行追跡では書込み元IDに加え、そのStoreのどのbyteが読まれたかも照合します。
 [符号付き逆数除算モデル](../tests/models/signed_reciprocal.smt2.in)は、20種類の正負の除数について、整数上の上位積の正規化・範囲・商・剰余と、誤った係数の反例・最小負数の到達を検査します。
 適用範囲は各モデルの算術・分岐選択と停止済みprefixです。C全体とISAの対応は実行比較でも確認します。
 

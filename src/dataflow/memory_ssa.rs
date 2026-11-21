@@ -97,6 +97,12 @@ pub struct Clobber {
     pub alias: Alias,
     /// Bit i denotes a possible contribution to byte i of the queried Load.
     pub byte_mask: u8,
+    /// For Load byte i, bit j denotes a possible source byte j of this Store.
+    /// Phi-edge translations can contribute several source positions.
+    pub byte_sources: [u8; 8],
+    /// Load bytes with unconstrained initial-memory or opaque contributions.
+    /// A may-alias Store still has a finite set of possible source bytes.
+    pub unknown_bytes: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

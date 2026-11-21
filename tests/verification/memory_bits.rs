@@ -2,10 +2,10 @@
 //! fault order are exercised separately by MemorySSA, IR and C integration tests.
 use crate::support::ir::c;
 use nirvana::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Width};
-fn address(base: &str, byte: usize) -> String {
+pub(super) fn address(base: &str, byte: usize) -> String {
     format!("(bvadd {base} (_ bv{byte} 64))")
 }
-fn put(memory: &str, base: &str, value: &str, bytes: usize) -> String {
+pub(super) fn put(memory: &str, base: &str, value: &str, bytes: usize) -> String {
     let mut result = memory.to_owned();
     for byte in 0..bytes {
         result = format!(
@@ -32,7 +32,10 @@ const HEADER: &str = "(set-logic QF_AUFBV)\n(declare-const m (Array (_ BitVec 64
 fn check(name: &str, query: &str, expected: &str) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target/verification/memory-bit-facts");
-    std::fs::create_dir_all(&root).unwrap();
+    check_at(&root, name, query, expected)
+}
+pub(super) fn check_at(root: &std::path::Path, name: &str, query: &str, expected: &str) {
+    std::fs::create_dir_all(root).unwrap();
     let path = root.join(format!("{name}.smt2"));
     std::fs::write(&path, format!("{HEADER}{query}\n(check-sat)\n")).unwrap();
     let solver = std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into());

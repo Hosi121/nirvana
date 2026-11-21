@@ -183,7 +183,7 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
                     }
                     write!(
                         out,
-                        "{{\"definition\":{},\"alias\":\"{}\",\"byte_mask\":{}}}",
+                        "{{\"definition\":{},\"alias\":\"{}\",\"byte_mask\":{},\"byte_sources\":{:?},\"unknown_bytes\":{}}}",
                         candidate.definition.0,
                         match candidate.alias {
                             Alias::Disjoint => "disjoint",
@@ -191,7 +191,9 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
                             Alias::Overlap => "overlap",
                             Alias::May => "may",
                         },
-                        candidate.byte_mask
+                        candidate.byte_mask,
+                        candidate.byte_sources,
+                        candidate.unknown_bytes,
                     )
                     .unwrap();
                 }

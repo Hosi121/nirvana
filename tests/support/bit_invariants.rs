@@ -56,7 +56,7 @@ fn finish() -> IrInstruction {
         Control::Return(bit(r(2))),
     )
 }
-pub fn memory_programs() -> [Program; 3] {
+pub fn memory_programs() -> [Program; 5] {
     let straight = vec![
         ins(
             0,
@@ -113,5 +113,60 @@ pub fn memory_programs() -> [Program; 3] {
         ),
         finish(),
     ];
-    [straight, diamond, looped].map(|instructions| Program::new(0, 8, instructions).unwrap())
+    let wide_finish = || {
+        ins(
+            4,
+            vec![
+                set(2, Expr::load(address(8), Width::U16)),
+                store(
+                    16,
+                    Width::U64,
+                    Expr::select(
+                        Expr::load(address(24), Width::U64),
+                        r(2),
+                        Expr::load(address(40), Width::U64),
+                    ),
+                ),
+            ],
+            Control::Return(bit(r(2))),
+        )
+    };
+    let partial = vec![
+        ins(
+            0,
+            vec![
+                set(0, Expr::load(r(7), Width::U64)),
+                set(1, tag(r(0))),
+                store(8, Width::U8, r(1)),
+            ],
+            Control::Jump(1),
+        ),
+        ins(1, vec![set(1, c(0))], Control::Jump(4)),
+        wide_finish(),
+    ];
+    let alias = vec![
+        ins(
+            0,
+            vec![
+                set(0, Expr::load(r(7), Width::U64)),
+                set(1, tag(r(0))),
+                set(
+                    6,
+                    b(B::Add, address(8), b(B::Sub, b(B::And, r(0), c(3)), c(1))),
+                ),
+                store(8, Width::U16, r(1)),
+                Assignment {
+                    destination: Place::Memory {
+                        address: r(6),
+                        width: Width::U8,
+                    },
+                    value: c(128),
+                },
+            ],
+            Control::Jump(4),
+        ),
+        wide_finish(),
+    ];
+    [straight, diamond, looped, partial, alias]
+        .map(|instructions| Program::new(0, 8, instructions).unwrap())
 }

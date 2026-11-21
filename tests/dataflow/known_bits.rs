@@ -487,8 +487,176 @@ fn stale_alias_width_and_entry_memory_cannot_justify_reaching_store_bits() {
             .definition
             .unwrap()
             .0;
-        if mode != 0 {
+        if mode == 4 {
+            assert_eq!(fresh.values()[id].one() & 128, 128);
+            assert_eq!(
+                fresh.values()[id].zero() & 0xff00,
+                0,
+                "the initial upper byte remains arbitrary"
+            );
+        } else if mode != 0 {
             assert_eq!(fresh.values()[id].one() & 128, 0);
         }
     }
+}
+
+#[test]
+fn partial_writers_keep_initial_bytes_unknown_and_join_translated_byte_positions() {
+    let store = |address, width, value| Assignment {
+        destination: Place::Memory { address, width },
+        value,
+    };
+    let full = program(vec![ins(
+        0,
+        vec![
+            store(r(7), Width::U8, c(128)),
+            set(1, Expr::load(r(7), Width::U16)),
+        ],
+        Control::Return(r(1)),
+    )]);
+    let plan = BitPlan::analyze(&full).unwrap();
+    let id = plan
+        .graph()
+        .point(Site {
+            instruction: 0,
+            assignment: Some(1),
+        })
+        .unwrap()
+        .definition
+        .unwrap()
+        .0;
+    assert_eq!(plan.values()[id].one(), 128);
+    assert_eq!(plan.values()[id].zero() & 0xff00, 0);
+    assert_eq!(plan.values()[id].number(), None);
+    let phi = program(vec![
+        ins(
+            0,
+            vec![store(r(7), Width::U32, c(0x44332211))],
+            Control::Branch {
+                condition: r(0),
+                target: 2,
+            },
+        ),
+        ins(1, vec![], Control::Jump(3)),
+        ins(2, vec![set(7, b(B::Add, r(7), c(1)))], Control::Jump(3)),
+        ins(
+            3,
+            vec![set(2, Expr::load(r(7), Width::U16))],
+            Control::Return(b(B::And, r(2), c(0x2200))),
+        ),
+    ]);
+    let plan = BitPlan::analyze(&phi).unwrap();
+    let id = plan
+        .graph()
+        .point(Site {
+            instruction: 3,
+            assignment: Some(0),
+        })
+        .unwrap()
+        .definition
+        .unwrap()
+        .0;
+    assert_eq!(plan.values()[id].one(), 0x2200);
+    assert_eq!(plan.values()[id].number(), None);
+    let (candidate, evidence) = plan.propose(&phi).unwrap();
+    assert!(evidence.memory_available && evidence.memory_loads > 0);
+    compare(&phi, &candidate);
+    assert_eq!(
+        candidate.instructions().last().unwrap().control,
+        Control::Return(c(0x2200))
+    );
+    // Whole-value forwarding still requires a full, equal-width writer.
+    assert!(nirvana::memory_values::MemoryValuePlan::analyze(&phi).is_none());
+    assert!(nirvana::memory_values::MemoryValuePlan::analyze(&full).is_none());
+}
+
+#[test]
+fn every_overlapping_width_projection_matches_full_ir_observations() {
+    let tag = 0x0807060504030201u64;
+    let widths = [Width::U8, Width::U16, Width::U32, Width::U64];
+    let mut cases = 0;
+    for read in widths {
+        for write in widths {
+            for offset in -(write.bytes() as i64 - 1)..read.bytes() as i64 {
+                let mut mask = 0;
+                for byte in 0..read.bytes() {
+                    let source = byte as i64 - offset;
+                    if (0..write.bytes() as i64).contains(&source) {
+                        mask |= ((tag >> (source * 8)) & 255) << (byte * 8);
+                    }
+                }
+                let source = program(vec![ins(
+                    0,
+                    vec![
+                        set(1, b(B::Or, r(0), c(tag))),
+                        Assignment {
+                            destination: Place::Memory {
+                                address: b(B::Add, r(7), c(offset as u64)),
+                                width: write,
+                            },
+                            value: r(1),
+                        },
+                        set(2, Expr::load(r(7), read)),
+                    ],
+                    Control::Return(b(B::And, r(2), c(mask))),
+                )]);
+                let plan = BitPlan::analyze(&source).unwrap();
+                let (candidate, evidence) = plan.propose(&source).unwrap();
+                assert!(evidence.memory_available && evidence.memory_loads > 0);
+                assert_eq!(
+                    candidate.instructions()[0].control,
+                    Control::Return(c(mask)),
+                    "{read:?}/{write:?}/{offset}"
+                );
+                compare(&source, &candidate);
+                cases += 1;
+            }
+        }
+    }
+    assert_eq!(cases, 104);
+    println!(
+        "{cases} overlapping width/offset projections, 128128 full-register/RAM/PC/budget observations"
+    );
+}
+
+#[test]
+fn may_alias_byte_stores_retain_bits_shared_by_every_possible_writer() {
+    let source = program(vec![ins(
+        0,
+        vec![
+            set(1, b(B::Or, b(B::And, r(0), c(15)), c(128))),
+            Assignment {
+                destination: Place::Memory {
+                    address: r(7),
+                    width: Width::U16,
+                },
+                value: r(1),
+            },
+            Assignment {
+                destination: Place::Memory {
+                    address: r(6),
+                    width: Width::U8,
+                },
+                value: c(128),
+            },
+            set(2, Expr::load(r(7), Width::U16)),
+        ],
+        Control::Return(b(B::And, r(2), c(128))),
+    )]);
+    let plan = BitPlan::analyze(&source).unwrap();
+    let (candidate, evidence) = plan.propose(&source).unwrap();
+    assert!(evidence.memory_available && evidence.store_load_edges >= 2);
+    assert_eq!(candidate.instructions()[0].control, Control::Return(c(128)));
+    for value in [0, 1, 7, 15, u64::MAX] {
+        for pointer in [4096u64, 4097, 4104, 4126, u64::MAX] {
+            for delta in [0u64, 1, 2, 7, u64::MAX] {
+                let input = [value, 0, 0, 0, 0, 0, pointer.wrapping_add(delta), pointer];
+                assert_eq!(
+                    source.run_with_memory(&input, 4096, &[0xa5; 32], 1),
+                    candidate.run_with_memory(&input, 4096, &[0xa5; 32], 1)
+                );
+            }
+        }
+    }
+    assert!(nirvana::memory_values::MemoryValuePlan::analyze(&source).is_none());
 }

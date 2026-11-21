@@ -50,21 +50,32 @@ pub(super) fn queries(
                 continue;
             }
             *visited |= bytes;
-            let mut record = |alias, byte_mask| {
+            let mut record = |alias, byte_mask, mut byte_sources: [u8; 8], unknown_bytes| {
+                for (byte, sources) in byte_sources.iter_mut().enumerate() {
+                    if byte_mask & (1 << byte) == 0 {
+                        *sources = 0;
+                    }
+                }
                 candidates
                     .entry(id)
                     .and_modify(|old| {
                         old.alias = std::cmp::max(old.alias, alias);
                         old.byte_mask |= byte_mask;
+                        old.unknown_bytes |= unknown_bytes & byte_mask;
+                        for (old, new) in old.byte_sources.iter_mut().zip(byte_sources) {
+                            *old |= new;
+                        }
                     })
                     .or_insert(Clobber {
                         definition: id,
                         alias,
                         byte_mask,
+                        byte_sources,
+                        unknown_bytes: unknown_bytes & byte_mask,
                     });
             };
             match &analysis.definitions[id.0] {
-                Definition::Initial => record(Alias::May, bytes),
+                Definition::Initial => record(Alias::May, bytes, [0; 8], bytes),
                 Definition::Phi { block, inputs } => {
                     remaining = remaining
                         .checked_sub(inputs.len())
@@ -85,14 +96,14 @@ pub(super) fn queries(
                     }
                 }
                 Definition::Opaque { previous, .. } => {
-                    record(Alias::May, bytes);
+                    record(Alias::May, bytes, [0; 8], bytes);
                     pending.push((*previous, location, bytes));
                 }
                 Definition::Store {
                     access: store,
                     previous,
                 } => {
-                    let (alias, mask) = relation(
+                    let (alias, mask, sources) = relation(
                         location.as_ref(),
                         analysis.accesses[*store].address.as_ref(),
                         access.source.width,
@@ -100,7 +111,7 @@ pub(super) fn queries(
                     );
                     let overlap = mask.unwrap_or(all_bytes) & bytes;
                     if overlap != 0 {
-                        record(alias, overlap);
+                        record(alias, overlap, sources, 0);
                     }
                     let pending_bytes = bytes & !mask.unwrap_or(0);
                     if pending_bytes != 0 {
@@ -130,16 +141,26 @@ fn relation(
     store: Option<&ModularAddress>,
     read_width: crate::model::ir::Width,
     store_width: crate::model::ir::Width,
-) -> (Alias, Option<u8>) {
+) -> (Alias, Option<u8>, [u8; 8]) {
+    // If this Store contributes at all, the byte must come from within its
+    // own value. Older writers remain candidates when the address may alias.
+    let mut possible = [0; 8];
+    let source_mask = ((1u16 << store_width.bytes()) - 1) as u8;
+    possible[..read_width.bytes()].fill(source_mask);
     let (Some(read), Some(store)) = (read, store) else {
-        return (Alias::May, None);
+        return (Alias::May, None, possible);
     };
     if read.terms != store.terms {
-        return (Alias::May, None);
+        return (Alias::May, None, possible);
     }
     let (a, b) = (read.offset, store.offset);
     let (ra, rb) = (read_width.bytes() as u64, store_width.bytes() as u64);
+    let mut sources = [0; 8];
     let mask = (0..ra).fold(0u8, |mask, byte| {
+        let source = a.wrapping_add(byte).wrapping_sub(b);
+        if source < rb {
+            sources[byte as usize] = 1 << source;
+        }
         mask | if a.wrapping_add(byte).wrapping_sub(b) < rb {
             1 << byte
         } else {
@@ -153,5 +174,5 @@ fn relation(
     } else {
         Alias::Overlap
     };
-    (alias, Some(mask))
+    (alias, Some(mask), sources)
 }

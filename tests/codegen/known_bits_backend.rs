@@ -152,15 +152,17 @@ fn bit_phi_and_loop_invariants_reduce_c_while_preserving_all_ram_and_first_fault
                     4120,
                     4128,
                     4144,
+                    4151,
                     4152,
                     4159,
                     u64::MAX,
                 ] {
-                    writeln!(text, "{pointer} {x} 17 19 {flag}").unwrap();
+                    let stored = x.rotate_left(8) ^ 0xa500;
+                    writeln!(text, "{pointer} {x} {stored} 19 {flag}").unwrap();
                     let mut memory: Vec<_> = (0..64usize)
                         .map(|n| n.wrapping_mul(29).wrapping_add(7) as u8)
                         .collect();
-                    for (i, v) in [x, 17, 19, flag].into_iter().enumerate() {
+                    for (i, v) in [x, stored, 19, flag].into_iter().enumerate() {
                         if let Some(o) = pointer
                             .checked_add(i as u64 * 8)
                             .and_then(|a| a.checked_sub(4096))

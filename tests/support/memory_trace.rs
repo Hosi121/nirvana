@@ -19,6 +19,7 @@ struct Replay<'a> {
     registers: Vec<u64>,
     memory: Vec<u8>,
     writers: Vec<MemoryId>,
+    writer_bytes: Vec<u8>,
     analysis: &'a Analysis,
     queries: BTreeMap<usize, &'a Query>,
     sites: BTreeMap<(u64, usize, bool), Site>,
@@ -85,12 +86,13 @@ impl Replay<'_> {
         let query = self.queries[&index];
         for byte in 0..width.bytes() {
             let writer = self.writers[offset + byte];
+            let candidate=query.candidates.iter().find(|c|c.definition==writer && c.byte_mask & (1 << byte)!=0)
+                .unwrap_or_else(||panic!("lost writer: site={site:?} address={address:#x} byte={byte} writer={writer:?} query={query:?}"));
             assert!(
-                query
-                    .candidates
-                    .iter()
-                    .any(|c| c.definition == writer && c.byte_mask & (1 << byte) != 0),
-                "lost writer: site={site:?} address={address:#x} byte={byte} writer={writer:?} query={query:?}"
+                candidate.unknown_bytes & (1 << byte) != 0
+                    || candidate.byte_sources[byte] & (1 << self.writer_bytes[offset + byte]) != 0,
+                "lost source byte: {site:?}/{address:#x}/byte {byte}/source {}: {candidate:?}",
+                self.writer_bytes[offset + byte]
             );
             self.stats.read_bytes += 1;
         }
@@ -184,6 +186,9 @@ impl Replay<'_> {
                 .unwrap();
             let writer = access.definition.unwrap();
             self.writers[offset..offset + width.bytes()].fill(writer);
+            for byte in 0..width.bytes() {
+                self.writer_bytes[offset + byte] = byte as u8;
+            }
             self.stats.written_bytes += width.bytes();
         }
         Ok(())
@@ -270,6 +275,7 @@ pub fn check(
     let mut replay = Replay {
         base: module.image.memory_base,
         writers: vec![MemoryId(0); memory.len()],
+        writer_bytes: vec![0; memory.len()],
         registers,
         memory,
         analysis,

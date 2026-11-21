@@ -225,6 +225,17 @@ for function in report['functions']:
         covered=0
         for c in query['candidates']:
             assert c['byte_mask'] and c['byte_mask'] & ~mask == 0
+            assert c['unknown_bytes'] & ~c['byte_mask'] == 0
+            assert len(c['byte_sources'])==8
+            d=defs[c['definition']]
+            if d['kind']=='store':
+                source_mask=(1<<(accesses[d['access']]['width']//8))-1
+                assert all(s & ~source_mask == 0 for s in c['byte_sources'])
+            else:
+                assert c['unknown_bytes']==c['byte_mask'] and not any(c['byte_sources'])
+            for i,sources in enumerate(c['byte_sources']):
+                if c['byte_mask'] & (1<<i): assert sources or c['unknown_bytes'] & (1<<i)
+                else: assert sources==0
             covered |= c['byte_mask']
         assert covered==mask
     checked+=1

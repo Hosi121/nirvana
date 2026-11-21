@@ -95,7 +95,7 @@ DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認して�
 [reduce](../src/transform/reduce.rs)は補助値を整理し、[web](../src/dataflow/web.rs)はレジスタ定義を使用とのつながりで分割します。
 候補ごとの検査を経て、load-mask、SSA定数伝播、算術式選択、純粋な不要代入除去を表示IRへ適用します。
 [known_bits](../src/dataflow/known_bits.rs)は既知の0/1を別maskで持ち、φでは両経路に共通するbitを残します。定数伝播と[SSA fact基盤](../src/dataflow/ssa_facts.rs)を共有し、解いた固定点を閉じた不変条件として再検査します。表示IRへは、証明できたLoad-freeの定数部分式を採用します。
-[メモリ入力](../src/dataflow/ssa_facts/memory.rs)は、同じ全byte幅の読み書きについてMemorySSAの全書込み候補を照合し、StoreのSSA入力からLoad結果へ依存辺を加えます。保存・再読込み・φを一つの固定点で解き、レジスタの上書きやループを越える共通bitを保ちます。初期メモリや曖昧な書込み候補はLoadの幅による情報として扱い、Load自体は元の位置に残します。
+[メモリ入力](../src/dataflow/ssa_facts/memory.rs)はMemorySSAのbyte対応表を使い、StoreのSSA入力からLoad結果へ依存辺を加えます。幅の違う書込みもbyteごとに組み立て、φでは書込み元byteの候補を合流します。曖昧なアドレスのStoreにも、その値のbyteだけが届くという範囲を使います。初期メモリ・opaque効果が届くbyteは未知とし、Load自体を元の位置に保って固定点を検査します。
 [memory_values](../src/dataflow/memory_values.rs)は、全書込み候補が同じ保存値を指すLoadの利用先を、その値のスナップショットへ結びます。最初のcycleより前に一度確保できる値を扱い、全bitを保存してword幅への射影を利用時に行います。[対応検査](../src/dataflow/memory_values/verify.rs)は実際の候補と初期化状態を照合します。C出力では元の候補とも比較し、局所変数数、関数本体の長さ、全体長の順で選びます。
 [arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
 [signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。

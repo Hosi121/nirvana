@@ -525,13 +525,19 @@ fn byte_intervals_match_executed_memory_for_all_widths_and_shifted_overlaps() {
                 let (p, a) = analyze(vec![
                     ins(
                         100,
-                        vec![store(add(r(0), offset as u64), write, 2)],
+                        vec![Assignment {
+                            destination: Place::Memory {
+                                address: add(r(0), offset as u64),
+                                width: write,
+                            },
+                            value: c(0x0807060504030201),
+                        }],
                         Control::Next,
                     ),
                     ins(101, vec![], Control::Return(Expr::load(r(0), read))),
                 ]);
                 let RunStatus::Returned(value) = p
-                    .run_with_memory(&[64, 0, 0, 0], 0, &[1; 128], 10)
+                    .run_with_memory(&[64, 0, 0, 0], 0, &[0xaa; 128], 10)
                     .unwrap()
                     .status
                 else {
@@ -541,8 +547,8 @@ fn byte_intervals_match_executed_memory_for_all_widths_and_shifted_overlaps() {
                 let mut expected = BTreeMap::new();
                 for (byte, tag) in value.to_le_bytes().iter().take(read.bytes()).enumerate() {
                     let writer = match tag {
-                        1 => 0,
-                        2 => 100,
+                        0xaa => 0,
+                        1..=8 => 100,
                         _ => panic!(),
                     };
                     *expected.entry(writer).or_insert(0u8) |= 1 << byte;
@@ -551,8 +557,75 @@ fn byte_intervals_match_executed_memory_for_all_widths_and_shifted_overlaps() {
                     candidates, expected,
                     "read={read:?} write={write:?} offset={offset}"
                 );
+                let query = &a.queries().as_ref().unwrap()[0];
+                for candidate in &query.candidates {
+                    for byte in 0..8 {
+                        let contributes = candidate.byte_mask & (1 << byte) != 0;
+                        match &a.definitions()[candidate.definition.0] {
+                            Definition::Initial => {
+                                assert_eq!(candidate.unknown_bytes & (1 << byte) != 0, contributes);
+                                assert_eq!(candidate.byte_sources[byte], 0);
+                            }
+                            Definition::Store { .. } => {
+                                assert_eq!(candidate.unknown_bytes, 0);
+                                let expected = if contributes {
+                                    1 << (value.to_le_bytes()[byte] - 1)
+                                } else {
+                                    0
+                                };
+                                assert_eq!(
+                                    candidate.byte_sources[byte], expected,
+                                    "{read:?}/{write:?}/{offset}/byte {byte}"
+                                );
+                            }
+                            other => panic!("{other:?}"),
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+#[test]
+fn phi_translations_retain_every_possible_store_byte_position() {
+    let (p, a) = analyze(vec![
+        ins(
+            100,
+            vec![Assignment {
+                destination: Place::Memory {
+                    address: r(0),
+                    width: Width::U32,
+                },
+                value: c(0x44332211),
+            }],
+            Control::Branch {
+                condition: r(1),
+                target: 110,
+            },
+        ),
+        ins(101, vec![], Control::Jump(120)),
+        ins(110, vec![set(0, add(r(0), 1))], Control::Jump(120)),
+        ins(
+            120,
+            vec![set(2, Expr::load(r(0), Width::U16))],
+            Control::Return(r(2)),
+        ),
+    ]);
+    let query = a.queries().as_ref().unwrap().last().unwrap();
+    assert!(query.translated_edges > 0);
+    assert_eq!(query.candidates.len(), 1);
+    let writer = query.candidates[0];
+    assert_eq!(writer.byte_mask, 3);
+    assert_eq!(writer.unknown_bytes, 0);
+    assert_eq!(writer.byte_sources, [3, 6, 0, 0, 0, 0, 0, 0]);
+    for (branch, expected) in [(0, 0x2211), (1, 0x3322)] {
+        assert_eq!(
+            p.execute_with_memory(&[64, branch, 0, 0], 0, &[0xa5; 128], 16)
+                .unwrap()
+                .value,
+            expected
+        );
     }
 }
 

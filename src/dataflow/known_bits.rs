@@ -153,7 +153,7 @@ pub struct BitEvidence {
     pub known_values: usize,
     pub constant_values: usize,
     pub replacements: usize,
-    /// Exact root loads linked to reaching stores in the current source.
+    /// Root loads with known byte sources in the current source's stores.
     pub memory_loads: usize,
     /// Reaching store-to-load links, including multiple uses of one store.
     pub store_load_edges: usize,
