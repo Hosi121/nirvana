@@ -1,0 +1,176 @@
+{
+  "schema": "nirvana-ctf-stdio-summary-v1",
+  "nirvana_commit": "7c65e304d45f5a56756ef1df6632687a195b1404",
+  "baseline_commit": "13347ba",
+  "manifest_sha256": "eab33d95b7d15628dc766d51f61f1984433fc2a76aa4c791d045ecb91486071c",
+  "binary_sha256": "66e8392f3eaaf0ee279369f4bbdb61ca7ede335f802339359e67daaa171b4340",
+  "nirvana_sha256": "e65093ff3ffa482e56816084618216ccb07c70da5e19342b0c50aa24a98b1e54",
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "scope": "process exit code, stdout bytes and stderr bytes; C locale",
+  "input_source": "author-provided solution, zeros and mutants from pinned model runs",
+  "summary": {
+    "defined_inputs": 8,
+    "generated_executables": 6,
+    "comparisons": 48,
+    "matched": 48
+  },
+  "before_known_solution": {
+    "original": {
+      "status": 0,
+      "stdout": "To get the flag, you must correctly enter six 9-digit positive integers: a, b, c, d, e, and f.\n\na = b = c = d = e = f = Correct.\nuiuctf{2a142dd72e87fa9c1456a32d1bc4f77739975e5fcf5c6c0}\n",
+      "stderr": ""
+    },
+    "generated": {
+      "status": 3,
+      "stdout": "To get the flag, you must correctly enter six 9-digit positive integers: a, b, c, d, e, and f.\n",
+      "stderr": "nirvana module: status=3 pc=0x4140b8 started=13 fault=0x0 width=0 access=0\n"
+    }
+  },
+  "fixtures": {
+    "original_profiles": 4,
+    "generated_profiles": 24,
+    "inputs": 8,
+    "native_comparisons": 192,
+    "profiles": "GCC O0/O2, EXEC/PIE; three generated C backends at O0/O2 with UBSan"
+  },
+  "cases": [
+    {
+      "index": 0,
+      "input": "705965527 780663452 341222189 465893239 966221407 217433792\n",
+      "purpose": "author-provided solution",
+      "exit_code": 0,
+      "stdout_sha256": "1bbb7ddeb05764413ef1e0cf4e81e8fe1cce600bce01be753c8762f0ac96b43f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": true
+    },
+    {
+      "index": 1,
+      "input": "0 0 0 0 0 0\n",
+      "purpose": "out-of-range rejection",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    },
+    {
+      "index": 2,
+      "input": "705965528 780663452 341222189 465893239 966221407 217433792\n",
+      "purpose": "one changed argument 0",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    },
+    {
+      "index": 3,
+      "input": "705965527 780663453 341222189 465893239 966221407 217433792\n",
+      "purpose": "one changed argument 1",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    },
+    {
+      "index": 4,
+      "input": "705965527 780663452 341222190 465893239 966221407 217433792\n",
+      "purpose": "one changed argument 2",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    },
+    {
+      "index": 5,
+      "input": "705965527 780663452 341222189 465893240 966221407 217433792\n",
+      "purpose": "one changed argument 3",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    },
+    {
+      "index": 6,
+      "input": "705965527 780663452 341222189 465893239 966221408 217433792\n",
+      "purpose": "one changed argument 4",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    },
+    {
+      "index": 7,
+      "input": "705965527 780663452 341222189 465893239 966221407 217433793\n",
+      "purpose": "one changed argument 5",
+      "exit_code": 0,
+      "stdout_sha256": "32c859d1c5a16ea8ce23cbc70be8f492b140e6c9471d5e2d09c338b53a2e2ff1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "accepted": false
+    }
+  ],
+  "backends": [
+    {
+      "mode": "module-c",
+      "optimization": "-O0",
+      "c_sha256": "6232c5dbf76c398c62982b2c18329ebcbd0f102bfecd8376a43f8492c6a96ea0",
+      "executable_sha256": "a0338f5d55bee1dcbdf4b382d6610cf76119a8d339db53a9eab150975e83327e",
+      "matched": 8
+    },
+    {
+      "mode": "module-c",
+      "optimization": "-O2",
+      "c_sha256": "6232c5dbf76c398c62982b2c18329ebcbd0f102bfecd8376a43f8492c6a96ea0",
+      "executable_sha256": "2c8f8de77bacb170669a5bfcd0451bbdb7017aa26a66b868715354cc77711ae4",
+      "matched": 8
+    },
+    {
+      "mode": "module-readable-c",
+      "optimization": "-O0",
+      "c_sha256": "84e791e34f9d002a7b6b590f12ea1542153a073aff4bad8bd0417b3abc29bfa8",
+      "executable_sha256": "5ab1a1ec0cb32f2145e310470b7772052aa459b6d0672d7255a15e4643f813a1",
+      "matched": 8
+    },
+    {
+      "mode": "module-readable-c",
+      "optimization": "-O2",
+      "c_sha256": "84e791e34f9d002a7b6b590f12ea1542153a073aff4bad8bd0417b3abc29bfa8",
+      "executable_sha256": "7c3640b29e950fe67c62aae1e918a4d0d08f427b0d021b5b40c2d5e9525f35a8",
+      "matched": 8
+    },
+    {
+      "mode": "module-locals-c",
+      "optimization": "-O0",
+      "c_sha256": "bb569d6d18f49b37e52a423ab407aa4b9cf6d037604ecb3c9bc9c86bd811ba37",
+      "executable_sha256": "310e3ddc854f3525e562a6ac5277e74e138356ed2cff1351f062f7557286aa85",
+      "matched": 8
+    },
+    {
+      "mode": "module-locals-c",
+      "optimization": "-O2",
+      "c_sha256": "bb569d6d18f49b37e52a423ab407aa4b9cf6d037604ecb3c9bc9c86bd811ba37",
+      "executable_sha256": "5e5e8df8f4e8d7efc65dce83f10b628f1761a2df7c405633eafa1800e1a04148",
+      "matched": 8
+    }
+  ],
+  "diagnostic_inputs": [
+    {
+      "input": "",
+      "observed_match": true,
+      "caveat": "original source leaves locals indeterminate after failed scanf"
+    },
+    {
+      "input": "bad\n",
+      "observed_match": true,
+      "caveat": "original source leaves locals indeterminate after failed scanf"
+    },
+    {
+      "input": "705965527 780663452\n",
+      "observed_match": true,
+      "caveat": "original source leaves locals indeterminate after failed scanf"
+    }
+  ],
+  "limitations": [
+    "original incomplete inputs leave uninitialized locals; diagnostics are separate from defined-input parity",
+    "Inputs use the public author solution and controlled mutants; this is a native parity check, not a blind solve",
+    "General allocator, FILE internals, remaining libc imports and sparse/signal profiles are further work"
+  ]
+}
