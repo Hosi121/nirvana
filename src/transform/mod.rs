@@ -21,5 +21,6 @@ pub mod remainder_expr;
 pub mod remainder_graph;
 pub mod self_update;
 pub mod sequence;
+pub mod signed_division_expr;
 pub mod signed_expr;
 pub mod simplify;

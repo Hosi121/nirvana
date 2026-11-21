@@ -80,6 +80,24 @@ impl Printer<'_> {
         }
         if let Some(view) = idioms::recognize(expr) {
             return match view {
+                idioms::View::Signed {
+                    name,
+                    value,
+                    divisor,
+                } => {
+                    let literal = if divisor < 0 {
+                        format!("-INT64_C({})", divisor.unsigned_abs())
+                    } else {
+                        format!("INT64_C({divisor})")
+                    };
+                    atom(
+                        format!(
+                            "{name}({}, {literal})",
+                            self.expression_at(value, point).text
+                        ),
+                        true,
+                    )
+                }
                 idioms::View::Call { name, arguments } => {
                     let arguments = arguments
                         .into_iter()

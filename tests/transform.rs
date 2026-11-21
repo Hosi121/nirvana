@@ -7,6 +7,7 @@ mod support {
     pub mod native;
     #[path = "../../examples/programs/mod.rs"]
     pub mod programs;
+    pub mod signed_reciprocals;
 }
 
 #[path = "transform/access_expr.rs"]
@@ -49,6 +50,8 @@ mod remainder_graph;
 mod self_update;
 #[path = "transform/sequence.rs"]
 mod sequence;
+#[path = "transform/signed_division_expr.rs"]
+mod signed_division_expr;
 #[path = "transform/signed_expr.rs"]
 mod signed_expr;
 #[path = "transform/simplify.rs"]

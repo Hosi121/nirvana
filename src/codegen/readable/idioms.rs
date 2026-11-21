@@ -7,9 +7,15 @@ use crate::transform::division_expr;
 use crate::transform::narrow_division_expr;
 use crate::transform::narrow_rotate::{self, Direction, NarrowRotate, NarrowWidth};
 use crate::transform::remainder_expr;
+use crate::transform::signed_division_expr;
 use crate::transform::signed_expr::{self, SignedKind};
 
 pub(super) enum View<'a> {
+    Signed {
+        name: &'static str,
+        value: &'a Expr,
+        divisor: i64,
+    },
     Call {
         name: &'static str,
         arguments: Vec<&'a Expr>,
@@ -25,6 +31,20 @@ pub(super) enum View<'a> {
 }
 
 pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
+    if let Some(view) = signed_division_expr::recognize_remainder(expression) {
+        return Some(View::Signed {
+            name: "nirvana_srem64",
+            value: view.value,
+            divisor: view.divisor,
+        });
+    }
+    if let Some(view) = signed_division_expr::recognize(expression) {
+        return Some(View::Signed {
+            name: "nirvana_sdiv64",
+            value: view.value,
+            divisor: view.divisor,
+        });
+    }
     if let Some(view) = remainder_expr::recognize(expression) {
         return Some(View::Remainder {
             value: view.value,
@@ -76,6 +96,12 @@ pub(super) fn preserve_mask(expression: &Expr) -> bool {
 
 pub(super) fn definitions(code: &str) -> String {
     let mut definitions = integer::selected_helpers(code);
+    if code.contains("nirvana_sdiv64(") || code.contains("nirvana_srem64(") {
+        definitions.push_str(signed_division_expr::DIVIDE_HELPER);
+    }
+    if code.contains("nirvana_srem64(") {
+        definitions.push_str(signed_division_expr::REMAINDER_HELPER);
+    }
     let mut include = |name: &str, definition: &str| {
         if code.contains(&format!("{name}(")) {
             definitions.push_str(definition);

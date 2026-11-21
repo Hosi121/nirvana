@@ -90,6 +90,7 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 [reduce](../src/transform/reduce.rs)は補助値を整理し、[web](../src/dataflow/web.rs)はレジスタ定義を使用とのつながりで分割します。
 候補ごとの検査を経て、load-mask、SSA定数伝播、算術式選択、純粋な不要代入除去を表示IRへ適用します。
 [arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
+[signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。
 Loadのスナップショット、保存位置、全命令の代入順も採用条件です。
 
 [LocalPlan](../src/codegen/readable/locals.rs)は表示IRの幅・生存範囲・copy関係・値の系譜から名前と保存場所を決めます。

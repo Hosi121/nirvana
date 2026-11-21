@@ -3,6 +3,7 @@
 mod support {
     pub mod ir;
     pub mod rewrite_cases;
+    pub mod signed_reciprocals;
 }
 
 #[path = "verification/block_verification.rs"]
