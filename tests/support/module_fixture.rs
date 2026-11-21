@@ -5,14 +5,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
 
-pub(crate) fn compile(command: &mut Command) {
-    let output = command.output().unwrap();
-    assert!(
-        output.status.success(),
-        "{command:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+pub(crate) use super::native::compile;
 #[derive(Clone)]
 pub(crate) struct Case {
     pub(crate) input: [u64; 4],

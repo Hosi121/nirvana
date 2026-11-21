@@ -5,54 +5,11 @@
 mod native;
 
 use nirvana::{linked_elf::LinkedOptions, module_ir};
-use std::{
-    io::Write,
-    path::Path,
-    process::{Command, Output, Stdio},
-    time::{Duration, Instant},
-};
+use std::time::Duration;
 
-fn run(binary: &Path, input: &str) -> Output {
-    let mut child = Command::new(binary)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while child.try_wait().unwrap().is_none() {
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("formatted fixture timed out: {}", binary.display());
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    child.wait_with_output().unwrap()
-}
+use native::{compile_c as compile, run_output};
 
-fn compile(source: &Path, binary: &Path, flags: &[&str]) {
-    let output = Command::new("cc")
-        .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic"])
-        .args(flags)
-        .arg(source)
-        .arg("-o")
-        .arg(binary)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}: {}",
-        source.display(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
 fn mixed_integer_widths_stack_varargs_and_failed_scans_match_native() {
@@ -91,7 +48,10 @@ fn mixed_integer_widths_stack_varargs_and_failed_scans_match_native() {
                 "12 bad\n",
                 "12 34 56 78 -9 bad\n",
             ];
-            let expected: Vec<_> = inputs.iter().map(|input| run(&original, input)).collect();
+            let expected: Vec<_> = inputs
+                .iter()
+                .map(|input| run_output(&original, Some(input), TIMEOUT))
+                .collect();
             for (name, code) in [
                 ("flat", nirvana::module_emit::emit_c(&module).unwrap()),
                 (
@@ -119,7 +79,7 @@ fn mixed_integer_widths_stack_varargs_and_failed_scans_match_native() {
                         ],
                     );
                     for (input, expected) in inputs.iter().zip(&expected) {
-                        let actual = run(&binary, input);
+                        let actual = run_output(&binary, Some(input), TIMEOUT);
                         assert_eq!(
                             (actual.status.code(), &actual.stdout, &actual.stderr),
                             (expected.status.code(), &expected.stdout, &expected.stderr),
@@ -156,7 +116,7 @@ fn checked_formatted_abi_handles_bounds_partial_input_and_rejections() {
             &binary,
             &[opt, "-fsanitize=undefined", "-fno-sanitize-recover=all"],
         );
-        let output = run(&binary, "");
+        let output = run_output(&binary, Some(""), TIMEOUT);
         assert!(
             output.status.success(),
             "{opt}: {}",

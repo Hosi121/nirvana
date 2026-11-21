@@ -2,31 +2,13 @@
 //! Real network I/O uses an ephemeral loopback listener and bounded waits only.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+#[path = "support/native.rs"]
+#[allow(dead_code)]
+mod native;
 
-struct Scratch(PathBuf);
+use std::time::Duration;
 
-impl Scratch {
-    fn new() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "nirvana-module-posix-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+use native::{Scratch, compile_c, run_output};
 
 #[test]
 fn linux_posix_bridge_obeys_checked_guest_abi_at_o0_and_o2() {
@@ -45,43 +27,8 @@ fn linux_posix_bridge_obeys_checked_guest_abi_at_o0_and_o2() {
     .unwrap();
     for optimization in ["-O0", "-O2"] {
         let executable = scratch.0.join(optimization);
-        let compiled = Command::new("cc")
-            .args([
-                "-std=c11",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-pedantic",
-                optimization,
-            ])
-            .arg(&source)
-            .arg("-o")
-            .arg(&executable)
-            .output()
-            .unwrap();
-        assert!(
-            compiled.status.success(),
-            "C compilation {optimization}: {}",
-            String::from_utf8_lossy(&compiled.stderr)
-        );
-        let mut child = Command::new(&executable)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let timed_out = loop {
-            if child.try_wait().unwrap().is_some() {
-                break false;
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                break true;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        };
-        let output = child.wait_with_output().unwrap();
-        assert!(!timed_out, "bounded C POSIX harness timed out");
+        compile_c(&source, &executable, &[optimization]);
+        let output = run_output(&executable, None, Duration::from_secs(10));
         assert!(
             output.status.success(),
             "C harness {optimization}: {}",
