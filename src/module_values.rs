@@ -3,7 +3,7 @@
 //! The private projection supplies events to SSA, not executable instructions.
 //! Closed internal calls retain unchanged identities; other calls consume all
 //! guest registers and produce fresh unknown values. Analysis
-//! follows function entry and normal call continuations; arbitrary PC reentry
+//! follows function entry and normal effect continuations; arbitrary PC reentry
 //! still uses the full checked module state. Memory remains an ordered byte store.
 
 use std::collections::BTreeMap;
@@ -25,6 +25,7 @@ pub enum PointRole {
     Assignment { original: usize },
     VectorAssignment { original: usize },
     VectorGuard,
+    DivideSource,
     Target,
     Input { register: Reg },
     OpaqueOutput { register: Reg },
@@ -32,7 +33,14 @@ pub enum PointRole {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BoundaryKind {
-    Call { continuation: u64 },
+    Call {
+        continuation: u64,
+    },
+    Divide {
+        continuation: u64,
+        width: Width,
+        signed: bool,
+    },
     Tail,
     Return,
 }
@@ -48,9 +56,10 @@ pub struct Boundary {
     pub address: u64,
     pub kind: BoundaryKind,
     pub target_reads: Vec<RegisterValue>,
+    pub operand_reads: Vec<RegisterValue>,
     /// Conservative register observations before entering the call or exit.
     pub inputs: Vec<RegisterValue>,
-    /// Fresh identities on a normal call continuation; values are unknown.
+    /// Fresh identities on a normal effect continuation; values are unknown.
     pub outputs: Vec<RegisterValue>,
     /// Live identities forwarded unchanged to a normal call continuation.
     pub preserved: Vec<RegisterValue>,
@@ -204,7 +213,13 @@ fn members(values: &FunctionValues) -> usize {
         + values
             .boundaries
             .iter()
-            .map(|b| b.inputs.len() + b.outputs.len() + b.target_reads.len() + b.preserved.len())
+            .map(|b| {
+                b.inputs.len()
+                    + b.outputs.len()
+                    + b.target_reads.len()
+                    + b.operand_reads.len()
+                    + b.preserved.len()
+            })
             .sum::<usize>()
 }
 
@@ -335,8 +350,51 @@ impl Projection<'_> {
         let address = instruction.address();
         let mut assignments = Vec::new();
         let control = match instruction {
-            Instruction::Divide { .. } => {
-                return Err("module values retain division as an opaque instruction effect".into());
+            Instruction::Divide {
+                source,
+                width,
+                signed,
+                ..
+            } => {
+                self.expression(source)?;
+                self.read(
+                    address,
+                    &mut assignments,
+                    source.clone(),
+                    PointRole::DivideSource,
+                )?;
+                // Byte division reads AX and writes AL/AH, both within RAX.
+                // Wider operations also read and write RDX. Full raw identities
+                // include any preserved upper bits in the canonical result.
+                let registers: &[Reg] = if *width == Width::U8 {
+                    &[Reg(crate::x86::RAX)]
+                } else {
+                    &[Reg(crate::x86::RAX), Reg(crate::x86::RDX)]
+                };
+                self.observe(address, &mut assignments, registers)?;
+                for &register in registers {
+                    self.push(
+                        address,
+                        &mut assignments,
+                        Assignment {
+                            destination: register.into(),
+                            value: Expr::Const(0),
+                        },
+                        PointRole::OpaqueOutput { register },
+                    )?;
+                }
+                let continuation = address
+                    .checked_add(u64::from(instruction.size()))
+                    .ok_or("division continuation overflow")?;
+                self.boundaries.push((
+                    address,
+                    BoundaryKind::Divide {
+                        continuation,
+                        width: *width,
+                        signed: *signed,
+                    },
+                ));
+                Control::Jump(continuation)
             }
             Instruction::Core(i) => {
                 self.copy_assignments(address, &mut assignments, &i.assignments, false)?;
@@ -523,6 +581,7 @@ fn analyze_function(
                     address,
                     kind,
                     target_reads: Vec::new(),
+                    operand_reads: Vec::new(),
                     inputs: Vec::new(),
                     outputs: Vec::new(),
                     preserved: Vec::new(),
@@ -537,6 +596,7 @@ fn analyze_function(
             reached.insert(boundary.address);
             match projection.roles.get(&point.site) {
                 Some(PointRole::Target) => boundary.target_reads.extend(&point.reads),
+                Some(PointRole::DivideSource) => boundary.operand_reads.extend(&point.reads),
                 Some(PointRole::Input { .. }) => boundary.inputs.extend(&point.reads),
                 Some(PointRole::OpaqueOutput { register }) => {
                     boundary.outputs.push(RegisterValue {
@@ -548,25 +608,40 @@ fn analyze_function(
             }
         }
     }
-    // Calls terminate their projection block. Exit values already name the
+    // Effects terminate their projection block. Exit values already name the
     // identities needed on continuation edges, including unchanged registers.
     for block in &graph.blocks {
         if let Some(boundary) = block
             .points
             .last()
             .and_then(|p| boundaries.get_mut(&p.site.instruction))
-            && let Some(CallContract::Closed { callee }) = boundary.call_contract
         {
-            let summary = summaries.at(callee).ok_or("missing closed call summary")?;
+            let preserved = match boundary.kind {
+                BoundaryKind::Divide { .. } => None,
+                _ => match boundary.call_contract {
+                    Some(CallContract::Closed { callee }) => Some(
+                        &summaries
+                            .at(callee)
+                            .ok_or("missing closed call summary")?
+                            .preserved,
+                    ),
+                    _ => continue,
+                },
+            };
             boundary.preserved.extend(
                 block
                     .exit_values
                     .iter()
                     .filter(|v| {
-                        summary
-                            .preserved
-                            .binary_search_by_key(&v.register.0, |r| r.0)
-                            .is_ok()
+                        v.register.0 < program.register_count()
+                            && preserved.map_or_else(
+                                || !boundary.outputs.iter().any(|o| o.register == v.register),
+                                |registers| {
+                                    registers
+                                        .binary_search_by_key(&v.register.0, |r| r.0)
+                                        .is_ok()
+                                },
+                            )
                     })
                     .copied(),
             );

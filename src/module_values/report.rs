@@ -112,6 +112,7 @@ impl Json {
                 ("vector-assignment", Some(*original), None)
             }
             Some(PointRole::VectorGuard) => ("vector-guard", None, None),
+            Some(PointRole::DivideSource) => ("divide-source", None, None),
             Some(PointRole::Target) => ("transfer-target", None, None),
             Some(PointRole::Input { register }) => ("boundary-input", None, Some(register.0)),
             Some(PointRole::OpaqueOutput { register }) => ("opaque-output", None, Some(register.0)),
@@ -146,9 +147,12 @@ impl Json {
                 self.raw("{\"kind\":")?;
                 self.string(match role {
                     Some(PointRole::OpaqueOutput { .. }) => "opaque-output",
-                    Some(PointRole::Input { .. } | PointRole::Target | PointRole::VectorGuard) => {
-                        "observation"
-                    }
+                    Some(
+                        PointRole::Input { .. }
+                        | PointRole::Target
+                        | PointRole::VectorGuard
+                        | PointRole::DivideSource,
+                    ) => "observation",
                     _ => "assignment",
                 })?;
                 self.raw(",\"register\":")?;
@@ -362,15 +366,26 @@ impl Json {
             self.raw(",\"kind\":")?;
             self.string(match boundary.kind {
                 BoundaryKind::Call { .. } => "call",
+                BoundaryKind::Divide { .. } => "divide",
                 BoundaryKind::Tail => "tail",
                 BoundaryKind::Return => "return",
             })?;
-            if let BoundaryKind::Call { continuation } = boundary.kind {
+            if let BoundaryKind::Call { continuation } | BoundaryKind::Divide { continuation, .. } =
+                boundary.kind
+            {
                 self.raw(",\"continuation\":")?;
                 self.number(continuation)?;
             }
+            if let BoundaryKind::Divide { width, signed, .. } = boundary.kind {
+                self.raw(",\"width\":")?;
+                self.number(width.bits())?;
+                self.raw(",\"signed\":")?;
+                self.raw(if signed { "true" } else { "false" })?;
+            }
             self.raw(",\"target_reads\":")?;
             self.registers(&boundary.target_reads)?;
+            self.raw(",\"operand_reads\":")?;
+            self.registers(&boundary.operand_reads)?;
             self.raw(",\"inputs\":")?;
             self.registers(&boundary.inputs)?;
             self.raw(",\"outputs\":")?;
@@ -402,7 +417,7 @@ pub(super) fn render(analysis: &Analysis) -> Option<String> {
         return None;
     }
     let mut out = Json(String::new());
-    out.raw("{\"schema\":\"nirvana-module-values-v2\",\"identity\":\"per-function-ssa\",\"scope\":\"function-entry-and-normal-call-continuations\",\"liveness\":\"syntactic-possible-uses\",\"calls\":\"closed-internal-footprints-with-opaque-fallback\",\"memory\":\"ordered-accesses-and-opaque-call-effects\",\"sites\":\"analysis-event-indices\",\"functions\":[")?;
+    out.raw("{\"schema\":\"nirvana-module-values-v3\",\"identity\":\"per-function-ssa\",\"scope\":\"function-entry-and-normal-effect-continuations\",\"liveness\":\"syntactic-possible-uses\",\"calls\":\"closed-internal-footprints-with-opaque-fallback\",\"memory\":\"ordered-accesses-and-opaque-call-effects\",\"sites\":\"analysis-event-indices\",\"functions\":[")?;
     for (i, function) in analysis.functions.iter().enumerate() {
         if i > 0 {
             out.raw(",")?;

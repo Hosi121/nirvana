@@ -148,6 +148,11 @@ fn matrix(compiler: &str, label: &str) {
                     let module =
                         module_ir::lift_elf_at(&std::fs::read(stripped).unwrap(), entry, options)
                             .unwrap();
+                    let locals = nirvana::module_readable::emit_c_with_locals(&module).unwrap();
+                    assert_eq!(
+                        locals.report.local_fallback_functions, 0,
+                        "{label} {bits} {signed} {opt} {pie}"
+                    );
                     assert!(
                         module
                             .program

@@ -310,6 +310,160 @@ empty:
 }
 
 #[test]
+fn division_boundaries_keep_saved_values_and_reload_fresh_results() {
+    use nirvana::ir::Width;
+    use nirvana::module_values::BoundaryKind;
+    for (width, suffix, divisor) in [
+        (Width::U8, "b", "%dl"),
+        (Width::U16, "w", "%dx"),
+        (Width::U32, "l", "%edx"),
+        (Width::U64, "q", "%rdx"),
+    ] {
+        for signed in [false, true] {
+            for memory in [false, true] {
+                let operand = if memory { "(%rax)" } else { divisor };
+                let (module, values, plan) = fixture(&format!(
+                    ".globl main\n.type main,@function\nmain:\n\
+                     mov %rax,%rbx\n{}div{suffix} {operand}\n\
+                     add %rbx,%rax\nadd %rdx,%rax\nret\n.size main,.-main\n",
+                    if signed { "i" } else { "" }
+                ));
+                let local = function(&module, &plan, "main");
+                let values = values
+                    .functions
+                    .iter()
+                    .find(|f| f.function.name == "main")
+                    .unwrap()
+                    .result
+                    .as_ref()
+                    .unwrap();
+                let boundary = values
+                    .boundaries()
+                    .iter()
+                    .find(|b| matches!(b.kind, BoundaryKind::Divide { .. }))
+                    .unwrap();
+                let divide = module
+                    .program
+                    .instructions()
+                    .iter()
+                    .find(|i| i.address() == boundary.address)
+                    .unwrap();
+                assert_eq!(
+                    boundary.kind,
+                    BoundaryKind::Divide {
+                        continuation: divide.address() + u64::from(divide.size()),
+                        width,
+                        signed,
+                    }
+                );
+                assert!(boundary.target_reads.is_empty());
+                assert!(boundary.call_contract.is_none());
+                assert_eq!(boundary.operand_reads.len(), 1);
+                assert_eq!(
+                    boundary.operand_reads[0].register,
+                    Reg(if memory { 0 } else { 2 })
+                );
+                let affected: &[usize] = if width == Width::U8 { &[0] } else { &[0, 2] };
+                assert_eq!(
+                    boundary
+                        .inputs
+                        .iter()
+                        .map(|v| v.register.0)
+                        .collect::<Vec<_>>(),
+                    affected
+                );
+                assert_eq!(
+                    boundary
+                        .outputs
+                        .iter()
+                        .map(|v| v.register.0)
+                        .collect::<Vec<_>>(),
+                    affected
+                );
+                for (input, output) in boundary.inputs.iter().zip(&boundary.outputs) {
+                    assert_ne!(input.value, output.value);
+                    let nirvana::ssa::Definition::Assignment { site, register } =
+                        values.graph().values[output.value.0]
+                    else {
+                        panic!()
+                    };
+                    assert_eq!(register, output.register);
+                    assert_eq!(values.roles()[&site], PointRole::OpaqueOutput { register });
+                }
+                assert!(boundary.preserved.iter().any(|v| v.register == Reg(3)));
+                assert_eq!(
+                    boundary.preserved.iter().any(|v| v.register == Reg(2)),
+                    width == Width::U8
+                );
+                let step = &local.steps[&boundary.address];
+                assert!(step.assignments.is_empty(), "events must stay metadata");
+                for register in [Reg(0), Reg(2), Reg(3)] {
+                    assert!(
+                        step.after
+                            .iter()
+                            .any(|a| a.value == Expr::Register(register))
+                    );
+                }
+                assert!(
+                    step.after
+                        .iter()
+                        .all(|a| matches!(a.destination, Place::Register(r) if r.0 >= 80))
+                );
+                assert!(
+                    !step
+                        .after
+                        .iter()
+                        .any(|a| matches!(a.value, Expr::Const(_) | Expr::Load { .. }))
+                );
+                let output = nirvana::module_readable::emit_c_with_locals(&module).unwrap();
+                assert_eq!(output.report.local_fallback_functions, 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn stale_byte_division_events_cannot_justify_wider_division_locals() {
+    // Both opcodes occupy two bytes, so addresses, function extents, source
+    // assignment counts and CFG all agree. The missing RDX input/result must
+    // still invalidate the plan, even when only RAX is used afterwards.
+    let source = |divide: &str| {
+        format!(
+            ".globl main\n.type main,@function\nmain:\n{divide}\n\
+         add $1,%rax\nret\n.size main,.-main\n"
+        )
+    };
+    let (byte_module, byte_values, _) = fixture(&source("divb %bl"));
+    let (wide_module, wide_values, _) = fixture(&source("divl %ebx"));
+    assert_eq!(
+        byte_module.program.functions(),
+        wide_module.program.functions()
+    );
+    for (module, values) in [(&wide_module, &byte_values), (&byte_module, &wide_values)] {
+        let plan = module_local_plan::recover(&module.program, values).unwrap();
+        let address = module
+            .program
+            .functions()
+            .iter()
+            .find(|f| f.name == "main")
+            .unwrap()
+            .address;
+        let error = plan
+            .functions
+            .iter()
+            .find(|f| f.address == address)
+            .unwrap()
+            .result
+            .as_ref()
+            .unwrap_err();
+        assert!(
+            error.contains("division event coverage mismatch"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn loop_phi_transfers_are_pure_and_branch_conditions_stay_canonical() {
     let (module, _, plan) = fixture(
         r#"

@@ -192,8 +192,14 @@ fn function_plan(
             budget.scan(&assignment.value)?;
         }
         let control = match instruction {
-            Instruction::Divide { .. } => {
-                return Err("module locals retain the division effect in canonical state".into());
+            Instruction::Divide { source, .. } => {
+                budget.scan(source)?;
+                Control::Jump(
+                    instruction
+                        .address()
+                        .checked_add(u64::from(instruction.size()))
+                        .ok_or("module local division continuation overflow")?,
+                )
             }
             Instruction::Core(i) => match &i.control {
                 Control::Branch { condition, target } => {
@@ -417,6 +423,46 @@ fn function_plan(
                 after: Vec::new(),
             };
             let mut seen = vec![false; assignments(instruction).len()];
+            if let Instruction::Divide { width, .. } = instruction {
+                // Check complete coverage independently of the event producer:
+                // source observation, dividend inputs, then fresh results.
+                let registers: &[Reg] = if *width == ir::Width::U8 {
+                    &[Reg(crate::x86::RAX)]
+                } else {
+                    &[Reg(crate::x86::RAX), Reg(crate::x86::RDX)]
+                };
+                let range = point_ranges[&address].clone();
+                if range.len() != 1 + registers.len() * 2 {
+                    return Err("module local division event coverage mismatch".into());
+                }
+                for (event, p) in range.enumerate() {
+                    budget.spend(1)?;
+                    let point = &ssa_block.points[p];
+                    let (role, register) = if event == 0 {
+                        (PointRole::DivideSource, Reg(RAW))
+                    } else if event <= registers.len() {
+                        (
+                            PointRole::Input {
+                                register: registers[event - 1],
+                            },
+                            Reg(RAW),
+                        )
+                    } else {
+                        let register = registers[event - 1 - registers.len()];
+                        (PointRole::OpaqueOutput { register }, register)
+                    };
+                    if point.site.assignment != Some(event)
+                        || values.roles().get(&point.site) != Some(&role)
+                        || point.definition.and_then(|id| graph.values.get(id.0))
+                            != Some(&Definition::Assignment {
+                                site: point.site,
+                                register,
+                            })
+                    {
+                        return Err("module local division event role/definition mismatch".into());
+                    }
+                }
+            }
             for p in point_ranges[&address].clone() {
                 let point = &ssa_block.points[p];
                 for read in &point.reads {
@@ -532,7 +578,10 @@ fn function_plan(
                         return Err("module local exit register mismatch".into());
                     }
                 }
-                if matches!(instruction, Instruction::Transfer { link: Some(_), .. }) {
+                if matches!(
+                    instruction,
+                    Instruction::Transfer { link: Some(_), .. } | Instruction::Divide { .. }
+                ) {
                     for binding in
                         bindings(&live_block.live_out, &demand, &current, graph, plan, budget)?
                     {
@@ -736,6 +785,7 @@ fn validate_observation(
                 .address
                 .clone(),
         ),
+        (Instruction::Divide { source, .. }, Some(PointRole::DivideSource)) => Some(source.clone()),
         (Instruction::Transfer { target, .. }, Some(PointRole::Target)) => Some(match target {
             module_ir::Target::Value(e) => e.clone(),
             module_ir::Target::Plt(address) => Expr::load(Expr::Const(*address), ir::Width::U64),
@@ -745,11 +795,11 @@ fn validate_observation(
             ir::Width::U64,
         )),
         (
-            Instruction::Transfer { .. } | Instruction::Return { .. },
+            Instruction::Transfer { .. } | Instruction::Return { .. } | Instruction::Divide { .. },
             Some(PointRole::Input { register }),
         ) => Some(Expr::Register(*register)),
         (
-            Instruction::Transfer { link: Some(_), .. },
+            Instruction::Transfer { link: Some(_), .. } | Instruction::Divide { .. },
             Some(PointRole::OpaqueOutput { register }),
         ) => {
             if !point.reads.is_empty() || point.definition.is_none() || register.0 >= RAW {
@@ -870,9 +920,7 @@ fn append_edges(
             Control::Return(_) => {}
         },
         Instruction::Vector(_) => append(next, None)?,
-        Instruction::Divide { .. } => {
-            return Err("module locals retain the division effect in canonical state".into());
-        }
+        Instruction::Divide { .. } => append(next, None)?,
         Instruction::Transfer {
             link: Some(link), ..
         } => append(*link, None)?,

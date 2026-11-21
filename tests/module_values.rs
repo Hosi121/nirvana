@@ -357,8 +357,8 @@ fn optimized_c_loops_expose_phi_edges_and_json_reports_definition_use_consistenc
 const JSON_CHECK: &str = r#"
 import json,sys
 r=json.load(sys.stdin)
-assert r['schema']=='nirvana-module-values-v2'
-assert r['scope']=='function-entry-and-normal-call-continuations'
+assert r['schema']=='nirvana-module-values-v3'
+assert r['scope']=='function-entry-and-normal-effect-continuations'
 summaries={f['address']:f['call_summary'] for f in r['functions']}
 for f in r['functions']:
     if f['status']!='analyzed': continue
@@ -381,7 +381,16 @@ for f in r['functions']:
         for key in ('before','after'): assert point[key]==sorted(set(point[key]))
     for b in f['boundaries']:
         contract=b['call_contract']
-        if contract and contract['kind']=='closed':
+        if b['kind']=='divide':
+            assert b['width'] in (8,16,32,64) and isinstance(b['signed'],bool)
+            assert b['continuation']>b['address'] and contract is None
+            expected=[0] if b['width']==8 else [0,2]
+            assert [x['register'] for x in b['inputs']]==expected
+            assert [x['register'] for x in b['outputs']]==expected
+            assert not b['target_reads']
+            source=next(point for point in p.values() if point['site']['instruction']==b['address'] and point['role']['kind']=='divide-source')
+            assert source['reads']==b['operand_reads']
+        elif contract and contract['kind']=='closed':
             summary=summaries[contract['callee']]; assert summary['closed']
             assert [x['register'] for x in b['inputs']]==summary['reads']
             assert [x['register'] for x in b['outputs']]==summary['clobbers']
@@ -423,6 +432,68 @@ for f in r['functions']:
             for destination,source in edge['parallel']: before[destination]=source
             assert actual[:count]==before[:count]
 "#;
+
+#[test]
+fn division_report_separates_operand_observations_from_unknown_results() {
+    let scratch = native::Scratch::new();
+    let source = scratch.0.join("division.S");
+    let binary = scratch.0.join("division");
+    std::fs::write(
+        &source,
+        r#"
+.text
+.globl main
+.type main,@function
+main:
+    mov %rax,%rbx
+    divb %dl
+    idivw %cx
+    divl (%rdi)
+    idivq %rsi
+    add %rbx,%rax
+    ret
+.size main,.-main
+.section .note.GNU-stack,"",@progbits
+"#,
+    )
+    .unwrap();
+    compile(
+        Command::new("cc")
+            .arg("-no-pie")
+            .arg(source)
+            .arg("-o")
+            .arg(&binary),
+    );
+    let module = lift(&binary, false);
+    let values = module_values::analyze(&module.program).unwrap();
+    let main = values
+        .functions
+        .iter()
+        .find(|f| f.function.name == "main")
+        .unwrap()
+        .result
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        main.boundaries()
+            .iter()
+            .filter(|b| matches!(b.kind, BoundaryKind::Divide { .. }))
+            .count(),
+        4
+    );
+    let mut python = Command::new("python3")
+        .args(["-c", JSON_CHECK])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    python
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(values.to_json().unwrap().as_bytes())
+        .unwrap();
+    assert!(python.wait().unwrap().success());
+}
 
 #[test]
 fn malformed_cli_combinations_are_rejected() {

@@ -41,6 +41,31 @@ fn build(source: &str, directory: &Path, pie: bool) -> module_ir::Module {
     )
     .unwrap()
 }
+fn assert_local_divisions(module: &module_ir::Module) {
+    let values = nirvana::module_values::analyze(&module.program).unwrap();
+    let plan = nirvana::module_local_plan::recover(&module.program, &values).unwrap();
+    for instruction in module.program.instructions() {
+        if matches!(instruction, Instruction::Divide { .. }) {
+            let function = module
+                .program
+                .functions()
+                .iter()
+                .find(|f| (f.address..f.address + f.size).contains(&instruction.address()))
+                .unwrap();
+            let local = plan
+                .functions
+                .iter()
+                .find(|f| f.address == function.address)
+                .unwrap()
+                .result
+                .as_ref()
+                .unwrap();
+            assert!(local.steps[&instruction.address()].assignments.is_empty());
+        }
+    }
+    let output = nirvana::module_readable::emit_c_with_locals(module).unwrap();
+    assert_eq!(output.report.local_fallback_functions, 0);
+}
 fn assembly(width: Width, signed: bool, form: usize, wrapper: bool) -> String {
     let index = width.bytes().trailing_zeros() as usize;
     let operand = match form {
@@ -86,6 +111,76 @@ fn initial(module: &module_ir::Module) -> Vec<u64> {
     }
     registers
 }
+
+#[test]
+fn division_in_loop_diamond_preserves_saved_values_phis_and_every_pc_resume() {
+    let scratch = native::Scratch::new();
+    for pie in [false, true] {
+        let directory = scratch.0.join(format!("loop-{pie}"));
+        std::fs::create_dir(&directory).unwrap();
+        let module = build(include_str!("fixtures/division-values.S"), &directory, pie);
+        assert_local_divisions(&module);
+        let registers = initial(&module);
+        let mut cases = Vec::new();
+        let mut rows = Vec::new();
+        for input in [
+            [13, 3, 0, 19],
+            [13, 3, 1, 19],
+            [u64::MAX, 7, 3, 19],
+            [17, 0, 5, 19],
+        ] {
+            let case = Case {
+                input,
+                pc: module.program.entry(),
+                budget: 200,
+                patch: None,
+            };
+            let (row, status) = expected_with_state(&module, &case, Some(&registers));
+            if input[1] != 0 {
+                let mut value = input[0];
+                let mut saved = input[2];
+                let mut remainder = 0;
+                for _ in 0..3 {
+                    remainder = value % input[1];
+                    if saved & 1 != 0 {
+                        saved = saved.wrapping_add(remainder);
+                    }
+                    value = (value / input[1]).wrapping_add(value);
+                }
+                assert!(matches!(status, Status::Returned(_)));
+                assert_eq!(&row[..5], &[value, value, remainder, saved, input[3]]);
+            } else {
+                assert_eq!(status, Status::DivideError);
+            }
+            cases.push(case);
+            rows.push(row);
+        }
+        for instruction in module.program.instructions() {
+            for budget in [0, 1, 2, 8, 40, 200] {
+                for divisor in [0, 3] {
+                    let case = Case {
+                        input: [13, divisor, 5, 19],
+                        pc: instruction.address(),
+                        budget,
+                        patch: None,
+                    };
+                    rows.push(expected_with_state(&module, &case, Some(&registers)).0);
+                    cases.push(case);
+                }
+            }
+        }
+        check_generated_with_state(
+            &module,
+            &cases,
+            &rows,
+            &directory,
+            true,
+            &[1, 2, 64],
+            Some(&registers),
+        );
+    }
+}
+
 #[test]
 fn divide_effects_preserve_fault_pc_budget_and_full_state_in_three_backends() {
     let scratch = native::Scratch::new();
@@ -108,6 +203,7 @@ fn divide_effects_preserve_fault_pc_budget_and_full_state_in_three_backends() {
                         std::fs::create_dir(&directory).unwrap();
                         let module =
                             build(&assembly(width, signed, form, wrapper), &directory, pie);
+                        assert_local_divisions(&module);
                         let registers = initial(&module);
                         let divide = module
                             .program
