@@ -457,3 +457,6 @@ fn unused_phi_does_not_merge_distinct_observed_pointer_shapes() {
     assert!(field(a, 0, Width::U32).reads);
     assert!(field(b, 16, Width::U64).reads);
 }
+
+#[path = "record_shapes/memory_flow.rs"]
+mod memory_flow;

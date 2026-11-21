@@ -14,6 +14,7 @@
 | [`input-breadth/*.c`](input-breadth/README.md) | 密なswitch、負の下限、入れ子のジャンプテーブルを含むリンク済みELF |
 | [`dispatch-programs/*.c`](dispatch-programs/README.md) | 分類表、状態機械、stack再利用によるdispatchと実行境界の比較 |
 | [`stripped-modules/*.c`](stripped-modules/README.md) | 別翻訳単位・関数ポインタ・strip後の関数範囲と呼出し |
+| `types/*.c` | フィールド・配列・メモリ経由のポインタ型候補を検査する専用ABIの入力 |
 | `division-runtime.c` | 32/64-bit・符号あり／なしの実行時の商と剰余 |
 | `inputs.tsv` | IDと4個の入力状態ワード |
 | `golden.tsv` | 手計算した返り値と最終状態の期待値 |

@@ -8,6 +8,7 @@ use crate::dataflow::ssa::{Site, ValueId};
 use crate::model::ir::{Program, Reg, Width};
 
 mod infer;
+mod memory_flow;
 mod report;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,6 +17,7 @@ pub enum ConstraintKind {
     Phi,
     Select,
     Stack,
+    Memory,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,6 +59,17 @@ pub struct Analysis {
     pub records: Vec<Record>,
     pub constraints: Vec<Constraint>,
     pub skipped_stack_flows: usize,
+    /// Whole-word reaching-store evidence on normal continuations. An optional
+    /// analysis limit leaves the existing copy/phi/stack candidates available.
+    pub memory_flow: Result<MemoryFlowStats, String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MemoryFlowStats {
+    pub considered_loads: usize,
+    /// Every possible writer is an exact, complete 64-bit Store. Its RHS can
+    /// still lack a representation-preserving value/type-flow interpretation.
+    pub complete_loads: usize,
 }
 
 /// Analyze the supplied source afresh, avoiding stale type/address evidence.

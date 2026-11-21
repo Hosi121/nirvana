@@ -69,10 +69,14 @@ impl Builder<'_> {
         let mut inputs = vec![Vec::new(); self.parent.len()];
         for c in &proposals {
             self.reserve(1)?;
-            inputs[c.to.0].push(c.from.0);
+            // Accesses use exact alias representatives. Propagate demand in
+            // that same space, retaining original SSA values in the evidence.
+            let from = self.types.aliases()[c.from.0].0;
+            let to = self.types.aliases()[c.to.0].0;
+            inputs[to].push(from);
             if c.kind == ConstraintKind::Copy {
                 self.reserve(1)?;
-                inputs[c.from.0].push(c.to.0);
+                inputs[from].push(to);
             }
         }
         let mut needed = vec![false; self.parent.len()];
@@ -92,9 +96,9 @@ impl Builder<'_> {
         }
         for c in proposals {
             self.spend(1)?;
-            // Dead phi/select/stack outputs impose no record compatibility:
+            // Unused non-copy outputs impose no record compatibility:
             // unpruned SSA also has phis for unrelated, unused register values.
-            if c.kind != ConstraintKind::Copy && !needed[c.to.0] {
+            if c.kind != ConstraintKind::Copy && !needed[self.types.aliases()[c.to.0].0] {
                 continue;
             }
             if self.types.values()[c.from.0].maximum_bits == 0 {
@@ -120,7 +124,7 @@ impl Builder<'_> {
     ) -> Result<(), String> {
         self.spend(1)?;
         if let Some(from) = identity(expression, reads, self.types.aliases(), &mut self.work)? {
-            let from = if kind == ConstraintKind::Stack {
+            let from = if matches!(kind, ConstraintKind::Stack | ConstraintKind::Memory) {
                 self.types.aliases()[from.0]
             } else {
                 from
@@ -135,7 +139,7 @@ impl Builder<'_> {
             Expr::Select {
                 taken, not_taken, ..
             } => {
-                let kind = if kind == ConstraintKind::Stack {
+                let kind = if matches!(kind, ConstraintKind::Stack | ConstraintKind::Memory) {
                     kind
                 } else {
                     ConstraintKind::Select
@@ -244,6 +248,30 @@ pub(super) fn analyze(
     if stack.is_some_and(|r| r.0 >= source.register_count()) {
         return Err("record stack register out of bounds".into());
     }
+    let origins = super::memory_flow::collect(source, types);
+    let result = with_memory_origins(source, types, stack, &origins);
+    match (result, &origins) {
+        (Err(reason), Ok((_, transfers))) if !transfers.is_empty() => {
+            // Applying edges or building a larger field class can exhaust
+            // a different budget than origin collection. Retry the original
+            // candidate path, discarding all added edges and null qualifiers.
+            with_memory_origins(
+                source,
+                types,
+                stack,
+                &Err(format!("record memory candidate declined: {reason}")),
+            )
+        }
+        (result, _) => result,
+    }
+}
+
+fn with_memory_origins(
+    source: &Program,
+    types: &TypeAnalysis,
+    stack: Option<Reg>,
+    origins: &Result<(MemoryFlowStats, Vec<super::memory_flow::Transfer>), String>,
+) -> Result<Analysis, String> {
     let graph = types.graph();
     let mut builder = Builder {
         types,
@@ -299,6 +327,34 @@ pub(super) fn analyze(
         }
     }
     let skipped_stack_flows = stack_flow(source, types, stack, &points, &mut builder)?;
+    let memory_flow = match origins {
+        Ok((stats, transfers)) => {
+            for transfer in transfers {
+                let index = source
+                    .instructions()
+                    .binary_search_by_key(&transfer.store.instruction, |i| i.address)
+                    .map_err(|_| "record memory store/source mismatch")?;
+                let assignment = transfer
+                    .store
+                    .assignment
+                    .and_then(|n| source.instructions()[index].assignments.get(n))
+                    .ok_or("record memory assignment/source mismatch")?;
+                let point = points
+                    .get(&transfer.store)
+                    .ok_or("record memory SSA/source mismatch")?;
+                builder.spend(point.reads.len() + 1)?;
+                builder.flow(
+                    &assignment.value,
+                    &read_map(point),
+                    transfer.to,
+                    ConstraintKind::Memory,
+                    transfer.store,
+                )?;
+            }
+            Ok(*stats)
+        }
+        Err(reason) => Err(reason.clone()),
+    };
     builder.apply_connections()?;
     let mut roots = Vec::with_capacity(graph.values.len());
     for i in 0..graph.values.len() {
@@ -437,6 +493,7 @@ pub(super) fn analyze(
         records,
         constraints: builder.constraints,
         skipped_stack_flows,
+        memory_flow,
     })
 }
 

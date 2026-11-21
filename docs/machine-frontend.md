@@ -147,6 +147,10 @@ cargo run -- /tmp/nirvana-record.o --emit types
 `maximum_bits`は値を格納できる上位ビット境界、`storage_bits_candidate`はその候補幅です。
 元の型宣言やオブジェクト全体の大きさは、候補を評価する次の段階で扱います。
 
+`record_shapes.constraints`の`kind: "memory"`は、完全な64-bit Storeからの読戻しに基づく型互換性です。`site`は書込み位置、`to`はLoad結果のSSA値IDを示します。
+`record_shapes.memory_flow`は検査した直接64-bit Load数（`considered_loads`）と、全経路の書込み元を確認できた数（`complete_loads`）を表示します。後者にはRHSから型関係を取り出せないStoreも含みます。
+解析上限では`status: "unavailable"`と理由を残し、copy・φ・stackから得た候補を出力します。[record-memory.c](../tests/fixtures/types/record-memory.c)が最適化後の読戻しの例です。
+
 ## 文字列と呼出し参照
 
 ```sh

@@ -5,6 +5,12 @@ const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MEMBERS: usize = 1_000_000;
 
 fn validate(analysis: &Analysis) -> Result<(), String> {
+    if let Ok(stats) = &analysis.memory_flow
+        && (stats.complete_loads > stats.considered_loads
+            || stats.considered_loads > crate::dataflow::ssa::MAX_ASSIGNMENTS)
+    {
+        return Err("record memory report bounds".into());
+    }
     if analysis.records.len() > 2048 || analysis.constraints.len() > 262_144 {
         return Err("record report collection limit".into());
     }
@@ -151,6 +157,7 @@ pub(super) fn json(analysis: &Analysis) -> Result<String, String> {
             ConstraintKind::Phi => "phi",
             ConstraintKind::Select => "select",
             ConstraintKind::Stack => "stack",
+            ConstraintKind::Memory => "memory",
         };
         write!(
             out,
@@ -164,10 +171,20 @@ pub(super) fn json(analysis: &Analysis) -> Result<String, String> {
     }
     write!(
         out,
-        "\n],\"skipped_stack_flows\":{}\n}}\n",
+        "\n],\"skipped_stack_flows\":{},\"memory_flow\":",
         analysis.skipped_stack_flows
     )
     .unwrap();
+    match &analysis.memory_flow {
+        Ok(stats) => write!(
+            out,
+            "{{\"status\":\"available\",\"considered_loads\":{},\"complete_loads\":{}}}",
+            stats.considered_loads, stats.complete_loads
+        )
+        .unwrap(),
+        Err(reason) => out.push_str(&unavailable(reason)?),
+    }
+    out.push_str("\n}\n");
     check(&out)?;
     Ok(out)
 }

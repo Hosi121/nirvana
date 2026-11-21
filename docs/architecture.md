@@ -71,6 +71,8 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 アドレスの正確な恒等関係は[address_identity](../src/dataflow/address_identity.rs)が担当します。
 `offset + Σ(coefficient × SSA値) mod 2^64`を、型やオブジェクト形状の仮説から独立して扱います。
 [type_infer](../src/dataflow/type_infer.rs)はこの参照情報と値の幅・使用制約からフィールドや配列の候補を組み、[record_shapes](../src/dataflow/record_shapes.rs)が構造体候補をまとめます。
+構造体の互換性は、copy・φ・stackに加え、MemorySSAで全8 byteの書込み元を確認できたStore→Loadにも伝播します。辺上のアドレス変換を使い、初期メモリ・部分上書き・may-aliasを含むLoadは元の候補を保ちます。
+追加解析の上限では、追加した辺とnull候補を破棄して従来の候補を構成し、理由をレポートへ残します。
 
 [memory_ssa](../src/dataflow/memory_ssa.rs)はStoreごとのメモリ世代とφを作り、Loadへの書込み候補をbyte mask付きで求めます。
 確実なStoreで埋まったbyteだけ遡及を止め、may-alias・未知の効果では前の候補も残します。分岐ごとの未解決byteを個別に追跡します。
