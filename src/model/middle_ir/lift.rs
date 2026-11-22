@@ -31,6 +31,12 @@ impl Cursor<'_> {
 }
 struct Builder {
     next_value: usize,
+    source_values: usize,
+}
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+enum Key {
+    Pure(Pure),
+    Read(StorageId, Option<ssa::ValueId>),
 }
 impl Builder {
     fn region(
@@ -40,7 +46,7 @@ impl Builder {
         cursor: &mut Cursor<'_>,
     ) -> Result<Region, Error> {
         let mut bindings = Vec::new();
-        let result = self.value(expr, origin, cursor, &mut bindings)?;
+        let result = self.value(expr, origin, cursor, &mut bindings, &mut BTreeMap::new())?;
         Ok(Region {
             origin,
             bindings,
@@ -53,7 +59,9 @@ impl Builder {
         origin: Origin,
         cursor: &mut Cursor<'_>,
         bindings: &mut Vec<Binding>,
+        intern: &mut BTreeMap<Key, ValueId>,
     ) -> Result<ValueId, Error> {
+        self.source_values += 1;
         let operation = match expr {
             Expr::Const(n) => Operation::Pure(Pure::Constant(*n)),
             Expr::Register(reg) => Operation::ReadStorage {
@@ -61,16 +69,16 @@ impl Builder {
                 version: cursor.read(*reg)?,
             },
             Expr::Unary(op, input) => {
-                let input = self.value(input, origin, cursor, bindings)?;
+                let input = self.value(input, origin, cursor, bindings, intern)?;
                 Operation::Pure(Pure::Unary(*op, input))
             }
             Expr::Binary(op, a, b) => {
-                let a = self.value(a, origin, cursor, bindings)?;
-                let b = self.value(b, origin, cursor, bindings)?;
+                let a = self.value(a, origin, cursor, bindings, intern)?;
+                let b = self.value(b, origin, cursor, bindings, intern)?;
                 Operation::Pure(Pure::Binary(*op, a, b))
             }
             Expr::Load { address, width } => {
-                let address = self.value(address, origin, cursor, bindings)?;
+                let address = self.value(address, origin, cursor, bindings, intern)?;
                 Operation::Load {
                     address,
                     width: *width,
@@ -81,7 +89,7 @@ impl Builder {
                 taken,
                 not_taken,
             } => {
-                let condition = self.value(condition, origin, cursor, bindings)?;
+                let condition = self.value(condition, origin, cursor, bindings, intern)?;
                 Operation::Select {
                     condition,
                     taken: self.region(taken, origin, cursor)?,
@@ -89,11 +97,22 @@ impl Builder {
                 }
             }
         };
+        let key = match &operation {
+            Operation::Pure(pure) => Some(Key::Pure(pure.clone())),
+            Operation::ReadStorage { storage, version } => Some(Key::Read(*storage, *version)),
+            Operation::Load { .. } | Operation::Select { .. } => None,
+        };
+        if let Some(id) = key.as_ref().and_then(|key| intern.get(key)) {
+            return Ok(*id);
+        }
         if self.next_value >= ssa::MAX_NODES {
             return Err(Error::Limit("values"));
         }
         let id = ValueId(self.next_value);
         self.next_value += 1;
+        if let Some(key) = key {
+            intern.insert(key, id);
+        }
         bindings.push(Binding {
             id,
             origin,
@@ -112,7 +131,10 @@ pub(super) fn build(source: &Program) -> Result<Function, Error> {
         .flat_map(|b| &b.points)
         .map(|p| (p.site, p))
         .collect();
-    let mut builder = Builder { next_value: 0 };
+    let mut builder = Builder {
+        next_value: 0,
+        source_values: 0,
+    };
     let mut blocks = Vec::new();
     for block in source.cfg().blocks() {
         let mut steps = Vec::new();
@@ -199,5 +221,6 @@ pub(super) fn build(source: &Program) -> Result<Function, Error> {
         blocks,
         ssa: graph,
         value_count: builder.next_value,
+        source_value_count: builder.source_values,
     })
 }

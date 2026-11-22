@@ -120,10 +120,9 @@ fn source_origins_and_exact_source_binding_are_checked() {
 #[test]
 fn pure_dag_sharing_can_lower_without_changing_effects() {
     let original = source(Expr::binary(BinaryOp::Add, Expr::Const(7), Expr::Const(7)));
-    let mut function = Function::from_low(&original).unwrap();
-    let region = result(&mut function);
-    let a = region.bindings[0].id;
-    region.bindings[2].operation = Operation::Pure(Pure::Binary(BinaryOp::Add, a, a));
+    let function = Function::from_low(&original).unwrap();
+    assert_eq!(function.value_count(), 2);
+    assert_eq!(function.source_value_count(), 3);
     function.validate_source(&original).unwrap();
     assert_eq!(
         function.run_with_memory(&[0; 2], 0, &[], 1).unwrap().status,

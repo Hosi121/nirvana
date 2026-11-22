@@ -8,7 +8,7 @@ use nirvana::{
 };
 use std::error::Error;
 
-const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|ssa-c|readable-c|effects-c|effects-readable-c|effects-ir|module-c|module-readable-c|module-locals-c|module-ir|module-values|module-jumps|types|record-types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol. Module modes also accept --entry LINK_TIME_ADDRESS with mapped unwind bounds.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c.\n--emit types reports SSA value constraints, candidate layouts and record shape compatibility as JSON.\n--emit record-types emits tentative x86-64 record declarations inferred from field and pointer flow.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--emit module-c/module-ir lifts bounded linked functions with internal/indirect calls; default symbol main.\n--entry ADDRESS selects an exact link-time region entry in module modes; PIE bias is added automatically.\nmodule-c emits a standalone Linux x86-64 C program with checked POSIX imports.\nmodule-readable-c recovers named calls and structured function bodies with checked PC resumption.\nmodule-locals-c adds checked named locals, phi transfers and canonical state reconstruction.\n--emit module-values reports per-function SSA values, uses, live sets and opaque call boundaries as JSON.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\n--emit ssa-c adds checked SSA local groups and phi edge copies with canonical register mirrors.\nExecutable modes require supported instructions and fully resolved code references.\n";
+const HELP: &str = "usage: nirvana ELF [--symbol fixture] [--emit c|ssa-c|readable-c|middle-ir|middle-c|effects-c|effects-readable-c|effects-ir|module-c|module-readable-c|module-locals-c|module-ir|module-values|module-jumps|types|record-types|references|ir|cfg|structured-cfg|decoded]\n       nirvana FILE.o --emit readable-c --verify-reduction PATH_TO_Z3\n       nirvana FILE.o --run A,B,C,D [--steps N]\n       nirvana FILE.o --run-effects RESULT[,RESULT...] [--steps N]\n       nirvana FILE.bin --raw [--base 0x1000] [--entry 0x1000] [--emit ...]\n\nELF input: ELF64 little-endian x86-64 ET_REL/ET_EXEC/PIE, with a sized function symbol. Module modes also accept --entry LINK_TIME_ADDRESS with mapped unwind bounds.\n--run initializes the four-word fixture ABI (RDI points to guest state).\n--emit readable-c observes the return and guest memory, with value arguments and named memory views.\n--no-coalesce-locals keeps separate local value variables in readable-c/middle-c.\n--emit middle-ir reports scoped immutable values, checked loads/stores, SSA storage versions and CFG.\n--emit middle-c validates Middle IR reconstruction before using the readable C backend.\n--emit types reports SSA value constraints, candidate layouts and record shape compatibility as JSON.\n--emit record-types emits tentative x86-64 record declarations inferred from field and pointer flow.\n--emit references reports ELF symbolic addresses, file literals and opaque call sites as JSON.\n--emit effects-c/effects-readable-c/effects-ir uses the explicit puts output/outcome model.\n--emit effects-readable-c structures control while preserving checked calls and budgets.\n--emit module-c/module-ir lifts bounded linked functions with internal/indirect calls; default symbol main.\n--entry ADDRESS selects an exact link-time region entry in module modes; PIE bias is added automatically.\nmodule-c emits a standalone Linux x86-64 C program with checked POSIX imports.\nmodule-readable-c recovers named calls and structured function bodies with checked PC resumption.\nmodule-locals-c adds checked named locals, phi transfers and canonical state reconstruction.\n--emit module-values reports per-function SSA values, uses, live sets and opaque call boundaries as JSON.\n--run-effects supplies signed int return inputs, prints modeled output, and reports status on stderr.\n--emit structured-cfg reconstructs a graph from the checked structured AST.\n--verify-reduction checks IR reduction only; an unaccepted candidate keeps original IR.\n--emit c preserves the full machine-register interface.\n--emit ssa-c adds checked SSA local groups and phi edge copies with canonical register mirrors.\nExecutable modes require supported instructions and fully resolved code references.\n";
 
 fn number(text: &str) -> Result<u64, Box<dyn Error>> {
     Ok(if let Some(hex) = text.strip_prefix("0x") {
@@ -88,9 +88,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             "--verify-reduction requires --emit readable-c and cannot be used with --run".into(),
         );
     }
-    if !coalesce_locals && (format != "readable-c" || input.is_some()) {
+    if !coalesce_locals
+        && (!matches!(format.as_str(), "readable-c" | "middle-c") || input.is_some())
+    {
         return Err(
-            "--no-coalesce-locals requires --emit readable-c and cannot be used with --run".into(),
+            "--no-coalesce-locals requires --emit readable-c or middle-c and cannot be used with --run".into(),
         );
     }
     let bytes = std::fs::read(path)?;
@@ -338,7 +340,20 @@ fn run() -> Result<(), Box<dyn Error>> {
             );
             print!("{}", lowered.emit_c()?.code);
         }
-        "readable-c" => {
+        "middle-ir" => {
+            print!(
+                "{}",
+                nirvana::middle_ir::Function::from_low(&program)?.to_text()?
+            );
+        }
+        "readable-c" | "middle-c" => {
+            let middle_program;
+            let program = if format == "middle-c" {
+                middle_program = nirvana::middle_ir::Function::from_low(&program)?.lower()?;
+                &middle_program
+            } else {
+                &program
+            };
             let options = readable::ReadableOptions {
                 stack_register: Some(nirvana::ir::Reg(x86::RSP)),
                 recover_objects: true,
@@ -348,7 +363,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let output = if let Some(solver) = solver {
                 let (output, validation) =
                     readable::emit_readable_c_with_checked_reduction_and_options(
-                        &program, &solver, options,
+                        program, &solver, options,
                     )?;
                 if validation.accepted() {
                     eprintln!(
@@ -378,7 +393,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }
                 output
             } else {
-                readable::emit_readable_c_with_options(&program, options)?
+                readable::emit_readable_c_with_options(program, options)?
             };
             if let Some(reason) = output.fallback_reason {
                 eprintln!("retaining goto control flow: {reason}");

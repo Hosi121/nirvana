@@ -303,44 +303,6 @@ fn zero_storage_functions_and_invalid_invocations_are_preserved() {
 }
 
 #[test]
-fn real_gcc_functions_keep_full_state_across_middle_ir_and_back() {
-    use crate::support::native;
-    let scratch = native::Scratch::new();
-    let mut observations = 0;
-    for name in ["shared-tail", "multi-exit-prefix"] {
-        for opt in ["-O0", "-O2", "-O3"] {
-            let object = scratch.0.join(format!("{name}-{opt}.o"));
-            native::object(
-                &native::fixture_root().join(format!("cases/{name}.c")),
-                &object,
-                opt,
-                "fixture",
-            );
-            let source =
-                nirvana::frontend::lift_elf_auto(&std::fs::read(object).unwrap(), "fixture")
-                    .unwrap()
-                    .program;
-            let mut inputs = Vec::new();
-            let mut memory: Vec<_> = (0..65536).map(|n| (n as u8).wrapping_mul(29)).collect();
-            for n in 0..4 {
-                memory[4096 + n * 8..4104 + n * 8].copy_from_slice(&(n as u64).to_le_bytes());
-            }
-            for value in [0, 1, 3, u64::MAX] {
-                for pointer in [8192, 67568, u64::MAX] {
-                    let mut regs = vec![value; source.register_count()];
-                    regs[nirvana::x86::RSP] = 67584;
-                    regs[nirvana::x86::RDI] = pointer;
-                    inputs.push(regs);
-                }
-            }
-            observations += compare(&source, &inputs, &memory, &[0, 1, 2, 5, 20, 200]);
-        }
-    }
-    assert_eq!(observations, 432);
-    println!("{observations} actual GCC full-state MIR/lowered prefix observations");
-}
-
-#[test]
 fn nested_lazy_regions_keep_condition_faults_and_chosen_arm_order() {
     let value = Expr::select(
         Expr::load(r(7), Width::U8),
@@ -371,3 +333,49 @@ fn nested_lazy_regions_keep_condition_faults_and_chosen_arm_order() {
         compare(&source, &inputs, &[byte; 32], &[0, 1, 2]);
     }
 }
+
+#[test]
+fn canonical_values_share_pure_computation_and_keep_distinct_loads() {
+    let repeated = b(B::Mul, r(0), c(3));
+    let source = one(
+        vec![],
+        Control::Return(b(B::Add, repeated.clone(), repeated)),
+    );
+    let middle = Function::from_low(&source).unwrap();
+    assert_eq!((middle.source_value_count(), middle.value_count()), (7, 4));
+    compare(
+        &source,
+        &[vec![0; 8], vec![u64::MAX; 8]],
+        &[0; 32],
+        &[0, 1, 2],
+    );
+    let source = one(
+        vec![],
+        Control::Return(b(
+            B::Add,
+            Expr::load(r(7), Width::U8),
+            Expr::load(r(7), Width::U8),
+        )),
+    );
+    let middle = Function::from_low(&source).unwrap();
+    let Terminator::Return(region) = &middle.blocks()[0].terminator else {
+        panic!()
+    };
+    assert_eq!(
+        region
+            .bindings
+            .iter()
+            .filter(|v| matches!(v.operation, Operation::Load { .. }))
+            .count(),
+        2
+    );
+    compare(
+        &source,
+        &[vec![0, 0, 0, 0, 0, 0, 0, 4096]],
+        &[5; 32],
+        &[0, 1, 2],
+    );
+}
+
+#[path = "middle_ir/fixtures.rs"]
+mod fixtures;

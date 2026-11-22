@@ -79,6 +79,8 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
 | `--emit ssa-c` | 検査済みの局所値・φの辺上コピーと、全レジスタへの書込みを持つC |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
+| `--emit middle-ir` | 評価領域ごとの不変な値、Load/Store、保存場所のSSA版、CFGをテキストで出力 |
+| `--emit middle-c` | Middle IRを持ち上げ・再構成検査して、既存のreadable C backendへ接続 |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
 | `--emit record-types` | フィールド配置・ポインタの型互換性から構造体候補をC11の宣言で出力 |
 | `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |
@@ -94,7 +96,7 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--emit cfg` / `structured-cfg` | 元CFG／対応検査済みASTのグラフをDOT出力 |
 | `--run A,B,C,D` | fixture ABIで実行し、返り値と最終状態4要素を出力 |
 | `--steps N` | runの元命令数の上限。既定は100000 |
-| `--no-coalesce-locals` | readable-cで局所値ごとに保存場所を確保 |
+| `--no-coalesce-locals` | readable-c/middle-cで局所値ごとに保存場所を確保 |
 | `--verify-reduction PATH` | readable-cのIR還元を指定のZ3で検査 |
 
 `module-c`はstandalone C11です。`cc -std=c11 -O2 server.c -o server`でコンパイルし、POSIX importをLinux x86-64 libcへ接続できます。

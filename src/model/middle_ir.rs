@@ -19,6 +19,7 @@ mod lower;
 mod run;
 #[cfg(test)]
 mod tests;
+mod text;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ValueId(pub usize);
@@ -35,7 +36,7 @@ pub struct Origin {
     pub site: ssa::Site,
     pub operand: Operand,
 }
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Pure {
     Constant(u64),
     Unary(UnaryOp, ValueId),
@@ -114,6 +115,7 @@ pub struct Function {
     blocks: Vec<Block>,
     ssa: SsaFunction,
     value_count: usize,
+    source_value_count: usize,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -169,5 +171,9 @@ impl Function {
     }
     pub fn value_count(&self) -> usize {
         self.value_count
+    }
+    /// Expression nodes in the source before region-local pure sharing.
+    pub fn source_value_count(&self) -> usize {
+        self.source_value_count
     }
 }

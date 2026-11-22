@@ -5,6 +5,8 @@ mod support {
     pub mod native;
 }
 
+#[path = "cli/middle_ir_cli.rs"]
+mod middle_ir_cli;
 #[path = "cli/record_shapes_cli.rs"]
 mod record_shapes_cli;
 #[path = "cli/reference_cli.rs"]

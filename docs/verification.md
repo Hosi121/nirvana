@@ -45,6 +45,7 @@ compiler・実行ファイル・評価器・入力・グラフのhash、時間�
 | 境界 | 主な検査 |
 | --- | --- |
 | 機械語→IR | 元Cまたは独立した実機assembly、命令境界、部分レジスタ、例外とメモリアクセス順 |
+| Low IR→Middle IR | 元の式・命令・CFGの再構成、SSA版と値のscope、lazyな子領域とLoadの順序。直接MIR実行とLow IR実行の全状態・fault・停止予算を比較 |
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |
@@ -69,6 +70,15 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 各表示変換も自身の採用条件を検査し、退避経路を実行比較に含めます。
 `ReadableC`は元IRと表示IRの構造証拠、web回復・定数伝播・式選択・領域復元の採否を保持します。
 Cの型幅と描画は再コンパイル後の実行で確認します。
+
+[Middle IRの比較](../tests/model/middle_ir.rs)は、Store先の先行検査、選ばれた枝の読込み、部分的な書込み、φとループを含みます。検査器にはLoadの脱落・複製・並べ替え、scope外の値、誤ったSSA版を渡します。直接MIR実行器とLow IR実行器は、scalar演算とchecked memoryの基本処理を共有し、式と制御の評価を別々に実装しています。
+[CLI比較](../tests/cli/middle_ir_cli.rs)はMiddle IR経由の生成Cと既存出力を照合します。保持したM0 smoke集合には次の任意比較を使えます。16構成すべてを要求し、全RAMをbyte単位で照合します。
+
+```sh
+NIRVANA_MIDDLE_OBJECTS=target/structure-baseline cargo test --locked --test model \
+  middle_ir::fixtures::retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction \
+  -- --ignored --exact --nocapture
+```
 
 ## Native Cと生成C
 
