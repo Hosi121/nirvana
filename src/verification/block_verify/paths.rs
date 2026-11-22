@@ -5,6 +5,8 @@
 //! proving a CFG edge unreachable through other paths or loop iterations.
 use super::*;
 use crate::model::ir::RunReport;
+mod enumerate;
+pub use enumerate::dag_prefixes_to;
 
 pub const MODEL_ID: &str = "checked-memory-path-inputs-v1";
 const MAX_PREFIX: usize = 1024;
