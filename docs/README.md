@@ -6,11 +6,11 @@
 | 目的 | 文書 |
 | --- | --- |
 | 入力形式・対応命令・出力・実行APIを選ぶ | [CLIと対応範囲](machine-frontend.md) |
-| 処理の流れとコードの担当箇所を知る | [設計](architecture.md) |
+| IRの抽象化・段階間の保証・コードの担当箇所を知る | [設計](architecture.md) |
 | 整数・メモリ・外部効果・途中停止の意味を確認する | [実行モデルと同値性](equivalence.md) |
 | 比較の観測対象・独立検査・任意のSMT検査を確認する | [検証ガイド](verification.md) |
 | テストを探す・ケースを追加する | [テストガイド](../tests/README.md)・[C fixtures](../tests/fixtures/README.md) |
-| x86-64での到達目標と評価ゲートを確認する | [ロードマップ](x86-64-roadmap.md) |
+| 現行のM0・到達基準・実装の着手順を確認する | [ロードマップ](x86-64-roadmap.md) |
 
 ## 調査記録
 

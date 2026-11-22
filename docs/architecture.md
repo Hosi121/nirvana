@@ -19,6 +19,23 @@ ELF / raw bytes
 単一関数、外部効果付き単一関数、複数関数は、それぞれの状態モデルに対応する生成経路を持ちます。
 各経路は実行時のアドレスとゲストRAMを使い、外部効果や途中停止を観測できる状態を保ちます。
 
+## 抽象化の段階と保証
+
+実行IRが機械語の動作を表す正本です。SSAとMemorySSAはその上の解析表現、Semantic IRは検査付きの意味回復計画、Structured ASTは制御構造の表現です。解析結果を対象の入力IRと命令位置へ結び、変換後は影響する解析を再構築します。
+
+| 表現 | 担当する抽象化 | 次へ渡す契約と現在の検査 |
+| --- | --- | --- |
+| Executable IR | [単一関数](../src/model/ir.rs)・[module](../src/model/module_ir.rs)のbit演算、順序付き効果、PCとゲスト状態 | 幅・flag・Load/Store・CALL/RET・最初のfaultを明示する。native/oracle比較で命令意味を検査し、moduleでは予算と途中再開も照合する |
+| Register SSA | [定義・使用・φ](../src/dataflow/ssa.rs)による値の識別 | 各readを元IRの定義へ結び、仮想入口と全先行辺を保持する。[独立検査](../src/dataflow/ssa/verify.rs)を通した値IDを変換の根拠にする |
+| MemorySSA | [メモリ世代とbyteごとの到達書込み候補](../src/dataflow/memory_ssa.rs) | may-alias・初期メモリ・未知CALLの寄与を保持する。現在の検査は[書込み元tagの独立実行比較](../tests/dataflow/memory_ssa.rs)などで、グラフ全体に対する一般の独立検査器は追加対象 |
+| Semantic IR | [保存時点と値IDに結び付けた意味付き演算](../src/model/semantic_ir.rs) | 現在はblock内の商・剰余などを回復する。入力の保存時点、置換箇所、元の効果と制御を照合して実行IRへ下ろす。関数全体の型付きIRは到達目標 |
+| Structured AST | [Step・If・Loop・脱出](../src/control_flow/structure.rs)による制御の構成 | [ASTをグラフへ戻す検査](../src/control_flow/structure_verify.rs)で元PC、代入、条件、移転先を照合する。条件の集約・移動には追加の意味検査を結ぶ |
+| C | 保存先・宣言・型表記と再コンパイル可能な出力 | 単一関数は返り値・RAM・最初のfault、moduleはレジスタ・PC・予算・外部効果も比較する。現在は個別の対応検査と再コンパイル実行比較を組み合わせる |
+
+元変数の同定、非aliasの証明、Cの型や所有権の確定は、それぞれ追加の回復主張です。値ID・メモリ世代・viewの名前から得られる事実と、[実行契約](equivalence.md)を保つ根拠を分けて記録します。
+
+compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作り、検査後にSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
+
 ## ソースの配置
 
 | ディレクトリ | 責務と入口 |
