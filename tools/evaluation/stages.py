@@ -61,11 +61,13 @@ def validate(value, step_limit, directory, requested_cases):
     if continuation is not None:
         version = continuation.get('model') if isinstance(continuation, dict) else None
         fields = {'model', 'removed_conditions', 'compared_graph_nodes'}
-        if version == 'c-fragment-continuation-v2':
+        if version in ['c-fragment-continuation-v2', 'c-fragment-continuation-v3']:
             fields.add('shared_fragments')
+        if version == 'c-fragment-continuation-v3':
+            fields.add('store_order')
         require(isinstance(continuation, dict)
                 and set(continuation) == fields
-                and version in ['c-fragment-continuation-v1', 'c-fragment-continuation-v2']
+                and version in ['c-fragment-continuation-v1', 'c-fragment-continuation-v2', 'c-fragment-continuation-v3']
                 and type(continuation['removed_conditions']) is int
                 and 0 <= continuation['removed_conditions'] <= 4096
                 and type(continuation['compared_graph_nodes']) is int
@@ -74,6 +76,10 @@ def validate(value, step_limit, directory, requested_cases):
         shared = continuation.get('shared_fragments', 0)
         require(type(shared) is int and 0 <= shared <= 4096
                 and (shared > 0 or continuation['removed_conditions'] > 0), 'C continuation progress')
+        if version == 'c-fragment-continuation-v3':
+            order = continuation['store_order']
+            require(isinstance(order, dict) and set(order) == {'prefix_nodes', 'range_witnesses', 'swapped_pairs'}
+                    and all(type(n) is int and 0 < n <= 4096 for n in order.values()), 'C store-order evidence')
     return value
 
 

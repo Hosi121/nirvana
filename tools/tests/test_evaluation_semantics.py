@@ -199,6 +199,18 @@ class SemanticTests(unittest.TestCase):
                     with self.subTest(parameters=parameters), self.assertRaises(semantics.ProtocolError):
                         stages.validate(value, 4096, Path(directory), 24)
 
+    def test_store_order_evidence_has_explicit_prefix_range_and_progress_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = dict(model='c-fragment-continuation-v3', removed_conditions=0, shared_fragments=1,
+                            compared_graph_nodes=20, store_order=dict(prefix_nodes=3,range_witnesses=2,swapped_pairs=1))
+            for change in [{}, {'prefix_nodes': 0}, {'range_witnesses': True}, {'swapped_pairs': 0}, {'extra': 1}]:
+                value = architecture()
+                value['selected_c']['continuations'] = {**evidence, 'store_order': {**evidence['store_order'], **change}}
+                if change:
+                    with self.subTest(change=change), self.assertRaises(semantics.ProtocolError):
+                        stages.validate(value, 4096, Path(directory), 24)
+                else: stages.validate(value, 4096, Path(directory), 24)
+
 
 if __name__ == '__main__':
     unittest.main()
