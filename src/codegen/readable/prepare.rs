@@ -14,7 +14,16 @@ pub(super) enum MemoryRecovery {
     Disabled,
     Registers,
     StoredExpressions,
-    InvariantExpressions,
+    InvariantExpressions(usize),
+}
+impl MemoryRecovery {
+    pub(super) fn rounds(self) -> usize {
+        match self {
+            Self::Disabled => 0,
+            Self::Registers | Self::StoredExpressions => 1,
+            Self::InvariantExpressions(rounds) => rounds.min(3),
+        }
+    }
 }
 
 pub(super) struct PreparedFunction {
@@ -32,6 +41,7 @@ pub(super) struct PreparedFunction {
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
     pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
     pub memory_values: Option<crate::dataflow::memory_values::MemoryValueEvidence>,
+    pub memory_value_rounds: Vec<crate::dataflow::memory_values::MemoryValueEvidence>,
 }
 
 type CheckedDisplay<E> = (
@@ -138,41 +148,50 @@ fn prepare_selected(
         let (expanded, evidence) = plan.propose(&program)?;
         checked_display(expanded, structure.is_ok(), evidence)
     });
-    let (program, widths, structure, known_bits) = match bits {
+    let (mut program, mut widths, mut structure, known_bits) = match bits {
         Some((p, w, s, e)) => (p, w, s, Some(e)),
         None => (program, widths, structure, None),
     };
-    let memory = match memory_recovery {
-        MemoryRecovery::Disabled => None,
-        MemoryRecovery::Registers => {
-            crate::dataflow::memory_values::MemoryValuePlan::analyze_registers(&program)
-        }
-        MemoryRecovery::StoredExpressions => {
-            crate::dataflow::memory_values::MemoryValuePlan::analyze_once(&program)
-        }
-        MemoryRecovery::InvariantExpressions => {
-            crate::dataflow::memory_values::MemoryValuePlan::analyze(&program)
-        }
-    }
-    .and_then(|plan| {
-        let lowered = plan.lower(&program)?;
-        let bounds = ValueWidths::analyze(&lowered);
-        let width = |reg| {
-            if parameters.contains(&reg) {
-                Width::U64
-            } else {
-                bounds.width(reg)
+    let mut memory_value_rounds = Vec::new();
+    for _ in 0..memory_recovery.rounds() {
+        let memory = match memory_recovery {
+            MemoryRecovery::Disabled => None,
+            MemoryRecovery::Registers => {
+                crate::dataflow::memory_values::MemoryValuePlan::analyze_registers(&program)
             }
+            MemoryRecovery::StoredExpressions => {
+                crate::dataflow::memory_values::MemoryValuePlan::analyze_once(&program)
+            }
+            MemoryRecovery::InvariantExpressions(_) => {
+                crate::dataflow::memory_values::MemoryValuePlan::analyze(&program)
+            }
+        }
+        .and_then(|plan| {
+            let lowered = plan.lower(&program)?;
+            let bounds = ValueWidths::analyze(&lowered);
+            let width = |reg| {
+                if parameters.contains(&reg) {
+                    Width::U64
+                } else {
+                    bounds.width(reg)
+                }
+            };
+            // Reload identities can expose equal pure operands. Normalize
+            // before dependency/allocation analysis and strict C diagnostics.
+            let displayed = presentation_program(&lowered, &width).ok()?;
+            checked_display(displayed, structure.is_ok(), plan.evidence())
+        });
+        let Some((next, bounds, structured, evidence)) = memory else {
+            break;
         };
-        // Reload identities can expose equal pure operands. Normalize
-        // before dependency/allocation analysis and strict C diagnostics.
-        let displayed = presentation_program(&lowered, &width).ok()?;
-        checked_display(displayed, structure.is_ok(), plan.evidence())
-    });
-    let (program, widths, structure, memory_values) = match memory {
-        Some((p, w, s, e)) => (p, w, s, Some(e)),
-        None => (program, widths, structure, None),
-    };
+        // Each round is checked against its actual predecessor, then gets
+        // fresh SSA/MemorySSA on the next visit. Facts never justify themselves.
+        program = next;
+        widths = bounds;
+        structure = structured;
+        memory_value_rounds.push(evidence);
+    }
+    let memory_values = memory_value_rounds.first().copied();
     // Choose arithmetic before any read/liveness/allocation consumer. Explicit
     // snapshots retain historical numerators; independent DCE removes pure work.
     let arithmetic =
@@ -235,6 +254,7 @@ fn prepare_selected(
         ssa_constants,
         known_bits,
         memory_values,
+        memory_value_rounds,
     })
 }
 

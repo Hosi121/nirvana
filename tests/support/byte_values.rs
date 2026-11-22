@@ -193,6 +193,7 @@ pub fn programs() -> Vec<Program> {
     result.extend(stored_expression_programs());
     result.extend(invariant_loop_programs());
     result.extend(register_phi_programs());
+    result.extend(resaved_phi_programs());
     result
 }
 
@@ -263,6 +264,30 @@ pub fn register_phi_programs() -> Vec<Program> {
         ),
     ]);
     vec![diamond, nested, looped]
+}
+
+/// A merged reload is saved again, clobbered and observed through a narrower view.
+pub fn resaved_phi_programs() -> Vec<Program> {
+    register_phi_programs()
+        .into_iter()
+        .map(|source| {
+            let mut rows = source.instructions().to_vec();
+            let returned = rows
+                .iter_mut()
+                .find(|i| matches!(i.control, Control::Return(_)))
+                .unwrap();
+            let Control::Return(value) = returned.control.clone() else {
+                unreachable!()
+            };
+            returned.assignments.extend([
+                store(48, Width::U16, value),
+                set(2, c(0)),
+                set(3, load(49, Width::U8)),
+            ]);
+            returned.control = Control::Return(r(3));
+            program(rows)
+        })
+        .collect()
 }
 
 /// Disjoint stores whose contiguous source bits cross SSA producer definitions.

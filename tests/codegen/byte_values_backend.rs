@@ -1,6 +1,31 @@
 use crate::support::{byte_values, checked_c, native};
 use nirvana::ir::{AccessKind, Reg, RunStatus};
 use std::fmt::Write as _;
+
+#[test]
+fn resaved_phi_slices_share_storage_after_checked_memory_rounds() {
+    let source = byte_values::resaved_phi_programs().remove(0);
+    let out = nirvana::readable::emit_readable_c_with_options(
+        &source,
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(4)),
+            coalesce_locals: true,
+            recover_objects: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        out.locals.len() <= 2,
+        "saved input and branch condition suffice: {}",
+        out.locals.len()
+    );
+    assert!(
+        out.memory_value_rounds.len() >= 2,
+        "the selected C must use checked feedback"
+    );
+}
+
 #[test]
 fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
     let scratch = native::Scratch::new();

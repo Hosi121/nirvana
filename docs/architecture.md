@@ -103,7 +103,9 @@ DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認して�
 
 [対応検査](../src/dataflow/memory_values/verify.rs)は実際の候補と初期化状態を照合します。候補側の窓をたどる処理とは別に、検査側はSSA定義とStoreの全bitの出所を評価し、未知のbitをSSA結果・Storeごとに区別します。同じSSA IDでも反復で変わるbitは未知として保持し、不変な結果のbitだけを共有します。C出力は元の候補、SSA値だけを使う復元、保存式も使う復元、不変値を使う循環内の復元を生成し、局所変数数、関数本体長、全体長の順で選びます。
 
-[保存値の同値伝播](../src/dataflow/memory_values/value_facts.rs)は、検査済みLoadの結果を`(保存値, bit開始位置, 幅)`へ結び、copyとφへ伝播します。合流の全入力が同じ射影を持つ場合に、その値を捕捉済みの保存値で表します。固定点の計算中に使う未評価状態は、公開時には未知へ変換します。独立した検査が元SSAの全入力・仮想入口・戻り辺を照合し、捕捉した保存先の利用可能性は候補SSAの初期化検査で確認します。
+[保存値の同値伝播](../src/dataflow/memory_values/value_facts.rs)は、保存元のwordと検査済みLoadの結果を`(保存値, bit開始位置, 幅)`へ結び、copy・bit抽出・φへ伝播します。抽出の合成では入力のゼロ拡張も保ち、合流では全入力の射影を照合します。固定点の計算中に使う未評価状態は、公開時には未知へ変換します。独立した検査が元SSAの全入力・仮想入口・戻り辺を照合し、捕捉した保存先の利用可能性は候補SSAの初期化検査で確認します。
+
+表示用の保存値復元は、検査済み変換を最大3段階まで合成します。各段階でSSA・MemorySSAを作り直し、合流した値を再保存した後の読込みにも元のwordとの対応を伝えます。各段階のCと従来の候補を同じ評価基準で比較し、局所変数数・関数本体長・全体長の順に選びます。`memory_value_rounds`は段階ごとの証拠を、`memory_values`は最初の段階の証拠を保持します。
 [arithmetic_graph](../src/transform/arithmetic_graph.rs)と[expression_ir](../src/model/expression_ir.rs)は、分子・上位乗算・商・剰余を値IDと定義位置で結び、算術の証拠を照合します。
 [signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。
 [semantic_ir](../src/model/semantic_ir.rs)はblock内の不変な値IDを使い、別々に保存された上位積・符号補正・商・剰余を結びます。分子を一度保存し、代入・メモリアドレス・分岐・返り値の部分式を、利用可能な意味付きの値へ置き換えます。独立した対応検査が、保存時点、元レジスタへの書込み、Load/Storeの順序、制御辺を照合します。

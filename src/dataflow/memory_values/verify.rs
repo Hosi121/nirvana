@@ -57,7 +57,7 @@ pub(super) fn plan(
         }
         used.insert(proof.key.value);
     }
-    if used != keys || rewrite::mapping(plan).is_none() {
+    if used != keys || rewrite::mapping(plan, context).is_none() {
         return Err(invalid("memory value source classes"));
     }
     super::value_facts::validate(context, &plan.proofs, &plan.facts)?;
@@ -79,7 +79,7 @@ pub(super) fn check(
     {
         return Err(invalid("memory value candidate layout"));
     }
-    let mapping = rewrite::mapping(plan).ok_or(invalid("memory value mapping"))?;
+    let mapping = rewrite::mapping(plan, context).ok_or(invalid("memory value mapping"))?;
     let captures =
         rewrite::capture_map(plan, context).ok_or(invalid("memory value capture expression"))?;
     let mut count = 0;

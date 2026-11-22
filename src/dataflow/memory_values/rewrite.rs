@@ -2,7 +2,10 @@ use super::analyze::Context;
 use super::*;
 use crate::model::ir::{Control, IrInstruction, Place};
 
-pub(super) fn mapping(plan: &MemoryValuePlan) -> Option<BTreeMap<ValueId, Expr>> {
+pub(super) fn mapping(
+    plan: &MemoryValuePlan,
+    context: &Context<'_>,
+) -> Option<BTreeMap<ValueId, Expr>> {
     let captures = plan
         .captures
         .iter()
@@ -12,6 +15,14 @@ pub(super) fn mapping(plan: &MemoryValuePlan) -> Option<BTreeMap<ValueId, Expr>>
     let mut result = BTreeMap::new();
     for (id, key) in plan.facts.iter().enumerate() {
         if let Some(key) = key {
+            if matches!(key.value, SavedValue::Register(root) if context.aliases.get(id) == Some(&root))
+                && key.start == 0
+                && key.width == Width::U64
+            {
+                // Source-word anchors describe identity, not a reason to
+                // copy the same root into another capture on every round.
+                continue;
+            }
             let register = *captures.get(&key.value)?;
             result.insert(ValueId(id), word(*key, Expr::Register(register)));
         }
@@ -40,7 +51,7 @@ pub(super) fn construct(
     if registers > ssa::MAX_REGISTERS {
         return None;
     }
-    let mapping = mapping(plan)?;
+    let mapping = mapping(plan, context)?;
     let captures = capture_map(plan, context)?;
     let mut instructions = Vec::with_capacity(source.instructions().len());
     let mut count = 0;

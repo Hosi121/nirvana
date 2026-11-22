@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn sequential_saved_value_plans_keep_the_original_prefix_at_every_round() {
+    let mut checked = 0;
+    let mut multiple = 0;
+    for source in crate::support::byte_values::resaved_phi_programs() {
+        let mut current = source.clone();
+        let mut rounds = 0;
+        for _ in 0..3 {
+            let Some(plan) = MemoryValuePlan::analyze(&current) else {
+                break;
+            };
+            let next = plan.lower(&current).unwrap();
+            memory_values::validate(&current, &plan, &next).unwrap();
+            checked += compare(&source, &next);
+            current = next;
+            rounds += 1;
+        }
+        multiple += usize::from(rounds >= 2);
+    }
+    assert!(multiple >= 2);
+    println!("{checked} sequential plan full-prefix/RAM/PC/fault/budget observations");
+}
+
+#[test]
 fn equal_saved_slices_cross_register_phis_nested_copies_and_loop_backedges() {
     use nirvana::ir::UnaryOp;
     let mut checked = 0;

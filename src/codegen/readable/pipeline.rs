@@ -48,14 +48,23 @@ fn emit_reduced_c(
     for recovery in [
         MemoryRecovery::Registers,
         MemoryRecovery::StoredExpressions,
-        MemoryRecovery::InvariantExpressions,
+        MemoryRecovery::InvariantExpressions(1),
+        MemoryRecovery::InvariantExpressions(2),
+        MemoryRecovery::InvariantExpressions(3),
     ] {
-        if let Ok(candidate) = emit_reduced_choice(&reduced, options, recovery)
-            && best
+        if let Ok(candidate) = emit_reduced_choice(&reduced, options, recovery) {
+            let exhausted = matches!(recovery, MemoryRecovery::InvariantExpressions(_))
+                && candidate.memory_value_rounds.len() < recovery.rounds()
+                && !matches!(candidate.web_recovery, WebRecovery::RenderingFallback(_));
+            if best
                 .as_ref()
                 .map_or(true, |old| render_cost(&candidate) < render_cost(old))
-        {
-            best = Ok(candidate);
+            {
+                best = Ok(candidate);
+            }
+            if exhausted {
+                break;
+            }
         }
     }
     best
@@ -113,6 +122,7 @@ fn emit_prepared_c(
         ssa_constants,
         known_bits,
         memory_values,
+        memory_value_rounds,
     } = prepared;
     let program = &presented;
     let context_remainders = expression_evidence
@@ -487,6 +497,7 @@ fn emit_prepared_c(
         ssa_constants,
         known_bits,
         memory_values,
+        memory_value_rounds,
         web_recovery,
         stack_views,
         object_views,
