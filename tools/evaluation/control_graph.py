@@ -13,7 +13,7 @@ Entry and exit must correspond. Search considers maximum-cardinality partial
 bijections: adding a remaining pair costs at most one relabel instead of two
 node edits, and cannot increase edge cost over deleting/inserting its incident
 edges. A finite search returns an exact result or a witnessed upper bound,
-with the node/edge-count difference as a lower bound. No third-party packages.
+with a lower bound from unmatched labels and edge partitions. No third-party packages.
 """
 from collections import Counter
 import re
@@ -167,6 +167,44 @@ def mapping_cost(left, right, mapping):
     return nodes + edges
 
 
+def completion_bound(left, right, mapping, *, fixed_edges=None, fixed_labels=None):
+    """Admissible cost for any maximum-cardinality completion of this injection.
+
+    The smaller graph is on the left. Fixed/fixed edges are exact. For each
+    fixed pair, incoming/outgoing edges to the remaining sets form disjoint
+    partitions; internal remaining edges form one more. Every partition needs
+    at least its edge-count difference in edits. Remaining labels contribute
+    unavoidable mismatches, even when the larger side has inserted nodes.
+    """
+    ln, rn = left['nodes'], right['nodes']
+    used = set(mapping.values())
+    a, b = set(ln) - mapping.keys(), set(rn) - used
+    labels_a, labels_b = Counter(ln[n] for n in a), Counter(rn[n] for n in b)
+    labels = sum(max(0, count - labels_b[kind]) for kind, count in labels_a.items())
+    if fixed_labels is None:
+        fixed_labels = sum(ln[x] != rn[y] for x, y in mapping.items())
+    if fixed_edges is None:
+        le, re_ = Counter(left['edges']), Counter(right['edges'])
+        fixed_edges = sum(abs(le[x, z] - re_[y, w])
+                          for x, y in mapping.items() for z, w in mapping.items())
+    def partitions(edges, fixed):
+        outgoing, incoming = Counter(), Counter()
+        internal = 0
+        for x, y in edges:
+            if x in fixed:
+                if y not in fixed:
+                    outgoing[x] += 1
+            elif y in fixed:
+                incoming[y] += 1
+            else:
+                internal += 1
+        return outgoing, incoming, internal
+    ao, ai, ae = partitions(left['edges'], mapping)
+    bo, bi, be = partitions(right['edges'], used)
+    boundary = sum(abs(ao[x] - bo[y]) + abs(ai[x] - bi[y]) for x, y in mapping.items())
+    return len(rn) - len(ln) + fixed_labels + labels + fixed_edges + boundary + abs(ae - be)
+
+
 def distance(left, right, *, max_states=100000, seconds=1.0):
     validate(left)
     validate(right)
@@ -196,7 +234,7 @@ def distance(left, right, *, max_states=100000, seconds=1.0):
     best, witness = mapping_cost(left, right, greedy), greedy
     node_delta = len(rn) - len(ln)
     edge_delta = abs(len(left['edges']) - len(right['edges']))
-    lower = node_delta + edge_delta
+    lower = completion_bound(left, right, mapping)
     states, limit = 0, None
 
     def edge_increment(a, b):
@@ -215,6 +253,8 @@ def distance(left, right, *, max_states=100000, seconds=1.0):
             return
         states += 1
         if node_delta + labels + max(edge_delta, edge_cost) >= best:
+            return
+        if completion_bound(left, right, mapping, fixed_edges=edge_cost, fixed_labels=labels) >= best:
             return
         if index == len(order):
             cost = mapping_cost(left, right, mapping)
@@ -242,6 +282,6 @@ def distance(left, right, *, max_states=100000, seconds=1.0):
     exact = limit is None or best == lower
     return {'metric': METRIC, 'status': 'exact' if exact else 'upper_bound',
             'lower_bound': best if exact else lower, 'upper_bound': best,
-            'reason': 'count_lower_bound' if best == lower else 'search_complete' if exact else limit,
+            'reason': 'partition_lower_bound' if best == lower else 'search_complete' if exact else limit,
             'mapping': sorted(witness.items()), 'search_states': states,
             'wall_seconds': time.monotonic() - start}

@@ -18,15 +18,16 @@ def graph(nodes, edges):
     return {'nodes': dict(enumerate(nodes)), 'edges': edges}
 
 
-def oracle(left, right):
+def oracle(left, right, fixed=None):
     """Enumerate every partial matching, including simultaneous deletions/insertions."""
-    a = sorted(set(left['nodes']) - {0, 1})
-    b = sorted(set(right['nodes']) - {0, 1})
+    fixed = {0: 0, 1: 1} if fixed is None else fixed
+    a = sorted(set(left['nodes']) - set(fixed))
+    b = sorted(set(right['nodes']) - set(fixed.values()))
     best = float('inf')
     for size in range(min(len(a), len(b)) + 1):
         for subset in itertools.combinations(a, size):
             for targets in itertools.permutations(b, size):
-                mapping = {0: 0, 1: 1, **dict(zip(subset, targets))}
+                mapping = {**fixed, **dict(zip(subset, targets))}
                 score = len(left['nodes']) + len(right['nodes']) - 2 * len(mapping)
                 score += sum(left['nodes'][x] != right['nodes'][y] for x, y in mapping.items())
                 pending = Counter(right['edges'])
@@ -42,6 +43,33 @@ def oracle(left, right):
 
 
 class EditDistance(unittest.TestCase):
+    def test_partition_bound_never_exceeds_independent_partial_mapping_oracle(self):
+        # Exercise all edges of the smallest nontrivial rooted graph. Loops and
+        # disconnected nodes deliberately remain in this metric-level test.
+        graphs = []
+        possibilities = [(0, 1), (0, 2), (2, 1), (2, 2)]
+        for mask in range(16):
+            for label in ['branch', 'return']:
+                graphs.append(graph(['entry', 'exit', label],
+                                    [edge for n, edge in enumerate(possibilities) if mask >> n & 1]))
+        for left in graphs:
+            for right in graphs:
+                for fixed in [{0: 0, 1: 1}, {0: 0, 1: 1, 2: 2}]:
+                    self.assertLessEqual(cg.completion_bound(left, right, fixed), oracle(left, right, fixed))
+        rng = random.Random(314159)
+        for _ in range(120):
+            size_a = rng.randrange(2, 6)
+            size_b = rng.randrange(size_a, 7)
+            def make(size):
+                return graph(['entry', 'exit'] + [rng.choice(['return', 'branch', 'flow']) for _ in range(size - 2)],
+                             [(a, b) for a in range(size) for b in range(size)
+                              for _ in range(rng.randrange(3)) if rng.randrange(3) == 0])
+            left, right = make(size_a), make(size_b)
+            fixed = {0: 0, 1: 1}
+            if size_a > 2 and rng.randrange(2):
+                fixed[2] = rng.randrange(2, size_b)
+            self.assertLessEqual(cg.completion_bound(left, right, fixed), oracle(left, right, fixed))
+
     def test_search_matches_all_partial_matchings_on_small_graphs(self):
         rng = random.Random(271828)
         graphs = []
