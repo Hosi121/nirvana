@@ -117,7 +117,7 @@ fn actual_register_phi_paths_have_checked_memory_proofs_and_a_replayed_unequal_a
 
 #[test]
 #[ignore = "requires Z3; set NIRVANA_Z3"]
-fn composed_phi_memory_plans_preserve_checked_paths_and_replay_a_bad_last_stage() {
+fn composed_canonical_phi_memory_plans_preserve_checked_paths_and_replay_a_bad_last_stage() {
     use nirvana::block_verify::{self, BlockVerdict};
     use nirvana::ir::{Control, Program, Reg};
     let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
@@ -126,6 +126,7 @@ fn composed_phi_memory_plans_preserve_checked_paths_and_replay_a_bad_last_stage(
     std::fs::create_dir_all(&root).unwrap();
     let prefix: Vec<_> = (0..8).map(Reg).collect();
     let mut proved = 0;
+    let mut merged = 0;
     for (family, source) in crate::support::byte_values::resaved_phi_programs()
         .into_iter()
         .enumerate()
@@ -135,6 +136,8 @@ fn composed_phi_memory_plans_preserve_checked_paths_and_replay_a_bad_last_stage(
             let Some(plan) = nirvana::memory_values::MemoryValuePlan::analyze(&candidate) else {
                 break;
             };
+            let plan = plan.canonicalize(&candidate).unwrap();
+            merged += plan.merged_snapshots();
             candidate = plan.lower(&candidate).unwrap();
         }
         let paths = family_paths(family);
@@ -187,8 +190,9 @@ fn composed_phi_memory_plans_preserve_checked_paths_and_replay_a_bad_last_stage(
         }
     }
     assert_eq!(proved, 10);
+    assert!(merged > 0, "exercise merged snapshot roots");
     println!(
-        "{proved} universal composed phi/memory path checks; 1 replayed last-stage SAT control"
+        "{proved} universal composed phi/memory path checks with {merged} merged roots; 1 replayed last-stage SAT control"
     );
 }
 
@@ -207,7 +211,10 @@ fn source_memory_recovery_then_reduction_keeps_return_ram_and_first_faults() {
         .into_iter()
         .enumerate()
     {
-        let plan = nirvana::memory_values::MemoryValuePlan::analyze(&source).unwrap();
+        let plan = nirvana::memory_values::MemoryValuePlan::analyze(&source)
+            .unwrap()
+            .canonicalize(&source)
+            .unwrap();
         let captured = plan.lower(&source).unwrap();
         let reduced = nirvana::reduce::reduce(&captured).unwrap();
         assert!(
