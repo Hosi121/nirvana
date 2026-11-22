@@ -1,7 +1,7 @@
 use crate::support::ir::{c, r};
 use crate::support::native;
 use crate::support::word_reciprocals::{
-    CASES, WIDTHS, b, cases as word_cases, kernel, magic, sext, word,
+    CASES, WIDTHS, b, cases as word_cases, corrected_kernel, kernel, magic, sext, word,
 };
 use nirvana::ir::{BinaryOp as B, Control, Expr, IrInstruction, Program, Width};
 use nirvana::word_signed_division::{self as signed, Operation, View};
@@ -128,6 +128,114 @@ fn explicit_words_recover_all_signed_boundaries_and_strength_reduced_remainders(
         }
     }
     println!("{compared} independent word quotient/remainder observations");
+}
+
+#[test]
+fn estimate_sign_corrections_and_distributed_numerators_recover_word_operations() {
+    let mut kernels = 0;
+    let mut observations = 0;
+    for width in WIDTHS {
+        let mut seen = std::collections::BTreeSet::new();
+        for (d, s) in word_cases(width) {
+            for negative in [false, true] {
+                let (d, s) = if negative {
+                    (-d, if d == 3 { 1 } else { s })
+                } else {
+                    (d, s)
+                };
+                if !seen.insert((d, s)) {
+                    continue;
+                }
+                for before in [false, true] {
+                    for distributed in [false, true] {
+                        let q = corrected_kernel(width, d, s, before, distributed);
+                        let view = signed::recognize(&q)
+                            .unwrap_or_else(|| panic!("{width:?}/{d}/{s}/{before}/{distributed}"));
+                        assert_eq!((view.divisor, view.operation), (d, Operation::Quotient));
+                        assert!(signed::validate(&q, &view));
+                        let rem = word(
+                            b(
+                                B::Add,
+                                b(B::Sub, r(0), b(B::Mul, q.clone(), c(d as u64))),
+                                c(13),
+                            ),
+                            width,
+                        );
+                        let rv = signed::recognize(&rem).unwrap();
+                        assert_eq!((rv.divisor, rv.operation), (d, Operation::Remainder));
+                        let qp = program(q);
+                        let rp = program(rem);
+                        for x in values(width) {
+                            let n = signed_value(x.wrapping_add(13), width);
+                            assert_eq!(
+                                qp.execute(&[x, 0], 1).unwrap().value,
+                                (n / d) as u64 & width.mask()
+                            );
+                            assert_eq!(
+                                rp.execute(&[x, 0], 1).unwrap().value,
+                                (n % d) as u64 & width.mask()
+                            );
+                            observations += 2;
+                        }
+                        kernels += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(kernels >= 200);
+    println!("{kernels} estimate-corrected kernels, {observations} independent word observations");
+}
+
+#[test]
+fn negative_reciprocal_requires_the_strict_minimum_magnitude_bound() {
+    let q = corrected_kernel(Width::U8, -3, 0, true, false);
+    assert!(signed::recognize(&q).is_none());
+    // M=86 works for the positive kernel, but the reversed domain includes
+    // +128. Its error reaches the scale and produces 43 instead of 42.
+    let x = 128u64.wrapping_sub(13);
+    assert_eq!(program(q).execute(&[x, 0], 1).unwrap().value, 43);
+    assert_eq!((-128i64 / -3) as u64, 42);
+    assert!(signed::recognize(&corrected_kernel(Width::U8, -3, 1, true, false)).is_some());
+}
+
+#[test]
+fn estimate_sign_rejects_changed_sources_counts_and_unbounded_high_bits() {
+    for width in WIDTHS {
+        let original = corrected_kernel(width, 7, 2, false, true);
+        for variant in 0..3 {
+            let mut changed = original.clone();
+            let Expr::Binary(B::And, sum, _) = &mut changed else {
+                panic!()
+            };
+            let Expr::Binary(B::Add, _, sign) = sum.as_mut() else {
+                panic!()
+            };
+            let Expr::Binary(B::Shr, input, count) = sign.as_mut() else {
+                panic!()
+            };
+            match variant {
+                0 => **count = c(u64::from(width.bits())),
+                1 => **input = word(r(1), width),
+                2 => {
+                    let Expr::Binary(B::And, raw, _) = input.as_ref() else {
+                        panic!()
+                    };
+                    **input = sext(*raw.clone(), width);
+                }
+                _ => unreachable!(),
+            }
+            assert!(signed::recognize(&changed).is_none(), "{width:?}/{variant}");
+            let a = program(original.clone());
+            let b = program(changed);
+            assert!(
+                values(width)
+                    .into_iter()
+                    .any(|x| a.execute(&[x, 0], 1).unwrap().value
+                        != b.execute(&[x, 0], 1).unwrap().value)
+            );
+        }
+    }
 }
 
 #[test]

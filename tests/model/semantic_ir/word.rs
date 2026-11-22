@@ -1,11 +1,65 @@
 use super::*;
-use crate::support::word_reciprocals::{WIDTHS, cases, kernel, word};
+use crate::support::word_reciprocals::{WIDTHS, cases, corrected_kernel, kernel, word};
 use nirvana::ir::{RunStatus, UnaryOp};
 
 struct Case {
     program: Program,
     q: Reg,
     rem: Reg,
+}
+
+#[test]
+fn estimate_corrected_word_captures_survive_input_overwrites_and_fault_cutoffs() {
+    for width in WIDTHS {
+        for divisor in [31, -31] {
+            for before in [false, true] {
+                let q = corrected_kernel(width, divisor, 4, before, true);
+                let source = Program::new(
+                    0,
+                    8,
+                    vec![
+                        IrInstruction {
+                            address: 0,
+                            size: 1,
+                            assignments: vec![set(1, q)],
+                            control: Control::Next,
+                        },
+                        IrInstruction {
+                            address: 1,
+                            size: 1,
+                            assignments: vec![set(0, c(99)), store(8, r(1))],
+                            control: Control::Return(r(1)),
+                        },
+                    ],
+                )
+                .unwrap();
+                let plan = SemanticPlan::analyze(&source).unwrap();
+                assert!(plan.evidence().divisions >= 1);
+                let lowered = plan.lower(&source).unwrap();
+                assert!(validate(&source, &plan, &lowered));
+                for x in values(width) {
+                    for pointer in [4096, 4144, 4159, u64::MAX] {
+                        let mut regs = vec![0xa123_ffff_7839_2084; 8];
+                        regs[0] = x;
+                        regs[x86::RDI] = pointer;
+                        let memory = [0xa9; 64];
+                        compare(&source, &lowered, &regs, &memory, true);
+                        if pointer == 4096 {
+                            let mut expanded = regs;
+                            expanded.resize(lowered.register_count(), 0);
+                            let run = lowered
+                                .execute_with_memory(&expanded, 4096, &memory, 100)
+                                .unwrap();
+                            assert_eq!(
+                                run.registers[1],
+                                (signed(x.wrapping_add(13), width) / divisor) as u64 & width.mask()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 fn source(width: Width, divisor: i64) -> Case {
     let expected_shift = if divisor.unsigned_abs() == 3 { 0 } else { 2 };

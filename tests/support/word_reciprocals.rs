@@ -96,3 +96,69 @@ pub fn kernel(width: Width, divisor: i64, shift: u32, split: bool, commute: bool
         width,
     )
 }
+
+/// Independent fixture for a logical sign correction on the estimate. Bias
+/// distribution exercises word equality without changing the full product.
+pub fn corrected_kernel(
+    width: Width,
+    divisor: i64,
+    shift: u32,
+    sign_before: bool,
+    distributed: bool,
+) -> Expr {
+    let bits = width.bits();
+    let base = 1u64 << bits;
+    let magnitude = magic(width, divisor, shift);
+    let multiplier = if divisor < 0 {
+        base.wrapping_sub(magnitude)
+    } else {
+        magnitude
+    };
+    let encoded = match width {
+        Width::U8 => multiplier as i8 as i64,
+        Width::U16 => multiplier as i16 as i64,
+        Width::U32 => multiplier as i32 as i64,
+        Width::U64 => unreachable!(),
+    };
+    let input = word(b(B::Add, Expr::Register(Reg(0)), Expr::Const(13)), width);
+    let product = b(
+        B::Mul,
+        sext(input.clone(), width),
+        Expr::Const(encoded as u64),
+    );
+    let high = word(b(B::Shr, product, Expr::Const(u64::from(bits))), width);
+    let core = if divisor > 0 && encoded < 0 {
+        if distributed {
+            b(
+                B::Add,
+                b(B::Add, high, Expr::Register(Reg(0))),
+                Expr::Const(13),
+            )
+        } else {
+            b(B::Add, high, input)
+        }
+    } else if divisor < 0 && encoded > 0 {
+        if distributed {
+            b(
+                B::Sub,
+                b(B::Sub, high, Expr::Const(13)),
+                Expr::Register(Reg(0)),
+            )
+        } else {
+            b(B::Sub, high, input)
+        }
+    } else {
+        high
+    };
+    let estimate = b(
+        B::AShr,
+        sext(word(core.clone(), width), width),
+        Expr::Const(u64::from(shift)),
+    );
+    let sign = b(
+        B::Shr,
+        word(if sign_before { core } else { estimate.clone() }, width),
+        Expr::Const(u64::from(bits - 1)),
+    );
+    word(b(B::Add, estimate, sign), width)
+}

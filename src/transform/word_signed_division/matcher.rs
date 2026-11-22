@@ -1,6 +1,8 @@
 //! One word-level proof matcher for syntax trees and immutable value graphs.
 use super::source::{Node, Source};
 use super::*;
+mod correction;
+mod remainders;
 
 #[derive(Clone, Copy)]
 struct Kernel<K> {
@@ -9,6 +11,7 @@ struct Kernel<K> {
     multiplier: u64,
     shift: u32,
     negate: bool,
+    reversed: bool,
 }
 
 pub(super) fn recognize<S: Source>(s: &S, e: S::Key, work: &mut Work) -> Option<WordView<S::Key>> {
@@ -51,6 +54,11 @@ fn root<S: Source>(s: &S, e: S::Key) -> Option<(Width, S::Key)> {
 }
 fn certified<K: Copy>(k: Kernel<K>, width: Width) -> Option<WordView<K>> {
     let proof = SignedReciprocal::infer(k.multiplier, width.bits(), k.shift)?;
+    // A negative reciprocal reverses the asymmetric signed domain. Its
+    // positive magnitude includes MIN, requiring a strict error bound there.
+    if k.reversed && proof.negative_bound >= (1u128 << (width.bits() + k.shift)) {
+        return None;
+    }
     let d = i64::try_from(proof.divisor).ok()?;
     Some(WordView {
         value: k.value,
@@ -77,8 +85,11 @@ fn candidates<S: Source>(
     for k in quotients(s, low, width, work)? {
         result.extend(certified(k, width));
     }
-    let Some((value, product)) = binary(s, project(s, low, width, work)?, B::Sub) else {
+    if !result.is_empty() {
         return Some(result);
+    }
+    let Some((value, product)) = binary(s, project(s, low, width, work)?, B::Sub) else {
+        return remainders::distributed(s, low, width, work);
     };
     let mut pending = vec![product];
     while let Some(e) = pending.pop() {
@@ -102,7 +113,11 @@ fn candidates<S: Source>(
             _ => {}
         }
     }
-    Some(result)
+    if result.is_empty() {
+        remainders::distributed(s, low, width, work)
+    } else {
+        Some(result)
+    }
 }
 fn quotients<S: Source>(
     s: &S,
@@ -111,10 +126,10 @@ fn quotients<S: Source>(
     work: &mut Work,
 ) -> Option<Vec<Kernel<S::Key>>> {
     work.spend()?;
+    let mut result = correction::quotients(s, e, width, work)?;
     let Some((a, b)) = binary(s, project(s, e, width, work)?, B::Sub) else {
-        return Some(Vec::new());
+        return Some(result);
     };
-    let mut result = Vec::new();
     for (estimate, sign, negate) in [(a, b, false), (b, a, true)] {
         let Some((signed, count)) = binary(s, project(s, sign, width, work)?, B::AShr) else {
             continue;
@@ -219,6 +234,7 @@ fn high_product<S: Source>(
             multiplier: m,
             shift,
             negate: false,
+            reversed: false,
         }));
     }
     Some(None)
@@ -240,7 +256,12 @@ fn signed_input<S: Source>(
         }
     }
 }
-fn project<S: Source>(s: &S, mut e: S::Key, width: Width, work: &mut Work) -> Option<S::Key> {
+pub(super) fn project<S: Source>(
+    s: &S,
+    mut e: S::Key,
+    width: Width,
+    work: &mut Work,
+) -> Option<S::Key> {
     loop {
         work.spend()?;
         e = match s.node(e)? {
@@ -277,7 +298,10 @@ pub(super) fn same_word<S: Source>(
 ) -> Option<bool> {
     let a = project(s, a, width, work)?;
     let b = project(s, b, width, work)?;
-    s.same(a, b, work)
+    if s.same(a, b, work)? {
+        return Some(true);
+    }
+    super::ring::matches(s, a, &[(b, 1)], width, work)
 }
 fn coefficient<S: Source>(
     s: &S,

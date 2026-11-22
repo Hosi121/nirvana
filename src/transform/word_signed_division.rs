@@ -37,6 +37,7 @@ pub struct WordView<K> {
 }
 pub type View<'a> = WordView<&'a Expr>;
 mod matcher;
+mod ring;
 mod source;
 
 pub fn recognize(expression: &Expr) -> Option<View<'_>> {
