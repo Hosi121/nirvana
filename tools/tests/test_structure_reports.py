@@ -15,6 +15,19 @@ from report_fixture import DUMP, save, fixture
 
 
 class ReportTests(unittest.TestCase):
+    def test_binary_revision_and_evaluation_workspace_have_distinct_provenance(self):
+        from evaluation import build_identity
+        with tempfile.TemporaryDirectory() as directory:
+            a,b=Path(directory)/'a',Path(directory)/'b';before,after=fixture(a),fixture(b)
+            after['decompiler'].update(version='nirvana 0.1.0 git='+'1'*40+' source_dirty=false',returncode=0)
+            after['decompiler']['build']=build_identity.parse(after['decompiler'])
+            result=self.compare(a,b,before,after)
+            self.assertEqual(result['after']['evaluation_revision'],'revision')
+            self.assertEqual(result['after']['binary_build']['source_revision'],'1'*40)
+            self.assertIsNone(result['before']['binary_build'])
+            after['decompiler']['build']['source_dirty']=0
+            with self.assertRaisesRegex(ValueError,'binary build identity'): self.compare(a,b,before,after)
+
     def test_probe_profile_and_stage_summaries_replay_the_retained_json(self):
         for variant in ['intact', 'profile', 'continuation', 'coverage', 'raw_hash', 'legacy', 'missing_binding']:
             with tempfile.TemporaryDirectory() as directory:

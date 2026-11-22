@@ -11,6 +11,7 @@ from pathlib import Path
 from . import control_graph as cg, semantics, stages, c_footprint as cf
 from . import state_memory as sm
 from .state_values import protocol as sv
+from . import build_identity
 
 
 class Incompatible(ValueError):
@@ -37,6 +38,10 @@ def hashed(path, expected):
 def index(report):
     require(report['schema'] == 'nirvana-structure-report-v1', 'report schema')
     require(report['metric'] == cg.METRIC, 'metric version')
+    if 'build' in report['decompiler']:
+        require(json.dumps(report['decompiler']['build'],sort_keys=True,allow_nan=False)
+                == json.dumps(build_identity.parse(report['decompiler']),sort_keys=True,allow_nan=False),
+                'binary build identity differs from retained version output')
     rows = report['rows']
     result = {row['id']: row for row in rows}
     require(len(result) == len(rows) == report['requested_profiles'] == report['summary']['requested'],
@@ -301,12 +306,14 @@ def compare(before_path, after_path):
                      'architecture_regression': ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
                      'before_replay': ar, 'after_replay': br})
-    return {'schema': 'nirvana-structure-comparison-v1', 'metric': cg.METRIC,
-            'before': {'revision': before['workspace_revision'], 'dirty': before['workspace_dirty'],
-                       'decompiler_sha256': before['decompiler']['sha256'],
+    return {'schema': 'nirvana-structure-comparison-v2', 'metric': cg.METRIC,
+            'before': {'evaluation_revision': before['workspace_revision'], 'evaluation_dirty': before['workspace_dirty'],
+                       'binary_build': before['decompiler'].get('build'),
+                       'decompiler_sha256': before['decompiler'].get('sha256'),
                        'report_sha256': semantics.sha(before_path)},
-            'after': {'revision': after['workspace_revision'], 'dirty': after['workspace_dirty'],
-                      'decompiler_sha256': after['decompiler']['sha256'],
+            'after': {'evaluation_revision': after['workspace_revision'], 'evaluation_dirty': after['workspace_dirty'],
+                      'binary_build': after['decompiler'].get('build'),
+                      'decompiler_sha256': after['decompiler'].get('sha256'),
                       'report_sha256': semantics.sha(after_path)},
             'requested': len(rows),
             'structure': dict(Counter(row['distance'] for row in rows)),

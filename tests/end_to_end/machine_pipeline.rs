@@ -13,6 +13,27 @@ const BASE: u64 = 0x1000;
 const STATE: usize = 0x1000;
 const MEMORY_SIZE: usize = 0x10000;
 
+#[test]
+fn cli_version_identifies_the_build_without_reading_an_input_image() {
+    for flag in ["--version", "-V"] {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+            .arg(flag)
+            .output()
+            .unwrap();
+        assert!(result.status.success());
+        assert_eq!(
+            String::from_utf8(result.stdout).unwrap().trim(),
+            nirvana::BUILD_VERSION
+        );
+        assert!(result.stderr.is_empty());
+    }
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+        .args(["--version", "image.o"])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+}
+
 fn prepare(input: &[u64; 4]) -> (Vec<u64>, Vec<u8>) {
     let mut registers = vec![0; x86::REGISTER_COUNT];
     registers[x86::RDI] = BASE + STATE as u64;

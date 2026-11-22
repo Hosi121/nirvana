@@ -7,6 +7,17 @@
 //! Implementations are grouped by responsibility; root exports preserve the
 //! existing Rust API.
 
+/// Identity captured during the build. `source_dirty` covers Rust target inputs
+/// (src/examples/tests, Cargo/build/toolchain files); archives report unknown.
+pub const BUILD_VERSION: &str = concat!(
+    "nirvana ",
+    env!("CARGO_PKG_VERSION"),
+    " git=",
+    env!("NIRVANA_BUILD_REVISION"),
+    " source_dirty=",
+    env!("NIRVANA_SOURCE_DIRTY"),
+);
+
 pub mod binary;
 pub mod codegen;
 pub mod control_flow;

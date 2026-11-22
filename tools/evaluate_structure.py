@@ -27,6 +27,7 @@ from evaluation import semantics
 from evaluation import c_footprint as cf
 from evaluation import state_memory as sm
 from evaluation.state_values import protocol as sv
+from evaluation import build_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
@@ -336,12 +337,14 @@ def run(args):
               'corpus': {'path': str(args.cases.resolve()), 'sha256': digest(args.cases)},
               'workspace_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'workspace_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)),
-              'decompiler': {'path': str(args.decompiler), 'sha256': digest(args.decompiler)},
+              'decompiler': provenance(args.decompiler, args.timeout),
               'clang': provenance(args.clang, args.timeout),
               'c_compiler': provenance(args.c_compiler, args.timeout),
               'compilers': {tag: provenance(compiler, args.timeout) for tag, compiler in compilers},
               'budgets': {'command_seconds': args.timeout, 'search_seconds': args.search_seconds, 'search_states': args.max_states},
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
+    report['decompiler']['build'] = build_identity.parse(report['decompiler'])
+    report['evaluation']['build_identity_sha256'] = digest(build_identity.__file__)
     report['emission'] = args.emit
     if args.semantic_probe:
         report['evaluation']['probe_metadata'] = 'hashed-probe-json-v1'

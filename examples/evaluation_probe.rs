@@ -56,7 +56,15 @@ fn write_row(out: &mut String, words: &[u64]) {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let object = PathBuf::from(args.next().ok_or("object path required")?);
+    let first = args.next().ok_or("object path required")?;
+    if first == "--version" {
+        if args.next().is_some() {
+            return Err("--version accepts no additional arguments".into());
+        }
+        println!("{}", nirvana::BUILD_VERSION);
+        return Ok(());
+    }
+    let object = PathBuf::from(first);
     let generated = PathBuf::from(args.next().ok_or("generated C path required")?);
     let out = PathBuf::from(args.next().ok_or("output directory required")?);
     let symbol = args.next().ok_or("symbol required")?;
