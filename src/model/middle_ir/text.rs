@@ -97,11 +97,25 @@ impl Function {
         )?;
         if let Some(saved) = self.saved_values() {
             for (n, snapshot) in saved.snapshots.iter().enumerate() {
+                let source = match snapshot.origin {
+                    crate::dataflow::memory_values::SavedValue::Register(id) => {
+                        format!("ssa v{}", id.0)
+                    }
+                    crate::dataflow::memory_values::SavedValue::Stored(site) => format!(
+                        "store-rhs @{:#x}:{}",
+                        site.instruction,
+                        site.assignment.unwrap()
+                    ),
+                };
+                let point = snapshot
+                    .point
+                    .after
+                    .map_or_else(|| "before".into(), |n| format!("after assignment {n}"));
                 text.line(
                     0,
                     format_args!(
-                        "snapshot #{n} = {:?} @{:#x} after {:?}",
-                        snapshot.origin, snapshot.point.instruction, snapshot.point.after
+                        "snapshot #{n} = {source} @{:#x} {point}",
+                        snapshot.point.instruction
                     ),
                 )?;
             }
@@ -109,9 +123,9 @@ impl Function {
                 text.line(
                     0,
                     format_args!(
-                        "saved-load @{:#x}:{:?} [ssa v{}] => #{} bits {}:{}",
+                        "saved-load @{:#x}:{} [ssa v{}] => #{} bits {}:{}",
                         load.site.instruction,
-                        load.site.assignment,
+                        load.site.assignment.unwrap(),
                         load.definition.0,
                         load.slice.snapshot.0,
                         load.slice.start,

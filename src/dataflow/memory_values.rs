@@ -42,7 +42,7 @@ struct Key {
     width: Width,
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-/// Source position after a successful assignment, or before a guest step.
+/// Source position after a successful assignment, or before its first assignment.
 pub struct CapturePoint {
     pub instruction: u64,
     /// None is before the instruction's first assignment.

@@ -76,6 +76,8 @@ pub struct ReadableC {
     pub code: String,
     /// Memory result refinements adopted from the source-bound middle IR.
     pub middle_memory: Option<crate::model::middle_ir::MemoryEvidence>,
+    /// Saved snapshot identities materialized before readable C preparation.
+    pub middle_saved: Option<crate::model::middle_ir::SavedEvidence>,
     /// Input machine-register indices in the emitted argument order.
     pub parameters: Vec<Reg>,
     pub uses_memory: bool,

@@ -45,7 +45,7 @@ Middle IRはM1の段階間契約を実装する最初の共通表現です。保
 
 [メモリ値の回復](../src/model/middle_ir/recover_memory.rs)は、その根拠から`KnownLoad`を作ります。検査器は元のMIRとの対応と全候補のbyte値を再計算します。既知値の根拠には元のLoadを使い、回復結果の循環した自己参照を防ぎます。実行と戻し変換は元のchecked readを保持します。`middle-ir`は回復後の値を表示し、`middle-c`は同じ引数契約で既存の出力と比較して、局所変数数・関数長の順で小さい出力を選びます。この定数回復は単一関数のscalar値を対象とし、MemorySSA自体の検証境界は表の通りです。
 
-[保存値の同一性](../src/model/middle_ir/saved_values.rs)は、既存の`MemoryValuePlan`で検査したsnapshotとbit範囲を`ReadSaved`へ結びます。同じ保存値を読む値は、コピー・部分抽出・等しいφ入力を通して同じsnapshotを参照します。通常の実行と`lower()`は元のレジスタ範囲を保ち、`lower_saved_values()`は検査済みの保存用レジスタを追加します。後者の比較は`SavedLowering::project_report()`で内部レジスタを除き、元の全レジスタ・RAM・fault・PC・予算を照合します。
+[保存値の同一性](../src/model/middle_ir/saved_values.rs)は、既存の`MemoryValuePlan`で検査したsnapshotとbit範囲を`ReadSaved`へ結びます。同じ保存値を読む値は、コピー・部分抽出・等しいφ入力を通して同じsnapshotを参照します。通常の実行と`lower()`は元のレジスタ範囲を保ち、`lower_saved_values()`は検査済みの保存用レジスタを追加します。後者の比較は`SavedLowering::project_report()`で内部レジスタを除き、元の全レジスタ・RAM・fault・PC・予算を照合します。`middle-ir`はこれらの同一性を表示し、`middle-c`は保存値を展開した候補も既存出力と比較します。
 
 ## ソースの配置
 

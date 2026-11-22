@@ -31,6 +31,7 @@ fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
     let scratch = native::Scratch::new();
     let mut checked = 0;
     let mut adopted = 0;
+    let mut middle_adopted = 0;
     let mut all_statuses = [0; 3];
     for (index, source) in byte_values::programs().into_iter().enumerate() {
         assert!(nirvana::memory_values::MemoryValuePlan::analyze(&source).is_some());
@@ -124,38 +125,64 @@ fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
         }
         for coalesce in [false, true] {
             for objects in [false, true] {
-                let out = nirvana::readable::emit_readable_c_with_options(
-                    &source,
-                    nirvana::readable::ReadableOptions {
-                        stack_register: Some(Reg(4)),
-                        coalesce_locals: coalesce,
-                        recover_objects: objects,
-                        compact_memory: true,
-                    },
-                )
-                .unwrap();
+                let options = nirvana::readable::ReadableOptions {
+                    stack_register: Some(Reg(4)),
+                    coalesce_locals: coalesce,
+                    recover_objects: objects,
+                    compact_memory: true,
+                };
+                let out =
+                    nirvana::readable::emit_readable_c_with_options(&source, options).unwrap();
                 adopted += usize::from(out.memory_values.is_some());
-                let path = scratch
-                    .0
-                    .join(format!("byte-values-{index}-{coalesce}-{objects}.c"));
-                std::fs::write(&path, checked_c::source(&out, 8, 4)).unwrap();
-                for opt in ["-O0", "-O2"] {
-                    let binary = path.with_extension(format!("{opt}.bin"));
-                    native::compile_c(
-                        &path,
-                        &binary,
-                        &[
-                            opt,
-                            "-fsanitize=undefined",
-                            "-fno-sanitize-recover=undefined",
-                        ],
-                    );
-                    assert_eq!(
-                        native::run_fields(&binary, &input, 13),
-                        expected,
-                        "family {index}/{coalesce}/{objects}/{opt}"
-                    );
-                    checked += expected.len();
+                let mut outputs = vec![("readable", out)];
+                if coalesce && objects {
+                    let middle = nirvana::middle_ir::Function::from_low(&source).unwrap();
+                    let (saved, _) = middle.recover_saved_values().unwrap().unwrap();
+                    let lowered = saved.lower_saved_values().unwrap().unwrap();
+                    let materialized =
+                        nirvana::readable::emit_readable_c_with_options(lowered.program(), options)
+                            .unwrap();
+                    let selected =
+                        nirvana::readable::emit_middle_c_with_options(&middle, options).unwrap();
+                    assert_eq!(selected.parameters, outputs[0].1.parameters);
+                    let cost = |out: &nirvana::readable::ReadableC| {
+                        (
+                            out.locals.len(),
+                            out.code
+                                .split_once("uint64_t nirvana_readable(")
+                                .unwrap()
+                                .1
+                                .len(),
+                            out.code.len(),
+                        )
+                    };
+                    assert!(cost(&selected) <= cost(&outputs[0].1));
+                    middle_adopted += usize::from(selected.middle_saved.is_some());
+                    outputs.extend([("saved", materialized), ("middle", selected)]);
+                }
+                for (backend, out) in outputs {
+                    let path = scratch.0.join(format!(
+                        "byte-values-{index}-{coalesce}-{objects}-{backend}.c"
+                    ));
+                    std::fs::write(&path, checked_c::source(&out, 8, 4)).unwrap();
+                    for opt in ["-O0", "-O2"] {
+                        let binary = path.with_extension(format!("{opt}.bin"));
+                        native::compile_c(
+                            &path,
+                            &binary,
+                            &[
+                                opt,
+                                "-fsanitize=undefined",
+                                "-fno-sanitize-recover=undefined",
+                            ],
+                        );
+                        assert_eq!(
+                            native::run_fields(&binary, &input, 13),
+                            expected,
+                            "family {index}/{coalesce}/{objects}/{backend}/{opt}"
+                        );
+                        checked += expected.len();
+                    }
                 }
             }
         }
@@ -163,6 +190,6 @@ fn partial_saved_values_keep_full_ram_first_faults_and_aliases_in_portable_c() {
     assert!(all_statuses.into_iter().all(|n| n > 0));
     assert!(adopted > 0, "source recovery must reach selected C output");
     println!(
-        "{checked} partial saved-value C/full-RAM/first-fault observations; {adopted} render configurations adopted value snapshots"
+        "{checked} partial saved-value C/full-RAM/first-fault observations; {adopted} render configurations adopted value snapshots; {middle_adopted} selected native MIR snapshots"
     );
 }

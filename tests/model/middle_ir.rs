@@ -42,6 +42,10 @@ fn compare(source: &Program, inputs: &[Vec<u64>], memory: &[u8], limits: &[usize
     assert_eq!(restored.instructions(), source.instructions());
     let (refined, _) = middle.recover_memory_constants().unwrap();
     let refined_low = refined.lower().unwrap();
+    let saved = middle.recover_saved_values().unwrap().map(|(saved, _)| {
+        let lowered = saved.lower_saved_values().unwrap().unwrap();
+        (saved, lowered)
+    });
     let mut checked = 0;
     for input in inputs {
         for &limit in limits {
@@ -69,6 +73,23 @@ fn compare(source: &Program, inputs: &[Vec<u64>], memory: &[u8], limits: &[usize
                 expected,
                 "refined Low input={input:?}, budget={limit}"
             );
+            if let Some((saved, lowered)) = &saved {
+                assert_eq!(
+                    saved.run_with_memory(input, 4096, memory, limit).unwrap(),
+                    expected
+                );
+                let mut extended = input.clone();
+                extended.resize(lowered.program().register_count(), 0xdeadbeefcafebabe);
+                let report = lowered
+                    .program()
+                    .run_with_memory(&extended, 4096, memory, limit)
+                    .unwrap();
+                assert_eq!(
+                    lowered.project_report(report).unwrap(),
+                    expected,
+                    "saved Low input={input:?}, budget={limit}"
+                );
+            }
             checked += 1;
         }
     }

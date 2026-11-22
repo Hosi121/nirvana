@@ -165,3 +165,140 @@ fn retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction
         "16 frozen M0 objects; {observations} original/refined MIR/lowered full-state prefix observations; {source_values} source values -> {canonical_values} canonical values; {proved_loads}/{memory_loads} memory loads proved"
     );
 }
+
+#[test]
+fn gcc_saved_value_fixtures_keep_middle_identity_and_projected_state_at_every_budget() {
+    use crate::support::{checked_c, native};
+    use nirvana::ir::{AccessKind, RunStatus};
+    use std::fmt::Write;
+    let scratch = native::Scratch::new();
+    let mut observations = 0;
+    let mut recovered = 0;
+    let mut c_observations = 0;
+    for name in [
+        "byte-saved-value",
+        "phi-saved-value",
+        "loop-saved-value",
+        "resaved-value",
+    ] {
+        for opt in ["-O0", "-O2", "-O3"] {
+            let object = scratch.0.join(format!("{name}-{opt}.o"));
+            native::object(
+                &native::fixture_root().join(format!("recovery/{name}.c")),
+                &object,
+                opt,
+                "fixture",
+            );
+            let low = nirvana::frontend::lift_elf_auto(&std::fs::read(object).unwrap(), "fixture")
+                .unwrap()
+                .program;
+            let middle = Function::from_low(&low).unwrap();
+            let saved = middle.recover_saved_values().unwrap();
+            recovered += usize::from(saved.is_some());
+            if name == "byte-saved-value" && opt != "-O0" {
+                assert!(saved.as_ref().unwrap().1.memory.proved_loads >= 2);
+            }
+            let mut c_input = String::new();
+            let mut expected = Vec::new();
+            for seed in [0u64, 1, 3, u64::MAX] {
+                let mut memory = vec![0xa5; 65536];
+                for (n, v) in [seed, seed & 7, 0, seed ^ 9].into_iter().enumerate() {
+                    memory[4096 + n * 8..4104 + n * 8].copy_from_slice(&v.to_le_bytes());
+                }
+                let inputs: Vec<_> = [8192, 69616, u64::MAX]
+                    .map(|pointer| {
+                        let mut input = vec![seed; low.register_count()];
+                        input[nirvana::x86::RDI] = pointer;
+                        input[nirvana::x86::RSP] = 69632;
+                        input
+                    })
+                    .into();
+                observations +=
+                    compare(&low, &inputs, &memory, &[0, 1, 2, 4, 8, 16, 32, 128, 1024]);
+                for mut input in inputs {
+                    let pointer = input[nirvana::x86::RDI];
+                    let words = [seed, seed & 7, 0, seed ^ 9];
+                    writeln!(
+                        c_input,
+                        "{pointer} {} {} {} {}",
+                        words[0], words[1], words[2], words[3]
+                    )
+                    .unwrap();
+                    let mut ram: Vec<_> = (0..65536usize).map(|i| (i * 29 + 7) as u8).collect();
+                    for (n, value) in words.into_iter().enumerate() {
+                        if let Some(offset) = pointer
+                            .checked_add(n as u64 * 8)
+                            .and_then(|p| p.checked_sub(4096))
+                            .filter(|n| *n <= 65528)
+                        {
+                            ram[offset as usize..offset as usize + 8]
+                                .copy_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                    input.fill(0);
+                    input[nirvana::x86::RDI] = pointer;
+                    input[nirvana::x86::RSP] = 69632;
+                    let report = low.run_with_memory(&input, 4096, &ram, 4096).unwrap();
+                    let mut row = match report.status {
+                        RunStatus::Returned(value) => vec![0, 0, 0, 0, value],
+                        RunStatus::Fault(f) => vec![
+                            1,
+                            f.address,
+                            if f.access == AccessKind::Read { 1 } else { 2 },
+                            f.width.bytes() as u64,
+                            0,
+                        ],
+                        _ => panic!("bounded native fixture"),
+                    };
+                    row.extend(
+                        report
+                            .state
+                            .memory
+                            .chunks_exact(8)
+                            .map(|b| u64::from_le_bytes(b.try_into().unwrap())),
+                    );
+                    expected.push(row);
+                }
+            }
+            let output = nirvana::readable::emit_middle_c_with_options(
+                &middle,
+                nirvana::readable::ReadableOptions {
+                    stack_register: Some(Reg(nirvana::x86::RSP)),
+                    coalesce_locals: true,
+                    recover_objects: true,
+                    compact_memory: true,
+                },
+            )
+            .unwrap();
+            let path = scratch.0.join(format!("{name}-{opt}-middle.c"));
+            std::fs::write(
+                &path,
+                checked_c::source_with_size(&output, low.register_count(), 4, 65536),
+            )
+            .unwrap();
+            for c_opt in ["-O0", "-O2"] {
+                let binary = path.with_extension(format!("{c_opt}.bin"));
+                native::compile_c(
+                    &path,
+                    &binary,
+                    &[
+                        c_opt,
+                        "-fsanitize=undefined",
+                        "-fno-sanitize-recover=undefined",
+                    ],
+                );
+                assert_eq!(
+                    native::run_fields(&binary, &c_input, 8197),
+                    expected,
+                    "{name}/{opt}/{c_opt}"
+                );
+                c_observations += expected.len();
+            }
+        }
+    }
+    assert_eq!(observations, 1296);
+    assert_eq!(c_observations, 288);
+    println!(
+        "{observations} GCC saved-value full-state prefixes, {recovered}/12 inputs have checked MIR identities, {c_observations} sanitized C full-RAM/fault observations"
+    );
+}
