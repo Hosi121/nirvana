@@ -1,0 +1,44 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-integer-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "gcc-O3",
+    "clang18-O2",
+    "clang18-O3"
+  ],
+  "cohort_policy": "Development extension for width, indexed loop updates and compiler vectorization. Initial v1 holdout remains separate.",
+  "cases": [
+    {
+      "id": "narrow-signed",
+      "family": "integer-narrow-signed",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/narrow-signed.c",
+      "source_sha256": "265bb24d86a2c56b9b6d87a97db6bbace90bfe2610d125ea4bd1e6a34f1c2a83",
+      "function": "fixture",
+      "shape": "bounded signed arithmetic",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "indexed-rotate",
+      "family": "integer-indexed-rotate",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/indexed-rotate.c",
+      "source_sha256": "29e2c33ecdad9153d5c8355ccfe619bc918d2de1acee0f2b5d62030c309adc1c",
+      "function": "fixture",
+      "shape": "loop-carried indexed memory",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "vector-map",
+      "family": "integer-vector-map",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/vector-map.c",
+      "source_sha256": "cf8a87bf5fb8385d18f3f00b638d707ceefc99fef6a44060b99b918c67850ed3",
+      "function": "fixture",
+      "shape": "independent fixed-size scalar updates",
+      "origin": "repository-authored fixture"
+    }
+  ]
+}
