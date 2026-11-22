@@ -6,11 +6,15 @@ use nirvana::{
 };
 use std::sync::Arc;
 
+#[path = "semantic_records.rs"]
+mod records;
+
 pub(super) struct Stage {
     pub status: &'static str,
     lowering: Option<Arc<Lowering>>,
     observations: usize,
     failure: Option<String>,
+    records: String,
 }
 impl Stage {
     pub fn new(machine: &Program, lowering: Option<Arc<Lowering>>) -> Self {
@@ -19,6 +23,7 @@ impl Stage {
             lowering,
             observations: 0,
             failure: None,
+            records: String::new(),
         };
         if let Some(lowering) = &stage.lowering {
             if lowering.source().register_count() >= machine.register_count() && lowering.validate()
@@ -38,16 +43,39 @@ impl Stage {
         input: &[u64],
         initial: u64,
         budget: usize,
+        case: usize,
     ) {
+        let (Ok(left), Ok(right)) = (expected, actual) else {
+            self.status = "rejected";
+            self.failure = Some(format!(
+                "Semantic execution profile error: expected={expected:?}, actual={actual:?}\n"
+            ));
+            return;
+        };
+        let Some(record) = records::pair(case, budget, initial, input, left, right) else {
+            self.status = "rejected";
+            self.failure = Some("Semantic observer requires flat guest memory\n".into());
+            return;
+        };
+        if record.len() > records::MAX_LINE_BYTES
+            || self.records.len().saturating_add(record.len()) > records::MAX_BYTES
+        {
+            self.status = "budget_exhausted";
+            self.failure = Some(
+                "Semantic state-pair record budget exceeded (4 MiB/row, 128 MiB/file)\n".into(),
+            );
+            return;
+        }
+        self.records.push_str(&record);
         self.observations += 1;
-        if expected.is_err() || actual != expected {
+        if actual != expected {
             self.status = "counterexample";
             self.failure = Some(format!(
                 "selected_semantic, fresh_initial={initial}, input={input:?}, budget={budget}\nexpected={expected:?}\nactual={actual:?}\n"
             ));
         }
     }
-    pub fn check(&mut self, input: &[u64], ram: &[u8], budget: usize) {
+    pub fn check(&mut self, input: &[u64], ram: &[u8], budget: usize, case: usize) {
         if self.status != "passed" {
             return;
         }
@@ -74,7 +102,7 @@ impl Stage {
                             actual,
                         })
                 });
-            self.record(&expected, &actual, input, initial, budget);
+            self.record(&expected, &actual, input, initial, budget, case);
             if self.status != "passed" {
                 break;
             }
@@ -88,6 +116,7 @@ impl Stage {
             "null"
         };
         let semantic = if let Some(lowering) = &self.lowering {
+            std::fs::write(out.join(records::FILE), &self.records)?;
             for (name, program) in [
                 ("selected-semantic-input.ir.txt", lowering.source()),
                 ("selected-semantic-lowered.ir.txt", lowering.program()),
@@ -104,7 +133,7 @@ impl Stage {
             }
             let e = lowering.evidence();
             format!(
-                "{{\"model\":\"selected-semantic-input-state-v1\",\"source_registers\":{},\"lowered_registers\":{},\"fresh_initializers\":[0,{}],\"inputs\":{},\"divisions\":{},\"remainders\":{},\"replaced_subtrees\":{},\"input_ir\":\"selected-semantic-input.ir.txt\",\"lowered_ir\":\"selected-semantic-lowered.ir.txt\"}}",
+                "{{\"model\":\"selected-semantic-input-state-v1\",\"source_registers\":{},\"lowered_registers\":{},\"fresh_initializers\":[0,{}],\"inputs\":{},\"divisions\":{},\"remainders\":{},\"replaced_subtrees\":{},\"input_ir\":\"selected-semantic-input.ir.txt\",\"lowered_ir\":\"selected-semantic-lowered.ir.txt\",\"state_pairs\":{{\"model\":\"selected-semantic-state-pairs-v1\",\"file\":\"selected-semantic-states.jsonl\"}}}}",
                 lowering.source().register_count(),
                 lowering.program().register_count(),
                 u64::MAX,
@@ -186,7 +215,7 @@ mod tests {
             ] {
                 let mut stage = Stage::new(&source, Some(lowering.clone()));
                 for budget in 0..=3 {
-                    stage.check(&[33, pointer], &value.to_le_bytes(), budget);
+                    stage.check(&[33, pointer], &value.to_le_bytes(), budget, 0);
                 }
                 assert_eq!(stage.status, "passed", "{:?}", stage.failure);
                 assert_eq!(stage.observations, 8);
@@ -225,6 +254,7 @@ mod tests {
                 &input,
                 0,
                 2,
+                0,
             );
             assert_eq!(
                 stage.status,
@@ -249,7 +279,7 @@ mod tests {
         for initial in [0, u64::MAX] {
             let mut actual = expected.clone();
             actual.status = RunStatus::Returned(initial);
-            stage.record(&Ok(expected.clone()), &Ok(actual), &input, initial, 2);
+            stage.record(&Ok(expected.clone()), &Ok(actual), &input, initial, 2, 0);
         }
         assert_eq!(stage.status, "counterexample");
         assert_eq!(stage.observations, 2);

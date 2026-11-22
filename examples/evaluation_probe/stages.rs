@@ -59,6 +59,7 @@ pub(super) struct Stages {
     steps: BTreeSet<u64>,
     source_steps: usize,
     work: usize,
+    cases: usize,
 }
 impl Stages {
     pub fn new(source: &Program, output: &ReadableC, limit: usize) -> Self {
@@ -145,9 +146,12 @@ impl Stages {
             steps: BTreeSet::new(),
             source_steps: source.instructions().len(),
             work: 0,
+            cases: 0,
         }
     }
     pub fn observe(&mut self, source: &Program, input: &[u64], ram: &[u8], complete: &RunReport) {
+        let case = self.cases;
+        self.cases += 1;
         self.steps.extend(&complete.state.trace);
         self.observed.extend(
             complete
@@ -187,7 +191,7 @@ impl Stages {
             for stage in &mut self.stages {
                 stage.check(input, ram, budget, &expected);
             }
-            self.semantic.check(input, ram, budget);
+            self.semantic.check(input, ram, budget, case);
         }
     }
     pub fn json(&self, output: &ReadableC, out: &std::path::Path) -> std::io::Result<String> {

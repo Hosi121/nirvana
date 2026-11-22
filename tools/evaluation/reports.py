@@ -129,6 +129,15 @@ def replay(root, row):
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
                         semantic['profile']['requested_cases'], semantic['profile'].get('register_count'))
     result['architecture'] = architecture['status']
+    selected = next((e for e in architecture.get('execution', []) if e['name'] == 'selected_semantic'), {})
+    state_pairs = (selected.get('semantic') or {}).get('state_pairs')
+    if state_pairs:
+        result['semantic_state_pairs'] = ('replayed' if selected.get('status') == 'passed'
+                                          else 'counterexample' if state_pairs['mismatches'] else 'partial')
+    else:
+        result['semantic_state_pairs'] = ('metadata_only' if selected.get('semantic')
+                                          else selected.get('status', 'not_run'))
+    result['semantic_state_pair_rows'] = state_pairs['rows'] if state_pairs else 0
     memory_sites = row.get('state_memory_sites', {'status': 'not_run'})
     require(memory_sites['status'] in ['not_run', 'unavailable', 'unsupported', 'evaluator_error', 'measured', 'partial'],
             'state memory status')
@@ -303,6 +312,8 @@ def compare(before_path, after_path):
             require(old_stages['prefix_budgets'] == new_stages['prefix_budgets'],
                     f'{key}: changed architecture prefix budgets')
         lost_checks = sorted(old_checked - new_checked)
+        if ar['semantic_state_pairs'] == 'replayed' and br['semantic_state_pairs'] != 'replayed':
+            lost_checks.append('selected_semantic.state_pairs')
         rows.append({'id': key, 'cohort': a['cohort'],
                      'c_syntax_delta': content_change,
                      'c_footprint_regression': ar['c_footprint'] == 'measured' and br['c_footprint'] != 'measured',
@@ -342,6 +353,7 @@ def compare(before_path, after_path):
             'candidate_state_values': dict(Counter(row['after_replay']['state_values'] for row in rows)),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'candidate_execution': stages.execution_summary(after['rows']),
+            'candidate_semantic_state_pairs': dict(Counter(row['after_replay']['semantic_state_pairs'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',
             'rows': rows}

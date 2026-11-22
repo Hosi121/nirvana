@@ -1,6 +1,7 @@
 """Source-entry architecture checks and Low IR coverage, independent of C ABI."""
 from .semantics import ProtocolError, sha
 from collections import Counter
+from . import semantic_pairs
 
 EXECUTION_NAMES = ('low_middle', 'middle_predicates', 'selected_semantic')
 
@@ -48,7 +49,7 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
                 fields = {'model', 'source_registers', 'lowered_registers', 'fresh_initializers',
                           'inputs', 'divisions', 'remainders', 'replaced_subtrees', 'input_ir', 'lowered_ir'}
                 require(isinstance(evidence, dict)
-                        and set(evidence) - {'input_ir_sha256', 'lowered_ir_sha256'} == fields
+                        and set(evidence) - {'input_ir_sha256', 'lowered_ir_sha256', 'state_pairs'} == fields
                         and evidence['model'] == 'selected-semantic-input-state-v1', 'Semantic IR model')
                 counts = [evidence[k] for k in ['inputs', 'divisions', 'remainders', 'replaced_subtrees']]
                 require(all(type(n) is int and 0 <= n <= 4096 for n in counts)
@@ -68,6 +69,9 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
                     digest = sha(directory / filename)
                     require(evidence.get(field + '_sha256', digest) == digest, 'Semantic IR artifact hash')
                     evidence[field + '_sha256'] = digest
+                if 'state_pairs' in evidence:
+                    evidence['state_pairs'] = semantic_pairs.validate(evidence['state_pairs'], entry, evidence,
+                        budgets, requested_cases, directory, original_registers)
         witness = entry['witness']
         if witness is not None:
             require(isinstance(witness, str) and witness == entry['name'] + '.witness.txt', 'stage witness name')

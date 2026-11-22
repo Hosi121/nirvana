@@ -69,6 +69,8 @@ NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
 
 意味IRの入力・出力dumpとhash、捕捉数・置換数、観測件数を保持します。`architecture_execution`は各段階の状態を要求した全構成から集計し、未適用・未実行も残します。比較器は保存データを再検査し、通過していた段階の脱落を回帰、prefix予算の変更を比較条件の変更として扱います。従来の段階形式v1も読み取れます。
 
+`state_pairs`は、各ケース・予算・初期値で比較した全状態をJSON Linesへ保存します。再検査器はレジスタ・全RAM・返り値/fault・PC・traceを比較し、件数・順序・幅・初期状態を確認します。nativeの入力ベクトルが全件ある場合は、初期RAMも共通の512-byte profileへ結び、`input_binding: native-vectors`と記録します。それ以外は`stage-profile`です。記録量は1行4 MiB・1構成128 MiBを上限とし、上限到達は未判定となります。以前の件数だけの報告は`metadata_only`として区別し、保存済み状態の検査が脱落した比較を回帰に含めます。これらは記録した入力・予算での具体比較です。
+
 `low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。
 
 `continuations`はC保存先の確定後に検査した終了処理の共有を、モデルID・条件nodeの減少数・照合グラフ規模で示します。v2の`shared_fragments`は、非空のStep/Evaluate/Return断片の減少数です。条件の複製を一箇所へまとめる場合も、各経路での評価を保持します。v3は`store_order`に保持するprefix node数・成功読込みの範囲数・Store交換数を加えます。これらは静的な変換根拠で、C文数や動的な実行回数と分けて扱います。v4の`effect_order`はStore同士と独立な局所更新との交換数を分けます。比較器はv1〜v4を読み、[設計](architecture.md#c保存先確定後の継続処理)に記したCの観測境界とMIRの全状態検査を別々に集計します。対応検査と具体入力での一致は、それぞれの対象範囲を持つ検証結果です。
