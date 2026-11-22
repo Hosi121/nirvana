@@ -6,6 +6,7 @@ mod support {
     pub mod byte_values;
     pub mod ir;
     pub mod projections;
+    pub mod pure_prefix;
     pub mod rewrite_cases;
     pub mod signed_reciprocals;
     pub mod word_reciprocals;
@@ -29,6 +30,8 @@ mod known_bits;
 mod memory_bits;
 #[path = "verification/memory_values.rs"]
 mod memory_values;
+#[path = "verification/predicates.rs"]
+mod predicates;
 #[path = "verification/recovery_verification.rs"]
 mod recovery_verification;
 #[path = "verification/unary_ops.rs"]

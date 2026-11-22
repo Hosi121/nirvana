@@ -100,6 +100,12 @@ Cの型幅と描画は再コンパイル後の実行で確認します。
 [保存値の同一性](../tests/model/middle_ir/saved.rs)は、共通の保存値fixtureを使い、コピー・部分抽出・φ・ループ・上書きとsnapshotの初期化を検査します。通常のMIRは全状態を直接比較し、保存値を展開したLow IRは追加レジスタを除いて比較します。異なるφ入力、偽のslice、古いsnapshot、根拠を欠くreadを拒否し、[同じC比較](../tests/codegen/byte_values_backend.rs)で元の出力・保存値展開・候補選択を照合します。
 [snapshot統合の対照](../src/dataflow/memory_values/roots/tests.rs)は、bit境界、循環、偽のSSA事実、入れ子の根拠、入力変更を検査します。誤ったoffsetは拒否した上で、生成された候補が異なる返り値を出す反例も実行します。
 [経路条件の対照](../src/dataflow/predicates/tests.rs)は、全流入辺の主張、異なるLoad・φ入力・再定義、booleanと一般のwordに対するXORを検査します。誤った分岐先は拒否した上で具体実行の差も確認します。元IR・変換後IR・再構築したMiddle IRの入口実行を、全レジスタ・RAM・fault・PC・予算について比較します。純粋式の値番号付けとscalar演算は検査器の共有する信頼基盤です。
+[純粋DAGの経路検査](../tests/verification/predicates.rs)は、実際に採用された7計画をSSAや経路事実を使わずに記号実行します。`pure-dag-entry-prefix-v1`は、各予算の返り値・全レジスタ・PC・trace・停止状態を`pure-u64-v1`へ符号化します。51問い合わせのUNSATと、誤った移転先のSAT・実行による再現を検査します。対象は小さいload/store-freeなDAGです。M0の具体実行比較が、メモリを含む実バイナリ側の境界を補います。
+
+```sh
+NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --locked --test verification \
+  predicates::actual_predicate_plans -- --ignored --nocapture
+```
 [CLI比較](../tests/cli/middle_ir_cli.rs)はMiddle IR経由の生成Cと既存出力を照合します。保持したM0 smoke集合には次の任意比較を使えます。16構成すべてを要求し、全RAMをbyte単位で照合します。
 
 ```sh
