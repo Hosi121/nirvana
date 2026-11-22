@@ -5,6 +5,8 @@ out-of-range signed conversions, zero divisors and nonconstant shifts remain
 outside this first profile. Graph IDs and storage/local identities are separate.
 """
 from dataclasses import dataclass
+import hashlib
+import json
 
 
 class Unsupported(ValueError):
@@ -17,7 +19,7 @@ class Type:
     signed: bool = False
 
     def __post_init__(self):
-        if (self.bits not in [1, 8, 16, 32, 64] or type(self.signed) is not bool
+        if (type(self.bits) is not int or self.bits not in [1, 8, 16, 32, 64] or type(self.signed) is not bool
                 or self.bits == 1 and self.signed):
             raise Unsupported('scalar type outside profile')
 
@@ -149,7 +151,14 @@ class Graph:
         if len(little_endian) not in [1, 2, 4, 8] or any(self.type(n) != BYTE for n in little_endian):
             raise Unsupported('byte packing width')
         if len(little_endian) == 1: return little_endian[0]
-        return self.intern(Node('pack', Type(len(little_endian) * 8), tuple(little_endian)))
+        typ = Type(len(little_endian) * 8)
+        parts = [self.nodes[n] for n in little_endian]
+        if all(n.op == 'const' for n in parts):
+            return self.const(sum(n.value << (i * 8) for i, n in enumerate(parts)), typ)
+        if (all(n.op == 'extract' and n.value == i * 8 and n.args == parts[0].args for i, n in enumerate(parts))
+                and self.type(parts[0].args[0]).bits == typ.bits):
+            return self.cast(parts[0].args[0], typ)
+        return self.intern(Node('pack', typ, tuple(little_endian)))
 
     def calculate(self, node, values):
         op, typ = node.op, node.type
@@ -179,6 +188,18 @@ class Graph:
             value = inputs[node.value] if node.op == 'input' else node.value if node.op == 'const' else self.calculate(node, [values[i] for i in node.args])
             values.append(value & mask(node.type))
         return [values[i] for i in roots]
+
+    def summary(self, roots):
+        fingerprints = []
+        for n in self.nodes:
+            content = [n.op, n.type.bits, n.type.signed, n.value, [fingerprints[a] for a in n.args]]
+            fingerprints.append(hashlib.sha256(json.dumps(content, separators=(',', ':')).encode()).hexdigest())
+        seen, pending = set(), list(roots)
+        while pending:
+            i = pending.pop()
+            if i not in seen:
+                seen.add(i); pending.extend(self.nodes[i].args)
+        return {'reachable_value_nodes': len(seen), 'output_fingerprints': [fingerprints[i] for i in roots]}
 
     def smt(self):
         ref = lambda i: f'v{i}'

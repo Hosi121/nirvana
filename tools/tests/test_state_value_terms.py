@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from evaluation.state_values.terms import Graph, Type, U64, BYTE, BOOL, Unsupported
+from evaluation.state_values.terms import Graph, Node, Type, U64, BYTE, BOOL, Unsupported
 
 
 class ValueTerms(unittest.TestCase):
@@ -70,7 +70,9 @@ class SolverValueTerms(unittest.TestCase):
         masked = g.binary('&', x, g.const(255), U64)
         plus = g.binary('+', x, g.const(2**64 - 1), U64)
         minus = g.binary('-', x, g.const(1), U64)
-        packed = g.pack([g.extract(x, n * 8) for n in range(8)])
+        parts = tuple(g.extract(x, n * 8) for n in range(8))
+        packed = g.intern(Node('pack', U64, parts))  # Bypass normalization in the oracle.
+        self.assertEqual(g.pack(parts), x)
         self.check(g.smt() + f'(assert (or (distinct v{low} v{masked}) (distinct v{plus} v{minus}) (distinct v{packed} v{x})))\n')
 
     def test_concrete_semantics_and_smt_agree_across_widths_and_signs(self):
