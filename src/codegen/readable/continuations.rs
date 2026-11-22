@@ -3,7 +3,9 @@
 //! PCs and machine-register traces are provenance, outside this projection.
 use super::*;
 
+mod effects;
 mod order;
+mod permutations;
 mod propose;
 #[cfg(test)]
 mod tests;
@@ -13,6 +15,15 @@ const MAX_WORK: usize = 262144;
 const MAX_BYTES: usize = 1024 * 1024;
 pub const MODEL_ID: &str = "c-fragment-continuation-v2";
 pub const STORE_ORDER_MODEL_ID: &str = "c-fragment-continuation-v3";
+pub const EFFECT_ORDER_MODEL_ID: &str = "c-fragment-continuation-v4";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffectOrderEvidence {
+    pub prefix_nodes: usize,
+    pub range_witnesses: usize,
+    pub store_pairs: usize,
+    pub local_pairs: usize,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StoreOrderEvidence {
@@ -25,6 +36,7 @@ pub struct StoreOrderEvidence {
 pub(super) enum Strategy {
     Exact,
     CheckedStores,
+    CheckedEffects,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,10 +47,13 @@ pub struct ContinuationEvidence {
     pub shared_fragments: usize,
     pub compared_graph_nodes: usize,
     pub store_order: Option<StoreOrderEvidence>,
+    pub effect_order: Option<EffectOrderEvidence>,
 }
 impl ContinuationEvidence {
     pub fn model(&self) -> &'static str {
-        if self.store_order.is_some() {
+        if self.effect_order.is_some() {
+            EFFECT_ORDER_MODEL_ID
+        } else if self.store_order.is_some() {
             STORE_ORDER_MODEL_ID
         } else {
             MODEL_ID
@@ -138,18 +153,23 @@ fn recover_with(
     condition: &impl Fn(&Expr) -> Option<String>,
     names: &BTreeMap<usize, String>,
 ) -> Option<(Vec<Node>, ContinuationEvidence)> {
-    recover_candidate(source, source, atom, condition, names, None, None)
+    recover_candidate(source, source, atom, condition, names, None)
 }
 
 type StoreProbe<'a> = dyn Fn(&Node) -> Option<order::Span> + 'a;
+type EffectProbe<'a> = dyn Fn(&Node) -> Option<effects::Effect> + 'a;
+struct Ordered<'a> {
+    check: verify::Ordering<'a>,
+    stores: Option<StoreOrderEvidence>,
+    effects: Option<EffectOrderEvidence>,
+}
 fn recover_candidate(
     source: &[Node],
     seed: &[Node],
     atom: &impl Fn(&Node) -> Option<String>,
     condition: &impl Fn(&Expr) -> Option<String>,
     names: &BTreeMap<usize, String>,
-    ordering: Option<(&order::Facts, &StoreProbe<'_>)>,
-    store_order: Option<StoreOrderEvidence>,
+    ordering: Option<Ordered<'_>>,
 ) -> Option<(Vec<Node>, ContinuationEvidence)> {
     let (before, _) = shape(source)?;
     let mut budget = Budget {
@@ -191,8 +211,8 @@ fn recover_candidate(
     {
         return None;
     }
-    let compared_graph_nodes = if let Some((facts, store)) = ordering {
-        verify::check_ordered(source, &candidate, atom, condition, facts, store)?
+    let compared_graph_nodes = if let Some(ordering) = &ordering {
+        verify::check_ordering(source, &candidate, atom, condition, ordering.check)?
     } else {
         verify::check(source, &candidate, atom, condition)?
     };
@@ -202,7 +222,8 @@ fn recover_candidate(
             removed_conditions,
             shared_fragments,
             compared_graph_nodes,
-            store_order,
+            store_order: ordering.as_ref().and_then(|o| o.stores),
+            effect_order: ordering.as_ref().and_then(|o| o.effects),
         },
     ))
 }
@@ -238,8 +259,28 @@ pub(super) fn recover(
                 &atom,
                 &condition,
                 &printer.names,
-                Some((&facts, &store)),
-                Some(evidence),
+                Some(Ordered {
+                    check: verify::Ordering::Stores(&facts, &store),
+                    stores: Some(evidence),
+                    effects: None,
+                }),
+            )
+        }
+        Strategy::CheckedEffects => {
+            let facts = order::facts(printer, nodes, &atom)?;
+            let effect = |node: &Node| effects::describe(printer, node);
+            let (ordered, evidence) = effects::propose(nodes, &facts, &effect)?;
+            recover_candidate(
+                nodes,
+                &ordered,
+                &atom,
+                &condition,
+                &printer.names,
+                Some(Ordered {
+                    check: verify::Ordering::Effects(&facts, &effect),
+                    stores: None,
+                    effects: Some(evidence),
+                }),
             )
         }
     }

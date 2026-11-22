@@ -234,6 +234,55 @@ fn native_c_store_permutations_require_successful_prefix_reads() {
 }
 
 #[test]
+fn native_c_store_keeps_the_old_value_before_a_coalesced_scalar_update() {
+    let field = b(BinaryOp::Add, r(0), c(16));
+    let set = |reg, value| Assignment {
+        destination: Reg(reg).into(),
+        value,
+    };
+    let program = Program::new(
+        0,
+        6,
+        vec![
+            instruction(
+                0,
+                vec![set(2, load(r(0))), set(3, load(field.clone()))],
+                Control::Branch {
+                    condition: r(1),
+                    target: 5,
+                },
+            ),
+            instruction(
+                1,
+                vec![store(field.clone(), Width::U64, r(2))],
+                Control::Next,
+            ),
+            instruction(
+                2,
+                vec![set(4, b(BinaryOp::Add, r(2), c(17)))],
+                Control::Next,
+            ),
+            instruction(3, vec![store(r(0), Width::U64, r(4))], Control::Next),
+            instruction(4, vec![], Control::Return(b(BinaryOp::Xor, r(4), r(3)))),
+            instruction(5, vec![store(field, Width::U64, r(2))], Control::Next),
+            instruction(
+                6,
+                vec![set(5, b(BinaryOp::Xor, r(2), c(31)))],
+                Control::Next,
+            ),
+            instruction(7, vec![store(r(0), Width::U64, r(5))], Control::Next),
+            instruction(8, vec![], Control::Return(b(BinaryOp::Xor, r(5), r(3)))),
+        ],
+    )
+    .unwrap();
+    let inputs: Vec<_> = [0x1000, 0x1001, 0x1008, 0x100f, 0xffff, u64::MAX]
+        .into_iter()
+        .flat_map(|address| [0, 1, 3, u64::MAX].map(|condition| [address, condition]))
+        .collect();
+    compare(&program, &inputs);
+}
+
+#[test]
 fn native_c_sequences_binary_select_and_nested_address_faults() {
     let expressions = [
         b(BinaryOp::Add, load(r(0)), load(r(1))),

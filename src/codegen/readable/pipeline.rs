@@ -221,6 +221,7 @@ fn emit_prepared_c(
             None,
             Some(continuations::Strategy::Exact),
             Some(continuations::Strategy::CheckedStores),
+            Some(continuations::Strategy::CheckedEffects),
         ] {
             if !prefer_updates && strategy.is_none() {
                 continue;

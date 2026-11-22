@@ -197,8 +197,12 @@ impl Stages {
                 ",\"store_order\":{{\"prefix_nodes\":{},\"range_witnesses\":{},\"swapped_pairs\":{}}}",
                 o.prefix_nodes, o.range_witnesses, o.swapped_pairs
             ));
+            let effects = e.effect_order.map_or(String::new(), |o| format!(
+                ",\"effect_order\":{{\"prefix_nodes\":{},\"range_witnesses\":{},\"store_pairs\":{},\"local_pairs\":{}}}",
+                o.prefix_nodes, o.range_witnesses, o.store_pairs, o.local_pairs
+            ));
             format!(
-                "{{\"model\":\"{}\",\"removed_conditions\":{},\"shared_fragments\":{},\"compared_graph_nodes\":{}{order}}}",
+                "{{\"model\":\"{}\",\"removed_conditions\":{},\"shared_fragments\":{},\"compared_graph_nodes\":{}{order}{effects}}}",
                 e.model(),
                 e.removed_conditions,
                 e.shared_fragments,

@@ -10,7 +10,7 @@ pub(super) struct Span {
     pub bytes: u8,
 }
 impl Span {
-    fn disjoint(self, other: Self) -> bool {
+    pub(super) fn disjoint(self, other: Self) -> bool {
         self.root == other.root
             && self.offset.wrapping_sub(other.offset) >= u64::from(other.bytes)
             && other.offset.wrapping_sub(self.offset) >= u64::from(self.bytes)
@@ -27,6 +27,9 @@ impl Facts {
     }
     pub fn prefix_len(&self) -> usize {
         self.prefix.len()
+    }
+    pub fn range_count(&self) -> usize {
+        self.ranges.len()
     }
     pub fn matches(&self, nodes: &[Node], atom: &impl Fn(&Node) -> Option<String>) -> Option<()> {
         if nodes.len() < self.prefix.len() {
@@ -122,63 +125,17 @@ pub(super) fn propose(
     facts: &Facts,
     store: &impl Fn(&Node) -> Option<Span>,
 ) -> Option<(Vec<Node>, StoreOrderEvidence)> {
-    let mut result = nodes.to_vec();
-    let mut budget = MAX_WORK;
-    let mut swapped = 0;
-    fn sort(
-        nodes: &mut [Node],
-        facts: &Facts,
-        store: &impl Fn(&Node) -> Option<Span>,
-        budget: &mut usize,
-        swapped: &mut usize,
-    ) -> Option<()> {
-        for node in nodes.iter_mut() {
-            *budget = budget.checked_sub(1)?;
-            if let Node::If {
-                taken, not_taken, ..
-            } = node
-            {
-                sort(taken, facts, store, budget, swapped)?;
-                sort(not_taken, facts, store, budget, swapped)?;
-            }
-        }
-        for end in (1..nodes.len()).rev() {
-            let mut changed = false;
-            for i in 0..end {
-                *budget = budget.checked_sub(1)?;
-                if let (Some(a), Some(b)) = (store(&nodes[i]), store(&nodes[i + 1]))
-                    && facts.contains(a)
-                    && facts.contains(b)
-                    && a.disjoint(b)
-                    && a.offset > b.offset
-                {
-                    *swapped += 1;
-                    if *swapped > MAX_ITEMS {
-                        return None;
-                    }
-                    nodes.swap(i, i + 1);
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        Some(())
-    }
-    sort(
-        &mut result[facts.prefix_len()..],
-        facts,
-        store,
-        &mut budget,
-        &mut swapped,
-    )?;
-    (swapped > 0).then_some((
+    let tag = |node: &Node| store(node).filter(|s| facts.contains(*s));
+    let inversion = |a: &Span, b: &Span| {
+        (a.offset > b.offset && a.disjoint(*b)).then_some(permutations::Swap::Store)
+    };
+    let (result, counts) = permutations::propose(nodes, facts.prefix_len(), &tag, &inversion)?;
+    (counts.stores > 0).then_some((
         result,
         StoreOrderEvidence {
             prefix_nodes: facts.prefix_len(),
-            range_witnesses: facts.ranges.len(),
-            swapped_pairs: swapped,
+            range_witnesses: facts.range_count(),
+            swapped_pairs: counts.stores,
         },
     ))
 }
@@ -316,5 +273,66 @@ mod tests {
         assert!(
             verify::check_ordered(&source, &candidate, &atom, &condition, &facts, &store).is_none()
         );
+    }
+
+    #[test]
+    fn scalar_store_graphs_use_frozen_c_storage_dependencies() {
+        let source = vec![
+            node(0),
+            node(1),
+            node(2),
+            node(3),
+            Node::Return(Expr::Const(7)),
+        ];
+        let candidate = vec![
+            node(0),
+            node(2),
+            node(1),
+            node(3),
+            Node::Return(Expr::Const(7)),
+        ];
+        let a = at(0, 0, 8);
+        let facts = Facts {
+            prefix: vec![atom(&source[0]).unwrap()],
+            ranges: BTreeSet::from([a]),
+        };
+        for (written, safe) in [("value", false), ("other", true)] {
+            let effect = |n: &Node| match n {
+                Node::Step { address: 1, .. } => Some(effects::Effect::Store {
+                    span: a,
+                    reads: BTreeSet::from(["value".into()]),
+                }),
+                Node::Step { address: 2, .. } => Some(effects::Effect::Local {
+                    written: written.into(),
+                    reads: BTreeSet::from(["value".into()]),
+                }),
+                _ => None,
+            };
+            let ordering = verify::Ordering::Effects(&facts, &effect);
+            assert_eq!(
+                verify::check_ordering(&source, &candidate, &atom, &condition, ordering).is_some(),
+                safe
+            );
+            let proposal = effects::propose(&source, &facts, &effect);
+            assert_eq!(proposal.is_some(), safe);
+            if let Some((nodes, evidence)) = proposal {
+                assert_eq!(evidence.local_pairs, 1);
+                assert_eq!(evidence.store_pairs, 0);
+                assert!(
+                    verify::check_ordering(&source, &nodes, &atom, &condition, ordering).is_some()
+                );
+            }
+            let mut barrier = source.clone();
+            barrier.swap(2, 3);
+            assert!(
+                verify::check_ordering(&barrier, &candidate, &atom, &condition, ordering).is_none()
+            );
+            let mut changed_prefix = candidate.clone();
+            changed_prefix[0] = node(9);
+            assert!(
+                verify::check_ordering(&source, &changed_prefix, &atom, &condition, ordering)
+                    .is_none()
+            );
+        }
     }
 }
