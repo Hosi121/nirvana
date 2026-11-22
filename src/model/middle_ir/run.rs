@@ -9,7 +9,7 @@ fn evaluate(region: &Region, function: &Function, machine: &Machine) -> Result<u
             Operation::Pure(Pure::Constant(n)) => *n,
             Operation::Pure(Pure::Unary(op, input)) => op.evaluate(values[input]),
             Operation::Pure(Pure::Binary(op, a, b)) => op.evaluate(values[a], values[b]),
-            Operation::ReadStorage { storage, .. } => {
+            Operation::ReadStorage { storage, .. } | Operation::ReadSaved { storage, .. } => {
                 machine.registers[function.storages[storage.0].0]
             }
             Operation::Load { address, width } => machine.load(values[address], *width)?,

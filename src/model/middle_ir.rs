@@ -20,10 +20,14 @@ mod memory;
 pub use memory::{Load, LoadFlow, MemoryFacts, Store};
 mod recover_memory;
 pub use recover_memory::MemoryEvidence;
+mod saved_values;
+pub use crate::dataflow::memory_values::{SavedSlice, SavedValueView, SnapshotId};
+pub use saved_values::{SavedEvidence, SavedLowering};
 mod run;
 #[cfg(test)]
 mod tests;
 mod text;
+mod walk;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ValueId(pub usize);
@@ -53,6 +57,13 @@ pub enum Operation {
         storage: StorageId,
         /// None denotes a syntactically retained, entry-unreachable site.
         version: Option<ssa::ValueId>,
+    },
+    /// Read original storage with a checked identity in a saved snapshot.
+    /// Execution keeps the storage read; explicit saved lowering uses snapshots.
+    ReadSaved {
+        storage: StorageId,
+        version: Option<ssa::ValueId>,
+        slice: SavedSlice,
     },
     Load {
         address: ValueId,
@@ -127,6 +138,7 @@ pub struct Function {
     ssa: SsaFunction,
     value_count: usize,
     source_value_count: usize,
+    saved: Option<saved_values::Recovery>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -168,6 +180,7 @@ impl Function {
         Ok(())
     }
     pub fn lower(&self) -> Result<Program, Error> {
+        saved_values::validate(self)?;
         recover_memory::validate_constants(self)?;
         lower::program(self, true)
     }

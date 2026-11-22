@@ -20,7 +20,7 @@ impl Function {
             .filter_map(|load| facts.constant_load(load.value).map(|v| (load.value, v)))
             .collect();
         let mut candidate = self.clone();
-        visit_mut(&mut candidate, |binding| {
+        walk::visit_mut(&mut candidate, |binding| {
             if let Operation::Load { address, width } = binding.operation
                 && let Some(&value) = constants.get(&binding.id)
             {
@@ -49,7 +49,7 @@ impl Function {
         }
         let known = known_constants(candidate)?;
         let mut expected = self.clone();
-        visit_mut(&mut expected, |binding| {
+        walk::visit_mut(&mut expected, |binding| {
             if let Operation::Load { address, width } | Operation::KnownLoad { address, width, .. } =
                 binding.operation
                 && let Some(&value) = known.get(&binding.id)
@@ -97,75 +97,14 @@ fn check(facts: &MemoryFacts<'_>, known: &BTreeMap<ValueId, u64>) -> Result<(), 
     Ok(())
 }
 fn known_constants(function: &Function) -> Result<BTreeMap<ValueId, u64>, Error> {
-    let mut regions = Vec::new();
-    for block in &function.blocks {
-        for step in &block.steps {
-            for statement in &step.statements {
-                match statement {
-                    Statement::WriteStorage { value, .. } => regions.push(value),
-                    Statement::Store { address, value, .. } => {
-                        regions.extend([address, value]);
-                    }
-                }
-            }
-        }
-        match &block.terminator {
-            Terminator::Branch { condition, .. } | Terminator::Return(condition) => {
-                regions.push(condition)
-            }
-            _ => {}
-        }
-    }
     let mut known = BTreeMap::new();
-    let mut budget = ssa::Budget::new();
-    while let Some(region) = regions.pop() {
-        budget
-            .spend(region.bindings.len() + 1)
-            .map_err(Error::Ssa)?;
-        for binding in &region.bindings {
-            match &binding.operation {
-                Operation::KnownLoad { value, .. } => {
-                    if known.insert(binding.id, *value).is_some() {
-                        return Err(Error::Invalid("duplicate KnownLoad ID"));
-                    }
-                }
-                Operation::Select {
-                    taken, not_taken, ..
-                } => regions.extend([taken, not_taken]),
-                _ => {}
-            }
+    walk::visit(function, |binding| {
+        if let Operation::KnownLoad { value, .. } = binding.operation
+            && known.insert(binding.id, value).is_some()
+        {
+            return Err(Error::Invalid("duplicate KnownLoad ID"));
         }
-    }
+        Ok(())
+    })?;
     Ok(known)
-}
-
-fn visit_mut(function: &mut Function, mut visit: impl FnMut(&mut Binding)) {
-    let mut regions = Vec::new();
-    for block in &mut function.blocks {
-        for step in &mut block.steps {
-            for statement in &mut step.statements {
-                match statement {
-                    Statement::WriteStorage { value, .. } => regions.push(value),
-                    Statement::Store { address, value, .. } => regions.extend([address, value]),
-                }
-            }
-        }
-        match &mut block.terminator {
-            Terminator::Branch { condition, .. } | Terminator::Return(condition) => {
-                regions.push(condition)
-            }
-            _ => {}
-        }
-    }
-    while let Some(region) = regions.pop() {
-        for binding in &mut region.bindings {
-            visit(binding);
-            if let Operation::Select {
-                taken, not_taken, ..
-            } = &mut binding.operation
-            {
-                regions.extend([taken, not_taken]);
-            }
-        }
-    }
 }

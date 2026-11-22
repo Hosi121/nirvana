@@ -100,7 +100,10 @@ impl Builder {
         let key = match &operation {
             Operation::Pure(pure) => Some(Key::Pure(pure.clone())),
             Operation::ReadStorage { storage, version } => Some(Key::Read(*storage, *version)),
-            Operation::Load { .. } | Operation::KnownLoad { .. } | Operation::Select { .. } => None,
+            Operation::Load { .. }
+            | Operation::KnownLoad { .. }
+            | Operation::Select { .. }
+            | Operation::ReadSaved { .. } => None,
         };
         if let Some(id) = key.as_ref().and_then(|key| intern.get(key)) {
             return Ok(*id);
@@ -216,6 +219,7 @@ pub(super) fn build(source: &Program) -> Result<Function, Error> {
         });
     }
     Ok(Function {
+        saved: None,
         entry: source.cfg().block(source.cfg().entry()).start,
         storages: (0..source.register_count()).map(Reg).collect(),
         blocks,

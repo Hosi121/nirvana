@@ -252,11 +252,15 @@ fn constant(region: &Region, constants: &[ssa_constants::ConstantValue]) -> Opti
             },
             Operation::ReadStorage {
                 version: Some(id), ..
+            }
+            | Operation::ReadSaved {
+                version: Some(id), ..
             } => match constants.get(id.0) {
                 Some(ssa_constants::ConstantValue::Known(value)) => Some(*value),
                 _ => None,
             },
             Operation::ReadStorage { version: None, .. }
+            | Operation::ReadSaved { version: None, .. }
             | Operation::Load { .. }
             | Operation::KnownLoad { .. } => None,
         };

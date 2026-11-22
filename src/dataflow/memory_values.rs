@@ -18,6 +18,8 @@ mod single_visit;
 mod stability;
 mod value_facts;
 mod verify;
+mod view;
+pub use view::{SavedLoad, SavedSlice, SavedValueView, Snapshot, SnapshotId};
 const MAX_CAPTURES: usize = 256;
 
 #[derive(Clone, Copy)]
@@ -28,7 +30,8 @@ enum RecoveryPolicy {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum SavedValue {
+/// Source identity of a captured word, scoped to one checked plan.
+pub enum SavedValue {
     Register(ValueId),
     Stored(Site),
 }
@@ -39,10 +42,11 @@ struct Key {
     width: Width,
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct CapturePoint {
-    instruction: u64,
+/// Source position after a successful assignment, or before a guest step.
+pub struct CapturePoint {
+    pub instruction: u64,
     /// None is before the instruction's first assignment.
-    after: Option<usize>,
+    pub after: Option<usize>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Capture {

@@ -77,7 +77,10 @@ impl Lower<'_> {
             }
             let decoded = match &binding.operation {
                 Operation::Pure(Pure::Constant(n)) => Decoded::leaf(Expr::Const(*n)),
-                Operation::ReadStorage { storage, version } => {
+                Operation::ReadStorage { storage, version }
+                | Operation::ReadSaved {
+                    storage, version, ..
+                } => {
                     let reg = self.storage(*storage)?;
                     let valid = self
                         .points

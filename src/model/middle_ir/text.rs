@@ -27,6 +27,21 @@ impl Text {
                     indent,
                     format_args!("%{id} = read s{} [{}]", storage.0, version_text(*version)),
                 )?,
+                Operation::ReadSaved {
+                    storage,
+                    version,
+                    slice,
+                } => self.line(
+                    indent,
+                    format_args!(
+                        "%{id} = saved #{} bits {}:{} via s{} [{}]",
+                        slice.snapshot.0,
+                        slice.start,
+                        slice.width.bits(),
+                        storage.0,
+                        version_text(*version)
+                    ),
+                )?,
                 Operation::Load { address, width } => self.line(
                     indent,
                     format_args!("%{id} = load{} %{}", width.bits(), address.0),
@@ -80,6 +95,31 @@ impl Function {
                 self.source_value_count
             ),
         )?;
+        if let Some(saved) = self.saved_values() {
+            for (n, snapshot) in saved.snapshots.iter().enumerate() {
+                text.line(
+                    0,
+                    format_args!(
+                        "snapshot #{n} = {:?} @{:#x} after {:?}",
+                        snapshot.origin, snapshot.point.instruction, snapshot.point.after
+                    ),
+                )?;
+            }
+            for load in &saved.loads {
+                text.line(
+                    0,
+                    format_args!(
+                        "saved-load @{:#x}:{:?} [ssa v{}] => #{} bits {}:{}",
+                        load.site.instruction,
+                        load.site.assignment,
+                        load.definition.0,
+                        load.slice.snapshot.0,
+                        load.slice.start,
+                        load.slice.width.bits()
+                    ),
+                )?;
+            }
+        }
         for block in &self.blocks {
             text.line(0, format_args!("block @{:#x}:", block.address))?;
             if let Some(ssa_block) = self.ssa.blocks.iter().find(|b| b.start == block.address) {
