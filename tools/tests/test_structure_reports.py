@@ -63,7 +63,7 @@ def fixture(root):
     tool = dict(sha256='b' * 64, version='compiler-v1', returncode=0)
     report = dict(schema='nirvana-structure-report-v1', metric=cg.METRIC,
                   requested_profiles=1, summary=dict(requested=1, cohorts=dict(development=1)),
-                  evaluation=dict(metric_sha256='c' * 64), budgets=dict(states=100), emission='readable-c',
+                  evaluation=dict(metric_sha256='c' * 64), budgets=dict(search_states=100, search_seconds=1), emission='readable-c',
                   corpus=dict(sha256='d' * 64), clang=tool, c_compiler=tool, compilers=dict(gcc=tool),
                   semantics=dict(contract=semantics.CONTRACT), workspace_revision='revision',
                   workspace_dirty=False, decompiler=dict(sha256='e' * 64), rows=[row])
@@ -71,6 +71,32 @@ def fixture(root):
 
 
 class ReportTests(unittest.TestCase):
+    def test_reanalysis_retains_original_runs_and_failure_denominators(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = fixture(root)
+            path = root / 'report.json'
+            path.write_text(json.dumps(original))
+            before = path.read_bytes()
+            refined = reports.reanalyze(path)
+            self.assertEqual(refined['rows'][0]['distance']['upper_bound'], 0)
+            self.assertEqual(refined['reanalysis']['source_report_sha256'], semantics.sha(path))
+            self.assertEqual(refined['reanalysis']['original_evaluation'], original['evaluation'])
+            self.assertEqual(refined['rows'][0]['commands'], original['rows'][0]['commands'])
+            self.assertEqual(refined['requested_profiles'], 1)
+            self.assertEqual(path.read_bytes(), before)
+            for states, seconds in [(0, 1), (100, float('inf')), (100, 0)]:
+                with self.assertRaises(ValueError):
+                    reports.reanalyze(path, max_states=states, seconds=seconds)
+            failed = copy.deepcopy(original)
+            failed['rows'][0].pop('distance')
+            failed['rows'][0].update(structure_status='timeout', semantics={'status': 'not_run'})
+            path.write_text(json.dumps(failed))
+            preserved = reports.reanalyze(path)
+            self.assertEqual(preserved['requested_profiles'], 1)
+            self.assertEqual(preserved['rows'][0]['structure_status'], 'timeout')
+            self.assertNotIn('distance', preserved['rows'][0])
+
     def compare(self, a, b, before, after):
         (a / 'report.json').write_text(json.dumps(before))
         (b / 'report.json').write_text(json.dumps(after))

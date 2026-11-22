@@ -210,3 +210,36 @@ def compare(before_path, after_path):
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',
             'rows': rows}
+
+
+def reanalyze(path, *, max_states=None, seconds=None):
+    """Refine saved graph distances after replay, preserving original run costs.
+
+    The result belongs beside the original report, where its retained artifact
+    paths resolve. Caller writes to a new filename; no native/C rerun is claimed.
+    """
+    path = Path(path)
+    report = json.loads(path.read_text())
+    index(report)
+    original_evaluation = dict(report['evaluation'])
+    budgets = report['budgets']
+    max_states = budgets['search_states'] if max_states is None else max_states
+    seconds = budgets['search_seconds'] if seconds is None else seconds
+    require(type(max_states) is int and max_states >= 1 and 0 < seconds < float('inf'),
+            'positive finite graph search budgets required')
+    for row in report['rows']:
+        replay(path.parent, row)
+        if 'distance' not in row:
+            continue
+        directory = artifact(path.parent, row['artifacts'])
+        graphs = [cg.graph_from_json(json.loads((directory / f'{stage}.json').read_text())['graph'])
+                  for stage in ['source_cfg', 'generated_cfg']]
+        row['distance'] = cg.distance(*graphs, max_states=max_states, seconds=seconds)
+    budgets.update(search_states=max_states, search_seconds=seconds)
+    report['evaluation']['metric_sha256'] = semantics.sha(cg.__file__)
+    report['summary']['distances'] = dict(Counter(row['distance']['status'] for row in report['rows'] if 'distance' in row))
+    report['reanalysis'] = {'source_report': path.name, 'source_report_sha256': semantics.sha(path),
+                            'original_evaluation': original_evaluation,
+                            'replay_sha256': semantics.sha(__file__),
+                            'resources': 'Original command samples retained; only graph search was rerun.'}
+    return report

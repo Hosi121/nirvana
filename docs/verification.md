@@ -53,6 +53,13 @@ python3 tools/compare_structure_reports.py \
   > target/structure-comparison.json
 ```
 
+探索器を更新した場合は、[保存グラフの再解析](../tools/reanalyze_structure_report.py)で同じ入力を使えます。元の報告を保持したまま同じディレクトリへ別名で保存し、元報告のhash・新しい探索器のhash・新しい距離を記録します。native/Cのコマンド費用は元測定の値として保持します。
+
+```sh
+python3 tools/reanalyze_structure_report.py target/structure-baseline/report.json \
+  --out target/structure-baseline/report-refined.json
+```
+
 ## 比較の境界
 
 | 境界 | 主な検査 |
