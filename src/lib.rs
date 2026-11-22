@@ -33,7 +33,8 @@ pub use dataflow::{
     value_width, web, web_verify,
 };
 pub use model::{
-    effects, effects_observe, expression_ir, hir, ir, memory, module_ir, observe, semantic_ir,
+    effects, effects_observe, expression_ir, hir, ir, memory, middle_ir, module_ir, observe,
+    semantic_ir,
 };
 pub use transform::{
     access_expr, add_division_expr, affine_region, arithmetic_graph, bit_expr, context_remainder,

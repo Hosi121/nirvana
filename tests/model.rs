@@ -32,6 +32,8 @@ mod integer_ops;
 mod ir_and_structure;
 #[path = "model/memory_ir.rs"]
 mod memory_ir;
+#[path = "model/middle_ir.rs"]
+mod middle_ir;
 #[path = "model/nonlocal_transfers.rs"]
 mod nonlocal_transfers;
 #[path = "model/run_reports.rs"]

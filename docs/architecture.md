@@ -27,6 +27,7 @@ ELF / raw bytes
 | --- | --- | --- |
 | Executable IR | [単一関数](../src/model/ir.rs)・[module](../src/model/module_ir.rs)のbit演算、順序付き効果、PCとゲスト状態 | 幅・flag・Load/Store・CALL/RET・最初のfaultを明示する。native/oracle比較で命令意味を検査し、moduleでは予算と途中再開も照合する |
 | Register SSA | [定義・使用・φ](../src/dataflow/ssa.rs)による値の識別 | 各readを元IRの定義へ結び、仮想入口と全先行辺を保持する。[独立検査](../src/dataflow/ssa/verify.rs)を通した値IDを変換の根拠にする |
+| Middle IR | [不変な値ID・保存場所・評価領域・CFG](../src/model/middle_ir.rs) | 単一関数の実行IRを持ち上げ、元の式・命令・SSA対応を再構成して照合する。Loadの順序とlazyな枝、Store先の先行検査、guest命令のPC・予算を保持する |
 | MemorySSA | [メモリ世代とbyteごとの到達書込み候補](../src/dataflow/memory_ssa.rs) | may-alias・初期メモリ・未知CALLの寄与を保持する。現在の検査は[書込み元tagの独立実行比較](../tests/dataflow/memory_ssa.rs)などで、グラフ全体に対する一般の独立検査器は追加対象 |
 | Semantic IR | [保存時点と値IDに結び付けた意味付き演算](../src/model/semantic_ir.rs) | 現在はblock内の商・剰余などを回復する。入力の保存時点、置換箇所、元の効果と制御を照合して実行IRへ下ろす。関数全体の型付きIRは到達目標 |
 | Structured AST | [Step・If・Loop・脱出](../src/control_flow/structure.rs)による制御の構成 | [ASTをグラフへ戻す検査](../src/control_flow/structure_verify.rs)で元PC、代入、条件、移転先を照合する。条件の集約・移動には追加の意味検査を結ぶ |
@@ -35,6 +36,8 @@ ELF / raw bytes
 元変数の同定、非aliasの証明、Cの型や所有権の確定は、それぞれ追加の回復主張です。値ID・メモリ世代・viewの名前から得られる事実と、[実行契約](equivalence.md)を保つ根拠を分けて記録します。
 
 compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作り、検査後にSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
+
+Middle IRはM1の段階間契約を実装する最初の共通表現です。保存場所IDと値IDを分け、各read/writeにレジスタSSAの版を対応付けます。値は64-bit bit列として計算し、Loadと抽出には幅を保持します。条件付きの式は子の評価領域を持ち、Storeはアドレスと右辺の領域を分けます。直接実行器とLow IRへの戻し変換を、全レジスタ・RAM・最初のfault・PC・命令予算で比較します。型・元変数の回復とmoduleの外部効果は、この単一関数の契約から段階的に広げます。
 
 ## ソースの配置
 
