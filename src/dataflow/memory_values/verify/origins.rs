@@ -3,6 +3,9 @@
 //! origins, instead of using the proposer's byte-window descent.
 use super::*;
 use crate::model::ir::BinaryOp as B;
+use std::rc::Rc;
+#[cfg(test)]
+mod stack_bounds;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Bit {
     Unknown,
@@ -10,12 +13,20 @@ enum Bit {
     Register(ValueId, u8),
     Stored(Site, u8),
 }
-type Word = [Bit; 64];
+// Keep recursive expression frames small while retaining all 64 bit origins.
+// Cached words share storage; assigning sampled origins uses copy-on-write.
+type Word = Rc<[Bit]>;
+fn bits(f: impl FnMut(usize) -> Bit) -> Word {
+    (0..64).map(f).collect::<Vec<_>>().into()
+}
+fn unknown() -> Word {
+    bits(|_| Bit::Unknown)
+}
 fn opaque(context: &Context<'_>, value: ValueId) -> Word {
     if context.stable.values.get(value.0) == Some(&true) {
-        std::array::from_fn(|bit| Bit::Register(value, bit as u8))
+        bits(|bit| Bit::Register(value, bit as u8))
     } else {
-        [Bit::Unknown; 64]
+        unknown()
     }
 }
 #[derive(Default)]
@@ -33,7 +44,7 @@ impl NormalValues {
     ) -> Result<Word, SsaError> {
         budget.spend(1)?;
         if let Some(word) = self.cache.get(&value) {
-            return Ok(*word);
+            return Ok(word.clone());
         }
         if depth >= 32 || !self.active.insert(value) {
             return Ok(opaque(context, value));
@@ -69,13 +80,13 @@ impl NormalValues {
         // Freeze a sampled unknown only for a value stable across visits.
         // Dynamic phi/producer bits remain unknown; their SSA ID alone does
         // not equate values from different iterations.
-        for (bit, origin) in word.iter_mut().enumerate() {
+        for (bit, origin) in Rc::make_mut(&mut word).iter_mut().enumerate() {
             if *origin == Bit::Unknown && context.stable.values.get(value.0) == Some(&true) {
                 *origin = Bit::Register(value, bit as u8);
             }
         }
         self.active.remove(&value);
-        self.cache.insert(value, word);
+        self.cache.insert(value, word.clone());
         Ok(word)
     }
 }
@@ -141,7 +152,7 @@ impl Values {
     ) -> Result<Word, SsaError> {
         budget.spend(1)?;
         if let Some(word) = self.stores.get(&site) {
-            return Ok(*word);
+            return Ok(word.clone());
         }
         let point = context.point(site).ok_or(invalid("byte origin point"))?;
         let assignment = context
@@ -174,12 +185,12 @@ impl Values {
         }
         // A pure Store RHS can be captured after this exact Store succeeds.
         // Distinct Store expressions retain distinct opaque result bits.
-        for (bit, origin) in word.iter_mut().enumerate() {
+        for (bit, origin) in Rc::make_mut(&mut word).iter_mut().enumerate() {
             if *origin == Bit::Unknown {
                 *origin = Bit::Stored(site, bit as u8);
             }
         }
-        self.stores.insert(site, word);
+        self.stores.insert(site, word.clone());
         Ok(word)
     }
 }
@@ -206,9 +217,8 @@ fn expression(
     budget.spend(64)?;
     let no = Bit::Literal(false);
     let yes = Bit::Literal(true);
-    let unknown = [Bit::Unknown; 64];
     Ok(match e {
-        Expr::Const(n) => std::array::from_fn(|bit| Bit::Literal(n & (1u64 << bit) != 0)),
+        Expr::Const(n) => bits(|bit| Bit::Literal(n & (1u64 << bit) != 0)),
         Expr::Register(register) => {
             let read = point
                 .reads
@@ -227,10 +237,8 @@ fn expression(
         Expr::Unary(op, value) => {
             let value = expression(value, context, point, cursor, budget, values, depth + 1)?;
             match op {
-                UnaryOp::SignExtend(width) => {
-                    std::array::from_fn(|bit| value[bit.min(width.bits() as usize - 1)])
-                }
-                UnaryOp::Extract { start, width } => std::array::from_fn(|bit| {
+                UnaryOp::SignExtend(width) => bits(|bit| value[bit.min(width.bits() as usize - 1)]),
+                UnaryOp::Extract { start, width } => bits(|bit| {
                     let source = usize::from(*start) + bit;
                     if bit < width.bits() as usize && source < 64 {
                         value[source]
@@ -242,7 +250,7 @@ fn expression(
         }
         Expr::Load { address, width } => {
             expression(address, context, point, cursor, budget, values, depth + 1)?;
-            std::array::from_fn(|bit| {
+            bits(|bit| {
                 if bit < width.bits() as usize {
                     Bit::Unknown
                 } else {
@@ -258,13 +266,13 @@ fn expression(
             expression(condition, context, point, cursor, budget, values, depth + 1)?;
             let a = expression(taken, context, point, cursor, budget, values, depth + 1)?;
             let b = expression(not_taken, context, point, cursor, budget, values, depth + 1)?;
-            std::array::from_fn(|i| if a[i] == b[i] { a[i] } else { Bit::Unknown })
+            bits(|i| if a[i] == b[i] { a[i] } else { Bit::Unknown })
         }
         Expr::Binary(op, left, right) => {
             let a = expression(left, context, point, cursor, budget, values, depth + 1)?;
             let b = expression(right, context, point, cursor, budget, values, depth + 1)?;
             match op {
-                B::And => std::array::from_fn(|i| {
+                B::And => bits(|i| {
                     if a[i] == no || b[i] == no {
                         no
                     } else if a[i] == yes {
@@ -275,7 +283,7 @@ fn expression(
                         Bit::Unknown
                     }
                 }),
-                B::Or => std::array::from_fn(|i| {
+                B::Or => bits(|i| {
                     if a[i] == yes || b[i] == yes {
                         yes
                     } else if a[i] == no {
@@ -286,7 +294,7 @@ fn expression(
                         Bit::Unknown
                     }
                 }),
-                B::Xor => std::array::from_fn(|i| {
+                B::Xor => bits(|i| {
                     if a[i] == no {
                         b[i]
                     } else if b[i] == no {
@@ -297,7 +305,7 @@ fn expression(
                         Bit::Unknown
                     }
                 }),
-                B::Insert { start, width } => std::array::from_fn(|bit| {
+                B::Insert { start, width } => bits(|bit| {
                     let start = usize::from(*start);
                     if bit >= start && bit - start < width.bits() as usize {
                         b[bit - start]
@@ -308,17 +316,17 @@ fn expression(
                 B::Shl | B::Shr | B::AShr => {
                     if let Some(count) = constant(&b) {
                         let count = (count & 63) as usize;
-                        std::array::from_fn(|bit| match op {
+                        bits(|bit| match op {
                             B::Shl if bit >= count => a[bit - count],
                             B::Shr | B::AShr if bit + count < 64 => a[bit + count],
                             B::AShr => a[63],
                             _ => no,
                         })
                     } else {
-                        unknown
+                        unknown()
                     }
                 }
-                _ => unknown,
+                _ => unknown(),
             }
         }
     })
