@@ -71,7 +71,7 @@ class StateValueProofs(unittest.TestCase):
              'return nirvana_load(&m,address+24,8);')
         result = self.compare(a,b)
         self.assertEqual(result.report['status'],'equivalent_under_model')
-        self.assertEqual(result.report['model'],'nirvana-state4-values-v4')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v5')
 
     def test_loop_completion_is_proved_over_all_words_including_wraparound(self):
         a = ('while(1){++state[1];if(state[0]&1){state[2]=200;break;}'

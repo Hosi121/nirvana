@@ -123,9 +123,35 @@ class StateValueAST(unittest.TestCase):
     def test_current_indices_do_not_re_evaluate_captured_view_initializers(self):
         body=('uint64_t i=0;const struct {struct nirvana_view saved;} v={{address+i*8}};'
               '++i;return nirvana_view_load(&m,v.saved,8);')
-        with self.assertRaises(Unsupported): self.model(Graph(),body,source=False)
+        g=Graph();captured=self.model(g,body,source=False)
+        self.assertEqual(g.evaluate(captured.outputs,[11,22,33,44]),[11,11,22,33,44])
         for body in ['uint64_t i=4;return state[i];','int i=-1;return state[i];',
                      'return *(state+100-100);','return *(state-1+1);']:
             with self.assertRaises(Unsupported): self.model(Graph(),body)
         model=self.model(Graph(),'return *(state+4-4);')  # A one-past pointer may move back.
         self.assertEqual(model.paths,1)
+
+    def test_loop_record_and_scalar_address_declarations_capture_each_iteration(self):
+        bodies=[
+            'uint64_t sum=0;for(uint64_t i=0;i<4;){'
+            'const struct {struct nirvana_view saved;} v={{address+i*8}};'
+            '++i;sum+=nirvana_view_load(&m,v.saved,8);}return sum;',
+            'uint64_t sum=0;for(uint64_t i=0;i<4;){uint64_t saved=address+i*8;'
+            '++i;sum+=nirvana_load(&m,saved,8);}return sum;',
+            'uint64_t i=0;const struct {struct nirvana_view saved;} original={{address+i*8}};'
+            'const struct {struct nirvana_view saved;} copy={original.saved};'
+            'i=3;return nirvana_view_load(&m,copy.saved,8);',
+        ]
+        for body,expected in zip(bodies,[110,110,11]):
+            g=Graph();model=self.model(g,body,source=False)
+            self.assertEqual(g.evaluate(model.outputs,[11,22,33,44]),[expected,11,22,33,44])
+
+    def test_signed_helper_call_is_lowered_under_an_explicit_runtime_contract(self):
+        g=Graph()
+        source=self.model(g,'uint64_t low=state[0]&65535;return low<32768?low:low-UINT64_C(65536);')
+        code=('uint64_t nirvana_sext16(uint64_t);'
+              'uint64_t nirvana_readable(uint64_t address,uint8_t *memory,uint64_t base,uint64_t size)'
+              '{struct nirvana_memory m={memory,base,size};return nirvana_sext16(nirvana_load(&m,address,8));}')
+        generated=observe(g,self.ast(code,'nirvana_readable'),'nirvana_readable',source=False)
+        for value in [0,32767,32768,65535,2**64-1]:
+            self.assertEqual(g.evaluate(source.outputs,[value,1,2,3]),g.evaluate(generated.outputs,[value,1,2,3]))

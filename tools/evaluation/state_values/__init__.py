@@ -6,8 +6,9 @@ from .ast import observe, LOOP_LIMIT
 from .terms import Graph, Unsupported
 from .solver import compare
 from . import definedness
+from . import helpers
 
-MODEL = 'nirvana-state4-values-v4'
+MODEL = 'nirvana-state4-values-v5'
 MEMORY_PROFILE = {'memory_base': 4096, 'memory_size': 512, 'state_pointer': 4224}
 
 
@@ -33,7 +34,8 @@ def measure(source_text, generated_text, name, parameters, solver, seconds=2, *,
               'completed_solver_wall_seconds': sum(n['wall_seconds'] for n in proof.responses),
               'profile': {**memory['profile'], **MEMORY_PROFILE, 'integer_abi': 'x86-64-lp64', 'pointer': 'valid-state-only',
                           'control': 'closed-bounded-loops', 'loop_iterations': LOOP_LIMIT,
-                          'completion': 'all-inputs', 'definedness': 'all-modeled-values', 'observations': ['return', 'state_bytes']},
+                          'completion': 'all-inputs', 'definedness': 'all-modeled-values', 'integer_helpers':helpers.MODEL,
+                          'observations': ['return', 'state_bytes']},
               'source': summary(a), 'generated': summary(b), 'reason': proof.reason, 'witness': proof.witness,
               'bound_witness': proof.bound_witness, 'definedness_witness': proof.definedness_witness}
     raw = {'schema': 'nirvana-state4-value-graph-v3', 'nodes': [asdict(n) for n in graph.nodes],

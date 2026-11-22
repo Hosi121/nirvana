@@ -7,11 +7,13 @@ volatile objects and unresolved addresses stay unsupported. The
 generated side uses the fixed Nirvana checked-memory helper contracts; C
 storage names and view field spellings do not identify values or addresses.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from itertools import chain, islice
 
 from .. import c_footprint as cf, state_memory as sm
 from .terms import Graph, Type, U64, BYTE, BOOL, Unsupported, number
+from . import helpers
+from .records import Records,View
 
 LOOP_LIMIT = 16
 
@@ -33,8 +35,9 @@ class State:
     guard: int
     locals: dict
     memory: list
+    records:dict=field(default_factory=dict)
 
-    def copy(self, guard): return State(guard, self.locals.copy(), self.memory.copy())
+    def copy(self, guard): return State(guard, self.locals.copy(), self.memory.copy(),self.records.copy())
 
 
 @dataclass
@@ -52,6 +55,8 @@ class Interpreter:
         self.root = cf.function(text, name)
         self.resolver = sm.Resolver(self.root, parameter)
         self.graph, self.source = graph, source
+        self.records=Records(graph,self.resolver)
+        self.parameter=parameter
         self.memory_context = None
         self.parameters = [n for n in cf.children(self.root) if n.get('kind') == 'ParmVarDecl']
         self.returns, self.work, self.assignments, self.declarations = [], 10000, 0, set()
@@ -108,36 +113,23 @@ class Interpreter:
         constant = self.graph.constant(value)
         return None if constant is None else number(constant, self.graph.type(value))
 
-    def address(self, node, mode, state, depth=0):
+    def pointer(self, node, state, depth=0):
         if depth > 32: raise Unsupported('evaluated address depth')
-        result = self.resolver.address(node, mode)
-        if result is not None and result.offset is not None and mode != 'pointer': return result
-        # Only current syntax may consult mutable locals. Expanding a saved
-        # view/alias initializer here would re-evaluate an old address using a
-        # new iteration's index. Static Resolver bindings remain snapshots.
+        result = self.resolver.address(node, 'pointer')
         node = sm.strip(node); parts = cf.children(node); kind = node.get('kind')
-        if mode == 'pointer' and kind == 'DeclRefExpr': return result
-        if kind == 'CallExpr' and mode != 'pointer':
-            target, args = sm.callee(node), parts[1:]
-            if target in ['nirvana_location_address', 'nirvana_location_view'] and len(args) == 1:
-                return self.address(args[0], 'scalar' if target.endswith('_address') else 'view', state, depth+1)
-            if target == 'nirvana_view_index' and len(args) == 4:
-                base = self.address(args[0], 'view', state, depth+1)
-                index, stride, offset = [self.constant(n, state) for n in args[1:]]
-                delta = None if None in [index,stride,offset] else index*stride+offset
-                return self.resolver.add(base, delta, True)
+        if kind == 'DeclRefExpr': return result
         if kind == 'BinaryOperator' and len(parts) == 2 and node.get('opcode') in ['+', '-']:
-            base = self.address(parts[0], mode, state, depth+1)
+            base = self.pointer(parts[0], state, depth+1)
             if base is not None:
                 delta = self.constant(parts[1], state)
-                if delta is not None: delta *= (8 if mode == 'pointer' else 1) * (-1 if node['opcode']=='-' else 1)
-                result = self.resolver.add(base, delta, mode != 'pointer')
+                if delta is not None: delta *= 8 * (-1 if node['opcode']=='-' else 1)
+                result = self.resolver.add(base, delta, False)
             elif node['opcode'] == '+':
-                base = self.address(parts[1], mode, state, depth+1)
+                base = self.pointer(parts[1], state, depth+1)
                 delta = self.constant(parts[0], state) if base is not None else None
-                result = self.resolver.add(base, None if delta is None else delta*(8 if mode=='pointer' else 1), mode!='pointer')
+                result = self.resolver.add(base, None if delta is None else delta*8, False)
             else: return None
-            if mode == 'pointer' and result is not None and result.offset is not None and not 0 <= result.offset <= 32:
+            if result is not None and result.offset is not None and not 0 <= result.offset <= 32:
                 raise Unsupported('source pointer arithmetic outside its state object')
             return result
         return None
@@ -147,10 +139,10 @@ class Interpreter:
         if self.source or address is None or address.offset is None:
             node = sm.strip(node); parts = cf.children(node)
             if node.get('kind') == 'ArraySubscriptExpr' and len(parts) == 2:
-                base, index = self.address(parts[0], 'pointer', state), self.constant(parts[1], state)
+                base, index = self.pointer(parts[0], state), self.constant(parts[1], state)
                 address = self.resolver.add(base, None if index is None else index*8, False)
             elif node.get('kind') == 'UnaryOperator' and node.get('opcode') == '*' and len(parts) == 1:
-                address = self.address(parts[0], 'pointer', state)
+                address = self.pointer(parts[0], state)
         return self.location(address, width)
 
     def helper_place(self, node, state):
@@ -167,7 +159,13 @@ class Interpreter:
                 or sm.strip(children[0]).get('referencedDecl', {}).get('id') != self.memory_context
                 or self.memory_context is None):
             raise Unsupported('checked-memory context differs from ABI')
-        place = self.location(self.address(args[1], mode, state), self.constant(args[2], state))
+        if mode=='view':
+            view=self.records.evaluate(args[1],state,self.value)
+            if not isinstance(view,View): raise Unsupported('checked-memory view argument')
+            address=view.address
+        else: address=self.value(args[1],state)
+        raw=self.graph.constant(address)
+        place=self.location(sm.Address(None if raw is None else (raw-4224)&sm.MASK),self.constant(args[2],state))
         return access, place, args
 
     def load(self, state, place):
@@ -189,6 +187,10 @@ class Interpreter:
             result = state.locals.get(identity)
             if result is None: raise Unsupported('scalar read lacks a defined local value')
             return result
+        if kind=='MemberExpr' and not self.source:
+            result=self.records.evaluate(node,state,self.value)
+            if type(result) is not int: raise Unsupported('record used as a scalar')
+            return g.cast(result,ctype(node))
         if kind in ['ImplicitCastExpr', 'CStyleCastExpr'] and len(parts) == 1:
             return g.cast(self.value(parts[0], state), ctype(node))
         if kind == 'UnaryOperator' and node.get('opcode') in ['+', '-', '~', '!'] and len(parts) == 1:
@@ -200,6 +202,9 @@ class Interpreter:
             c, a, b = [self.value(n, state) for n in parts]
             return g.choose(c, a, b)
         if kind == 'CallExpr':
+            if not self.source and sm.callee(node) in helpers.NAMES:
+                if ctype(node)!=U64: raise Unsupported('integer helper result type')
+                return helpers.lower(g,sm.callee(node),[self.value(n,state) for n in parts[1:]])
             access, place, _ = self.helper_place(node, state)
             if access == 'read': return g.cast(self.load(state, place), U64)
             if access == 'check': return g.const(128 + place[0])
@@ -224,13 +229,6 @@ class Interpreter:
             if value is None: return self.load(state, place)
             self.store(state, place, value)
 
-    def address_initializer(self, node):
-        node = sm.strip(node)
-        if node.get('kind') == 'InitListExpr':
-            return all(self.address_initializer(n) for n in cf.children(node))
-        address = self.resolver.address(node, 'scalar')
-        return address is not None and address.offset is not None or self.resolver.constant(node) is not None
-
     def declaration(self, node, state):
         parts = cf.children(node); g = self.graph
         typename = cf.type_key(node).replace('const ', '')
@@ -243,17 +241,14 @@ class Interpreter:
                 raise Unsupported('memory context is not the fixed ABI')
             self.memory_context = node['id']; return
         if typename.startswith('struct '):
-            if self.source or len(parts) != 1 or not self.address_initializer(parts[0]):
+            if self.source or len(parts) != 1:
                 raise Unsupported('record outside immutable address setup')
+            state.records.pop(node['id'],None)
+            state.records[node['id']]=self.records.evaluate(parts[0],state,self.value)
             return
         typ = ctype(node)
         identity = node['id']
         if len(parts) > 1: raise Unsupported('scalar initializer shape')
-        if parts and self.resolver.address(parts[0], 'scalar') is not None:
-            if not self.address_initializer(parts[0]): raise Unsupported('unresolved address initializer')
-            # Pure captured addresses are used by Resolver, rather than as
-            # scalar source values. Any value escape remains unsupported.
-            return
         # A loop re-enters this declaration with a fresh automatic object. Its
         # old iteration's value cannot initialize a read of the new object.
         state.locals[identity] = None
@@ -373,7 +368,11 @@ class Interpreter:
         bodies = [n for n in cf.children(self.root) if n.get('kind') == 'CompoundStmt']
         if len(bodies) != 1: raise Unsupported('function body shape')
         memory = [self.graph.extract(self.graph.inputs[n // 8], n % 8 * 8) for n in range(32)]
-        active = self.statement(bodies[0], State(self.graph.const(1, BOOL), {}, memory))
+        locals={}
+        if not self.source:
+            locals[self.parameters[self.parameter]['id']]=self.graph.const(4224)
+            for parameter,value in zip(self.parameters[-2:],[4096,512]): locals[parameter['id']]=self.graph.const(value)
+        active = self.statement(bodies[0], State(self.graph.const(1, BOOL), locals, memory))
         while self.gotos:
             target, state = self.gotos.pop()
             index = self.labels[target]

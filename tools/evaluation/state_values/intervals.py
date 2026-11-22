@@ -40,7 +40,7 @@ def derive(node,bounds):
     if op=='input': return full
     if op=='const':
         value=number(node.value,typ);return value,value
-    if op=='cast': return wrap(bounds[0],typ)
+    if op in ['cast','bitcast']: return wrap(bounds[0],typ)
     if op=='truth':
         lo,hi=bounds[0]
         return (0,0) if hi==lo==0 else (1,1) if lo>0 or hi<0 else (0,1)

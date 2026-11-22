@@ -186,6 +186,14 @@ class Graph:
 
     def calculate(self, node, values):
         op, typ = node.op, node.type
+        if op=='bitcast': return values[0]
+        if op=='total_ashr':
+            value=values[0]-(1<<64) if values[0]>>63 else values[0]
+            return value>>(values[1]&63)
+        if op=='total_sdiv':
+            signed=Type(typ.bits,True);a,b=[number(v,signed) for v in values]
+            if b==0: return 1 if a<0 else mask(typ)
+            return abs(a)//abs(b)*(-1 if (a<0)!=(b<0) else 1)
         if op == 'cast': return number(values[0], self.type(node.args[0])) & mask(typ)
         if op == 'truth': return int(values[0] != 0)
         if op == 'ite': return values[1] if values[0] else values[2]
@@ -244,6 +252,9 @@ class Graph:
                 before = self.type(node.args[0]); a = args[0]
                 term = (a if typ.bits == before.bits else f'((_ extract {typ.bits - 1} 0) {a})' if typ.bits < before.bits
                         else f'((_ {"sign_extend" if before.signed else "zero_extend"} {typ.bits - before.bits}) {a})')
+            elif op=='bitcast': term=args[0]
+            elif op=='total_ashr': term=f'(bvashr {args[0]} (bvand {args[1]} #x000000000000003f))'
+            elif op=='total_sdiv': term=f'(bvsdiv {args[0]} {args[1]})'
             elif op == 'truth': term = f'(ite (distinct {args[0]} {literal(0, self.type(node.args[0]))}) #b1 #b0)'
             elif op == 'ite': term = f'(ite (= {args[0]} #b1) {args[1]} {args[2]})'
             elif op == 'extract': term = f'((_ extract {node.value + typ.bits - 1} {node.value}) {args[0]})'
