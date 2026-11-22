@@ -153,6 +153,24 @@ class SemanticTests(unittest.TestCase):
                 with self.subTest(variant=variant), self.assertRaises(semantics.ProtocolError):
                     stages.validate(value, 4096, Path(directory), 24)
 
+    def test_c_continuation_model_is_distinct_from_full_state_checks(self):
+        evidence = dict(model='c-fragment-continuation-v1', removed_conditions=3,
+                        compared_graph_nodes=10)
+        with tempfile.TemporaryDirectory() as directory:
+            for change in [None, {}, {'model': 'machine-full-state'}, {'removed_conditions': True},
+                           {'removed_conditions': 0}, {'compared_graph_nodes': 16385}]:
+                value = architecture()
+                value['selected_c']['continuations'] = None if change is None else {**evidence, **change}
+                if change in [None, {}]:
+                    stages.validate(value, 4096, Path(directory), 24)
+                else:
+                    with self.subTest(change=change), self.assertRaises(semantics.ProtocolError):
+                        stages.validate(value, 4096, Path(directory), 24)
+            value = architecture()
+            value['selected_c'].update(continuations=evidence, fallback_goto=True)
+            with self.assertRaises(semantics.ProtocolError):
+                stages.validate(value, 4096, Path(directory), 24)
+
 
 if __name__ == '__main__':
     unittest.main()

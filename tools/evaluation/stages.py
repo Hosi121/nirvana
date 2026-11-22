@@ -52,6 +52,16 @@ def validate(value, step_limit, directory, requested_cases):
         require(isinstance(c['predicates'], dict)
                 and set(c['predicates']) == {'pruned_branches', 'constant_assignments', 'blocks_before', 'blocks_after'}
                 and all(type(n) is int and n >= 0 for n in c['predicates'].values()), 'predicate evidence counts')
+    continuation = c.get('continuations')
+    if continuation is not None:
+        require(isinstance(continuation, dict)
+                and set(continuation) == {'model', 'removed_conditions', 'compared_graph_nodes'}
+                and continuation['model'] == 'c-fragment-continuation-v1'
+                and type(continuation['removed_conditions']) is int
+                and 0 < continuation['removed_conditions'] <= 4096
+                and type(continuation['compared_graph_nodes']) is int
+                and 0 < continuation['compared_graph_nodes'] <= 16384
+                and not c['fallback_goto'], 'C continuation evidence')
     return value
 
 

@@ -385,4 +385,35 @@ mod tests {
             .is_none()
         );
     }
+
+    #[test]
+    fn ordered_memory_fragments_keep_access_width_and_fault_order() {
+        let write = Node::Step {
+            address: 10,
+            assignments: vec![Assignment {
+                destination: Place::Memory {
+                    address: r(0),
+                    width: Width::U8,
+                },
+                value: Expr::load(r(1), Width::U64),
+            }],
+        };
+        let read = Node::Evaluate(Expr::load(r(2), Width::U16));
+        let ret = Node::Return(r(1));
+        let source = vec![write.clone(), read.clone(), ret.clone()];
+        let reordered = vec![read, write.clone(), ret.clone()];
+        let dropped = vec![write, ret];
+        let mut resized = source.clone();
+        let Node::Step { assignments, .. } = &mut resized[0] else {
+            panic!()
+        };
+        let Place::Memory { width, .. } = &mut assignments[0].destination else {
+            panic!()
+        };
+        *width = Width::U64;
+        assert!(check(&source, &source, &atom, &cond).is_some());
+        for candidate in [reordered, dropped, resized] {
+            assert!(check(&source, &candidate, &atom, &cond).is_none());
+        }
+    }
 }
