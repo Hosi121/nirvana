@@ -105,6 +105,16 @@ class StateValueProofs(unittest.TestCase):
         self.assertEqual(result.report['status'],'counterexample_under_model')
         self.assertIsNone(result.report['bound_witness'])
 
+    def test_each_iteration_uses_its_current_index_and_byte_aliases(self):
+        result=self.compare('for(uint64_t i=0;i<4;++i){state[i]+=i;state[3-i]^=state[i];}return state[0];',
+                            'for(uint64_t index=0;index<4;++index){uint64_t offset=index*8;'
+                            'uint64_t value=nirvana_load(&m,address+offset,8)+index;'
+                            'nirvana_store(&m,address+offset,8,value);'
+                            'nirvana_view_store(&m,nirvana_view_index(nirvana_location_address(address),3-index,8,0),8,'
+                            'nirvana_load(&m,address+(3-index)*8,8)^value);}'
+                            'return nirvana_load(&m,address,8);')
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+
     def test_a_rare_branch_countermodel_replays_in_actual_source_and_generated_c(self):
         compiler = shutil.which('cc')
         if not compiler: self.skipTest('requires C compiler')

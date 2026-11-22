@@ -96,6 +96,7 @@ class StateValueAST(unittest.TestCase):
             'uint64_t i=0;do{++i;if(i==2)continue;state[2]+=i;}while(i<4);return state[2];',
             'for(uint64_t i=0;i<3;++i){for(uint64_t j=0;j<4;++j){'
             'if(j==1)continue;if(i==2)break;state[0]+=i+j;}}return state[0];',
+            'for(uint64_t i=0;i<4;++i){uint64_t old=state[i];state[3-i]^=old+i;state[i]+=i;}return state[0]+state[3];',
         ]
         rng = random.Random(17)
         vectors = [[0]*4, [2**64-1]*4, [1<<63,1,2,3], [1,2,3,4]] + [[rng.getrandbits(64) for _ in range(4)] for _ in range(16)]
@@ -114,3 +115,13 @@ class StateValueAST(unittest.TestCase):
                     value = function(state)
                     self.assertEqual(g.evaluate(model.outputs, words), [value, *state], body)
                     self.assertEqual(g.evaluate([model.incomplete], words), [0], body)
+
+    def test_current_indices_do_not_re_evaluate_captured_view_initializers(self):
+        body=('uint64_t i=0;const struct {struct nirvana_view saved;} v={{address+i*8}};'
+              '++i;return nirvana_view_load(&m,v.saved,8);')
+        with self.assertRaises(Unsupported): self.model(Graph(),body,source=False)
+        for body in ['uint64_t i=4;return state[i];','int i=-1;return state[i];',
+                     'return *(state+100-100);','return *(state-1+1);']:
+            with self.assertRaises(Unsupported): self.model(Graph(),body)
+        model=self.model(Graph(),'return *(state+4-4);')  # A one-past pointer may move back.
+        self.assertEqual(model.paths,1)

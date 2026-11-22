@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from itertools import chain, islice
 
 from .. import c_footprint as cf, state_memory as sm
-from .terms import Graph, Type, U64, BYTE, BOOL, Unsupported
+from .terms import Graph, Type, U64, BYTE, BOOL, Unsupported, number
 
 LOOP_LIMIT = 16
 
@@ -101,11 +101,59 @@ class Interpreter:
             raise Unsupported('memory outside resolved state bytes')
         return address.offset, width
 
-    def place(self, node):
+    def constant(self, node, state):
+        result = self.resolver.constant(node)
+        if result is not None: return result
+        value = self.value(node, state)
+        constant = self.graph.constant(value)
+        return None if constant is None else number(constant, self.graph.type(value))
+
+    def address(self, node, mode, state, depth=0):
+        if depth > 32: raise Unsupported('evaluated address depth')
+        result = self.resolver.address(node, mode)
+        if result is not None and result.offset is not None and mode != 'pointer': return result
+        # Only current syntax may consult mutable locals. Expanding a saved
+        # view/alias initializer here would re-evaluate an old address using a
+        # new iteration's index. Static Resolver bindings remain snapshots.
+        node = sm.strip(node); parts = cf.children(node); kind = node.get('kind')
+        if mode == 'pointer' and kind == 'DeclRefExpr': return result
+        if kind == 'CallExpr' and mode != 'pointer':
+            target, args = sm.callee(node), parts[1:]
+            if target in ['nirvana_location_address', 'nirvana_location_view'] and len(args) == 1:
+                return self.address(args[0], 'scalar' if target.endswith('_address') else 'view', state, depth+1)
+            if target == 'nirvana_view_index' and len(args) == 4:
+                base = self.address(args[0], 'view', state, depth+1)
+                index, stride, offset = [self.constant(n, state) for n in args[1:]]
+                delta = None if None in [index,stride,offset] else index*stride+offset
+                return self.resolver.add(base, delta, True)
+        if kind == 'BinaryOperator' and len(parts) == 2 and node.get('opcode') in ['+', '-']:
+            base = self.address(parts[0], mode, state, depth+1)
+            if base is not None:
+                delta = self.constant(parts[1], state)
+                if delta is not None: delta *= (8 if mode == 'pointer' else 1) * (-1 if node['opcode']=='-' else 1)
+                result = self.resolver.add(base, delta, mode != 'pointer')
+            elif node['opcode'] == '+':
+                base = self.address(parts[1], mode, state, depth+1)
+                delta = self.constant(parts[0], state) if base is not None else None
+                result = self.resolver.add(base, None if delta is None else delta*(8 if mode=='pointer' else 1), mode!='pointer')
+            else: return None
+            if mode == 'pointer' and result is not None and result.offset is not None and not 0 <= result.offset <= 32:
+                raise Unsupported('source pointer arithmetic outside its state object')
+            return result
+        return None
+
+    def place(self, node, state):
         address, width = self.resolver.place(node)
+        if self.source or address is None or address.offset is None:
+            node = sm.strip(node); parts = cf.children(node)
+            if node.get('kind') == 'ArraySubscriptExpr' and len(parts) == 2:
+                base, index = self.address(parts[0], 'pointer', state), self.constant(parts[1], state)
+                address = self.resolver.add(base, None if index is None else index*8, False)
+            elif node.get('kind') == 'UnaryOperator' and node.get('opcode') == '*' and len(parts) == 1:
+                address = self.address(parts[0], 'pointer', state)
         return self.location(address, width)
 
-    def helper_place(self, node):
+    def helper_place(self, node, state):
         parts = cf.children(node); target = sm.callee(node); args = parts[1:]
         if self.source or target not in sm.HELPERS and target not in ['nirvana_offset', 'nirvana_test_read_offset']:
             raise Unsupported('call outside checked-memory contracts')
@@ -119,7 +167,7 @@ class Interpreter:
                 or sm.strip(children[0]).get('referencedDecl', {}).get('id') != self.memory_context
                 or self.memory_context is None):
             raise Unsupported('checked-memory context differs from ABI')
-        place = self.location(self.resolver.address(args[1], mode), self.resolver.constant(args[2]))
+        place = self.location(self.address(args[1], mode, state), self.constant(args[2], state))
         return access, place, args
 
     def load(self, state, place):
@@ -152,13 +200,13 @@ class Interpreter:
             c, a, b = [self.value(n, state) for n in parts]
             return g.choose(c, a, b)
         if kind == 'CallExpr':
-            access, place, _ = self.helper_place(node)
+            access, place, _ = self.helper_place(node, state)
             if access == 'read': return g.cast(self.load(state, place), U64)
             if access == 'check': return g.const(128 + place[0])
             raise Unsupported('store inside a scalar expression')
         if kind == 'ArraySubscriptExpr' or kind == 'UnaryOperator' and node.get('opcode') == '*':
             if not self.source: raise Unsupported('raw generated pointer dereference')
-            return g.cast(self.load(state, self.place(node)), ctype(node))
+            return g.cast(self.load(state, self.place(node, state)), ctype(node))
         raise Unsupported('scalar expression: ' + str(kind))
 
     def lvalue(self, original, state, value=None):
@@ -172,7 +220,7 @@ class Interpreter:
             state.locals[identity] = g.cast(value, ctype(node)); self.assignments += 1
         else:
             if not self.source: raise Unsupported('generated assignment outside local storage')
-            place = self.place(node)
+            place = self.place(node, state)
             if value is None: return self.load(state, place)
             self.store(state, place, value)
 
@@ -256,7 +304,7 @@ class Interpreter:
             result = g.binary('+' if node['opcode'] == '++' else '-', old, g.const(1, ctype(parts[0])), ctype(parts[0]))
             self.lvalue(parts[0], state, result)
         elif kind == 'CallExpr':
-            access, place, args = self.helper_place(node)
+            access, place, args = self.helper_place(node, state)
             if access == 'write': self.store(state, place, self.value(args[3], state))
             elif access not in ['read', 'check']: raise Unsupported('expression statement call')
         elif kind == 'CStyleCastExpr' and cf.type_key(node) == 'void' and len(parts) == 1:
