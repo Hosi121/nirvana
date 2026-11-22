@@ -44,6 +44,13 @@ python3 -m unittest discover -s tools/tests
 ブロック検査は全到達境界の必要値・返り値・全メモリ・最初のfaultを比較し、入口関係の外にあるレジスタは左右独立に扱います。
 fault時は正確なfaultと全メモリを比較します。SATモデルは小さい具体メモリで再実行し、UNSAT判定にはモデルの全メモリ領域を使います。
 
+[隣接Storeの順序検査](../tests/verification/store_order.rs)は、両範囲への先行Loadと非重複を前提に、純粋な二つのStoreを入れ替えて比較します。1/2/4/8-byte幅、任意の相対offsetと64-bit折返しを含む36問い合わせでUNSATを得ました。先行読込みの欠如、条件付き読込み、重複、右辺のLoad、アドレス変更、異なる入力のaliasでは、6件のSATを具体IR実行で再現します。生成Cでは[採用条件とfaultの比較](../tests/codegen/c_evaluation.rs)をO0/O2・メモリviewの有無で確認します。適用範囲はflat RWの単一関数Cで、moduleの権限・外部効果・途中再開は元の順序を保ちます。
+
+```sh
+NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --locked --test verification \
+  store_order::successful_read_ranges_allow_disjoint_pure_store_permutations -- --ignored --exact
+```
+
 | 判定 | 意味 |
 | --- | --- |
 | `EquivalentUnderModel` | モデルの制約下で、差を示す問い合わせがUNSAT |
