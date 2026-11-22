@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Record a partial M0 baseline: source/control topology of generated C.
+
+Uses compiler-preprocessed C only on the evaluation side. Nirvana receives
+only the nondebug x86-64 object. Every requested profile remains in report.json,
+including tool failures, unsupported dumps and bounded distance results.
+Exit 0 means the report was produced, not semantic equivalence or M0 completion.
+"""
+import argparse
+from collections import Counter
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+from evaluation import control_graph as cg
+
+ROOT = Path(__file__).resolve().parents[1]
+FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
+IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
+TAG = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z')
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def capture(argv, timeout, **kwargs):
+    """Bound the command and its compiler children, including on interruption."""
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, start_new_session=True, **kwargs) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException as error:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = process.communicate()
+            if isinstance(error, subprocess.TimeoutExpired):
+                error.stdout, error.stderr = stdout, stderr
+            raise
+        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def load_cases(path):
+    value = json.loads(Path(path).read_text())
+    if value.get('schema') != 'nirvana-structure-corpus-v1':
+        raise ValueError('unknown corpus schema')
+    cases = value['cases']
+    if not 0 < len(cases) <= 64:
+        raise ValueError('require 1..64 cases')
+    ids, families = set(), {}
+    for case in cases:
+        if not TAG.fullmatch(case['id']) or case['id'] in ids:
+            raise ValueError('require unique safe case IDs')
+        ids.add(case['id'])
+        if not IDENTIFIER.fullmatch(case['function']):
+            raise ValueError('invalid function name')
+        if case['cohort'] not in ['development', 'holdout']:
+            raise ValueError('unknown cohort')
+        family = case['family']
+        if not isinstance(family, str) or not family:
+            raise ValueError('require source family')
+        if family in families and families[family] != case['cohort']:
+            raise ValueError('source family split across cohorts')
+        families[family] = case['cohort']
+        source = (ROOT / case['source']).resolve()
+        if not source.is_relative_to(ROOT) or not source.is_file():
+            raise ValueError('source must name an existing repository file')
+    return cases
+
+
+def provenance(executable, timeout):
+    path = shutil.which(str(executable))
+    if not path:
+        return {'requested': str(executable), 'status': 'unavailable'}
+    try:
+        result = capture([path, '--version'], timeout)
+        return {'path': str(Path(path).resolve()), 'sha256': digest(path),
+                'version': result.stdout.strip(), 'returncode': result.returncode,
+                'stderr': result.stderr}
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {'path': path, 'status': 'unavailable', 'error': str(error)}
+
+
+class CommandError(Exception):
+    def __init__(self, kind, message):
+        self.kind = kind
+        super().__init__(message)
+
+
+def invoke(argv, stage, directory, row, timeout):
+    argv = list(map(str, argv))
+    record = {'stage': stage, 'argv': argv, 'cwd': str(ROOT)}
+    row['commands'].append(record)
+    start = time.monotonic()
+    try:
+        result = capture(argv, timeout, cwd=ROOT, env=dict(os.environ, LC_ALL='C'))
+        record.update(returncode=result.returncode, wall_seconds=time.monotonic() - start)
+        for name, content in [('stdout', result.stdout), ('stderr', result.stderr)]:
+            path = directory / f'{stage}.{name}.txt'
+            path.write_text(content)
+            record[name] = path.name
+        if result.returncode:
+            raise CommandError('tool_error', result.stderr[-2000:])
+        row['stages'][stage] = 'passed'
+        return result
+    except subprocess.TimeoutExpired as error:
+        record.update(status='timeout', wall_seconds=time.monotonic() - start)
+        for name in ['stdout', 'stderr']:
+            content = getattr(error, name) or ''
+            if isinstance(content, bytes):
+                content = content.decode(errors='replace')
+            path = directory / f'{stage}.{name}.txt'
+            path.write_text(content)
+            record[name] = path.name
+        raise CommandError('timeout', f'{stage}: command exceeded {timeout}s') from error
+    except OSError as error:
+        record.update(status='unavailable', error=str(error), wall_seconds=time.monotonic() - start)
+        raise CommandError('unavailable', str(error)) from error
+
+
+def measure(case, tag, compiler, opt, args, out):
+    row = {**case, 'id': f'{case["id"]}-{tag}-{opt}', 'compiler': tag, 'optimization': opt,
+           'stages': {}, 'commands': [], 'semantics': {'status': 'not_run'}}
+    directory = out / row['id']
+    directory.mkdir()
+    row['artifacts'] = directory.name
+    source = ROOT / case['source']
+    preprocessed = directory / 'source.i'
+    obj = directory / 'input.o'
+    generated = directory / 'readable.c'
+    row['source_sha256'] = digest(source)
+    start = time.monotonic()
+    stage = 'preprocess'
+    try:
+        flags = [*FLAGS, f'-{opt}']
+        # Suppress GNU line markers so the retained C11 input can be compiled
+        # with the same strict warning flags by either compiler.
+        invoke([compiler, *flags, '-E', '-P', source, '-o', preprocessed], stage, directory, row, args.timeout)
+        row['preprocessed_sha256'] = digest(preprocessed)
+        stage = 'input_compile'
+        invoke([compiler, *flags, '-c', preprocessed, '-o', obj], stage, directory, row, args.timeout)
+        row['object_sha256'] = digest(obj)
+        stage = 'decompile'
+        result = invoke([args.decompiler, obj, '--symbol', case['function'], '--emit', 'readable-c'],
+                        stage, directory, row, args.timeout)
+        generated.write_text(result.stdout)
+        row['readable_sha256'] = digest(generated)
+        stage = 'recompile'
+        invoke([args.c_compiler, *flags, '-c', generated, '-o', directory / 'readable.o'],
+               stage, directory, row, args.timeout)
+        graphs = []
+        for stage, path, function in [('source_cfg', preprocessed, case['function']),
+                                      ('generated_cfg', generated, 'nirvana_readable')]:
+            result = invoke([args.clang, '--analyze', '-std=c11', '-Werror', '-Xclang',
+                             '-analyzer-checker=debug.DumpCFG', path, '-o', os.devnull],
+                            stage, directory, row, args.timeout)
+            raw, stats = cg.parse_dump(result.stderr, function)
+            graph, removed = cg.normalize(raw)
+            graph_file = directory / f'{stage}.json'
+            graph_file.write_text(json.dumps(
+                {'graph': graph, 'stats': {**stats, **removed}}, indent=2) + '\n')
+            row[stage] = {**stats, **removed, 'nodes': len(graph['nodes']), 'edges': len(graph['edges']),
+                          'graph_sha256': digest(graph_file),
+                          'dump_sha256': digest(directory / f'{stage}.stderr.txt')}
+            graphs.append(graph)
+        stage = 'distance'
+        row['distance'] = cg.distance(*graphs, max_states=args.max_states, seconds=args.search_seconds)
+        row['stages'][stage] = 'measured'
+        row['status'] = 'measured'
+    except (CommandError, cg.Unsupported) as error:
+        row['status'] = error.kind if isinstance(error, CommandError) else 'unsupported'
+        row['stages'][stage] = row['status']
+        row['failure_stage'] = stage
+        row['error'] = str(error)
+    row['wall_seconds'] = time.monotonic() - start
+    row['max_rss'] = None
+    (directory / 'row.json').write_text(json.dumps(row, indent=2) + '\n')
+    return row
+
+
+def run(args):
+    cases = load_cases(args.cases)
+    compilers = []
+    for setting in args.compiler or ['gcc=cc']:
+        tag, separator, executable = setting.partition('=')
+        if not separator or not TAG.fullmatch(tag) or not executable or tag in [t for t, _ in compilers]:
+            raise ValueError('compiler must be a unique TAG=EXECUTABLE')
+        compilers.append((tag, executable))
+    if len(compilers) > 8:
+        raise ValueError('compiler profile limit')
+    opts = args.optimization or ['O2', 'O3']
+    if len(set(opts)) != len(opts):
+        raise ValueError('duplicate optimization')
+    out = args.out.resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    if any(out.iterdir()):
+        raise ValueError('output directory must be empty; preserve earlier baselines')
+    args.decompiler = args.decompiler.resolve()
+    report = {'schema': 'nirvana-structure-report-v1', 'metric': cg.METRIC,
+              'evaluation': {'runner_sha256': digest(__file__), 'metric_sha256': digest(cg.__file__)},
+              'requested_profiles': len(cases) * len(compilers) * len(opts),
+              'scope': 'Control topology only; arithmetic, effect contents and semantic equivalence are separate evaluations.',
+              'corpus': {'path': str(args.cases.resolve()), 'sha256': digest(args.cases)},
+              'workspace_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+              'workspace_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)),
+              'decompiler': {'path': str(args.decompiler), 'sha256': digest(args.decompiler)},
+              'clang': provenance(args.clang, args.timeout),
+              'c_compiler': provenance(args.c_compiler, args.timeout),
+              'compilers': {tag: provenance(compiler, args.timeout) for tag, compiler in compilers},
+              'budgets': {'command_seconds': args.timeout, 'search_seconds': args.search_seconds, 'search_states': args.max_states},
+              'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
+    for case in cases:
+        for tag, compiler in compilers:
+            for opt in opts:
+                row = measure(case, tag, compiler, opt, args, out)
+                report['rows'].append(row)
+                # Retain completed rows even if the caller interrupts a later profile.
+                (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+    report['summary'] = {'requested': len(report['rows']),
+                         'status': dict(Counter(r['status'] for r in report['rows'])),
+                         'failures_by_stage': dict(Counter(r['failure_stage'] for r in report['rows'] if 'failure_stage' in r)),
+                         'distances': dict(Counter(r['distance']['status'] for r in report['rows'] if 'distance' in r)),
+                         'cohorts': dict(Counter(r['cohort'] for r in report['rows']))}
+    (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cases', type=Path, default=ROOT / 'tools/corpora/structure-smoke.json')
+    parser.add_argument('--decompiler', type=Path, default=ROOT / 'target/debug/nirvana')
+    parser.add_argument('--compiler', action='append', help='TAG=EXECUTABLE; repeat for each binary-producing compiler')
+    parser.add_argument('--c-compiler', default='cc', help='fixed compiler for all generated C profiles')
+    parser.add_argument('--clang', default=os.environ.get('NIRVANA_CLANG', 'clang'), help='evaluation CFG reader')
+    parser.add_argument('--optimization', action='append', choices=['O0', 'O1', 'O2', 'O3', 'Os'])
+    parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--timeout', type=float, default=15)
+    parser.add_argument('--search-seconds', type=float, default=1)
+    parser.add_argument('--max-states', type=int, default=100000)
+    args = parser.parse_args()
+    if not 0 < args.timeout < float('inf') or not 0 < args.search_seconds < float('inf') or args.max_states < 1:
+        parser.error('require positive finite budgets')
+    try:
+        report = run(args)
+    except (OSError, ValueError, KeyError) as error:
+        parser.error(str(error))
+    print(json.dumps(report['summary'], indent=2))
+
+
+if __name__ == '__main__':
+    main()

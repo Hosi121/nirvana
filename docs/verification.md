@@ -19,6 +19,27 @@ python3 -m unittest discover -s tools/tests
 例えば`cargo test --locked --test codegen c_evaluation::`でCの評価順の比較だけを実行できます。
 ソルバ・Clang・大きい生成比較は`#[ignore]`の任意テストです。
 
+## 制御構造の部分評価
+
+M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-smoke.json)は既存4ソース族の開発集合です。GCC/Clang × O2/O3で16構成となります。
+
+```sh
+cargo build --locked --bin nirvana
+python3 tools/evaluate_structure.py --clang clang-18 \
+  --compiler gcc=cc --compiler clang=clang-18 --out target/structure-baseline
+NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
+```
+
+入力のコンパイラと、生成Cを再コンパイルする`--c-compiler`（既定`cc`）を個別に固定します。元Cを各入力compilerで前処理し、そのCから作った機械語だけをNirvanaへ渡します。
+出力先は空のディレクトリを使い、`report.json`と各入力の前処理C・object・生成C・生のCFG・正規化グラフ・コマンド記録を保存します。
+compiler・実行ファイル・評価器・入力・グラフのhash、時間、探索予算を報告し、未対応・エラー・timeoutも要求した全構成に含めます。終了コード0は報告の生成を示します。
+
+指標`nirvana-control-topology-v1`は、入口・出口・return・分岐・残るflowをラベルにした有向多重グラフを使います。式・名前・分岐の極性を捨て、明示的に剪定された辺と入口から届かないblockを除きます。出口は保持し、単一後続のflowを縮約します。自己循環は残します。関数内のdispatcherも同じ規則で比較します。
+距離は入口・出口を対応させ、nodeの追加・削除・ラベル変更とedgeの追加・削除をそれぞれ1と数えます。`exact`と、探索予算で止まった`upper_bound`を区別し、下限・上限・対応表・停止理由を保存します。対応表は`control_graph.graph_from_json`と`mapping_cost`で再計算できます。
+
+この指標は制御の形を観測します。基本block内の演算・効果・処理の複製と、意味の同値性は別の評価対象です。初回報告の意味比較は`semantics: not_run`、最大RSSは`null`で、hold-outと既存の意味比較を統合する部分もM0の残作業です。
+[対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
+
 ## 比較の境界
 
 | 境界 | 主な検査 |

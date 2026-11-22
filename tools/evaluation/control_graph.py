@@ -33,12 +33,24 @@ def validate(graph):
     edges = graph['edges']
     if not nodes or len(nodes) > MAX_BLOCKS:
         raise Unsupported('graph size limit')
+    if any(type(n) is not int for n in nodes):
+        raise Unsupported('node IDs must be integers')
     if any(kind not in {'entry', 'exit', 'return', 'flow', 'branch'} for kind in nodes.values()):
         raise Unsupported('unknown node label')
     if any(sum(kind == expected for kind in nodes.values()) != 1 for expected in ['entry', 'exit']):
         raise Unsupported('require exactly one entry and exit')
     if any(a not in nodes or b not in nodes for a, b in edges):
         raise Unsupported('edge outside graph')
+
+
+def graph_from_json(value):
+    """Restore integer node IDs from a saved normalized graph artifact."""
+    if any(str(n) != str(int(n)) for n in value['nodes']):
+        raise Unsupported('noncanonical JSON node ID')
+    result = {'nodes': {int(n): k for n, k in value['nodes'].items()},
+              'edges': [tuple(edge) for edge in value['edges']]}
+    validate(result)
+    return result
 
 
 def parse_dump(text, function):

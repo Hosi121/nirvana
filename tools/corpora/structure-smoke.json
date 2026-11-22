@@ -1,0 +1,9 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "cases": [
+    {"id": "shared-tail", "family": "fixture-shared-tail", "cohort": "development", "source": "tests/fixtures/cases/shared-tail.c", "function": "fixture"},
+    {"id": "loop-returns", "family": "fixture-loop-returns", "cohort": "development", "source": "tests/fixtures/cases/loop-returns.c", "function": "fixture"},
+    {"id": "multi-exit-prefix", "family": "fixture-multi-exit-prefix", "cohort": "development", "source": "tests/fixtures/cases/multi-exit-prefix.c", "function": "fixture"},
+    {"id": "irreducible", "family": "fixture-irreducible", "cohort": "development", "source": "tests/fixtures/cases/irreducible.c", "function": "fixture"}
+  ]
+}
