@@ -24,6 +24,7 @@ compiler・実行ファイル・評価器・入力・グラフのhash、時間�
 `--c-footprint`は[Clang JSON AST](https://clang.llvm.org/docs/IntroductionToTheClangAST.html)から`nirvana-c-ast-footprint-v1`を測ります。対象関数の演算・リテラル・型、条件式の規模、メモリ参照構文、checked read/write helperの呼出し箇所を記録します。局所変数を宣言順のIDへ対応付け、名前変更を吸収した条件・関数のfingerprintを保存します。`_Generic`は選択された式、`sizeof`は未評価のoperandを区別して数えます。重複条件は同じ構文の出現数で、可変な局所変数が各使用点で持つ値の同一性は別の解析対象です。helper呼出し箇所も静的な構文の観測です。元Cとの差分は指標ごとに示し、意味的な距離や総合点への換算は将来の対応解析で扱います。
 
 ASTの生データとhashを保持し、比較器が集計値とfingerprintを再計算します。Clang 18の版を固定し、対象外のAST構文・読取り失敗も全構成の分母に保持します。これにより、制御の距離だけでは見えない処理や条件の増減を確認できます。
+配列は固定長を対象とします。可変長配列の宣言や`sizeof`には実行時の評価が関わるため、未対応として保持します（[C11草案 §6.5.3.4](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf)）。
 
 `--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
 

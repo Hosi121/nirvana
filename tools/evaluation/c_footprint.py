@@ -118,6 +118,12 @@ def measure(text, name):
         kind = node.get('kind')
         if kind is not None and kind not in KINDS:
             raise Unsupported('AST kind outside footprint profile: ' + kind)
+        # N1570 6.5.3.4: sizeof a VLA can evaluate its bound/operand. Clang's
+        # function JSON also omits some declaration-bound expressions. Keep
+        # variably modified types outside this syntax-counting profile.
+        for typename in [type_key(node), type_key({'type': node.get('argType', {})})]:
+            if any(not re.fullmatch(r'[0-9]+', bound.strip()) for bound in re.findall(r'\[([^]]*)\]', typename)):
+                raise Unsupported('array extent outside fixed-size footprint profile')
         if kind in ['ParmVarDecl', 'VarDecl']:
             identity = node.get('id')
             if not isinstance(identity, str) or identity in binders:

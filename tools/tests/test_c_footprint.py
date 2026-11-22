@@ -103,6 +103,12 @@ unsigned fixture(unsigned x) { return _Generic((x+1), unsigned:a,default:b)(x); 
         self.assertEqual(p['operations'], {})
         self.assertEqual(p['unevaluated_syntax']['BinaryOperator:+'], 1)
 
+    def test_variable_array_bounds_remain_outside_the_unevaluated_profile(self):
+        for source in ['unsigned fixture(unsigned n) { return sizeof(unsigned[++n]); }',
+                       'unsigned fixture(unsigned n) { unsigned a[++n]; return sizeof(a); }']:
+            with self.subTest(source=source), self.assertRaisesRegex(cf.Unsupported, 'array extent'):
+                self.measure(source)
+
     def test_control_forms_and_macro_spelling_keep_every_explicit_condition(self):
         p = self.measure('''#define LIMIT 3
 unsigned fixture(unsigned x) { for(unsigned i=0;i<LIMIT;i++) { if(x) break; }
