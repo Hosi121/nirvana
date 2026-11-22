@@ -71,7 +71,7 @@ class StateValueProofs(unittest.TestCase):
              'return nirvana_load(&m,address+24,8);')
         result = self.compare(a,b)
         self.assertEqual(result.report['status'],'equivalent_under_model')
-        self.assertEqual(result.report['model'],'nirvana-state4-values-v5')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v6')
 
     def test_loop_completion_is_proved_over_all_words_including_wraparound(self):
         a = ('while(1){++state[1];if(state[0]&1){state[2]=200;break;}'
@@ -127,6 +127,35 @@ class StateValueProofs(unittest.TestCase):
         self.assertEqual(result.report['profile']['definedness'],'all-modeled-values')
         self.assertTrue(result.graph['definedness'])
         self.assertIsNone(result.report['definedness_witness'])
+
+    def test_quotient_congruence_and_remainder_sign_normalization_prove_equal_values(self):
+        a=('int32_t n=(uint8_t)state[0]-128;state[1]=(uint64_t)(n/-7);'
+           'state[2]=(uint64_t)(n%-7);return state[1]+state[2];')
+        b=('int32_t n=(int32_t)(nirvana_load(&m,address,8)&255)-128;'
+           'nirvana_store(&m,address+8,8,(uint64_t)(n/-7));'
+           'nirvana_store(&m,address+16,8,(uint64_t)(n%7));'
+           'return nirvana_load(&m,address+8,8)+nirvana_load(&m,address+16,8);')
+        result=self.compare(a,b)
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+        self.assertEqual([(r['query'],r['stdout'].strip()) for r in result.solver_outputs],[('abstract','unsat')])
+        self.assertIn('QF_UFBV',result.abstraction_query)
+        self.assertIn('quotient_signed_magnitude_32',result.abstraction_query)
+        self.assertNotIn('quotient_signed_magnitude_32',result.query)
+
+    def test_spurious_abstract_countermodels_fall_back_to_exact_arithmetic(self):
+        result=self.compare('return state[0]/2;','return nirvana_load(&m,address,8)>>1;')
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+        self.assertEqual([(r['query'],r['stdout'].strip()) for r in result.solver_outputs],
+                         [('abstract','sat'),('exact','unsat')])
+        self.assertIsNone(result.report['witness'])
+
+    def test_only_the_exact_division_countermodel_can_report_a_difference(self):
+        result=self.compare('return state[0]/3;','return nirvana_load(&m,address,8)/5;')
+        self.assertEqual(result.report['status'],'counterexample_under_model')
+        self.assertEqual([r['query'] for r in result.solver_outputs],['abstract','exact','exact-model'])
+        words=result.report['witness']['input_words'];value=words[0]
+        self.assertEqual(result.report['witness']['source'][0],value//3)
+        self.assertEqual(result.report['witness']['generated'][0],value//5)
 
     def test_a_rare_branch_countermodel_replays_in_actual_source_and_generated_c(self):
         compiler = shutil.which('cc')

@@ -4,13 +4,14 @@ import math
 import re
 import subprocess
 import time
-from . import definedness
+from . import definedness,division_abstraction
 
 
 @dataclass
 class Proof:
     status: str
     query: str
+    abstraction_query: str = ''
     responses: list = field(default_factory=list)
     reason: str | None = None
     witness: dict | None = None
@@ -31,18 +32,23 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
     difference += ''.join(f' (= v{i} #b1)' for i in completion)
     premises=definedness.predicates(graph)
     if premises: difference += ' (not (and '+' '.join(term for _,term in premises)+'))'
-    query = (f'(set-option :timeout {max(1, int(seconds * 1000))})\n'
-             '(set-option :produce-models true)\n(set-option :pp.bv-literals true)\n'
-             + graph.smt() + f'(assert (or {difference}))\n')
-    proof = Proof('unknown', query)
+    def query(budget,abstract=False):
+        return (f'(set-option :timeout {max(1, int(budget * 1000))})\n'
+                '(set-option :produce-models true)\n(set-option :pp.bv-literals true)\n'
+                + graph.smt(abstract_division=abstract) + f'(assert (or {difference}))\n')
+    exact=query(seconds)
+    abstraction=query(min(seconds/4,0.25),True) if division_abstraction.declarations(graph) else ''
+    proof = Proof('unknown', exact, abstraction)
     retained = None if recorded is None else list(recorded)
-    def run(model=False):
-        script = query + '(check-sat)\n' + ('(get-value (word0 word1 word2 word3))\n' if model else '')
+    def run(model=False,abstract=False):
+        script = (abstraction if abstract else exact) + '(check-sat)\n' + ('(get-value (word0 word1 word2 word3))\n' if model else '')
+        phase='abstract' if abstract else 'exact-model' if model else 'exact'
+        budget=min(seconds/4,0.25) if abstract else seconds
         if retained is None:
             started = time.monotonic()
             result = subprocess.run([str(executable), '-in', '-smt2'], input=script,
-                                    capture_output=True, text=True, timeout=seconds + 0.25)
-            response = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr,
+                                    capture_output=True, text=True, timeout=budget + 0.25)
+            response = {'query':phase,'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr,
                         'wall_seconds': time.monotonic() - started}
         else:
             if not retained:
@@ -50,7 +56,8 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
                 if failure_reason == 'solver_timeout': raise subprocess.TimeoutExpired('retained-solver', seconds)
                 raise ValueError(failure_reason or 'missing solver response')
             response = retained.pop(0)
-            if (not isinstance(response, dict) or set(response) != {'returncode', 'stdout', 'stderr', 'wall_seconds'}
+            if (not isinstance(response, dict) or set(response) != {'query','returncode', 'stdout', 'stderr', 'wall_seconds'}
+                    or response['query']!=phase
                     or type(response['returncode']) is not int
                     or type(response['wall_seconds']) not in [int, float]
                     or not math.isfinite(response['wall_seconds']) or response['wall_seconds'] < 0
@@ -61,7 +68,9 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
             raise ValueError('solver failure or excessive output')
         return response['stdout'].strip()
     try:
-        status = run()
+        status=run(abstract=True) if abstraction else None
+        if status is not None and status not in ['unsat','sat','unknown']: raise ValueError('abstract solver response')
+        if status!='unsat': status=run()
         if status == 'unsat': proof.status = 'equivalent_under_model'
         elif status == 'unknown': proof.reason = 'solver_unknown'
         elif status == 'sat':

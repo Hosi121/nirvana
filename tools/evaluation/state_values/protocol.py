@@ -9,7 +9,8 @@ from pathlib import Path
 from ..semantics import sha
 from . import MODEL, MEMORY_PROFILE, measure, Unsupported
 
-NAMES = {'graph': 'state-values.graph.json', 'query': 'state-values.smt2', 'solver': 'state-values.solver.json'}
+NAMES = {'graph': 'state-values.graph.json', 'query': 'state-values.smt2',
+         'abstraction':'state-values.abstract.smt2','solver': 'state-values.solver.json'}
 STATUSES = {'equivalent_under_model', 'counterexample_under_model', 'unknown', 'unsupported', 'unavailable', 'evaluator_error', 'not_run'}
 
 
@@ -43,6 +44,7 @@ def attach(args, row, directory):
         try:
             result = measure(*arguments(directory, row), args.value_solver, args.value_seconds)
             contents = {'graph': json.dumps(result.graph, indent=2) + '\n', 'query': result.query + '(check-sat)\n',
+                        'abstraction':result.abstraction_query+'(check-sat)\n' if result.abstraction_query else '',
                         'solver': json.dumps(result.solver_outputs, indent=2) + '\n'}
             artifacts = {}
             for key, text in contents.items():
@@ -85,7 +87,9 @@ def replay(directory, row):
         texts[key] = (directory / expected).read_text()
     result = measure(*arguments(directory, row), None, value['solver_seconds'],
                      recorded=json.loads(texts['solver']), failure_reason=value.get('reason'))
-    if (result.query + '(check-sat)\n' != texts['query'] or canonical(result.graph) != canonical(json.loads(texts['graph']))
+    expected_abstract=result.abstraction_query+'(check-sat)\n' if result.abstraction_query else ''
+    if (result.query + '(check-sat)\n' != texts['query'] or expected_abstract!=texts['abstraction']
+            or canonical(result.graph) != canonical(json.loads(texts['graph']))
             or canonical({**result.report, 'artifacts': artifacts}) != canonical(value)):
         raise ValueError('state value graph, query or verdict differs from retained inputs')
     return status

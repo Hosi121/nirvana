@@ -6,9 +6,9 @@ from .ast import observe, LOOP_LIMIT
 from .terms import Graph, Unsupported
 from .solver import compare
 from . import definedness
-from . import helpers
+from . import helpers,division_abstraction
 
-MODEL = 'nirvana-state4-values-v5'
+MODEL = 'nirvana-state4-values-v6'
 MEMORY_PROFILE = {'memory_base': 4096, 'memory_size': 512, 'state_pointer': 4224}
 
 
@@ -16,6 +16,7 @@ MEMORY_PROFILE = {'memory_base': 4096, 'memory_size': 512, 'state_pointer': 4224
 class Evaluation:
     report: dict
     query: str
+    abstraction_query: str
     solver_outputs: list
     graph: dict
 
@@ -31,10 +32,12 @@ def measure(source_text, generated_text, name, parameters, solver, seconds=2, *,
         return {'modeled_return_paths': model.paths, 'expanded_assignments': model.expanded_assignments,
                 'scalar_declarations': model.scalar_declarations, **graph.summary(model.outputs)}
     report = {'model': MODEL, 'status': proof.status, 'solver_seconds': seconds,
+              'abstraction_solver_seconds': min(seconds/4,0.25),
               'completed_solver_wall_seconds': sum(n['wall_seconds'] for n in proof.responses),
               'profile': {**memory['profile'], **MEMORY_PROFILE, 'integer_abi': 'x86-64-lp64', 'pointer': 'valid-state-only',
                           'control': 'closed-bounded-loops', 'loop_iterations': LOOP_LIMIT,
                           'completion': 'all-inputs', 'definedness': 'all-modeled-values', 'integer_helpers':helpers.MODEL,
+                          'division_abstraction':division_abstraction.MODEL,'solver_query_limit':3,
                           'observations': ['return', 'state_bytes']},
               'source': summary(a), 'generated': summary(b), 'reason': proof.reason, 'witness': proof.witness,
               'bound_witness': proof.bound_witness, 'definedness_witness': proof.definedness_witness}
@@ -43,4 +46,4 @@ def measure(source_text, generated_text, name, parameters, solver, seconds=2, *,
            'definedness':[{'value':i,'predicate':term} for i,term in definedness.predicates(graph)],
            'source_outputs': a.outputs, 'generated_outputs': b.outputs,
            'source_incomplete': a.incomplete, 'generated_incomplete': b.incomplete}
-    return Evaluation(report, proof.query, proof.responses, raw)
+    return Evaluation(report, proof.query, proof.abstraction_query, proof.responses, raw)

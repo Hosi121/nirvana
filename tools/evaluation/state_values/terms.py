@@ -237,14 +237,18 @@ class Graph:
                 seen.add(i); pending.extend(self.nodes[i].args)
         return {'reachable_value_nodes': len(seen), 'output_fingerprints': [fingerprints[i] for i in roots]}
 
-    def smt(self):
+    def smt(self, *, abstract_division=False):
+        from . import division_abstraction
         ref = lambda i: f'v{i}'
         def literal(n, typ): return f'(_ bv{n} {typ.bits})'
-        lines = ['(set-logic QF_BV)\n']
+        declarations=division_abstraction.declarations(self) if abstract_division else ''
+        lines = ['(set-logic '+('QF_UFBV' if declarations else 'QF_BV')+')\n',declarations]
         for i, node in enumerate(self.nodes):
             op, typ = node.op, node.type
             args = [ref(a) for a in node.args]
-            if op == 'input':
+            abstract=division_abstraction.term(self,node) if abstract_division else None
+            if abstract is not None: term=abstract
+            elif op == 'input':
                 lines.append(f'(declare-fun word{node.value} () (_ BitVec 64))\n')
                 term = f'word{node.value}'
             elif op == 'const': term = literal(node.value, typ)

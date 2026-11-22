@@ -30,13 +30,13 @@ class StateValueProtocol(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         return p.stdout
 
-    def prepare(self, root, *, unsupported=False, unknown=False, bound=False):
+    def prepare(self, root, *, unsupported=False, unknown=False, bound=False, division=False):
         source = ('switch(state[0]){case 1:return 1;}return state[2];' if unsupported
                   else 'uint64_t count=state[0];while(count)--count;return state[2];' if bound
-                  else 'return state[2];')
+                  else 'return state[2]/3;' if division else 'return state[2];')
         a = self.ast('uint64_t fixture(uint64_t *state){'+source+'}', 'fixture')
         b = self.ast('uint64_t nirvana_readable(uint64_t address,uint8_t *memory,uint64_t base,uint64_t size)'
-                     '{struct nirvana_memory m={memory,base,size};return nirvana_load(&m,address+16,8);}', 'nirvana_readable')
+                     '{struct nirvana_memory m={memory,base,size};return nirvana_load(&m,address+16,8)'+('/3' if division else '')+';}', 'nirvana_readable')
         (root/'source_ast.stdout.txt').write_text(a); (root/'generated_ast.stdout.txt').write_text(b)
         # Protocol-only fixture: the outer report tests bind actual probe JSON.
         row = {'function':'fixture', 'c_footprint':{'status':'measured'},
@@ -107,5 +107,22 @@ class StateValueProtocol(unittest.TestCase):
                     path.write_text(json.dumps(graph));row['state_values']['artifacts']['graph']['sha256']=sv.sha(path)
                 elif variant=='profile': row['state_values']['profile']['loop_iterations']=15
                 if variant=='intact': self.assertEqual(sv.replay(root,row),'unknown')
+                else:
+                    with self.assertRaises(ValueError): sv.replay(root,row)
+
+    def test_division_abstraction_queries_and_solver_phase_are_rebuilt(self):
+        for variant in ['intact','query','phase','verdict','missing']:
+            with self.subTest(variant=variant),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);row=self.prepare(root,division=True);value=row['state_values']
+                self.assertEqual(value['status'],'equivalent_under_model')
+                if variant=='query':
+                    path=root/sv.NAMES['abstraction'];path.write_text(path.read_text().replace('unsigned_64','unsigned_32'))
+                    value['artifacts']['abstraction']['sha256']=sv.sha(path)
+                elif variant in ['phase','verdict']:
+                    path=root/sv.NAMES['solver'];raw=json.loads(path.read_text())
+                    raw[0]['query' if variant=='phase' else 'stdout']='exact' if variant=='phase' else 'sat\n'
+                    path.write_text(json.dumps(raw));value['artifacts']['solver']['sha256']=sv.sha(path)
+                elif variant=='missing': del value['artifacts']['abstraction']
+                if variant=='intact': self.assertEqual(sv.replay(root,row),'equivalent_under_model')
                 else:
                     with self.assertRaises(ValueError): sv.replay(root,row)

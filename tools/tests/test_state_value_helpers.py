@@ -13,8 +13,8 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools'))
-from evaluation.state_values import helpers
-from evaluation.state_values.terms import Graph,Type,Unsupported
+from evaluation.state_values import helpers,division_abstraction
+from evaluation.state_values.terms import Graph,Type,Node,Unsupported
 
 
 class IntegerHelperContracts(unittest.TestCase):
@@ -103,3 +103,76 @@ class IntegerHelperContracts(unittest.TestCase):
                           ('nirvana_sdiv_word',[0,0,64]),('unknown',[])]:
             g=Graph()
             with self.assertRaises(Unsupported): helpers.lower(g,name,[g.const(n) for n in args])
+
+    def test_signed_magnitude_interpretation_contains_every_native_byte_quotient_and_remainder(self):
+        library=self.libraries[1]
+        for divisor in range(-128,128):
+            g=Graph();root=helpers.lower(g,'nirvana_sdiv_word',[g.inputs[0],g.const(divisor,Type(64,True)),g.const(8,Type(32))])
+            node=next(n for n in g.nodes if n.op=='total_sdiv')
+            _,bits,magnitude,negative=division_abstraction.operation(g,node)
+            self.assertEqual((bits,magnitude,negative),(8,abs(divisor),divisor<0))
+            for value in range(256):
+                signed=value-256 if value>=128 else value
+                q=(abs(signed)//magnitude if magnitude else 255)*(-1 if signed<0 else 1)
+                quotient=(-q if negative else q)&255
+                remainder=(value-q*magnitude)&255
+                self.assertEqual(library.nirvana_sdiv_word(value,divisor,8),quotient)
+                self.assertEqual(library.nirvana_srem_word(value,divisor,8),remainder)
+                self.assertEqual(g.evaluate([root],[value,0,0,0]),[quotient])
+
+    def test_normalization_matches_signed_quadrants_for_any_unsigned_quotient_function(self):
+        # SMT-LIB defines signed division/remainder through four sign cases.
+        # An arbitrary unsigned quotient is stronger than actual bvudiv; its
+        # remainder uses n-q*d. Real division supplies one interpretation.
+        solver=shutil.which(os.environ.get('NIRVANA_Z3','z3'))
+        if not solver: self.skipTest('requires Z3')
+        artifacts=Path(os.environ['NIRVANA_VALUE_PROOFS']) if 'NIRVANA_VALUE_PROOFS' in os.environ else None
+        if artifacts: artifacts.mkdir(parents=True,exist_ok=True)
+        proved=0
+        for bits in [8,16,32,64]:
+            g=Graph();unsigned=Type(bits);signed=Type(bits,True)
+            u=g.cast(g.inputs[0],unsigned);a=g.intern(Node('bitcast',signed,(u,)))
+            roots=[]
+            for divisor in [0,1,-1,3,-31,-(1 << (bits-1)),(1 << (bits-1))-1]:
+                for op in ['/','%']:
+                    roots.extend([g.intern(Node(op,signed,(a,g.const(divisor,signed)))),
+                                  g.intern(Node(op,unsigned,(u,g.const(divisor,unsigned))))])
+                roots.append(g.intern(Node('total_sdiv',unsigned,(u,g.const(divisor,unsigned)))))
+            bv=f'(_ BitVec {bits})';zero=f'(_ bv0 {bits})';q=f'quotient_unsigned_{bits}'
+            positive=lambda n:f'(bvsge {n} {zero})'
+            call=lambda x,y:f'({q} {x} {y})'
+            rem=lambda x,y:f'(bvsub {x} (bvmul {call(x,y)} {y}))'
+            def quadrants(operation,division):
+                pp=operation('a','b');np=operation('(bvneg a)','b')
+                pn=operation('a','(bvneg b)');nn=operation('(bvneg a)','(bvneg b)')
+                if division: pn=f'(bvneg {pn})'
+                else: nn=f'(bvneg {nn})'
+                return f'(ite {positive("a")} (ite {positive("b")} {pp} {pn}) (ite {positive("b")} (bvneg {np}) {nn}))'
+            definitions=(f'(declare-fun {q} ({bv} {bv}) {bv})\n'
+                f'(define-fun quotient_signed_magnitude_{bits} ((a {bv}) (m {bv})) {bv} '
+                f'(ite {positive("a")} ({q} a m) (bvneg ({q} (bvneg a) m))))\n'
+                f'(define-fun reference_sdiv ((a {bv}) (b {bv})) {bv} {quadrants(call,True)})\n'
+                f'(define-fun reference_srem ((a {bv}) (b {bv})) {bv} {quadrants(rem,False)})\n'
+                f'(define-fun reference_udiv ((a {bv}) (b {bv})) {bv} {call("a","b")})\n'
+                f'(define-fun reference_urem ((a {bv}) (b {bv})) {bv} {rem("a","b")})\n')
+            exact=g.smt().replace('(set-logic QF_BV)','(set-logic QF_UFBV)\n'+definitions)
+            for old,new in [('bvsdiv','reference_sdiv'),('bvsrem','reference_srem'),
+                            ('bvudiv','reference_udiv'),('bvurem','reference_urem')]:
+                exact=exact.replace('('+old+' ','('+new+' ')
+            differences=[f'(distinct v{i} {division_abstraction.term(g,g.nodes[i])})' for i in roots]
+            checks=[]
+            for nonnegative in [False,True]:
+                condition=f'(bvsge v{a} {zero})'
+                if not nonnegative: condition=f'(not {condition})'
+                for difference in differences:
+                    checks.append(f'(push)\n(assert {condition})\n(assert {difference})\n(check-sat)\n(pop)\n')
+            script='(set-option :timeout 1000)\n'+exact+''.join(checks)
+            result=subprocess.run([solver,'-in'],input=script,capture_output=True,text=True,timeout=15)
+            if artifacts:
+                (artifacts/f'bits-{bits}.smt2').write_text(script)
+                (artifacts/f'bits-{bits}.out').write_text(result.stdout)
+            self.assertEqual((result.returncode,result.stdout.split()),(0,['unsat']*len(checks)),f'{bits}: {result.stderr}')
+            proved+=len(checks)
+        if artifacts:
+            (artifacts/'result.json').write_text(json.dumps({'model':division_abstraction.MODEL,'unsat':proved,
+                'interpretation':'arbitrary unsigned quotient; remainder n-q*d; all four signed quadrants'},indent=2)+'\n')
