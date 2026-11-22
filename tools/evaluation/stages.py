@@ -1,19 +1,36 @@
 """Source-entry architecture checks and Low IR coverage, independent of C ABI."""
 from .semantics import ProtocolError, sha
+from collections import Counter
+
+EXECUTION_NAMES = ('low_middle', 'middle_predicates', 'selected_semantic')
 
 
-def validate(value, step_limit, directory, requested_cases):
+def execution_summary(rows):
+    return {name: dict(Counter(next((e['status'] for e in row.get('stage_checks', {}).get('execution', [])
+                                     if e['name'] == name), 'not_run') for row in rows))
+            for name in EXECUTION_NAMES}
+
+
+def validate(value, step_limit, directory, requested_cases, original_registers=None):
     def require(condition, message):
         if not condition:
             raise ProtocolError(message)
-    require(isinstance(value, dict) and value.get('schema') == 'nirvana-evaluation-stages-v1'
-            and value.get('contract') == 'nirvana-entry-full-state-v1', 'stage check schema or contract')
+    versions = [('nirvana-evaluation-stages-v1', 'nirvana-entry-full-state-v1'),
+                ('nirvana-evaluation-stages-v2', 'nirvana-stage-input-state-v2')]
+    require(isinstance(value, dict)
+            and (value.get('schema'), value.get('contract')) in versions, 'stage check schema or contract')
+    extended = value['schema'] == versions[1][0]
+    if extended:
+        require(type(original_registers) is int and 0 <= original_registers <= 4096
+                and type(value['original_registers']) is int
+                and value['original_registers'] == original_registers, 'stage original register binding')
     budgets = value['prefix_budgets']
     require(isinstance(budgets, list) and bool(budgets) and all(type(n) is int and 0 <= n <= step_limit for n in budgets)
             and budgets == sorted(set(budgets)) and budgets[0] == 0 and budgets[-1] == step_limit,
             'stage prefix budgets')
     execution = value['execution']
-    require([entry['name'] for entry in execution] == ['low_middle', 'middle_predicates'], 'stage execution names')
+    names = list(EXECUTION_NAMES if extended else EXECUTION_NAMES[:2])
+    require([entry['name'] for entry in execution] == names, 'stage execution names')
     statuses = []
     for entry in execution:
         status = entry['status']
@@ -23,6 +40,34 @@ def validate(value, step_limit, directory, requested_cases):
                 and (status != 'passed' or entry['observations'] == requested_cases * len(budgets) * 2)
                 and (status != 'not_applied' or entry['observations'] == 0), 'stage observation count')
         require(entry['name'] != 'low_middle' or status != 'not_applied', 'missing base Middle IR check')
+        if entry['name'] == 'selected_semantic':
+            evidence = entry['semantic']
+            require((status not in ['passed', 'counterexample'] or evidence is not None)
+                    and (status != 'not_applied' or evidence is None), 'Semantic IR execution evidence')
+            if evidence is not None:
+                fields = {'model', 'source_registers', 'lowered_registers', 'fresh_initializers',
+                          'inputs', 'divisions', 'remainders', 'replaced_subtrees', 'input_ir', 'lowered_ir'}
+                require(isinstance(evidence, dict)
+                        and set(evidence) - {'input_ir_sha256', 'lowered_ir_sha256'} == fields
+                        and evidence['model'] == 'selected-semantic-input-state-v1', 'Semantic IR model')
+                counts = [evidence[k] for k in ['inputs', 'divisions', 'remainders', 'replaced_subtrees']]
+                require(all(type(n) is int and 0 <= n <= 4096 for n in counts)
+                        and min(counts[0], counts[1] + counts[2], counts[3]) > 0
+                        and sum(counts[:3]) <= 4096, 'Semantic IR capture counts')
+                require(type(evidence['source_registers']) is int
+                        and original_registers <= evidence['source_registers'] <= 4096
+                        and type(evidence['lowered_registers']) is int
+                        and evidence['lowered_registers'] == evidence['source_registers'] + sum(counts[:3]),
+                        'Semantic IR register projection')
+                initializers = evidence['fresh_initializers']
+                require(isinstance(initializers, list) and all(type(n) is int for n in initializers)
+                        and initializers == [0, 2**64 - 1], 'Semantic IR private initializers')
+                for field, filename in [('input_ir', 'selected-semantic-input.ir.txt'),
+                                        ('lowered_ir', 'selected-semantic-lowered.ir.txt')]:
+                    require(evidence[field] == filename, 'Semantic IR artifact name')
+                    digest = sha(directory / filename)
+                    require(evidence.get(field + '_sha256', digest) == digest, 'Semantic IR artifact hash')
+                    evidence[field + '_sha256'] = digest
         witness = entry['witness']
         if witness is not None:
             require(isinstance(witness, str) and witness == entry['name'] + '.witness.txt', 'stage witness name')
@@ -92,12 +137,12 @@ def validate(value, step_limit, directory, requested_cases):
     return value
 
 
-def attach(value, row, directory, step_limit, requested_cases):
+def attach(value, row, directory, step_limit, requested_cases, original_registers=None):
     if value is None:
         row['stage_checks'] = {'status': 'not_run'}
         return
     try:
-        row['stage_checks'] = validate(value, step_limit, directory, requested_cases)
+        row['stage_checks'] = validate(value, step_limit, directory, requested_cases, original_registers)
     except (ProtocolError, OSError, KeyError, TypeError, IndexError, ValueError) as error:
         row['stage_checks'] = {'status': 'evaluator_error', 'reason': str(error)}
     status = row['stage_checks']['status']

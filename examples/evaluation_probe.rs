@@ -136,7 +136,7 @@ int main(void) {{
     let mut native_expected = String::new();
     let mut statuses = [0usize; 4];
     let mut native_cases = 0;
-    let mut stages = stages::Stages::new(&source, limit);
+    let mut stages = stages::Stages::new(&source, &output, limit);
     let (generator, vectors) = if let Some(path) = input_file {
         let mut vectors = Vec::new();
         for line in std::fs::read_to_string(path)?.lines() {

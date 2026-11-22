@@ -7,14 +7,50 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from evaluation import control_graph as cg, reports, semantics, c_footprint as cf
+from evaluation import control_graph as cg, reports, semantics, stages, c_footprint as cf
 import evaluate_structure
 
 
-from report_fixture import DUMP, save, fixture
+from report_fixture import DUMP, save, fixture, semantic_architecture, retain_semantic_ir
 
 
 class ReportTests(unittest.TestCase):
+    def test_semantic_stage_loss_prefix_drift_and_retained_evidence_are_visible(self):
+        for variant in ['intact', 'not-applied', 'legacy', 'budget', 'denominator', 'raw']:
+            with tempfile.TemporaryDirectory() as directory:
+                a, b = Path(directory) / 'a', Path(directory) / 'b'
+                before, after = fixture(a), fixture(b)
+                for root, report in [(a, before), (b, after)]:
+                    row = report['rows'][0]
+                    row['semantics']['profile'].update(step_limit=4096, requested_cases=3, seed=17, register_count=32)
+                    row['stage_checks'] = semantic_architecture(3)
+                    if root == b:
+                        if variant == 'not-applied':
+                            row['stage_checks']['execution'][-1].update(status='not_applied', observations=0, semantic=None)
+                        elif variant == 'legacy':
+                            row['stage_checks'].update(schema='nirvana-evaluation-stages-v1', contract='nirvana-entry-full-state-v1')
+                            row['stage_checks'].pop('original_registers')
+                            row['stage_checks']['execution'].pop()
+                        elif variant == 'budget':
+                            row['stage_checks'] = semantic_architecture(3, [0, 1, 4096])
+                    raw = {**row['semantics']['profile'], 'stage_checks': copy.deepcopy(row['stage_checks'])}
+                    retain_semantic_ir(root / row['artifacts'] / 'semantics', row['stage_checks'])
+                    row['semantics']['prepare_stdout_sha256'] = save(root / row['artifacts'], 'semantic_prepare.stdout.txt', json.dumps(raw))
+                    report['summary']['architecture_execution'] = stages.execution_summary(report['rows'])
+                if variant == 'denominator':
+                    after['summary']['architecture_execution']['selected_semantic']['passed'] = 0
+                elif variant == 'raw':
+                    after['rows'][0]['stage_checks']['execution'][-1]['semantic'].update(inputs=2, lowered_registers=36)
+                with self.subTest(variant=variant):
+                    if variant in ['budget', 'denominator', 'raw']:
+                        with self.assertRaises(ValueError):
+                            self.compare(a, b, before, after)
+                    else:
+                        result = self.compare(a, b, before, after)
+                        lost = [] if variant == 'intact' else ['selected_semantic']
+                        self.assertEqual(result['rows'][0]['architecture_checks_lost'], lost)
+                        self.assertEqual(result['architecture_regressions'], int(bool(lost)))
+
     def test_binary_revision_and_evaluation_workspace_have_distinct_provenance(self):
         from evaluation import build_identity
         with tempfile.TemporaryDirectory() as directory:

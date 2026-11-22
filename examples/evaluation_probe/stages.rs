@@ -7,6 +7,9 @@ use nirvana::{
 };
 use std::collections::BTreeSet;
 
+#[path = "semantic_stage.rs"]
+mod semantic;
+
 struct Stage {
     name: &'static str,
     status: &'static str,
@@ -48,6 +51,8 @@ impl Stage {
 }
 pub(super) struct Stages {
     stages: Vec<Stage>,
+    semantic: semantic::Stage,
+    original_registers: usize,
     budgets: Vec<usize>,
     transfers: BTreeSet<(u64, u64)>,
     observed: BTreeSet<(u64, u64)>,
@@ -56,7 +61,7 @@ pub(super) struct Stages {
     work: usize,
 }
 impl Stages {
-    pub fn new(source: &Program, limit: usize) -> Self {
+    pub fn new(source: &Program, output: &ReadableC, limit: usize) -> Self {
         let base = Function::from_low(source).and_then(|middle| Ok((middle.lower()?, middle)));
         let mut stages = Vec::new();
         let mut add =
@@ -132,6 +137,8 @@ impl Stages {
             .collect();
         Self {
             stages,
+            semantic: semantic::Stage::new(source, output.semantic_lowering.clone()),
+            original_registers: source.register_count(),
             budgets,
             transfers,
             observed: BTreeSet::new(),
@@ -151,29 +158,36 @@ impl Stages {
                 .filter(|e| self.transfers.contains(e)),
         );
         for &budget in &self.budgets {
-            let active = self.stages.iter().filter(|s| s.status == "passed").count();
+            let active = self.stages.iter().filter(|s| s.status == "passed").count()
+                + usize::from(self.semantic.status == "passed");
             if active == 0 {
                 break;
             }
-            if self
-                .work
-                .saturating_add(budget.saturating_mul(1 + active * 2))
-                > 8_000_000
+            if self.work.saturating_add(
+                budget.saturating_mul(
+                    1 + active * 2 + usize::from(self.semantic.status == "passed") * 2,
+                ),
+            ) > 8_000_000
             {
                 for stage in &mut self.stages {
                     if stage.status == "passed" {
                         stage.status = "budget_exhausted";
                     }
                 }
+                if self.semantic.status == "passed" {
+                    self.semantic.status = "budget_exhausted";
+                }
                 break;
             }
-            self.work += budget * (1 + active * 2);
+            self.work +=
+                budget * (1 + active * 2 + usize::from(self.semantic.status == "passed") * 2);
             let expected = source
                 .run_with_memory(input, super::BASE, ram, budget)
                 .expect("same validated execution inputs");
             for stage in &mut self.stages {
                 stage.check(input, ram, budget, &expected);
             }
+            self.semantic.check(input, ram, budget);
         }
     }
     pub fn json(&self, output: &ReadableC, out: &std::path::Path) -> std::io::Result<String> {
@@ -191,6 +205,7 @@ impl Stages {
                 stage.name, stage.status, stage.observations
             ));
         }
+        stages.push(self.semantic.json(out)?);
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
         let continuations = output.continuations.map_or("null".into(), |e| {
             let order = e.store_order.map_or(String::new(), |o| format!(
@@ -209,14 +224,19 @@ impl Stages {
                 e.compared_graph_nodes
             )
         });
-        let status = if self.stages.iter().any(|s| s.status == "counterexample") {
-            "counterexample"
-        } else if self.stages.iter().any(|s| s.status == "rejected") {
-            "rejected"
-        } else if self
+        let statuses: Vec<_> = self
             .stages
             .iter()
-            .any(|s| matches!(s.status, "unavailable" | "budget_exhausted"))
+            .map(|s| s.status)
+            .chain(std::iter::once(self.semantic.status))
+            .collect();
+        let status = if statuses.contains(&"counterexample") {
+            "counterexample"
+        } else if statuses.contains(&"rejected") {
+            "rejected"
+        } else if statuses
+            .iter()
+            .any(|s| matches!(*s, "unavailable" | "budget_exhausted"))
         {
             "inconclusive"
         } else {
@@ -230,7 +250,8 @@ impl Stages {
             .join(",");
         let parameter_registers: Vec<_> = output.parameters.iter().map(|reg| reg.0).collect();
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v1\",\"contract\":\"nirvana-entry-full-state-v1\",\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v2\",\"contract\":\"nirvana-stage-input-state-v2\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            self.original_registers,
             self.budgets,
             stages.join(","),
             output.structure_evidence.is_some(),

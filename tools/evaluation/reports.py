@@ -49,6 +49,11 @@ def index(report):
     require(bool(rows), 'empty report')
     require(dict(Counter(row['cohort'] for row in rows)) == report['summary']['cohorts'],
             'cohort denominator')
+    if 'architecture_execution' in report['summary']:
+        observed = report['summary']['architecture_execution']
+        require(observed == stages.execution_summary(rows)
+                and all(type(n) is int for counts in observed.values() for n in counts.values()),
+                'architecture execution denominator')
     binding = report['evaluation'].get('probe_metadata')
     require(binding in [None, 'hashed-probe-json-v1'], 'probe metadata profile')
     if binding is not None:
@@ -122,7 +127,7 @@ def replay(root, row):
     architecture = row.get('stage_checks', {'status': 'not_run'})
     if 'schema' in architecture:
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
-                        semantic['profile']['requested_cases'])
+                        semantic['profile']['requested_cases'], semantic['profile'].get('register_count'))
     result['architecture'] = architecture['status']
     memory_sites = row.get('state_memory_sites', {'status': 'not_run'})
     require(memory_sites['status'] in ['not_run', 'unavailable', 'unsupported', 'evaluator_error', 'measured', 'partial'],
@@ -148,7 +153,8 @@ def replay(root, row):
             recorded_stages = prepared.pop('stage_checks', None)
             require(prepared == profile, 'semantic profile differs from retained probe JSON')
             restored = {}
-            stages.attach(recorded_stages, restored, destination, profile['step_limit'], profile['requested_cases'])
+            stages.attach(recorded_stages, restored, destination, profile['step_limit'],
+                          profile['requested_cases'], profile.get('register_count'))
             require(restored['stage_checks'] == architecture, 'stage checks differ from retained probe JSON')
             result['probe_metadata'] = 'replayed'
         for name in semantics.FILES:
@@ -290,6 +296,13 @@ def compare(before_path, after_path):
                       'division_abstraction','solver_query_limit']
             require(all(av['profile'][field] == bv['profile'][field] for field in fields) and av['source'] == bv['source'],
                     f'{key}: changed source value model')
+        old_stages, new_stages = a.get('stage_checks', {}), b.get('stage_checks', {})
+        old_checked = {e['name'] for e in old_stages.get('execution', []) if e['status'] == 'passed'}
+        new_checked = {e['name'] for e in new_stages.get('execution', []) if e['status'] == 'passed'}
+        if old_checked & new_checked:
+            require(old_stages['prefix_budgets'] == new_stages['prefix_budgets'],
+                    f'{key}: changed architecture prefix budgets')
+        lost_checks = sorted(old_checked - new_checked)
         rows.append({'id': key, 'cohort': a['cohort'],
                      'c_syntax_delta': content_change,
                      'c_footprint_regression': ar['c_footprint'] == 'measured' and br['c_footprint'] != 'measured',
@@ -304,7 +317,8 @@ def compare(before_path, after_path):
                         if 'distance' in b else None,
                      'before_semantics': sa['status'], 'after_semantics': sb['status'],
                      'structure_regression': a['structure_status'] == 'measured' and b['structure_status'] != 'measured',
-                     'architecture_regression': ar['architecture'] == 'passed' and br['architecture'] != 'passed',
+                     'architecture_checks_lost': lost_checks,
+                     'architecture_regression': bool(lost_checks) or ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
                      'before_replay': ar, 'after_replay': br})
     return {'schema': 'nirvana-structure-comparison-v2', 'metric': cg.METRIC,
@@ -327,6 +341,7 @@ def compare(before_path, after_path):
             'state_value_counterexamples': sum(row['after_replay']['state_values'] == 'counterexample_under_model' for row in rows),
             'candidate_state_values': dict(Counter(row['after_replay']['state_values'] for row in rows)),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
+            'candidate_execution': stages.execution_summary(after['rows']),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',
             'rows': rows}

@@ -12,15 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from evaluation import semantics, stages
 
 
-def architecture():
-    return dict(schema='nirvana-evaluation-stages-v1', contract='nirvana-entry-full-state-v1',
-                status='passed', prefix_budgets=[0, 4096],
-                execution=[dict(name='low_middle', status='passed', observations=96, witness=None),
-                           dict(name='middle_predicates', status='not_applied', observations=0, witness=None)],
-                selected_c=dict(predicates=None, input_structure_checked=True, display_structure_checked=True,
-                                saved_value_rounds=0, fallback_goto=False),
-                low_coverage=dict(steps_started=2, syntactic_steps=3, transfers_observed=1,
-                                  syntactic_transfers=2, unobserved_transfers=[[1, 2]]))
+from report_fixture import architecture, semantic_architecture, retain_semantic_ir
 
 
 class SemanticTests(unittest.TestCase):
@@ -50,11 +42,14 @@ class SemanticTests(unittest.TestCase):
                        checked_cases=24 - suspended, native_cases=count,
                        returned=8, read_faults=8, write_faults=8 - suspended,
                        suspended=suspended, memory_base=4096, memory_size=512,
-                       stack_pointer=4600, state_pointer=4224, row_words=69)
+                       stack_pointer=4600, state_pointer=4224, row_words=69, register_count=32)
         if stage_checks is not None:
             profile['stage_checks'] = stage_checks
+            retain_semantic_ir(destination, stage_checks)
             if stage_checks['status'] == 'counterexample':
-                (destination / 'low_middle.witness.txt').write_text('actual full-state counterexample')
+                for entry in stage_checks['execution']:
+                    if entry['status'] == 'counterexample':
+                        (destination / entry['witness']).write_text('actual original-state counterexample')
         if input_file: profile['generator'] = 'fixture-state4-input-file-v1'
         native = ('0 1 2 3 4\n' * count)
         checked = (' '.join(['0'] * 69) + '\n') * profile['checked_cases']
@@ -155,6 +150,52 @@ class SemanticTests(unittest.TestCase):
                 else: value['status'] = 'counterexample'
                 with self.subTest(variant=variant), self.assertRaises(semantics.ProtocolError):
                     stages.validate(value, 4096, Path(directory), 24)
+
+    def test_semantic_projection_binds_registers_capture_counts_and_two_private_patterns(self):
+        for variant in ['valid', 'display-input', 'source', 'lowered', 'count', 'boolean', 'model', 'private',
+                        'original', 'unbound', 'absent', 'missing-stage', 'observations', 'ir-hash', 'ir-name']:
+            with tempfile.TemporaryDirectory() as directory:
+                value = semantic_architecture()
+                entry = value['execution'][-1]
+                evidence = entry['semantic']
+                retain_semantic_ir(Path(directory), value)
+                registers = 32
+                if variant == 'display-input': evidence.update(source_registers=96, lowered_registers=99)
+                elif variant == 'source': evidence['source_registers'] = 31
+                elif variant == 'lowered': evidence['lowered_registers'] = 36
+                elif variant == 'count': evidence['inputs'] = 0
+                elif variant == 'boolean': evidence['divisions'] = True
+                elif variant == 'model': evidence['model'] = 'all-registers-v1'
+                elif variant == 'private': evidence['fresh_initializers'] = [0, 0]
+                elif variant == 'original': value['original_registers'] = 31
+                elif variant == 'unbound': registers = None
+                elif variant == 'absent': entry['semantic'] = None
+                elif variant == 'missing-stage': value['execution'].pop()
+                elif variant == 'observations': entry['observations'] = 48
+                elif variant == 'ir-hash': evidence['input_ir_sha256'] = '0' * 64
+                elif variant == 'ir-name': evidence['input_ir'] = '../outside'
+                with self.subTest(variant=variant):
+                    if variant in ['valid', 'display-input']:
+                        stages.validate(value, 4096, Path(directory), 24, registers)
+                    else:
+                        with self.assertRaises(semantics.ProtocolError):
+                            stages.validate(value, 4096, Path(directory), 24, registers)
+
+    def test_semantic_counterexamples_keep_native_c_observations_and_not_applied_is_explicit(self):
+        for status in ['passed', 'counterexample', 'not_applied']:
+            with tempfile.TemporaryDirectory() as directory:
+                value = semantic_architecture()
+                entry = value['execution'][-1]
+                if status == 'counterexample':
+                    value['status'] = status
+                    entry.update(status=status, observations=2, witness='selected_semantic.witness.txt')
+                elif status == 'not_applied':
+                    entry.update(status=status, observations=0, semantic=None)
+                row, calls = self.protocol(Path(directory), stage_checks=value)
+                self.assertEqual(row['semantics']['status'], 'passed')
+                self.assertIn('generated_O2_run', calls)
+                self.assertEqual(row['stage_checks']['status'], 'counterexample' if status == 'counterexample' else 'passed')
+                self.assertEqual(row['stage_checks']['execution'][-1]['status'], status)
 
     def test_c_continuation_model_is_distinct_from_full_state_checks(self):
         evidence = dict(model='c-fragment-continuation-v1', removed_conditions=3,

@@ -73,7 +73,8 @@ def run(args, row, directory, invoke, flags):
             or not 0 <= native_cases <= args.semantic_cases):
         raise ProtocolError('semantic probe coverage mismatch')
     from . import stages
-    stages.attach(profile.pop('stage_checks', None), row, destination, args.semantic_steps, profile['requested_cases'])
+    stages.attach(profile.pop('stage_checks', None), row, destination, args.semantic_steps,
+                  profile['requested_cases'], profile.get('register_count'))
     row['semantics'] = {'status': 'running', 'contract': CONTRACT, 'profile': profile,
                         'prepare_stdout_sha256': hashlib.sha256(result.stdout.encode()).hexdigest(),
                         'native_observations': 'return and state[4], valid pointer',

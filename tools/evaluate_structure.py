@@ -24,6 +24,7 @@ import traceback
 
 from evaluation import control_graph as cg
 from evaluation import semantics
+from evaluation import stages
 from evaluation import c_footprint as cf
 from evaluation import state_memory as sm
 from evaluation.state_values import protocol as sv
@@ -404,6 +405,7 @@ def run(args):
                            'contract': semantics.CONTRACT if args.semantic_probe else None,
                            'counts': dict(Counter(r['semantics']['status'] for r in report['rows']))}
     report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
+    report['summary']['architecture_execution'] = stages.execution_summary(report['rows'])
     report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
     report['summary']['state_memory_sites'] = dict(Counter(r['state_memory_sites']['status'] for r in report['rows']))
     report['summary']['state_values'] = dict(Counter(r['state_values']['status'] for r in report['rows']))

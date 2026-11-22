@@ -29,6 +29,7 @@ python3 -m unittest discover -s tools/tests
 | --- | --- |
 | 機械語→IR | 元Cまたは独立した実機assembly、命令境界、部分レジスタ、例外とメモリアクセス順 |
 | Low IR→Middle IR | 元の式・命令・CFGの再構成、SSA版と値のscope、lazyな子領域とLoadの順序。直接MIR実行とLow IR実行の全状態・fault・停止予算を比較 |
+| 選択したSemantic IR→実行IR | 実入力・計画・出力を保持した`Lowering`を再検査。入力の全レジスタ・RAM・fault・PC・traceを予算ごとに比較し、追加した捕捉レジスタだけを除く。入力・出力dumpと観測件数をM0へ記録 |
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |

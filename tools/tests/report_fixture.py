@@ -61,3 +61,37 @@ def fixture(root):
     return report
 
 
+
+def architecture(requested_cases=24, budgets=None):
+    budgets = [0, 4096] if budgets is None else budgets
+    observations = requested_cases * len(budgets) * 2
+    return dict(schema='nirvana-evaluation-stages-v1', contract='nirvana-entry-full-state-v1',
+                status='passed', prefix_budgets=budgets,
+                execution=[dict(name='low_middle', status='passed', observations=observations, witness=None),
+                           dict(name='middle_predicates', status='not_applied', observations=0, witness=None)],
+                selected_c=dict(predicates=None, input_structure_checked=True, display_structure_checked=True,
+                                saved_value_rounds=0, fallback_goto=False),
+                low_coverage=dict(steps_started=2, syntactic_steps=3, transfers_observed=1,
+                                  syntactic_transfers=2, unobserved_transfers=[[1, 2]]))
+
+
+def semantic_architecture(requested_cases=24, budgets=None):
+    value = architecture(requested_cases, budgets)
+    value.update(schema='nirvana-evaluation-stages-v2', contract='nirvana-stage-input-state-v2',
+                 original_registers=32)
+    value['execution'].append(dict(name='selected_semantic', status='passed', observations=requested_cases * len(value['prefix_budgets']) * 2, witness=None,
+        semantic=dict(model='selected-semantic-input-state-v1', source_registers=32,
+                      lowered_registers=35, fresh_initializers=[0, 2**64 - 1],
+                      inputs=1, divisions=1, remainders=1, replaced_subtrees=4,
+                      input_ir='selected-semantic-input.ir.txt', lowered_ir='selected-semantic-lowered.ir.txt')))
+    return value
+
+
+def retain_semantic_ir(directory, value):
+    for entry in value['execution']:
+        evidence = entry.get('semantic')
+        if evidence:
+            for field in ['input_ir', 'lowered_ir']:
+                save(directory, evidence[field], 'retained ' + field + '\n')
+
+
