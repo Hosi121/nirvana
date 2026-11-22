@@ -47,6 +47,8 @@ Middle IRはM1の段階間契約を実装する最初の共通表現です。保
 
 [保存値の同一性](../src/model/middle_ir/saved_values.rs)は、既存の`MemoryValuePlan`で検査したsnapshotとbit範囲を`ReadSaved`へ結びます。同じ保存値を読む値は、コピー・部分抽出・等しいφ入力を通して同じsnapshotを参照します。通常の実行と`lower()`は元のレジスタ範囲を保ち、`lower_saved_values()`は検査済みの保存用レジスタを追加します。後者の比較は`SavedLowering::project_report()`で内部レジスタを除き、元の全レジスタ・RAM・fault・PC・予算を照合します。`middle-ir`はこれらの同一性を表示し、`middle-c`は保存値を展開した候補も既存出力と比較します。
 
+[snapshotの統合](../src/dataflow/memory_values/roots.rs)は、直接検査済みの計画を根拠に使います。提案はsliceを合成し、検査器はbitごとの対応と統合後の保存先の初期化を再検査します。根拠は一段に制限し、統合後も元のLoad/Storeとguest命令境界を保持します。
+
 ## ソースの配置
 
 | ディレクトリ | 責務と入口 |

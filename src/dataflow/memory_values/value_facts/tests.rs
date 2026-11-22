@@ -87,6 +87,7 @@ fn independent_checker_rejects_a_forged_phi_and_replays_its_wrong_return() {
             Err(SsaError::Malformed("saved slice phi input"))
         ));
         let mut plan = MemoryValuePlan {
+            basis: None,
             source_registers: source.register_count(),
             evidence: MemoryValueEvidence {
                 ssa: context.evidence,

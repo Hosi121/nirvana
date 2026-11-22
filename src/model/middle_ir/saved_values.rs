@@ -11,6 +11,7 @@ pub struct SavedEvidence {
     /// Distinct MIR read bindings; source-tree occurrences may share a binding.
     pub annotated_reads: usize,
     pub phi_values: usize,
+    pub merged_snapshots: usize,
 }
 #[derive(Clone, Debug)]
 pub(super) struct Recovery {
@@ -55,10 +56,19 @@ impl Function {
         let Some(plan) = MemoryValuePlan::analyze(&source) else {
             return Ok(None);
         };
+        let plan = plan
+            .canonicalize(&source)
+            .ok_or(Error::Invalid("saved root source"))?;
         let view = plan.inspect(&source).map_err(Error::Ssa)?;
         let mut candidate = self.clone();
         let annotated_reads = annotate(&mut candidate, &view);
-        let evidence = evidence(self, &view, plan.evidence(), annotated_reads);
+        let evidence = evidence(
+            self,
+            &view,
+            plan.evidence(),
+            annotated_reads,
+            plan.merged_snapshots(),
+        );
         candidate.saved = Some(Recovery {
             plan,
             view,
@@ -113,10 +123,12 @@ fn evidence(
     view: &SavedValueView,
     memory: MemoryValueEvidence,
     annotated_reads: usize,
+    merged_snapshots: usize,
 ) -> SavedEvidence {
     SavedEvidence {
         memory,
         annotated_reads,
+        merged_snapshots,
         phi_values: view
             .values
             .iter()
@@ -171,7 +183,14 @@ pub(super) fn validate(function: &Function) -> Result<(), Error> {
     let mut expected = function.clone();
     let count = annotate(&mut expected, &checked);
     if expected.blocks != function.blocks
-        || saved.evidence != evidence(function, &checked, saved.plan.evidence(), count)
+        || saved.evidence
+            != evidence(
+                function,
+                &checked,
+                saved.plan.evidence(),
+                count,
+                saved.plan.merged_snapshots(),
+            )
     {
         return Err(Error::Invalid("unproved saved read identity"));
     }

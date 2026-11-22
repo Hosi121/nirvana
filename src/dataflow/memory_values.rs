@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod analyze;
 mod projection;
 mod rewrite;
+mod roots;
 mod single_visit;
 mod stability;
 mod value_facts;
@@ -99,6 +100,9 @@ pub struct MemoryValuePlan {
     /// Equal saved-word slices at each actual SSA definition, including phis.
     facts: Vec<Option<Key>>,
     evidence: MemoryValueEvidence,
+    /// One directly checked plan justifies derived root identities. The checker
+    /// rejects nested witnesses, so validation has a fixed depth.
+    basis: Option<Box<MemoryValuePlan>>,
 }
 impl MemoryValuePlan {
     pub fn analyze(source: &Program) -> Option<Self> {
@@ -145,6 +149,7 @@ impl MemoryValuePlan {
         let (proofs, captures) = analyze::collect(context, policy, allow_stored)?;
         let facts = value_facts::solve(context, &proofs).ok()?;
         let mut plan = Self {
+            basis: None,
             source_registers: source.register_count(),
             evidence: MemoryValueEvidence {
                 ssa: context.evidence,
@@ -166,6 +171,23 @@ impl MemoryValuePlan {
     }
     pub fn evidence(&self) -> MemoryValueEvidence {
         self.evidence
+    }
+    /// Consolidate snapshots through already checked saved-slice invariants.
+    /// Retain this plan if the smaller candidate fails source/initialization checks.
+    pub fn canonicalize(&self, source: &Program) -> Option<Self> {
+        let context = analyze::Context::new(source)?;
+        verify::plan(source, self, &context).ok()?;
+        let (candidate, _) = rewrite::construct(source, self, &context)?;
+        verify::check(source, self, &candidate, &context).ok()?;
+        if self.basis.is_some() {
+            return Some(self.clone());
+        }
+        Some(roots::propose(source, self, &context).unwrap_or_else(|| self.clone()))
+    }
+    pub fn merged_snapshots(&self) -> usize {
+        self.basis.as_ref().map_or(0, |base| {
+            base.captures.len().saturating_sub(self.captures.len())
+        })
     }
     /// Entry executions compare by projecting the register file onto the
     /// original prefix. Internal captures remain in the lowered state.

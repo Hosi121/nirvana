@@ -34,6 +34,23 @@ pub(super) fn plan(
     if !plan.captures.windows(2).all(|p| p[0].value < p[1].value) {
         return Err(invalid("memory value capture order"));
     }
+    let basis = if let Some(base) = &plan.basis {
+        if base.basis.is_some() || base.proofs.len() != plan.proofs.len() {
+            return Err(invalid("nested or incomplete saved root witness"));
+        }
+        self::plan(source, base, context)?;
+        let (candidate, _) = rewrite::construct(source, base, context)
+            .ok_or(SsaError::Unavailable("saved root witness rewrite"))?;
+        self::check(source, base, &candidate, context)?;
+        Some(
+            base.proofs
+                .iter()
+                .map(|p| (p.site, p.key))
+                .collect::<BTreeMap<_, _>>(),
+        )
+    } else {
+        None
+    };
     let loads = context
         .loads
         .bindings()
@@ -48,10 +65,23 @@ pub(super) fn plan(
         let (width, writers) = loads
             .get(&proof.site)
             .ok_or(invalid("memory value reaching stores"))?;
+        let identity = if let Some(proofs) = &basis {
+            let original = *proofs
+                .get(&proof.site)
+                .ok_or(invalid("saved root source load"))?;
+            roots::check_alias(
+                plan.basis.as_deref().unwrap(),
+                original,
+                proof.key,
+                &mut budget,
+            )?
+        } else {
+            origins.matches(context, proof.key, writers, &mut budget)?
+        };
         if !sites.insert(proof.site)
             || *width != proof.key.width
             || !keys.contains(&proof.key.value)
-            || !origins.matches(context, proof.key, writers, &mut budget)?
+            || !identity
         {
             return Err(invalid("memory value store identity"));
         }
