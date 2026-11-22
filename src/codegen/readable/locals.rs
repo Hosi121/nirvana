@@ -11,7 +11,7 @@ use crate::dataflow::stack_cells::CellBindings;
 use crate::dataflow::stack_role::StackRoles;
 use crate::dataflow::value_role::{ValueRole, infer};
 use crate::dataflow::value_width::ValueWidths;
-use crate::model::ir::{Program, Reg, Width};
+use crate::model::ir::{BinaryOp, Expr, Place, Program, Reg, Width};
 
 use super::{LocalPlanStats, LocalValue, ReadableOptions};
 
@@ -26,6 +26,10 @@ pub(super) struct LocalPlan {
     pub stack_roles: Option<StackRoles>,
     pub stack_cells: Option<CellBindings>,
 }
+pub(super) struct LayoutOptions {
+    pub readable: ReadableOptions,
+    pub prefer_updates: bool,
+}
 
 impl LocalPlan {
     pub fn build(
@@ -35,8 +39,12 @@ impl LocalPlan {
         mut names: BTreeMap<usize, String>,
         widths: &ValueWidths,
         nodes: &[Node],
-        options: ReadableOptions,
+        layout: LayoutOptions,
     ) -> Self {
+        let LayoutOptions {
+            readable: options,
+            prefer_updates,
+        } = layout;
         let eligible: Vec<_> = read
             .iter()
             .filter(|reg| !names.contains_key(reg))
@@ -54,12 +62,14 @@ impl LocalPlan {
             colors: storage,
             verified: verified_storage_pools,
             fallbacks: storage_verification_fallbacks,
+            update_hint_pairs,
         } = storage_colors(
             program,
             &eligible,
             widths,
             options.coalesce_locals,
             stack_roles.as_ref(),
+            prefer_updates,
         );
         let storage_slots = storage.iter().copied().collect::<BTreeSet<_>>().len();
         let pairs: Vec<_> = eligible
@@ -246,6 +256,7 @@ impl LocalPlan {
             split_storage_groups: origins.values().filter(|colors| colors.len() > 1).count(),
             verified_storage_pools,
             storage_verification_fallbacks,
+            update_hint_pairs,
             source_allocation: source_candidate.as_ref().map(|candidate| candidate.stats()),
             copy_allocation: copy_candidate.as_ref().map(|candidate| candidate.stats()),
         };
@@ -275,6 +286,7 @@ struct StorageColors {
     colors: Vec<usize>,
     verified: usize,
     fallbacks: usize,
+    update_hint_pairs: usize,
 }
 
 fn storage_colors(
@@ -283,10 +295,12 @@ fn storage_colors(
     widths: &ValueWidths,
     coalesce: bool,
     stack_roles: Option<&StackRoles>,
+    prefer_updates: bool,
 ) -> StorageColors {
     let mut colors: Vec<_> = (0..eligible.len()).collect();
     let mut verified = 0;
     let mut fallbacks = 0;
+    let mut update_hint_pairs = 0;
     if coalesce {
         let mut next_color = 0;
         for width in [Width::U64, Width::U32, Width::U16, Width::U8] {
@@ -308,10 +322,16 @@ fn storage_colors(
                     }
                 }
             }
-            let hints: Vec<_> = lineages
+            let mut hints: Vec<_> = lineages
                 .values()
                 .flat_map(|members| members.windows(2).map(|pair| (pair[0], pair[1])))
                 .collect();
+            // Existing spill/reload lineages keep their preference set. An
+            // optional layout instead connects register-only arithmetic roots.
+            if prefer_updates && hints.is_empty() {
+                hints = update_hints(program, &registers).unwrap_or_default();
+                update_hint_pairs += hints.len();
+            }
             let allocated = checked_colors(program, &registers, &hints).or_else(|| {
                 fallbacks += 1;
                 if hints.is_empty() {
@@ -333,7 +353,54 @@ fn storage_colors(
         colors,
         verified,
         fallbacks,
+        update_hint_pairs,
     }
+}
+
+fn update_hints(program: &Program, registers: &[Reg]) -> Option<Vec<(Reg, Reg)>> {
+    let eligible: BTreeSet<_> = registers.iter().map(|r| r.0).collect();
+    let mut hints = BTreeSet::new();
+    let mut work = 100_000usize;
+    for instruction in program.instructions() {
+        for assignment in &instruction.assignments {
+            work = work.checked_sub(1)?;
+            let Place::Register(destination) = assignment.destination else {
+                continue;
+            };
+            if !eligible.contains(&destination.0) {
+                continue;
+            }
+            let Expr::Binary(op, left, right) = &assignment.value else {
+                continue;
+            };
+            let commutative = matches!(
+                op,
+                BinaryOp::Add | BinaryOp::Mul | BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+            );
+            if !commutative
+                && !matches!(
+                    op,
+                    BinaryOp::Sub | BinaryOp::Shl | BinaryOp::Shr | BinaryOp::AShr
+                )
+            {
+                continue;
+            }
+            let source = match (left.as_ref(), right.as_ref()) {
+                (Expr::Register(source), _) if eligible.contains(&source.0) => *source,
+                (_, Expr::Register(source)) if commutative && eligible.contains(&source.0) => {
+                    *source
+                }
+                _ => continue,
+            };
+            if source != destination {
+                hints.insert((destination.0.min(source.0), destination.0.max(source.0)));
+            }
+            if hints.len() > 8192 {
+                return None;
+            }
+        }
+    }
+    Some(hints.into_iter().map(|(a, b)| (Reg(a), Reg(b))).collect())
 }
 
 fn checked_colors(

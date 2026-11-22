@@ -186,6 +186,9 @@ pub struct LocalPlanStats {
     pub verified_storage_pools: usize,
     /// Pools whose first allocation/check was unavailable or rejected.
     pub storage_verification_fallbacks: usize,
+    /// Syntactic update preferences considered by the selected layout.
+    /// Interference validation, rather than these hints, permits sharing.
+    pub update_hint_pairs: usize,
     /// Heuristic improvement and independent correspondence for an accepted
     /// source-lineage candidate, before optional copy refinement.
     pub source_allocation: Option<crate::dataflow::source_locals::SourceStats>,

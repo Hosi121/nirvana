@@ -33,6 +33,62 @@ fn instruction(address: u64, assignments: Vec<Assignment>, control: Control) -> 
 }
 
 #[test]
+fn native_c_update_preferences_keep_a_still_live_operand_separate() {
+    let result = b(BinaryOp::Xor, r(2), b(BinaryOp::Shr, r(3), c(3)));
+    let program = Program::new(
+        0,
+        4,
+        vec![
+            instruction(
+                0,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: load(r(0)),
+                }],
+                Control::Branch {
+                    condition: r(1),
+                    target: 4,
+                },
+            ),
+            instruction(
+                1,
+                vec![Assignment {
+                    destination: Reg(3).into(),
+                    value: b(BinaryOp::Add, r(2), c(17)),
+                }],
+                Control::Next,
+            ),
+            instruction(
+                2,
+                vec![store(b(BinaryOp::Add, r(0), c(8)), Width::U64, r(3))],
+                Control::Next,
+            ),
+            instruction(3, vec![], Control::Return(result.clone())),
+            instruction(
+                4,
+                vec![Assignment {
+                    destination: Reg(3).into(),
+                    value: b(BinaryOp::Xor, r(2), c(31)),
+                }],
+                Control::Next,
+            ),
+            instruction(
+                5,
+                vec![store(b(BinaryOp::Add, r(0), c(8)), Width::U64, r(3))],
+                Control::Next,
+            ),
+            instruction(6, vec![], Control::Return(result)),
+        ],
+    )
+    .unwrap();
+    let inputs: Vec<_> = [0x1000, 0x1001, 0x1008, 0x100f, 0xffff, u64::MAX]
+        .into_iter()
+        .flat_map(|address| [0, 1, 3, u64::MAX].map(|condition| [address, condition]))
+        .collect();
+    compare(&program, &inputs);
+}
+
+#[test]
 fn native_c_store_permutations_require_successful_prefix_reads() {
     let slot = b(BinaryOp::Add, r(0), c(8));
     let ret = b(BinaryOp::Add, b(BinaryOp::Add, r(2), r(3)), r(1));

@@ -210,20 +210,29 @@ fn emit_prepared_c(
         .as_deref()
         .is_some_and(super::continuations::possible);
     if !try_continuations {
-        return emit_prepared_layout(reduced, options, prepared, None);
+        return emit_prepared_layout(reduced, options, prepared, None, false);
     }
-    let mut best = emit_prepared_layout(reduced, options, prepared.clone(), None)?;
-    for strategy in [
-        continuations::Strategy::Exact,
-        continuations::Strategy::CheckedStores,
-    ] {
-        if let Ok(candidate) =
-            emit_prepared_layout(reduced, options, prepared.clone(), Some(strategy))
-            && candidate.continuations.is_some()
-            && candidate.parameters == best.parameters
-            && render_cost(&candidate) < render_cost(&best)
-        {
-            best = candidate;
+    let mut best = emit_prepared_layout(reduced, options, prepared.clone(), None, false)?;
+    for prefer_updates in [false, true] {
+        if prefer_updates && !options.coalesce_locals {
+            continue;
+        }
+        for strategy in [
+            None,
+            Some(continuations::Strategy::Exact),
+            Some(continuations::Strategy::CheckedStores),
+        ] {
+            if !prefer_updates && strategy.is_none() {
+                continue;
+            }
+            if let Ok(candidate) =
+                emit_prepared_layout(reduced, options, prepared.clone(), strategy, prefer_updates)
+                && (strategy.is_none() || candidate.continuations.is_some())
+                && candidate.parameters == best.parameters
+                && render_cost(&candidate) < render_cost(&best)
+            {
+                best = candidate;
+            }
         }
     }
     Ok(best)
@@ -234,6 +243,7 @@ fn emit_prepared_layout(
     options: ReadableOptions,
     prepared: PreparedFunction,
     share_continuations: Option<continuations::Strategy>,
+    prefer_updates: bool,
 ) -> Result<ReadableC, ReadableError> {
     let PreparedFunction {
         program: presented,
@@ -315,7 +325,10 @@ fn emit_prepared_layout(
         names,
         &value_widths,
         display_nodes.unwrap_or(&[]),
-        options,
+        super::locals::LayoutOptions {
+            readable: options,
+            prefer_updates,
+        },
     );
     let hints = if options.recover_objects && program.uses_memory() {
         crate::codegen::address_types::register_hints(program)
