@@ -17,6 +17,24 @@ fn atom(n: &Node) -> Option<String> {
         Node::Step { assignments, .. } => Some(format!("{assignments:?}")),
         Node::Return(e) => Some(format!("return {e:?}")),
         Node::Evaluate(e) => Some(format!("eval {e:?}")),
+        Node::If {
+            condition,
+            taken,
+            not_taken,
+        } => Some(format!(
+            "if {} {{{}}} else {{{}}}",
+            cond(condition)?,
+            taken
+                .iter()
+                .map(atom)
+                .collect::<Option<Vec<_>>>()?
+                .join(";"),
+            not_taken
+                .iter()
+                .map(atom)
+                .collect::<Option<Vec<_>>>()?
+                .join(";")
+        )),
         _ => None,
     }
 }
@@ -136,6 +154,66 @@ fn terminal_suffixes_share_after_distinct_prefixes_and_keep_the_branch() {
             assert!(check(&source, &swapped, &atom, &cond).is_none());
         }
     }
+}
+
+#[test]
+fn nested_prefixes_keep_their_faulting_conditions_when_sharing_a_return() {
+    let ret = Node::Return(Expr::binary(BinaryOp::Add, r(0), r(1)));
+    let source = vec![
+        Node::If {
+            condition: r(0),
+            taken: vec![step(10, 3), ret.clone()],
+            not_taken: vec![],
+        },
+        Node::If {
+            condition: Expr::load(r(2), Width::U8),
+            taken: vec![step(20, 4)],
+            not_taken: vec![step(30, 5)],
+        },
+        ret,
+    ];
+    let names = BTreeMap::from([(0, "a".into()), (1, "b".into()), (2, "p".into())]);
+    let (candidate, evidence) = recover_with(&source, &atom, &cond, &names).unwrap();
+    assert_eq!(candidate.len(), 2);
+    assert_eq!(evidence.removed_conditions, 0);
+    assert_eq!(evidence.shared_fragments, 1);
+    assert!(check(&source, &candidate, &atom, &cond).is_some());
+    let Node::If { not_taken, .. } = &candidate[0] else {
+        panic!()
+    };
+    assert!(
+        matches!(not_taken.first(), Some(Node::If { condition, .. }) if condition.uses_memory())
+    );
+}
+
+#[test]
+fn common_nested_suffixes_preserve_each_dynamic_condition_evaluation() {
+    let ret = Node::Return(Expr::binary(BinaryOp::Add, r(0), r(1)));
+    let nested = |pc| Node::If {
+        condition: Expr::load(r(2), Width::U8),
+        taken: vec![step(pc, 7)],
+        not_taken: vec![step(pc + 1, 8)],
+    };
+    let source = vec![
+        Node::If {
+            condition: r(0),
+            taken: vec![step(10, 3), nested(11), ret.clone()],
+            not_taken: vec![],
+        },
+        step(20, 4),
+        nested(21),
+        ret,
+    ];
+    let names = BTreeMap::from([(0, "a".into()), (1, "b".into()), (2, "p".into())]);
+    let (candidate, evidence) = recover_with(&source, &atom, &cond, &names).unwrap();
+    assert_eq!(candidate.len(), 3);
+    assert_eq!(evidence.removed_conditions, 1); // Two static copies become one.
+    assert_eq!(evidence.shared_fragments, 3);
+    assert!(matches!(&candidate[1], Node::If { condition, .. } if condition.uses_memory()));
+    assert!(check(&source, &candidate, &atom, &cond).is_some());
+    let mut dropped = candidate;
+    dropped.remove(1);
+    assert!(check(&source, &dropped, &atom, &cond).is_none());
 }
 
 #[test]

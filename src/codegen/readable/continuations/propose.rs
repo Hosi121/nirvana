@@ -26,7 +26,8 @@ fn linear(
     }
     None
 }
-// Freeze each flat path up to its return. Sharing a suffix factors the
+// Freeze each lexical path up to its return, including nested branch prefixes.
+// Sharing a suffix factors the
 // continuation without commuting effects or re-evaluating its condition.
 struct Frozen<'a> {
     node: &'a Node,
@@ -44,7 +45,7 @@ fn terminal<'a>(
         budget.spend(1)?;
         if !matches!(
             node,
-            Node::Step { .. } | Node::Evaluate(_) | Node::Return(_)
+            Node::Step { .. } | Node::If { .. } | Node::Evaluate(_) | Node::Return(_)
         ) {
             return None;
         }

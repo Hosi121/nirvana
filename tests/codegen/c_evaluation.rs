@@ -205,6 +205,65 @@ fn native_c_continuations_share_cleanup_and_preserve_first_faults() {
 }
 
 #[test]
+fn native_c_nested_continuations_keep_conditional_faults_before_shared_stores() {
+    let result = b(BinaryOp::Add, load(r(0)), r(1));
+    let mut instructions = vec![
+        instruction(
+            0,
+            vec![store(c(0x100f), Width::U8, c(0x55))],
+            Control::Branch {
+                condition: r(1),
+                target: 8,
+            },
+        ),
+        instruction(
+            1,
+            vec![],
+            Control::Branch {
+                condition: b(
+                    BinaryOp::And,
+                    Expr::load(b(BinaryOp::Add, r(0), c(1)), Width::U8),
+                    c(1),
+                ),
+                target: 5,
+            },
+        ),
+    ];
+    for (pc, value) in [(2, 5), (5, 7), (8, 3)] {
+        instructions.extend([
+            instruction(pc, vec![store(r(0), Width::U8, c(value))], Control::Next),
+            instruction(
+                pc + 1,
+                vec![store(c(0x1000), Width::U8, c(0x33))],
+                Control::Next,
+            ),
+            instruction(pc + 2, vec![], Control::Return(result.clone())),
+        ]);
+    }
+    let program = Program::new(0, 2, instructions).unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            coalesce_locals: true,
+            ..ReadableOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        output
+            .continuations
+            .is_some_and(|e| e.shared_fragments >= 2),
+        "{}",
+        output.code
+    );
+    let inputs: Vec<_> = [0x1000, 0x1001, 0x1008, 0x100f, 0xffff, u64::MAX]
+        .into_iter()
+        .flat_map(|address| [0, 1, 3, u64::MAX].map(|condition| [address, condition]))
+        .collect();
+    compare(&program, &inputs);
+}
+
+#[test]
 fn native_c_equal_branch_bodies_still_evaluate_ordered_faulting_condition() {
     let result = b(BinaryOp::Xor, load(c(0x1000)), r(1));
     for condition in [
