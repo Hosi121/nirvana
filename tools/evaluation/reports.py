@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import control_graph as cg, semantics, stages, c_footprint as cf
 from . import state_memory as sm
+from .state_values import protocol as sv
 
 
 class Incompatible(ValueError):
@@ -50,6 +51,20 @@ def index(report):
                     if 'profile' in row['semantics']), 'missing declared probe metadata binding')
     if report.get('state_memory_sites', {}).get('enabled'):
         require(all('state_memory_sites' in row for row in rows), 'missing state memory denominator')
+    value_profile = report.get('state_values', {'enabled': False})
+    require(isinstance(value_profile, dict) and type(value_profile.get('enabled')) is bool, 'state value profile')
+    require(all(isinstance(row.get('state_values', {}), dict) for row in rows), 'state value row shape')
+    if value_profile['enabled']:
+        require(value_profile.get('model') == sv.MODEL
+                and all('state_values' in row for row in rows), 'missing state value denominator or model')
+    else:
+        require(all(row.get('state_values', {}).get('status', 'not_run') == 'not_run' for row in rows),
+                'state value results require an enabled profile')
+    if value_profile['enabled'] or 'state_values' in report['summary']:
+        counts = report['summary']['state_values']
+        require(isinstance(counts, dict) and all(type(n) is int for n in counts.values())
+                and dict(Counter(row.get('state_values', {}).get('status', 'not_run') for row in rows)) == counts,
+                'state value summary denominator')
     return result
 
 
@@ -155,6 +170,12 @@ def replay(root, row):
     else:
         require(semantic['status'] not in ['passed', 'counterexample', 'inconclusive'],
                 'missing semantic observation profile')
+    values = row.get('state_values', {'status': 'not_run'})
+    require(isinstance(values, dict), 'state value shape')
+    if values.get('status') in ['equivalent_under_model', 'counterexample_under_model', 'unknown', 'unsupported']:
+        require(footprint.get('status') == 'measured' and 'prepare_stdout_sha256' in semantic,
+                'state values require retained AST and bound probe metadata')
+    result['state_values'] = sv.replay(directory, row)
     return result
 
 
@@ -200,6 +221,13 @@ def compare(before_path, after_path):
         require(before[key] == after[key], f'changed {key}')
     require(before.get('c_footprint') == after.get('c_footprint'), 'changed C footprint profile')
     require(before.get('state_memory_sites') == after.get('state_memory_sites'), 'changed state memory profile')
+    value_enabled = [bool(report.get('state_values', {}).get('enabled')) for report in [before, after]]
+    require(value_enabled[0] == value_enabled[1], 'changed state value profile')
+    if value_enabled[0]:
+        for key in ['model', 'scope']:
+            require(before['state_values'][key] == after['state_values'][key], 'changed state value model')
+        require(tool_identity(before['state_values']['solver']) == tool_identity(after['state_values']['solver']),
+                'changed state value solver')
     require(before['corpus']['sha256'] == after['corpus']['sha256'], 'changed corpus manifest')
     for key in ['clang', 'c_compiler']:
         require(tool_identity(before[key]) == tool_identity(after[key]), f'changed {key} tool')
@@ -250,11 +278,17 @@ def compare(before_path, after_path):
                     and am['source'] == bm['source'], f'{key}: changed source memory profile')
             memory_change = sm.delta(am['generated'], bm['generated'])
             memory_regression |= am['generated']['status'] == 'measured' and bm['generated']['status'] != 'measured'
+        av, bv = a.get('state_values', {}), b.get('state_values', {})
+        if all(v.get('status') in ['equivalent_under_model', 'counterexample_under_model', 'unknown'] for v in [av, bv]):
+            fields = ['state_register', 'source_parameter', 'state_bytes', 'word_bytes', 'integer_abi', 'pointer', 'control', 'observations']
+            require(all(av['profile'][field] == bv['profile'][field] for field in fields) and av['source'] == bv['source'],
+                    f'{key}: changed source value model')
         rows.append({'id': key, 'cohort': a['cohort'],
                      'c_syntax_delta': content_change,
                      'c_footprint_regression': ar['c_footprint'] == 'measured' and br['c_footprint'] != 'measured',
                      'state_memory_regression': memory_regression,
                      'state_memory_delta': memory_change,
+                     'state_value_regression': ar['state_values'] == 'equivalent_under_model' and br['state_values'] != 'equivalent_under_model',
                      'distance': 'equal' if same_graphs else interval_change(a.get('distance'), b.get('distance')),
                      'distance_basis': 'identical_graphs' if same_graphs else 'recorded_search_intervals',
                      'before_interval': [a['distance']['lower_bound'], a['distance']['upper_bound']]
@@ -280,6 +314,9 @@ def compare(before_path, after_path):
             'architecture_regressions': sum(row['architecture_regression'] for row in rows),
             'c_footprint_regressions': sum(row['c_footprint_regression'] for row in rows),
             'state_memory_regressions': sum(row['state_memory_regression'] for row in rows),
+            'state_value_regressions': sum(row['state_value_regression'] for row in rows),
+            'state_value_counterexamples': sum(row['after_replay']['state_values'] == 'counterexample_under_model' for row in rows),
+            'candidate_state_values': dict(Counter(row['after_replay']['state_values'] for row in rows)),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',

@@ -18,6 +18,7 @@ def main():
     print(json.dumps(result, indent=2))
     if (result['semantic_regressions'] or result['structure_regressions']
             or result['architecture_regressions'] or result['c_footprint_regressions'] or result['state_memory_regressions']
+            or result['state_value_regressions'] or result['state_value_counterexamples']
             or result['structure'].get('regressed')):
         raise SystemExit(1)
 

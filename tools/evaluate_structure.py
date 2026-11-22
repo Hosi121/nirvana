@@ -26,6 +26,7 @@ from evaluation import control_graph as cg
 from evaluation import semantics
 from evaluation import c_footprint as cf
 from evaluation import state_memory as sm
+from evaluation.state_values import protocol as sv
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
@@ -283,6 +284,10 @@ def measure(case, tag, compiler, opt, args, out):
                 failed(error, 'evaluator_error')
                 (directory / f'{stage}.traceback.txt').write_text(traceback.format_exc())
         row['stages'][stage] = row['state_memory_sites']['status']
+    sv.attach(args, row, directory)
+    if args.state_values and row['state_values']['status'] in ['counterexample_under_model', 'evaluator_error']:
+        stage = 'state_values'
+        failed('state value model differs or evaluator failed', row['state_values']['status'])
     row['wall_seconds'] = time.monotonic() - start
     row['max_rss'] = None
     samples = [command['resources']['max_rss_kib'] for command in row['commands'] if 'resources' in command]
@@ -295,11 +300,16 @@ def run(args):
     for name, default in [('emit', 'readable-c'), ('measure_rss', False), ('semantic_probe', None),
                           ('semantic_seed', 0x6e697276616e6130), ('semantic_cases', 16),
                           ('semantic_steps', 4096), ('toolchain_manifest', None), ('semantic_inputs', None),
-                          ('c_footprint', False), ('state_memory_sites', False)]:
+                          ('c_footprint', False), ('state_memory_sites', False), ('state_values', False),
+                          ('value_solver', os.environ.get('NIRVANA_Z3', 'z3')), ('value_seconds', 2.0)]:
         if not hasattr(args, name):
             setattr(args, name, default)
     if args.state_memory_sites and (not args.c_footprint or not args.semantic_probe):
         raise ValueError('state memory sites require --c-footprint and --semantic-probe')
+    if args.state_values and not args.state_memory_sites:
+        raise ValueError('state values require --state-memory-sites')
+    if type(args.value_seconds) not in [int, float] or not 0 < args.value_seconds <= 30:
+        raise ValueError('state value solver budget must be positive and at most 30 seconds')
     cases = load_cases(args.cases)
     compilers = []
     for setting in args.compiler or ['gcc=cc']:
@@ -344,6 +354,12 @@ def run(args):
     if args.state_memory_sites:
         report['evaluation']['state_memory_sha256'] = digest(sm.__file__)
     report['semantic_probe'] = provenance(args.semantic_probe, args.timeout) if args.semantic_probe else None
+    report['state_values'] = {'model': sv.MODEL, 'enabled': args.state_values,
+                              'scope': 'C model return/state bytes for valid state[4]; checked helper contracts.'}
+    if args.state_values:
+        report['evaluation']['state_values_modules'] = sv.implementation()
+        report['state_values']['solver'] = provenance(args.value_solver, args.timeout)
+        report['budgets']['value_solver_seconds'] = args.value_seconds
     if args.semantic_inputs:
         if not args.semantic_probe:
             raise ValueError('semantic input rows require --semantic-probe')
@@ -387,6 +403,7 @@ def run(args):
     report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
     report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
     report['summary']['state_memory_sites'] = dict(Counter(r['state_memory_sites']['status'] for r in report['rows']))
+    report['summary']['state_values'] = dict(Counter(r['state_values']['status'] for r in report['rows']))
     report['resources']['runner_peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
@@ -402,6 +419,9 @@ def main():
     parser.add_argument('--semantic-probe', type=Path, help='built examples/evaluation_probe executable')
     parser.add_argument('--c-footprint', action='store_true', help='observe C operators, literals and condition syntax using Clang AST JSON')
     parser.add_argument('--state-memory-sites', action='store_true', help='align static memory sites through the fixed state[4] ABI; requires C AST and semantic probe')
+    parser.add_argument('--state-values', action='store_true', help='compare supported C state values with SMT; requires --state-memory-sites')
+    parser.add_argument('--value-solver', default=os.environ.get('NIRVANA_Z3', 'z3'))
+    parser.add_argument('--value-seconds', type=float, default=2, help='state value solver seconds per invocation')
     parser.add_argument('--semantic-inputs', type=Path, help='fixed four-word input rows; use matching --semantic-cases')
     parser.add_argument('--semantic-seed', type=int, default=0x6e697276616e6130)
     parser.add_argument('--semantic-cases', type=int, default=16)

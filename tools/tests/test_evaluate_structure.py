@@ -28,7 +28,7 @@ class RunnerTests(unittest.TestCase):
             binary.chmod(0o755)
             args = self.args(root, cases=cases, compiler=['gcc=cc'], optimization=['O2'],
                              decompiler=binary, semantic_probe=Path(sys.executable), c_footprint=True,
-                             state_memory_sites=True)
+                             state_memory_sites=True, state_values=True)
             def semantic(*args): args[1]['semantics'] = {'status': 'passed'}
             with mock.patch.object(tool.semantics, 'run', side_effect=semantic) as probe:
                 report = tool.run(args)
@@ -40,6 +40,16 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(row['c_footprint']['source']['status'], 'unavailable')
             self.assertEqual(row['c_footprint']['generated']['status'], 'unavailable')
             self.assertEqual(report['summary']['state_memory_sites'], {'unavailable': 1})
+            self.assertEqual(report['summary']['state_values'], {'unavailable': 1})
+
+    def test_state_values_require_sites_and_a_finite_solver_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, 'require --state-memory-sites'):
+                tool.run(self.args(root, state_values=True))
+            for seconds in [0, -1, float('nan'), float('inf'), 31, True]:
+                with self.subTest(seconds=seconds), self.assertRaisesRegex(ValueError, 'solver budget'):
+                    tool.run(self.args(root, value_seconds=seconds))
 
     def test_state_memory_requires_both_ast_and_abi_evidence(self):
         for settings in [dict(c_footprint=True), dict(semantic_probe=Path(sys.executable))]:
