@@ -5,8 +5,9 @@ from .. import c_footprint as cf
 from .ast import observe, LOOP_LIMIT
 from .terms import Graph, Unsupported
 from .solver import compare
+from . import definedness
 
-MODEL = 'nirvana-state4-values-v3'
+MODEL = 'nirvana-state4-values-v4'
 MEMORY_PROFILE = {'memory_base': 4096, 'memory_size': 512, 'state_pointer': 4224}
 
 
@@ -32,10 +33,12 @@ def measure(source_text, generated_text, name, parameters, solver, seconds=2, *,
               'completed_solver_wall_seconds': sum(n['wall_seconds'] for n in proof.responses),
               'profile': {**memory['profile'], **MEMORY_PROFILE, 'integer_abi': 'x86-64-lp64', 'pointer': 'valid-state-only',
                           'control': 'closed-bounded-loops', 'loop_iterations': LOOP_LIMIT,
-                          'completion': 'all-inputs', 'observations': ['return', 'state_bytes']},
+                          'completion': 'all-inputs', 'definedness': 'all-modeled-values', 'observations': ['return', 'state_bytes']},
               'source': summary(a), 'generated': summary(b), 'reason': proof.reason, 'witness': proof.witness,
-              'bound_witness': proof.bound_witness}
-    raw = {'schema': 'nirvana-state4-value-graph-v2', 'nodes': [asdict(n) for n in graph.nodes],
+              'bound_witness': proof.bound_witness, 'definedness_witness': proof.definedness_witness}
+    raw = {'schema': 'nirvana-state4-value-graph-v3', 'nodes': [asdict(n) for n in graph.nodes],
+           'intervals':[graph.bounds(i) for i in range(len(graph.nodes))],
+           'definedness':[{'value':i,'predicate':term} for i,term in definedness.predicates(graph)],
            'source_outputs': a.outputs, 'generated_outputs': b.outputs,
            'source_incomplete': a.incomplete, 'generated_incomplete': b.incomplete}
     return Evaluation(report, proof.query, proof.responses, raw)

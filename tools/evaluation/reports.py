@@ -286,7 +286,7 @@ def compare(before_path, after_path):
         av, bv = a.get('state_values', {}), b.get('state_values', {})
         if all(v.get('status') in ['equivalent_under_model', 'counterexample_under_model', 'unknown'] for v in [av, bv]):
             fields = ['state_register', 'source_parameter', 'state_bytes', 'word_bytes', 'integer_abi', 'pointer', 'control', 'observations',
-                      'memory_base', 'memory_size', 'state_pointer', 'loop_iterations', 'completion']
+                      'memory_base', 'memory_size', 'state_pointer', 'loop_iterations', 'completion', 'definedness']
             require(all(av['profile'][field] == bv['profile'][field] for field in fields) and av['source'] == bv['source'],
                     f'{key}: changed source value model')
         rows.append({'id': key, 'cohort': a['cohort'],

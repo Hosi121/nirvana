@@ -7,6 +7,7 @@ outside this first profile. Graph IDs and storage/local identities are separate.
 from dataclasses import dataclass
 import hashlib
 import json
+from . import intervals
 
 
 class Unsupported(ValueError):
@@ -42,12 +43,12 @@ def mask(typ):
 
 
 def number(value, typ):
-    return value - (1 << typ.bits) if typ.signed and value >> (typ.bits - 1) else value
+    return intervals.number(value,typ)
 
 
 class Graph:
     def __init__(self):
-        self.nodes, self.ids = [], {}
+        self.nodes, self.ids, self.ranges = [], {}, []
         self.inputs = [self.intern(Node('input', U64, value=i)) for i in range(4)]
 
     def intern(self, node):
@@ -61,6 +62,15 @@ class Graph:
         return identity
 
     def type(self, value): return self.nodes[value].type
+    def bounds(self,value):
+        while len(self.ranges)<=value:
+            node=self.nodes[len(self.ranges)]
+            self.ranges.append(intervals.derive(node,[self.ranges[n] for n in node.args]))
+        return self.ranges[value]
+    def numeric_bounds(self,value):
+        constant=self.constant(value)
+        if constant is None: return self.bounds(value)
+        n=number(constant,self.type(value));return n,n
     def constant(self, value):
         n = self.nodes[value]
         return n.value if n.op == 'const' else None
@@ -74,12 +84,8 @@ class Graph:
         if typ == BOOL: return self.truth(value)
         constant = self.constant(value)
         if typ.signed:
-            if constant is not None:
-                n = number(constant, before)
-                if not -(1 << (typ.bits - 1)) <= n < 1 << (typ.bits - 1):
-                    raise Unsupported('out-of-range signed conversion')
-            elif typ.bits < before.bits or typ.bits == before.bits and not before.signed:
-                raise Unsupported('unknown signed conversion range')
+            lo,hi=self.numeric_bounds(value);minimum,maximum=intervals.domain(typ)
+            if lo<minimum or hi>maximum: raise Unsupported('out-of-range or unknown signed conversion')
         if constant is not None: return self.const(number(constant, before), typ)
         return self.intern(Node('cast', typ, (value,)))
 
@@ -104,7 +110,7 @@ class Graph:
         if op not in ['-', '~']: raise Unsupported('unary operator')
         n = self.constant(value)
         if op == '-' and typ.signed:
-            if n is None or number(n, typ) == -(1 << (typ.bits - 1)):
+            if self.numeric_bounds(value)[0] == -(1 << (typ.bits - 1)):
                 raise Unsupported('unknown signed negation range')
         if n is not None: return self.const(-n if op == '-' else ~n, typ)
         return self.intern(Node(op, typ, (value,)))
@@ -120,7 +126,11 @@ class Graph:
             if count is None or not 0 <= number(count, self.type(b)) < before.bits:
                 raise Unsupported('unknown or invalid shift count')
             b = self.const(count, Type(before.bits))
-            if typ != before or before.signed: raise Unsupported('signed shift outside profile')
+            if typ != before: raise Unsupported('shift result promotion')
+            if before.signed:
+                lo,hi=self.numeric_bounds(a)
+                if lo<0 or op=='<<' and hi << count > intervals.domain(before)[1]:
+                    raise Unsupported('unknown signed shift range')
         elif self.type(b) != before or not compare and typ != before:
             raise Unsupported('binary operand promotions')
         if op not in ['+', '-', '*', '&', '|', '^', '/', '%', '<<', '>>', '==', '!=', '<', '<=', '>', '>=']:
@@ -139,11 +149,12 @@ class Graph:
             if op == '^':
                 if x == 0: return b
                 if y == 0: return a
-        if before.signed and op in ['+', '-', '*', '/', '%'] and (x is None or y is None):
-            raise Unsupported('unknown signed arithmetic range')
+        if before.signed and op in ['+', '-', '*']:
+            lo,hi=intervals.arithmetic(op,self.numeric_bounds(a),self.numeric_bounds(b));minimum,maximum=intervals.domain(before)
+            if lo<minimum or hi>maximum: raise Unsupported('unknown signed arithmetic range')
         if op in ['/', '%'] and (y is None or y == 0): raise Unsupported('unknown or zero divisor')
-        if (before.signed and op in ['/', '%'] and x is not None
-                and number(x, before) == -(1 << (before.bits - 1)) and number(y, before) == -1):
+        if (before.signed and op in ['/', '%'] and self.numeric_bounds(a)[0] == -(1 << (before.bits - 1))
+                and number(y, before) == -1):
             raise Unsupported('signed quotient overflow')
         if x is not None and y is not None:
             value = self.calculate(Node(op, typ, (a, b)), [x, y])
@@ -188,19 +199,23 @@ class Graph:
             return quotient if op == '/' else x - quotient * y
         return {'+': lambda: x + y, '-': lambda: x - y, '*': lambda: x * y,
                 '&': lambda: x & y, '|': lambda: x | y, '^': lambda: x ^ y,
-                '<<': lambda: x << y, '>>': lambda: x >> y,
+                '<<': lambda: x << y, '>>': lambda: values[0] >> values[1],
                 '==': lambda: int(x == y), '!=': lambda: int(x != y),
                 '<': lambda: int(x < y), '<=': lambda: int(x <= y),
                 '>': lambda: int(x > y), '>=': lambda: int(x >= y)}[op]()
 
     def evaluate(self, roots, inputs):
+        values=self.values(inputs)
+        return [values[i] for i in roots]
+
+    def values(self, inputs):
         if len(inputs) != 4 or any(type(v) is not int or not 0 <= v < 2**64 for v in inputs):
             raise Unsupported('state input words')
         values = []
         for node in self.nodes:
             value = inputs[node.value] if node.op == 'input' else node.value if node.op == 'const' else self.calculate(node, [values[i] for i in node.args])
             values.append(value & mask(node.type))
-        return [values[i] for i in roots]
+        return values
 
     def summary(self, roots):
         fingerprints = []
@@ -244,7 +259,8 @@ class Graph:
                 term = f'(ite ({operator} {args[0]} {args[1]}) {literal(1, typ)} {literal(0, typ)})'
             else:
                 operator = {'+': 'bvadd', '-': 'bvsub', '*': 'bvmul', '&': 'bvand', '|': 'bvor', '^': 'bvxor',
-                            '/': 'bvudiv', '%': 'bvurem', '<<': 'bvshl', '>>': 'bvlshr'}[op]
+                            '/': 'bvsdiv' if self.type(node.args[0]).signed else 'bvudiv',
+                            '%': 'bvsrem' if self.type(node.args[0]).signed else 'bvurem', '<<': 'bvshl', '>>': 'bvlshr'}[op]
                 term = f'({operator} {args[0]} {args[1]})'
             lines.append(f'(define-fun v{i} () (_ BitVec {typ.bits}) {term})\n')
         return ''.join(lines)

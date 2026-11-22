@@ -4,6 +4,7 @@ import math
 import re
 import subprocess
 import time
+from . import definedness
 
 
 @dataclass
@@ -14,6 +15,7 @@ class Proof:
     reason: str | None = None
     witness: dict | None = None
     bound_witness: dict | None = None
+    definedness_witness: dict | None = None
 
 
 def compare(graph, source, generated, executable, seconds=2, *, recorded=None, failure_reason=None):
@@ -27,6 +29,8 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
     completion = [source.incomplete, generated.incomplete]
     if any(graph.type(i).bits != 1 for i in completion): raise ValueError('state value completion type')
     difference += ''.join(f' (= v{i} #b1)' for i in completion)
+    premises=definedness.predicates(graph)
+    if premises: difference += ' (not (and '+' '.join(term for _,term in premises)+'))'
     query = (f'(set-option :timeout {max(1, int(seconds * 1000))})\n'
              '(set-option :produce-models true)\n(set-option :pp.bv-literals true)\n'
              + graph.smt() + f'(assert (or {difference}))\n')
@@ -68,12 +72,17 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
             words = {int(i): int(n, 16) for i, n in re.findall(r'\(word([0-3])\s+#x([0-9a-fA-F]{16})\)', response)}
             if set(words) != set(range(4)): raise ValueError('solver input word denominator')
             inputs = [words[i] for i in range(4)]
-            unfinished = graph.evaluate(completion, inputs)
-            if any(unfinished):
+            values=graph.values(inputs)
+            bad=definedness.violations(graph,values)
+            unfinished = [values[i] for i in completion]
+            if bad:
+                proof.reason='definedness_not_established'
+                proof.definedness_witness={'input_words':inputs,'value_ids':bad}
+            elif any(unfinished):
                 proof.reason = 'loop_bound_exhausted'
                 proof.bound_witness = {'input_words': inputs, 'incomplete': dict(zip(['source', 'generated'], map(bool, unfinished)))}
             else:
-                a, b = [graph.evaluate(m.outputs, inputs) for m in [source, generated]]
+                a, b = [[values[i] for i in m.outputs] for m in [source, generated]]
                 if a == b: raise ValueError('solver countermodel did not replay')
                 proof.status = 'counterexample_under_model'
                 proof.witness = {'input_words': inputs, 'source': a, 'generated': b}
@@ -84,6 +93,6 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
     except subprocess.TimeoutExpired:
         proof.reason = 'solver_timeout'
     except (OSError, ValueError) as error:
-        proof.status, proof.witness, proof.bound_witness = 'unknown', None, None
+        proof.status, proof.witness, proof.bound_witness, proof.definedness_witness = 'unknown', None, None, None
         proof.reason = str(error)
     return proof

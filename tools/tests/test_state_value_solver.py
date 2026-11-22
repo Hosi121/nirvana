@@ -71,7 +71,7 @@ class StateValueProofs(unittest.TestCase):
              'return nirvana_load(&m,address+24,8);')
         result = self.compare(a,b)
         self.assertEqual(result.report['status'],'equivalent_under_model')
-        self.assertEqual(result.report['model'],'nirvana-state4-values-v3')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v4')
 
     def test_loop_completion_is_proved_over_all_words_including_wraparound(self):
         a = ('while(1){++state[1];if(state[0]&1){state[2]=200;break;}'
@@ -114,6 +114,19 @@ class StateValueProofs(unittest.TestCase):
                             'nirvana_load(&m,address+(3-index)*8,8)^value);}'
                             'return nirvana_load(&m,address,8);')
         self.assertEqual(result.report['status'],'equivalent_under_model')
+
+    def test_signed_ranges_and_their_definedness_are_proved_without_assuming_the_intervals(self):
+        a=('int32_t low=(uint8_t)state[0];int32_t product=(low-200)*3;'
+           'state[1]=(uint64_t)(product/-7);state[2]=(uint64_t)(product%-7);'
+           'return (uint64_t)(-product);')
+        b=('int32_t low=(int32_t)(nirvana_load(&m,address,8)&255);int32_t negative=600-low*3;'
+           'nirvana_store(&m,address+8,8,(uint64_t)(negative/7));'
+           'nirvana_store(&m,address+16,8,(uint64_t)(-(negative%7)));return (uint64_t)negative;')
+        result=self.compare(a,b)
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+        self.assertEqual(result.report['profile']['definedness'],'all-modeled-values')
+        self.assertTrue(result.graph['definedness'])
+        self.assertIsNone(result.report['definedness_witness'])
 
     def test_a_rare_branch_countermodel_replays_in_actual_source_and_generated_c(self):
         compiler = shutil.which('cc')

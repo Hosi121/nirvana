@@ -29,7 +29,7 @@ class ValueTerms(unittest.TestCase):
             with self.assertRaises(Unsupported):
                 g.binary(op, g.const(-(1 << 31), Type(32, True)), g.const(-1, Type(32, True)), Type(32, True))
         with self.assertRaises(Unsupported): g.cast(g.inputs[0], Type(64, True))
-        signed = g.cast(g.cast(g.inputs[0], BYTE), Type(32, True))
+        signed = g.cast(g.binary('&',g.inputs[0],g.const((1<<31)-1),U64),Type(32,True))
         with self.assertRaises(Unsupported): g.binary('+', signed, g.const(1, Type(32, True)), Type(32, True))
         for count in [64, 65, (1 << 64) - 1]:
             with self.assertRaises(Unsupported): g.binary('<<', g.inputs[0], g.const(count), U64)

@@ -97,6 +97,10 @@ class StateValueAST(unittest.TestCase):
             'for(uint64_t i=0;i<3;++i){for(uint64_t j=0;j<4;++j){'
             'if(j==1)continue;if(i==2)break;state[0]+=i+j;}}return state[0];',
             'for(uint64_t i=0;i<4;++i){uint64_t old=state[i];state[3-i]^=old+i;state[i]+=i;}return state[0]+state[3];',
+            'int32_t low=(uint8_t)state[0];int32_t product=(low-200)*3;'
+            'int8_t small=(int8_t)(low&127);state[1]=(uint64_t)(product/-7);'
+            'state[2]=(uint64_t)(product%-7);state[3]=(uint64_t)(low<<3);'
+            'return (uint64_t)(-product)+(uint64_t)small;',
         ]
         rng = random.Random(17)
         vectors = [[0]*4, [2**64-1]*4, [1<<63,1,2,3], [1,2,3,4]] + [[rng.getrandbits(64) for _ in range(4)] for _ in range(16)]
