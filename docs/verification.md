@@ -86,6 +86,8 @@ NIRVANA_MIDDLE_OBJECTS=target/structure-baseline cargo test --locked --test mode
 
 ## Native Cと生成C
 
+[状態値のCモデル](../tools/evaluation/state_values/)は、Clang ASTをC局所変数のsnapshotと32個の状態byteへ対応付けます。[native対照](../tools/tests/test_state_value_ast.py)はcast・alias・条件・旧値の保存を実際のCと照合し、[SMT対照](../tools/tests/test_state_value_solver.py)は稀な分岐の反例を元C・生成Cで再現します。[保存結果の検査](../tools/tests/test_state_value_protocol.py)は、graph・query・solver出力をhashごと書き換えた場合や、ABI・数値型の変更も検出します。モデルはx86-64 LP64のC整数と既知helper契約を信頼基盤に含みます。変換・演算の境界は[C11草案 §6.3.1.3・§6.5](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf)を参照します。
+
 [fixtureガイド](../tests/fixtures/README.md)に入力・ABIとコンパイル条件をまとめています。
 元Cは有効な引数で実行し、fixture ABIの返り値と4状態ワードを比較します。
 IR間は全RAMのbyte列を、再コンパイルCとの比較は全RAMのdigestまたはbyte列を使います。

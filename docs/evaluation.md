@@ -30,6 +30,19 @@ ASTの生データとhashを保持し、比較器が集計値とfingerprintを�
 
 動的添字、書換えられるアドレス引数、未解決の参照元や呼出しは`partial`として件数を残します。整数の切詰め・wrapは幅を保って扱います。これはABIの状態ワードとの位置の対応で、元の局所変数・型・格納値の同一性は次の評価対象です。生ASTとhash付きのABI情報から対応と集計を再検査し、対応範囲の喪失を比較結果へ記録します。
 
+`--state-values`は、同じABIの元Cと生成Cを[型付きの値グラフ](../tools/evaluation/state_values/)へ変換し、返り値と32-byteの状態に差がある入力をSMTで探します。最初の対象は閉じた`if / return`と整数演算です。局所変数への代入は値のsnapshotへ、メモリはbyte列へ対応付け、部分書込みとcastの幅を保持します。x86-64 LP64、有効な状態ポインタ、状態内の参照、既知のchecked-memory helper契約を前提にします。未知のsigned overflow・範囲外のsigned cast・ゼロ除算・未解決の参照・制御は、評価の未対応として記録します。
+
+`equivalent_under_model`は4状態ワードの全域に対するモデル下の結果です。SATは値グラフで再実行し、`counterexample_under_model`として入力と差を保存します。sourceの変数名や寿命、機械語全体の正しさはそれぞれ別の評価項目です。無効ポインタのfault、全RAM、PC・予算は既存の具体実行検査へ結びます。値グラフの規模・fingerprintは構文的な補助観測として扱います。
+
+```sh
+python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.json \
+  --clang clang-18 --compiler gcc=cc --compiler clang18=clang-18 \
+  --semantic-probe target/debug/examples/evaluation_probe --c-footprint --state-memory-sites \
+  --state-values --value-solver target/verification-venv/bin/z3 --out target/structure-values
+```
+
+AST・ABI情報から値グラフと問い合わせを再構築し、hash付きのsolver出力とSAT入力を照合します。UNSATは保存したsolverの判定を使います。報告の評価器revisionとmodule hashを揃えて再解析します。solverの完了した起動ごとの時間を保存し、そのRSSは未計測として扱います。Z3の準備と正負対照は[検証ガイド](verification.md)にまとめています。
+
 `--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
 
 同じprobeの`stage_checks`は、Low IR→Middle IRの再構成、直接MIR実行と戻し変換、経路条件回復後のMIRを別々に記録します。0/1/2/4/8/16/32/64/128と指定上限の各予算で、全レジスタ・全RAM・最初のfault・PC・traceを元IRと照合します。総実行予算を超えた段階は未判定として残します。反例や観測器のエラーがあっても、native/Cの比較は独立に進めます。
