@@ -1,0 +1,103 @@
+{
+  "schema": "nirvana-m0-checkpoint-v1",
+  "milestone": "M0",
+  "status": "achieved-for-fixed-profile",
+  "scope": "nirvana-structure-initial-v1; x86-64 LP64 state[4]; development and sealed holdout",
+  "evaluator_revision": "2d1b72de216f346a5382e56750c273255fd70d95",
+  "corpus_sha256": "6b5ece7ac0c9b15fe8081f519cff0c1d7ee48475a6f894d5775ba9de28df8184",
+  "requested_profiles": 24,
+  "cohorts": {
+    "development": 16,
+    "holdout": 8
+  },
+  "input_vectors": 24,
+  "input_vectors_sha256": "d9826735f9bc2a6f273dd3089dd0741b0e65a7e9e15b49b113be6d722694f79d",
+  "reports": {
+    "before": {
+      "file": "target/night-evaluation-20261123/v6-initial-before/report.json",
+      "sha256": "99d76c5b41071ffd43b090f5b32363c06434908aea0da145fb885cebafa8b240"
+    },
+    "after": {
+      "file": "target/night-evaluation-20261123/v6-initial-after/report.json",
+      "sha256": "bfd1246b1af3c3c4152dcbe66320d13806ebf56db4d06b5c6b64084b72d79f36"
+    },
+    "comparison": {
+      "file": "target/night-evaluation-20261123/v6-initial-comparison.json",
+      "sha256": "068d56614c9e4d1ea865f8fd8f56846cd00b370ccb0724cdc65899451b1dcc43"
+    }
+  },
+  "binaries": {
+    "before": {
+      "path": "/home/hosi/nirvana/target/night-evaluation-20261123/word-before-tools/nirvana",
+      "sha256": "3063f48a38fb465aba6eac90443788938cdf1704fd9b41e746488d4c6e50805a",
+      "version": "nirvana 0.1.0 git=62bf2ef07cdc5670e2974c58586c3824b7b0f616 source_dirty=false",
+      "returncode": 0,
+      "stderr": "",
+      "build": {
+        "model": "nirvana-rust-target-build-v1",
+        "package_version": "0.1.0",
+        "source_revision": "62bf2ef07cdc5670e2974c58586c3824b7b0f616",
+        "source_dirty": false
+      }
+    },
+    "after": {
+      "path": "/home/hosi/nirvana/target/night-evaluation-20261123/word-after-tools/nirvana",
+      "sha256": "7788952ca8137db0a28b154a9ad2c77508e95df2a96d7763e328acb5587a3f33",
+      "version": "nirvana 0.1.0 git=e06a2e59d9297598eed5917910bd104a9be75dbf source_dirty=false",
+      "returncode": 0,
+      "stderr": "",
+      "build": {
+        "model": "nirvana-rust-target-build-v1",
+        "package_version": "0.1.0",
+        "source_revision": "e06a2e59d9297598eed5917910bd104a9be75dbf",
+        "source_dirty": false
+      }
+    }
+  },
+  "toolchain": {
+    "gcc": {
+      "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "executable_sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26"
+    },
+    "clang18": {
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+      "executable_sha256": "1068ebb01110d586548c355156ebd48342d94630cb6af52d21fe60f7e2a0faa3"
+    }
+  },
+  "solver": "Z3 version 4.15.4 - 64 bit",
+  "value_model": "nirvana-state4-values-v6",
+  "observations": {
+    "native": 576,
+    "generated_c": 3456,
+    "stage_comparisons": 36000,
+    "source_values": {
+      "equivalent_under_model": 17,
+      "unsupported": 7
+    },
+    "state_memory_sites": {
+      "measured": 16,
+      "partial": 8
+    },
+    "structure": {
+      "equal": 24
+    },
+    "measured_commands": 360,
+    "timing": "single runs; per-command wall time and largest-process RSS retained"
+  },
+  "checks": {
+    "same_objects_inputs_and_contracts": "replayed by tools/compare_structure_reports.py",
+    "native_ir_generated_c": "passed for all 24 profiles",
+    "low_middle_stages": "passed for all 24 profiles",
+    "nondebug_objects": 24,
+    "rust_tests_passed": 1400,
+    "rust_tests_ignored": 53,
+    "python_tests_run": 149,
+    "python_tests_skipped": 2,
+    "clippy": "all targets; warnings denied"
+  },
+  "limits": [
+    "C source values observe return and 32 state bytes under the fixed valid-pointer model",
+    "17 source-value proofs and 7 unsupported profiles retain distinct outcomes",
+    "M0 completion covers evaluation infrastructure; semantic and recovery coverage are tracked per profile"
+  ]
+}

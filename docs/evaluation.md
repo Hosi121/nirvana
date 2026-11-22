@@ -35,7 +35,9 @@ ASTの生データとhashを保持し、比較器が集計値とfingerprintを�
 
 `equivalent_under_model`は4状態ワードの全域に対するモデル下の結果です。SATは値グラフで再実行し、`counterexample_under_model`として入力と差を保存します。sourceの変数名や寿命、機械語全体の正しさはそれぞれ別の評価項目です。無効ポインタのfault、全RAM、PC・予算は既存の具体実行検査へ結びます。値グラフの規模・fingerprintは構文的な補助観測として扱います。
 
-値モデルv5は、生成Cのrecord・view・整数アドレスを宣言時の値として保存します。ループ内の宣言は各反復で捕捉し直します。signed演算は保守的な区間で候補を作り、幅を広げた独立のSMT式でcastの範囲・overflowなどの前提も検査します。前提の反例は`unknown / definedness_not_established`として再実行します。既知の整数helperには別の全域契約を使い、符号拡張、mask付き算術シフト、8/16/32-bitの商・剰余を扱います。C演算の未定義動作とhelperの全域定義を区別します。
+値モデルv6は、生成Cのrecord・view・整数アドレスを宣言時の値として保存します。ループ内の宣言は各反復で捕捉し直します。signed演算は保守的な区間で候補を作り、幅を広げた独立のSMT式でcastの範囲・overflowなどの前提も検査します。前提の反例は`unknown / definedness_not_established`として再実行します。既知の整数helperには別の全域契約を使い、符号拡張、mask付き算術シフト、8/16/32-bitの商・剰余を扱います。C演算の未定義動作とhelperの全域定義を区別します。
+
+定数除算では、同じ幅・分子・除数の商を任意の関数へ置き換えた保守的な抽象化も使います。剰余は`n-q*d`、signed除数は絶対値と結果の符号へ分けます。この広いモデルでUNSATなら元の演算でも同値です。抽象化のSAT・unknownは通常のbit-vector式で再検査し、反例は元の演算で再実行します。抽象化には最大0.25秒（指定予算の1/4以下）、通常問い合わせと反例取得にはそれぞれ`--value-seconds`を使い、最大3回の起動と合計の完了時間を記録します。通常式と抽象式、各応答の問い合わせ区分を別々に保存・再検査します。
 
 ```sh
 python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.json \

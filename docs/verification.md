@@ -133,6 +133,9 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 [符号付き整数モデル](../tests/models/signed_integer.smt2)は、算術シフトの符号埋めと上位積の2の補数補正を、誤った変換の反例とともに検査します。
 [符号拡張の検査](../tests/verification/unary_ops.rs)は、各幅の補正式と入れ子の拡張を実際のSMTエンコーダで照合し、誤ったゼロ拡張の反例をIRで再実行します。
 [word除算の検査](../tests/verification/word_signed.rs)は、整数モデルで商・剰余を、bit-vectorモデルで幅への射影・右シフトの分割を検査します。[GCC入力](../tests/fixtures/recovery/word-signed-reciprocal.c)は、32-bitの結果と64-bitへ拡張した戻り値をnative・IR・生成Cで比較します。
+[途中値の符号補正](../tests/verification/word_correction.rs)は、8/16/32-bit・正負66組について、全積の範囲・補正値の範囲・商・剰余の264問い合わせをUNSATで確認します。最小負数に必要な厳しい誤差条件を外す対照はSATとなり、IRで商43と正しい42の差を再現します。[実行対照](../tests/transform/word_signed_division.rs)は264種の補正・分配形を独立した整数演算と比較し、[意味IR](../tests/model/semantic_ir/word.rs)は入力の上書き・fault・途中予算を含めて元の全状態を検査します。定数除算の背景は[LLVMの実装](https://llvm.org/doxygen/DivisionByConstantInfo_8cpp_source.html)を参照してください。
+
+C値モデルの除算抽象化は、[SMT-LIBのsigned演算の定義](https://smt-lib.org/logics-all.shtml#QF_BV)に沿い、任意のunsigned商関数と`n-q*d`から四つの符号ケースを照合します。[対照](../tools/tests/test_state_value_helpers.py)は8/16/32/64-bitの280問い合わせがUNSAT、byteの全65,536組は実際のC商・剰余と一致します。`NIRVANA_VALUE_PROOFS=DIR`で問い合わせを保存できます。抽象化だけのSATを[通常の式へ戻す検査](../tools/tests/test_state_value_solver.py)と、問い合わせ区分を含む[保存結果の検査](../tools/tests/test_state_value_protocol.py)も行います。
 [全域商・剰余の検査](../tests/verification/division_ops.rs)は、符号の4通りを合わせて64-bit全入力の定義を照合し、除数ゼロ・±1と誤った変換の反例も検査します。8-bitの復元kernelは実際のIR演算との等式として照合します。
 [word値グラフの検査](../tests/model/semantic_ir/word.rs)は、上位bitを失った分子、レジスタの上書き、符号境界を跨ぐループについて、元レジスタ・RAM・履歴・fault・予算を比較します。[GCC入力](../tests/fixtures/recovery/word-signed-memory.c)もnative・IR・生成Cで比較します。
 [既知bitの検査](../tests/verification/known_bits.rs)は転送規則をSMTで、[dataflow検査](../tests/dataflow/known_bits.rs)は小領域の全列挙・64-bit境界・φとループの不変条件で確認します。設計の参考は[LLVM KnownBits](https://llvm.org/doxygen/structllvm_1_1KnownBits.html)で、Nirvanaの規則は全域の64-bit演算とmaskしたシフト数に対して検査します。
