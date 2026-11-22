@@ -359,9 +359,18 @@ fn check_generated_options(
                 }
                 command.arg(format!("-DNV_HOST_DEPTH_LIMIT={depth}"));
                 compile(command.arg(&source).arg("-o").arg(&binary));
+                let observed = native::run_fields(&binary, &text, 94);
+                let retained = observed
+                    .iter()
+                    .map(|row| row.iter().map(u64::to_string).collect::<Vec<_>>().join(" ") + "\n")
+                    .collect::<String>();
+                std::fs::write(
+                    directory.join(format!("{mode}{generated_opt}-{depth}.observed.tsv")),
+                    retained,
+                )
+                .unwrap();
                 assert_eq!(
-                    native::run_fields(&binary, &text, 94),
-                    expected_rows,
+                    observed, expected_rows,
                     "{mode} {generated_opt} depth{depth}: all registers,PC,budgets,fault,RAM digest"
                 );
                 generated_cases += cases.len();

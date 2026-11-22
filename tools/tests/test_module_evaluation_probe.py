@@ -4,10 +4,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tools'))
+from evaluation import module_profile
 
 
 class ModuleEvaluationProbe(unittest.TestCase):
@@ -49,6 +52,15 @@ class ModuleEvaluationProbe(unittest.TestCase):
             self.assertEqual(report['checked_ram_bytes'],report['generated_compared']*report['memory_size'])
             self.assertEqual(len((out/'expected.tsv').read_text().splitlines()),report['cases'])
             self.assertEqual((out/'native-observed.tsv').read_text().split(),['0','1','2','3','4'])
+            replayed=module_profile.replay(out)
+            self.assertEqual(replayed['generated_rows'],report['generated_compared'])
+            observed=out/'core-O0-64.observed.tsv';saved=observed.read_text()
+            observed.write_text('1'+saved[1:])
+            with self.assertRaisesRegex(ValueError,'generated observations'): module_profile.replay(out)
+            observed.write_text(saved)
+            memory=out/'memory-0000.bin';saved=memory.read_bytes()
+            memory.write_bytes(bytes([saved[0]^1])+saved[1:])
+            with self.assertRaisesRegex(ValueError,'RAM digest'): module_profile.replay(out)
 
     def test_decode_and_oracle_failures_keep_the_requested_denominator(self):
         for variant in ['unsupported','bad-oracle']:

@@ -55,6 +55,24 @@ fn check(
         .iter()
         .find(|f| f.name == "fixture")
         .unwrap();
+    let root_steps = module
+        .program
+        .instructions()
+        .iter()
+        .filter(|i| root.address <= i.address() && i.address() < root.address + root.size)
+        .count();
+    let wanted = inputs.len() + root_steps * 7;
+    if root_steps > 256
+        || wanted > 4096
+        || module
+            .image
+            .memory
+            .len()
+            .checked_mul(wanted)
+            .is_none_or(|n| n > 128 * 1024 * 1024)
+    {
+        return "\"status\":\"budget_exhausted\",\"reason\":\"linked-leaf case/RAM budget\"".into();
+    }
     let mut cases: Vec<_> = inputs
         .iter()
         .map(|&input| fixtures::Case {
@@ -234,7 +252,7 @@ pub(super) fn run(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn 
         }
     };
     let report = format!(
-        "{{\"schema\":\"nirvana-module-evaluation-v1\",\"profile\":\"linked-leaf-state4-full-state-v1\",\"build\":{},\"requested_vectors\":{},\"native_requested\":{},\"stack_size\":65536,\"load_bias\":{},\"native_oracle\":{},\"wall_milliseconds\":{},{status}}}\n",
+        "{{\"schema\":\"nirvana-module-evaluation-v1\",\"profile\":\"linked-leaf-state4-full-state-v1\",\"build\":{},\"requested_vectors\":{},\"native_requested\":{},\"stack_size\":65536,\"load_bias\":{},\"native_oracle\":{},\"wall_milliseconds\":{},\"limits\":{{\"root_instructions\":256,\"cases\":4096,\"expected_ram_bytes\":134217728}},{status}}}\n",
         json::quote(nirvana::BUILD_VERSION),
         inputs.len(),
         if oracle.is_some() { inputs.len() } else { 0 },
