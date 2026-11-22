@@ -211,6 +211,19 @@ class SemanticTests(unittest.TestCase):
                         stages.validate(value, 4096, Path(directory), 24)
                 else: stages.validate(value, 4096, Path(directory), 24)
 
+    def test_effect_order_evidence_counts_scalar_and_memory_moves_separately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = dict(model='c-fragment-continuation-v4', removed_conditions=0, shared_fragments=1,
+                            compared_graph_nodes=20, effect_order=dict(prefix_nodes=3,range_witnesses=2,store_pairs=0,local_pairs=1))
+            for change in [{}, {'prefix_nodes': 0}, {'range_witnesses': True}, {'local_pairs': 0},
+                           {'store_pairs': -1}, {'store_pairs': 4096}, {'extra': 1}]:
+                value = architecture()
+                value['selected_c']['continuations'] = {**evidence, 'effect_order': {**evidence['effect_order'], **change}}
+                if change:
+                    with self.subTest(change=change), self.assertRaises(semantics.ProtocolError):
+                        stages.validate(value, 4096, Path(directory), 24)
+                else: stages.validate(value, 4096, Path(directory), 24)
+
 
 if __name__ == '__main__':
     unittest.main()

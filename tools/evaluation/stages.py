@@ -61,13 +61,15 @@ def validate(value, step_limit, directory, requested_cases):
     if continuation is not None:
         version = continuation.get('model') if isinstance(continuation, dict) else None
         fields = {'model', 'removed_conditions', 'compared_graph_nodes'}
-        if version in ['c-fragment-continuation-v2', 'c-fragment-continuation-v3']:
+        if version in ['c-fragment-continuation-v2', 'c-fragment-continuation-v3', 'c-fragment-continuation-v4']:
             fields.add('shared_fragments')
         if version == 'c-fragment-continuation-v3':
             fields.add('store_order')
+        if version == 'c-fragment-continuation-v4':
+            fields.add('effect_order')
         require(isinstance(continuation, dict)
                 and set(continuation) == fields
-                and version in ['c-fragment-continuation-v1', 'c-fragment-continuation-v2', 'c-fragment-continuation-v3']
+                and version in ['c-fragment-continuation-v1', 'c-fragment-continuation-v2', 'c-fragment-continuation-v3', 'c-fragment-continuation-v4']
                 and type(continuation['removed_conditions']) is int
                 and 0 <= continuation['removed_conditions'] <= 4096
                 and type(continuation['compared_graph_nodes']) is int
@@ -80,6 +82,13 @@ def validate(value, step_limit, directory, requested_cases):
             order = continuation['store_order']
             require(isinstance(order, dict) and set(order) == {'prefix_nodes', 'range_witnesses', 'swapped_pairs'}
                     and all(type(n) is int and 0 < n <= 4096 for n in order.values()), 'C store-order evidence')
+        if version == 'c-fragment-continuation-v4':
+            order = continuation['effect_order']
+            require(isinstance(order, dict)
+                    and set(order) == {'prefix_nodes', 'range_witnesses', 'store_pairs', 'local_pairs'}
+                    and all(type(n) is int and 0 <= n <= 4096 for n in order.values())
+                    and min(order['prefix_nodes'], order['range_witnesses'], order['local_pairs']) > 0
+                    and order['store_pairs'] + order['local_pairs'] <= 4096, 'C effect-order evidence')
     return value
 
 
