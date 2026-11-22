@@ -45,6 +45,7 @@ python3 -m unittest discover -s tools/tests
 fault時は正確なfaultと全メモリを比較します。SATモデルは小さい具体メモリで再実行し、UNSAT判定にはモデルの全メモリ領域を使います。
 
 [隣接Storeの順序検査](../tests/verification/store_order.rs)は、両範囲への先行Loadと非重複を前提に、純粋な二つのStoreを入れ替えて比較します。1/2/4/8-byte幅、任意の相対offsetと64-bit折返しを含む36問い合わせでUNSATを得ました。先行読込みの欠如、条件付き読込み、重複、右辺のLoad、アドレス変更、異なる入力のaliasでは、6件のSATを具体IR実行で再現します。生成Cでは[採用条件とfaultの比較](../tests/codegen/c_evaluation.rs)をO0/O2・メモリviewの有無で確認します。適用範囲はflat RWの単一関数Cで、moduleの権限・外部効果・途中再開は元の順序を保ちます。
+同じモデルで、Storeが読むC保存先と独立な純粋更新の移動も照合します。加算・AND・OR・XORと1/2/4/8-byte幅の16問い合わせがUNSAT、格納値・アドレス・右辺Loadの依存を壊した3問い合わせが具体実行で再現するSATです。正常終了の全レジスタも比較します。生成器の依存は割当て後のC変数名で照合し、仮想レジスタが異なる同一保存先も[回帰検査](../tests/codegen/c_evaluation.rs)に含めます。
 
 ```sh
 NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --locked --test verification \

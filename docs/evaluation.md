@@ -30,7 +30,7 @@ ASTの生データとhashを保持し、比較器が集計値とfingerprintを�
 
 動的添字、書換えられるアドレス引数、未解決の参照元や呼出しは`partial`として件数を残します。整数の切詰め・wrapは幅を保って扱います。これはABIの状態ワードとの位置の対応で、元の局所変数・型・格納値の同一性は次の評価対象です。生ASTとhash付きのABI情報から対応と集計を再検査し、対応範囲の喪失を比較結果へ記録します。
 
-`--state-values`は、同じABIの元Cと生成Cを[型付きの値グラフ](../tools/evaluation/state_values/)へ変換し、返り値と32-byteの状態に差がある入力をSMTで探します。最初の対象は閉じた`if / return`と整数演算です。局所変数への代入は値のsnapshotへ、メモリはbyte列へ対応付け、部分書込みとcastの幅を保持します。x86-64 LP64、有効な状態ポインタ、状態内の参照、既知のchecked-memory helper契約を前提にします。未知のsigned overflow・範囲外のsigned cast・ゼロ除算・未解決の参照・制御は、評価の未対応として記録します。
+`--state-values`は、同じABIの元Cと生成Cを[型付きの値グラフ](../tools/evaluation/state_values/)へ変換し、返り値と32-byteの状態に差がある入力をSMTで探します。対象は整数演算、閉じた`if / return`、関数本体の後続ラベルへのgotoです。gotoは現在の値のsnapshotを後続処理へ渡します。局所変数への代入は値のsnapshotへ、メモリはbyte列へ対応付け、部分書込みとcastの幅を保持します。x86-64 LP64、有効な状態ポインタ、状態内の参照、既知のchecked-memory helper契約を前提にします。未知のsigned overflow・範囲外のsigned cast・ゼロ除算・未解決の参照・制御は、評価の未対応として記録します。
 
 `equivalent_under_model`は4状態ワードの全域に対するモデル下の結果です。SATは値グラフで再実行し、`counterexample_under_model`として入力と差を保存します。sourceの変数名や寿命、機械語全体の正しさはそれぞれ別の評価項目です。無効ポインタのfault、全RAM、PC・予算は既存の具体実行検査へ結びます。値グラフの規模・fingerprintは構文的な補助観測として扱います。
 
@@ -49,7 +49,7 @@ AST・ABI情報から値グラフと問い合わせを再構築し、hash付き�
 
 `low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。
 
-`continuations`はC保存先の確定後に検査した終了処理の共有を、モデルID・条件nodeの減少数・照合グラフ規模で示します。v2の`shared_fragments`は、非空のStep/Evaluate/Return断片の減少数です。条件の複製を一箇所へまとめる場合も、各経路での評価を保持します。v3は`store_order`に保持するprefix node数・成功読込みの範囲数・Store交換数を加えます。これらは静的な変換根拠で、C文数や動的な実行回数と分けて扱います。比較器はv1/v2/v3を読み、[設計](architecture.md#c保存先確定後の継続処理)に記したCの観測境界とMIRの全状態検査を別々に集計します。対応検査と具体入力での一致は、それぞれの対象範囲を持つ検証結果です。
+`continuations`はC保存先の確定後に検査した終了処理の共有を、モデルID・条件nodeの減少数・照合グラフ規模で示します。v2の`shared_fragments`は、非空のStep/Evaluate/Return断片の減少数です。条件の複製を一箇所へまとめる場合も、各経路での評価を保持します。v3は`store_order`に保持するprefix node数・成功読込みの範囲数・Store交換数を加えます。これらは静的な変換根拠で、C文数や動的な実行回数と分けて扱います。v4の`effect_order`はStore同士と独立な局所更新との交換数を分けます。比較器はv1〜v4を読み、[設計](architecture.md#c保存先確定後の継続処理)に記したCの観測境界とMIRの全状態検査を別々に集計します。対応検査と具体入力での一致は、それぞれの対象範囲を持つ検証結果です。
 
 ## 追加入力
 
