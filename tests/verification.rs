@@ -34,6 +34,8 @@ mod memory_values;
 mod predicates;
 #[path = "verification/recovery_verification.rs"]
 mod recovery_verification;
+#[path = "verification/store_order.rs"]
+mod store_order;
 #[path = "verification/unary_ops.rs"]
 mod unary_ops;
 #[path = "verification/verification.rs"]
