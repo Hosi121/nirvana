@@ -56,7 +56,7 @@ class StateValueAST(unittest.TestCase):
             self.assertEqual(g.evaluate(a.outputs, [x, 2, 3, 4]), g.evaluate(b.outputs, [x, 2, 3, 4]))
 
     def test_uninitialized_values_unknown_effects_control_and_addresses_are_rejected(self):
-        for body in ['uint64_t x;return x;', 'return opaque(state[0]);', 'while(state[0])--state[0];return state[0];',
+        for body in ['uint64_t x;return x;', 'return opaque(state[0]);', 'switch(state[0]){case 1:return 1;}return 0;',
                      'again:if(state[0]){--state[0];goto again;}return state[0];',
                      'if(state[0]){inside:state[1]++;}if(state[2])goto inside;return state[1];',
                      'return state[state[0]&3];', 'return state[4];',
@@ -90,6 +90,12 @@ class StateValueAST(unittest.TestCase):
             'state[0]=(state[0]&~UINT64_C(65280))|UINT64_C(768);return state[0];',
             'uint64_t v;if(state[0]&1)goto fail;v=state[1]+state[2];state[2]=v;goto done;'
             'fail:state[0]|=2;done:state[3]+=state[2];return state[3];',
+            'while(1){++state[1];if(state[0]&1){state[2]=200;break;}'
+            'if(state[1]>=3){state[2]=100;break;}}return state[2]+state[1];',
+            'for(uint64_t i=0;i<16;++i){uint64_t snapshot=state[0];state[0]+=i;state[1]^=snapshot;}return state[1];',
+            'uint64_t i=0;do{++i;if(i==2)continue;state[2]+=i;}while(i<4);return state[2];',
+            'for(uint64_t i=0;i<3;++i){for(uint64_t j=0;j<4;++j){'
+            'if(j==1)continue;if(i==2)break;state[0]+=i+j;}}return state[0];',
         ]
         rng = random.Random(17)
         vectors = [[0]*4, [2**64-1]*4, [1<<63,1,2,3], [1,2,3,4]] + [[rng.getrandbits(64) for _ in range(4)] for _ in range(16)]
@@ -107,3 +113,4 @@ class StateValueAST(unittest.TestCase):
                     state = (ctypes.c_uint64 * 4)(*words)
                     value = function(state)
                     self.assertEqual(g.evaluate(model.outputs, words), [value, *state], body)
+                    self.assertEqual(g.evaluate([model.incomplete], words), [0], body)

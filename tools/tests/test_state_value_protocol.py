@@ -30,8 +30,10 @@ class StateValueProtocol(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         return p.stdout
 
-    def prepare(self, root, *, unsupported=False, unknown=False):
-        source = 'while(state[0])--state[0];return state[2];' if unsupported else 'return state[2];'
+    def prepare(self, root, *, unsupported=False, unknown=False, bound=False):
+        source = ('switch(state[0]){case 1:return 1;}return state[2];' if unsupported
+                  else 'uint64_t count=state[0];while(count)--count;return state[2];' if bound
+                  else 'return state[2];')
         a = self.ast('uint64_t fixture(uint64_t *state){'+source+'}', 'fixture')
         b = self.ast('uint64_t nirvana_readable(uint64_t address,uint8_t *memory,uint64_t base,uint64_t size)'
                      '{struct nirvana_memory m={memory,base,size};return nirvana_load(&m,address+16,8);}', 'nirvana_readable')
@@ -50,7 +52,7 @@ class StateValueProtocol(unittest.TestCase):
                 root=Path(directory); row=self.prepare(root)
                 self.assertEqual(row['state_values']['status'],'equivalent_under_model')
                 value=row['state_values']
-                if variant=='float': value['source']['syntactic_paths']=1.0
+                if variant=='float': value['source']['modeled_return_paths']=1.0
                 elif variant=='count': value['source']['reachable_value_nodes']+=1
                 elif variant=='profile': value['profile']['state_bytes']=31
                 elif variant in ['query','graph','solver']:
@@ -92,3 +94,18 @@ class StateValueProtocol(unittest.TestCase):
                 if variant=='missing': del broken['rows'][0]['state_values']
                 else: broken['summary']['state_values']={}
                 with self.assertRaises(reports.Incompatible): reports.index(broken)
+
+    def test_incomplete_guards_and_their_input_witness_are_rebuilt(self):
+        for variant in ['intact','witness','guard','profile']:
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);row=self.prepare(root,bound=True)
+                self.assertEqual(row['state_values']['status'],'unknown')
+                self.assertEqual(row['state_values']['reason'],'loop_bound_exhausted')
+                if variant=='witness': row['state_values']['bound_witness']['input_words'][0]=0
+                elif variant=='guard':
+                    path=root/sv.NAMES['graph'];graph=json.loads(path.read_text());graph['source_incomplete']=0
+                    path.write_text(json.dumps(graph));row['state_values']['artifacts']['graph']['sha256']=sv.sha(path)
+                elif variant=='profile': row['state_values']['profile']['loop_iterations']=15
+                if variant=='intact': self.assertEqual(sv.replay(root,row),'unknown')
+                else:
+                    with self.assertRaises(ValueError): sv.replay(root,row)

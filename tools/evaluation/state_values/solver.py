@@ -13,6 +13,7 @@ class Proof:
     responses: list = field(default_factory=list)
     reason: str | None = None
     witness: dict | None = None
+    bound_witness: dict | None = None
 
 
 def compare(graph, source, generated, executable, seconds=2, *, recorded=None, failure_reason=None):
@@ -23,6 +24,9 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
     if any(graph.type(i).bits != 64 or graph.type(i).signed for i in [*source.outputs, *generated.outputs]):
         raise ValueError('state value output type')
     difference = ' '.join(f'(distinct v{a} v{b})' for a, b in zip(source.outputs, generated.outputs))
+    completion = [source.incomplete, generated.incomplete]
+    if any(graph.type(i).bits != 1 for i in completion): raise ValueError('state value completion type')
+    difference += ''.join(f' (= v{i} #b1)' for i in completion)
     query = (f'(set-option :timeout {max(1, int(seconds * 1000))})\n'
              '(set-option :produce-models true)\n(set-option :pp.bv-literals true)\n'
              + graph.smt() + f'(assert (or {difference}))\n')
@@ -64,10 +68,15 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
             words = {int(i): int(n, 16) for i, n in re.findall(r'\(word([0-3])\s+#x([0-9a-fA-F]{16})\)', response)}
             if set(words) != set(range(4)): raise ValueError('solver input word denominator')
             inputs = [words[i] for i in range(4)]
-            a, b = [graph.evaluate(m.outputs, inputs) for m in [source, generated]]
-            if a == b: raise ValueError('solver countermodel did not replay')
-            proof.status = 'counterexample_under_model'
-            proof.witness = {'input_words': inputs, 'source': a, 'generated': b}
+            unfinished = graph.evaluate(completion, inputs)
+            if any(unfinished):
+                proof.reason = 'loop_bound_exhausted'
+                proof.bound_witness = {'input_words': inputs, 'incomplete': dict(zip(['source', 'generated'], map(bool, unfinished)))}
+            else:
+                a, b = [graph.evaluate(m.outputs, inputs) for m in [source, generated]]
+                if a == b: raise ValueError('solver countermodel did not replay')
+                proof.status = 'counterexample_under_model'
+                proof.witness = {'input_words': inputs, 'source': a, 'generated': b}
         else: raise ValueError('solver response')
         if retained: raise ValueError('unused solver responses')
     except FileNotFoundError:
@@ -75,6 +84,6 @@ def compare(graph, source, generated, executable, seconds=2, *, recorded=None, f
     except subprocess.TimeoutExpired:
         proof.reason = 'solver_timeout'
     except (OSError, ValueError) as error:
-        proof.status, proof.witness = 'unknown', None
+        proof.status, proof.witness, proof.bound_witness = 'unknown', None, None
         proof.reason = str(error)
     return proof

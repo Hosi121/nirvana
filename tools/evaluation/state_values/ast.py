@@ -1,7 +1,8 @@
-"""Translate a closed C11 if/return subset into immutable state values.
+"""Translate a closed C11 subset into immutable state values.
 
 This oracle owns local snapshots and 32 individual state bytes. Function-body
-forward gotos retain their snapshots; cycles, nested label scopes, scalar calls,
+forward gotos retain their snapshots; bounded structured loops retain an
+explicit incomplete guard. Nested label scopes, scalar calls,
 volatile objects and unresolved addresses stay unsupported. The
 generated side uses the fixed Nirvana checked-memory helper contracts; C
 storage names and view field spellings do not identify values or addresses.
@@ -11,6 +12,8 @@ from itertools import chain, islice
 
 from .. import c_footprint as cf, state_memory as sm
 from .terms import Graph, Type, U64, BYTE, BOOL, Unsupported
+
+LOOP_LIMIT = 16
 
 
 def ctype(node):
@@ -40,6 +43,7 @@ class Model:
     paths: int
     expanded_assignments: int
     scalar_declarations: int
+    incomplete: int
 
 
 class Interpreter:
@@ -51,7 +55,7 @@ class Interpreter:
         self.memory_context = None
         self.parameters = [n for n in cf.children(self.root) if n.get('kind') == 'ParmVarDecl']
         self.returns, self.work, self.assignments, self.declarations = [], 10000, 0, set()
-        self.gotos, self.labels = [], {}
+        self.gotos, self.labels, self.loops, self.truncated = [], {}, [], []
         if cf.type_key(self.root).split('(')[0].strip() not in ['uint64_t', 'unsigned long', 'unsigned long long']:
             raise Unsupported('return outside uint64_t profile')
         if source:
@@ -196,19 +200,22 @@ class Interpreter:
             return
         typ = ctype(node)
         identity = node['id']
-        if identity in state.locals: raise Unsupported('repeated scalar declaration')
         if len(parts) > 1: raise Unsupported('scalar initializer shape')
         if parts and self.resolver.address(parts[0], 'scalar') is not None:
             if not self.address_initializer(parts[0]): raise Unsupported('unresolved address initializer')
             # Pure captured addresses are used by Resolver, rather than as
             # scalar source values. Any value escape remains unsupported.
             return
-        state.locals[identity] = g.cast(self.value(parts[0], state), typ) if parts else None
+        # A loop re-enters this declaration with a fresh automatic object. Its
+        # old iteration's value cannot initialize a read of the new object.
+        state.locals[identity] = None
+        if parts: state.locals[identity] = g.cast(self.value(parts[0], state), typ)
         self.declarations.add(identity)
 
     def statement(self, node, state):
         self.spend()
         kind, parts, g = node.get('kind'), cf.children(node), self.graph
+        if g.constant(state.guard) == 0: return []
         if kind == 'CompoundStmt': return self.sequence(parts, [state])
         if kind == 'IfStmt' and len(parts) in [2, 3]:
             condition = g.truth(self.value(parts[0], state))
@@ -223,6 +230,12 @@ class Interpreter:
             self.gotos.append((node['targetLabelDeclId'], state)); return []
         if kind == 'LabelStmt' and len(parts) == 1:
             return self.statement(parts[0], state)
+        if kind in ['WhileStmt', 'ForStmt', 'DoStmt']:
+            return self.loop(node, state)
+        if kind in ['BreakStmt', 'ContinueStmt']:
+            if not self.loops: raise Unsupported('loop transfer outside a supported loop')
+            self.loops[-1]['break' if kind == 'BreakStmt' else 'continue'].append(state)
+            return []
         if kind == 'DeclStmt':
             for declaration in parts:
                 if declaration.get('kind') == 'VarDecl': self.declaration(declaration, state)
@@ -254,11 +267,58 @@ class Interpreter:
             raise Unsupported('control or statement: ' + str(kind))
         return [state]
 
+    def split(self, state, condition):
+        g = self.graph
+        value = g.truth(self.value(condition, state)) if condition is not None else g.const(1, BOOL)
+        yes = state.copy(g.binary('&', state.guard, value, BOOL))
+        no = state.copy(g.binary('&', state.guard, g.unary('!', value, BOOL), BOOL))
+        return [yes] if g.constant(yes.guard) != 0 else [], [no] if g.constant(no.guard) != 0 else []
+
+    def loop(self, node, state):
+        parts, kind = cf.children(node), node['kind']
+        init, increment = None, None
+        if kind == 'WhileStmt' and len(parts) == 2: condition, body = parts
+        elif kind == 'DoStmt' and len(parts) == 2: body, condition = parts
+        elif kind == 'ForStmt' and len(parts) == 5 and not parts[1]:
+            init, _, condition, increment, body = parts
+            init = init if init else None
+            condition = condition if condition else None
+            increment = increment if increment else None
+        else: raise Unsupported('loop AST shape')
+        active = self.statement(init, state) if init else [state]
+        context = {'break': [], 'continue': []}
+        self.loops.append(context)
+        exits = context['break']
+        try:
+            for iteration in range(LOOP_LIMIT + 1):
+                entered = []
+                for current in active:
+                    yes, no = ([current], []) if kind == 'DoStmt' and iteration == 0 else self.split(current, condition)
+                    entered.extend(yes); exits.extend(no)
+                if iteration == LOOP_LIMIT:
+                    self.truncated.extend(current.guard for current in entered)
+                    self.path_budget([])
+                    break
+                active = [next_state for current in entered for next_state in self.statement(body, current)]
+                active.extend(context['continue']); context['continue'].clear()
+                if increment:
+                    active = [next_state for current in active for next_state in self.statement(increment, current)]
+                self.path_budget(active)
+                if not active: break
+            return exits
+        finally:
+            self.loops.pop()
+
+    def path_budget(self, active):
+        count = len(active) + len(self.returns) + len(self.gotos) + len(self.truncated)
+        count += sum(len(states) for context in self.loops for states in context.values())
+        if count > 64: raise Unsupported('C path budget')
+
     def sequence(self, statements, states):
         for statement in statements:
             if not states: break
             states = [next_state for state in states for next_state in self.statement(statement, state)]
-            if len(states) + len(self.returns) + len(self.gotos) > 64: raise Unsupported('C path budget')
+            self.path_budget(states)
         return states
 
     def model(self):
@@ -271,11 +331,14 @@ class Interpreter:
             index = self.labels[target]
             continuation = chain(cf.children(self.statements[index]), islice(self.statements, index + 1, None))
             active.extend(self.sequence(continuation, [state]))
-        if active or not self.returns: raise Unsupported('function may fall through')
-        outputs = self.returns[-1][1]
-        for guard, values in reversed(self.returns[:-1]):
+        if active: raise Unsupported('function may fall through')
+        incomplete = self.graph.const(0, BOOL)
+        for guard in self.truncated: incomplete = self.graph.binary('|', incomplete, guard, BOOL)
+        if not self.returns and not self.truncated: raise Unsupported('function lacks a return')
+        outputs = [self.graph.const(0)] * 5
+        for guard, values in reversed(self.returns):
             outputs = [self.graph.choose(guard, a, b) for a, b in zip(values, outputs)]
-        return Model(outputs, len(self.returns), self.assignments, len(self.declarations))
+        return Model(outputs, len(self.returns), self.assignments, len(self.declarations), incomplete)
 
 
 def observe(graph, text, name, parameter=0, source=True):

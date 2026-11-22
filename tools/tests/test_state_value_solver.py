@@ -71,7 +71,39 @@ class StateValueProofs(unittest.TestCase):
              'return nirvana_load(&m,address+24,8);')
         result = self.compare(a,b)
         self.assertEqual(result.report['status'],'equivalent_under_model')
-        self.assertEqual(result.report['model'],'nirvana-state4-values-v2')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v3')
+
+    def test_loop_completion_is_proved_over_all_words_including_wraparound(self):
+        a = ('while(1){++state[1];if(state[0]&1){state[2]=200;break;}'
+             'if(state[1]>=3){state[2]=100;break;}}return state[2]+state[1];')
+        b = ('uint64_t count=nirvana_load(&m,address+8,8)+1;'
+             'uint64_t flag=nirvana_load(&m,address,8),result;'
+             'if(flag&1)result=200;else{for(;count<=2;++count){}result=100;}'
+             'nirvana_store(&m,address+8,8,count);nirvana_store(&m,address+16,8,result);return count+result;')
+        result = self.compare(a,b)
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+        self.assertEqual(result.report['profile']['completion'],'all-inputs')
+        self.assertEqual(result.report['profile']['loop_iterations'],16)
+        self.assertIn('source_incomplete',result.graph)
+        self.assertIsNone(result.report['bound_witness'])
+
+    def test_same_outputs_at_the_unroll_limit_do_not_establish_equivalence(self):
+        for body in ['while(state[0])--state[0];return 0;', 'for(;;){}']:
+            generated = body.replace('state[0]', 'counter')
+            if 'counter' in generated: generated = 'uint64_t counter=nirvana_load(&m,address,8);'+generated
+            result = self.compare(body,generated)
+            self.assertEqual(result.report['status'],'unknown')
+            self.assertEqual(result.report['reason'],'loop_bound_exhausted')
+            self.assertIsNone(result.report['witness'])
+            witness=result.report['bound_witness']
+            self.assertTrue(any(witness['incomplete'].values()))
+            if 'while' in body: self.assertGreater(witness['input_words'][0],16)
+
+    def test_a_completed_loop_value_difference_yields_a_replayed_countermodel(self):
+        result=self.compare('for(uint64_t i=0;i<4;++i)state[0]+=i;return state[0];',
+                            'uint64_t value=nirvana_load(&m,address,8)+7;nirvana_store(&m,address,8,value);return value;')
+        self.assertEqual(result.report['status'],'counterexample_under_model')
+        self.assertIsNone(result.report['bound_witness'])
 
     def test_a_rare_branch_countermodel_replays_in_actual_source_and_generated_c(self):
         compiler = shutil.which('cc')

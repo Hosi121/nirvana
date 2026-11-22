@@ -75,6 +75,18 @@ class SolverValueTerms(unittest.TestCase):
         self.assertEqual(g.pack(parts), x)
         self.check(g.smt() + f'(assert (or (distinct v{low} v{masked}) (distinct v{plus} v{minus}) (distinct v{packed} v{x})))\n')
 
+    def test_guard_normalization_matches_unsimplified_bitvector_operations(self):
+        g=Graph();x=g.truth(g.inputs[0]);zero=g.const(0,BOOL);one=g.const(1,BOOL)
+        identities=[('&',x,zero,zero),('&',x,one,x),('|',x,zero,x),('|',x,one,one),
+                    ('&',x,x,x),('|',x,x,x),('^',x,x,zero),('^',x,zero,x)]
+        differences=[]
+        for op,a,b,expected in identities:
+            for left,right in [(a,b),(b,a)]:
+                normalized=g.binary(op,left,right,BOOL)
+                raw=g.intern(Node(op,BOOL,(left,right)))
+                differences.extend([f'(distinct v{raw} v{expected})',f'(distinct v{normalized} v{expected})'])
+        self.check(g.smt()+'(assert (or '+' '.join(differences)+'))\n')
+
     def test_concrete_semantics_and_smt_agree_across_widths_and_signs(self):
         g = Graph(); roots = []
         for bits in [8, 16, 32, 64]:

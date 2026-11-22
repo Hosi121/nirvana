@@ -126,6 +126,19 @@ class Graph:
         if op not in ['+', '-', '*', '&', '|', '^', '/', '%', '<<', '>>', '==', '!=', '<', '<=', '>', '>=']:
             raise Unsupported('binary operator')
         x, y = self.constant(a), self.constant(b)
+        if before == typ == BOOL and op in ['&', '|', '^']:
+            if a == b: return self.const(0, BOOL) if op == '^' else a
+            if op == '&':
+                if 0 in [x, y]: return self.const(0, BOOL)
+                if x == 1: return b
+                if y == 1: return a
+            if op == '|':
+                if 1 in [x, y]: return self.const(1, BOOL)
+                if x == 0: return b
+                if y == 0: return a
+            if op == '^':
+                if x == 0: return b
+                if y == 0: return a
         if before.signed and op in ['+', '-', '*', '/', '%'] and (x is None or y is None):
             raise Unsupported('unknown signed arithmetic range')
         if op in ['/', '%'] and (y is None or y == 0): raise Unsupported('unknown or zero divisor')
