@@ -4,6 +4,8 @@
 #[path = "../tests/support/checked_c.rs"]
 #[allow(dead_code)]
 mod checked_c;
+#[path = "evaluation_probe/stages.rs"]
+mod stages;
 
 use nirvana::{
     frontend,
@@ -121,6 +123,7 @@ int main(void) {{
     let mut native_expected = String::new();
     let mut statuses = [0usize; 4];
     let mut native_cases = 0;
+    let mut stages = stages::Stages::new(&source, limit);
     for words in vectors(seed, count) {
         for pointer in [POINTER, BASE + SIZE as u64 - 16, u64::MAX] {
             let mut ram: Vec<_> = (0..SIZE).map(|n| (n * 29 + 7) as u8).collect();
@@ -137,6 +140,7 @@ int main(void) {{
             regs[x86::RDI] = pointer;
             regs[x86::RSP] = STACK;
             let report = source.run_with_memory(&regs, BASE, &ram, limit)?;
+            stages.observe(&source, &regs, &ram, &report);
             let mut row = match report.status {
                 RunStatus::Returned(value) => {
                     statuses[0] += 1;
@@ -185,7 +189,7 @@ int main(void) {{
         std::fs::write(out.join(name), text)?;
     }
     println!(
-        "{{\"schema\":\"nirvana-evaluation-probe-v1\",\"generator\":\"fixture-state4-seeds-v1\",\"seed\":{seed},\"vectors\":{count},\"requested_cases\":{},\"checked_cases\":{},\"native_cases\":{native_cases},\"returned\":{},\"read_faults\":{},\"write_faults\":{},\"suspended\":{},\"step_limit\":{limit},\"memory_base\":{BASE},\"memory_size\":{SIZE},\"stack_pointer\":{STACK},\"state_pointer\":{POINTER},\"register_count\":{},\"row_words\":{}}}",
+        "{{\"schema\":\"nirvana-evaluation-probe-v1\",\"generator\":\"fixture-state4-seeds-v1\",\"seed\":{seed},\"vectors\":{count},\"requested_cases\":{},\"checked_cases\":{},\"native_cases\":{native_cases},\"returned\":{},\"read_faults\":{},\"write_faults\":{},\"suspended\":{},\"step_limit\":{limit},\"memory_base\":{BASE},\"memory_size\":{SIZE},\"stack_pointer\":{STACK},\"state_pointer\":{POINTER},\"register_count\":{},\"row_words\":{},\"stage_checks\":{}}}",
         count * 3,
         statuses[0] + statuses[1] + statuses[2],
         statuses[0],
@@ -193,7 +197,8 @@ int main(void) {{
         statuses[2],
         statuses[3],
         source.register_count(),
-        5 + SIZE / 8
+        5 + SIZE / 8,
+        stages.json(&output, &out)?
     );
     Ok(())
 }

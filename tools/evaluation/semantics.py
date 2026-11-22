@@ -68,6 +68,8 @@ def run(args, row, directory, invoke, flags):
             or not isinstance(native_cases, int) or isinstance(native_cases, bool)
             or not 0 <= native_cases <= args.semantic_cases):
         raise ProtocolError('semantic probe coverage mismatch')
+    from . import stages
+    stages.attach(profile.pop('stage_checks', None), row, destination, args.semantic_steps, profile['requested_cases'])
     row['semantics'] = {'status': 'running', 'contract': CONTRACT, 'profile': profile,
                         'native_observations': 'return and state[4], valid pointer',
                         'generated_observations': 'return, all RAM words, first fault address/access/width',

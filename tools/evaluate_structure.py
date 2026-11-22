@@ -265,7 +265,9 @@ def run(args):
         raise ValueError('output directory must be empty; preserve earlier baselines')
     args.decompiler = args.decompiler.resolve()
     report = {'schema': 'nirvana-structure-report-v1', 'metric': cg.METRIC,
-              'evaluation': {'runner_sha256': digest(__file__), 'metric_sha256': digest(cg.__file__)},
+              'evaluation': {'runner_sha256': digest(__file__), 'metric_sha256': digest(cg.__file__),
+                             'semantics_sha256': digest(semantics.__file__),
+                             'stages_sha256': digest(Path(semantics.__file__).with_name('stages.py'))},
               'requested_profiles': len(cases) * len(compilers) * len(opts),
               'scope': 'Control topology only; arithmetic, effect contents and semantic equivalence are separate evaluations.',
               'corpus': {'path': str(args.cases.resolve()), 'sha256': digest(args.cases)},
@@ -311,6 +313,7 @@ def run(args):
     report['semantics'] = {'status': 'reported' if args.semantic_probe else 'not_run',
                            'contract': semantics.CONTRACT if args.semantic_probe else None,
                            'counts': dict(Counter(r['semantics']['status'] for r in report['rows']))}
+    report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
     report['resources']['runner_peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report

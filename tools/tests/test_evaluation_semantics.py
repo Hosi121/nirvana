@@ -8,7 +8,18 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from evaluation import semantics
+from evaluation import semantics, stages
+
+
+def architecture():
+    return dict(schema='nirvana-evaluation-stages-v1', contract='nirvana-entry-full-state-v1',
+                status='passed', prefix_budgets=[0, 4096],
+                execution=[dict(name='low_middle', status='passed', observations=96, witness=None),
+                           dict(name='middle_predicates', status='not_applied', observations=0, witness=None)],
+                selected_c=dict(predicates=None, input_structure_checked=True, display_structure_checked=True,
+                                saved_value_rounds=0, fallback_goto=False),
+                low_coverage=dict(steps_started=2, syntactic_steps=3, transfers_observed=1,
+                                  syntactic_transfers=2, unobserved_transfers=[[1, 2]]))
 
 
 class SemanticTests(unittest.TestCase):
@@ -29,7 +40,7 @@ class SemanticTests(unittest.TestCase):
             with self.assertRaises(semantics.ProtocolError):
                 semantics.compare(expected, actual, 'first\nsecond\n', 6)
 
-    def protocol(self, root, *, wrong=False, suspended=0):
+    def protocol(self, root, *, wrong=False, suspended=0, stage_checks=None):
         destination = root / 'semantics'
         destination.mkdir()
         count = 8
@@ -39,6 +50,10 @@ class SemanticTests(unittest.TestCase):
                        returned=8, read_faults=8, write_faults=8 - suspended,
                        suspended=suspended, memory_base=4096, memory_size=512,
                        stack_pointer=4600, state_pointer=4224, row_words=69)
+        if stage_checks is not None:
+            profile['stage_checks'] = stage_checks
+            if stage_checks['status'] == 'counterexample':
+                (destination / 'low_middle.witness.txt').write_text('actual full-state counterexample')
         native = ('0 1 2 3 4\n' * count)
         checked = (' '.join(['0'] * 69) + '\n') * profile['checked_cases']
         files = {'native-inputs.txt': '1 2 3 4\n' * count, 'native-expected.txt': native,
@@ -89,6 +104,33 @@ class SemanticTests(unittest.TestCase):
             self.assertEqual(observed['profile']['requested_cases'], 24)
             self.assertEqual(observed['profile']['checked_cases'], 22)
             self.assertEqual(observed['profile']['suspended'], 2)
+
+    def test_architecture_failure_keeps_native_and_generated_comparisons(self):
+        for status in ['passed', 'counterexample', 'malformed']:
+            with tempfile.TemporaryDirectory() as directory:
+                value = architecture()
+                if status == 'counterexample':
+                    value['status'] = status
+                    value['execution'][0].update(status=status, observations=1, witness='low_middle.witness.txt')
+                elif status == 'malformed': value['low_coverage']['syntactic_transfers'] = 99
+                row, calls = self.protocol(Path(directory), stage_checks=value)
+                self.assertEqual(row['semantics']['status'], 'passed')
+                self.assertNotIn('stage_checks', row['semantics']['profile'])
+                self.assertIn('generated_O2_run', calls)
+                self.assertEqual(row['stage_checks']['status'], 'evaluator_error' if status == 'malformed' else status)
+                self.assertEqual(bool(row.get('failures')), status != 'passed')
+
+    def test_stage_prefix_coverage_and_counterexample_protocol(self):
+        for variant in ['coverage', 'budget', 'count', 'witness', 'status']:
+            with tempfile.TemporaryDirectory() as directory:
+                value = architecture()
+                if variant == 'coverage': value['low_coverage']['unobserved_transfers'] = []
+                elif variant == 'budget': value['prefix_budgets'] = [4096, 0]
+                elif variant == 'count': value['execution'][0]['observations'] = 1
+                elif variant == 'witness': value['execution'][0]['witness'] = '../outside'
+                else: value['status'] = 'counterexample'
+                with self.subTest(variant=variant), self.assertRaises(semantics.ProtocolError):
+                    stages.validate(value, 4096, Path(directory), 24)
 
 
 if __name__ == '__main__':

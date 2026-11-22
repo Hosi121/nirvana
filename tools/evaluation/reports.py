@@ -8,7 +8,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
-from . import control_graph as cg, semantics
+from . import control_graph as cg, semantics, stages
 
 
 class Incompatible(ValueError):
@@ -80,6 +80,11 @@ def replay(root, row):
         require(cg.mapping_cost(*graphs, dict(pairs)) == hi, 'mapping witness cost')
         result['mapping_cost'] = hi
     semantic = row['semantics']
+    architecture = row.get('stage_checks', {'status': 'not_run'})
+    if 'schema' in architecture:
+        stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
+                        semantic['profile']['requested_cases'])
+    result['architecture'] = architecture['status']
     if 'profile' in semantic:
         require(semantic['contract'] == semantics.CONTRACT, 'semantic contract')
         profile = semantic['profile']
@@ -194,6 +199,7 @@ def compare(before_path, after_path):
                         if 'distance' in b else None,
                      'before_semantics': sa['status'], 'after_semantics': sb['status'],
                      'structure_regression': a['structure_status'] == 'measured' and b['structure_status'] != 'measured',
+                     'architecture_regression': ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
                      'before_replay': ar, 'after_replay': br})
     return {'schema': 'nirvana-structure-comparison-v1', 'metric': cg.METRIC,
@@ -207,6 +213,8 @@ def compare(before_path, after_path):
             'structure': dict(Counter(row['distance'] for row in rows)),
             'structure_regressions': sum(row['structure_regression'] for row in rows),
             'candidate_semantics': dict(Counter(row['after_semantics'] for row in rows)),
+            'architecture_regressions': sum(row['architecture_regression'] for row in rows),
+            'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',
             'rows': rows}
