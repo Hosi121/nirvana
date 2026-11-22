@@ -76,6 +76,8 @@ NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --locked --test verificati
 ```
 [CLI比較](../tests/cli/middle_ir_cli.rs)はMiddle IR経由の生成Cと既存出力を照合します。保持したM0 smoke集合には次の任意比較を使えます。16構成すべてを要求し、全RAMをbyte単位で照合します。
 
+[経路入力の検査](../tests/verification/path_inputs.rs)は、64-bitの折返し、部分書込みのalias、lazyなfault、ループの指定回数を含めてSAT入力を再実行します。UNSATは固定profileと指定した命令prefixに結びます。DAGの全prefix列挙は、全192個の小さい前向きProgramを、命令単位の経路oracleと照合します。[ツールの正負対照](../tools/tests/test_evaluation_witnesses.py)は、稀な分岐への入力追加、solver欠如・予算不足の未判定、正常returnに至らない候補の除外、debug objectの拒否を確認します。
+
 ```sh
 NIRVANA_MIDDLE_OBJECTS=target/structure-baseline cargo test --locked --test model \
   middle_ir::fixtures::retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction \
