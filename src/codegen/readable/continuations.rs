@@ -5,11 +5,13 @@ use super::*;
 const MAX_ITEMS: usize = 4096;
 const MAX_WORK: usize = 262144;
 const MAX_BYTES: usize = 1024 * 1024;
-pub const MODEL_ID: &str = "c-fragment-continuation-v1";
+pub const MODEL_ID: &str = "c-fragment-continuation-v2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContinuationEvidence {
     pub removed_conditions: usize,
+    /// Static nonempty Step/Evaluate/Return fragments shared between paths.
+    pub shared_fragments: usize,
     pub compared_graph_nodes: usize,
 }
 
@@ -36,7 +38,7 @@ fn shape(nodes: &[Node]) -> Option<(usize, usize)> {
     Some((conditions, returns))
 }
 pub(super) fn possible(nodes: &[Node]) -> bool {
-    shape(nodes).is_some_and(|(conditions, returns)| conditions > 0 && returns > 1)
+    shape(nodes).is_some_and(|(conditions, returns)| conditions > 0 && returns > 0)
 }
 struct Budget {
     work: usize,
@@ -136,6 +138,82 @@ fn recover_with(
         }
         None
     }
+    // Freeze each flat path up to its return. Sharing a suffix factors the
+    // continuation without commuting effects or re-evaluating its condition.
+    struct Frozen<'a> {
+        node: &'a Node,
+        terminal: bool,
+        text: String,
+    }
+    fn terminal<'a>(
+        prefix: &'a [Node],
+        next: &'a [Node],
+        atom: &impl Fn(&Node) -> Option<String>,
+        budget: &mut Budget,
+    ) -> Option<Vec<Frozen<'a>>> {
+        let mut out = Vec::new();
+        for node in prefix.iter().chain(next) {
+            budget.spend(1)?;
+            if !matches!(
+                node,
+                Node::Step { .. } | Node::Evaluate(_) | Node::Return(_)
+            ) {
+                return None;
+            }
+            let text = atom(node)?;
+            budget.text(&text)?;
+            let terminal = matches!(node, Node::Return(_));
+            if !text.is_empty() || terminal {
+                out.push(Frozen {
+                    node,
+                    terminal,
+                    text,
+                });
+            }
+            if terminal {
+                return Some(out);
+            }
+        }
+        None
+    }
+    fn share_tail(
+        condition: &Expr,
+        taken: &[Node],
+        not_taken: &[Node],
+        next: &[Node],
+        atom: &impl Fn(&Node) -> Option<String>,
+        budget: &mut Budget,
+    ) -> Option<Vec<Node>> {
+        let a = terminal(taken, next, atom, budget)?;
+        let b = terminal(not_taken, next, atom, budget)?;
+        let common = a
+            .iter()
+            .rev()
+            .zip(b.iter().rev())
+            .take_while(|(x, y)| x.terminal == y.terminal && x.text == y.text)
+            .count();
+        if common == 0 {
+            return None;
+        }
+        let taken: Vec<_> = a[..a.len() - common]
+            .iter()
+            .map(|n| n.node.clone())
+            .collect();
+        let not_taken: Vec<_> = b[..b.len() - common]
+            .iter()
+            .map(|n| n.node.clone())
+            .collect();
+        let mut out = Vec::new();
+        if !taken.is_empty() || !not_taken.is_empty() || condition.uses_memory() {
+            out.push(Node::If {
+                condition: condition.clone(),
+                taken,
+                not_taken,
+            });
+        }
+        out.extend(a[a.len() - common..].iter().map(|n| n.node.clone()));
+        Some(out)
+    }
     fn fold(
         nodes: &[Node],
         tail: &[Node],
@@ -166,7 +244,14 @@ fn recover_with(
                             not_taken.clear();
                         }
                     }
-                    if !(taken.is_empty() && not_taken.is_empty() && !condition.uses_memory()) {
+                    if let Some(shared) =
+                        share_tail(condition, &taken, &not_taken, &out, atom, budget)
+                    {
+                        out = shared;
+                    } else if !(taken.is_empty()
+                        && not_taken.is_empty()
+                        && !condition.uses_memory())
+                    {
                         out.insert(
                             0,
                             Node::If {
@@ -184,14 +269,45 @@ fn recover_with(
     }
     let candidate = fold(source, &[], atom, &mut budget)?;
     let (after, _) = shape(&candidate)?;
-    if after >= before || read_names(source, names) != read_names(&candidate, names) {
+    let removed_conditions = before.checked_sub(after)?;
+    fn fragments(
+        nodes: &[Node],
+        atom: &impl Fn(&Node) -> Option<String>,
+        budget: &mut Budget,
+    ) -> Option<usize> {
+        let mut pending: Vec<_> = nodes.iter().collect();
+        let mut count = 0;
+        while let Some(node) = pending.pop() {
+            budget.spend(1)?;
+            if let Node::If {
+                taken, not_taken, ..
+            } = node
+            {
+                pending.extend(taken.iter().chain(not_taken));
+            } else {
+                let text = atom(node)?;
+                budget.text(&text)?;
+                count += usize::from(!text.is_empty());
+            }
+        }
+        Some(count)
+    }
+    let shared_fragments = fragments(source, atom, &mut budget)?.checked_sub(fragments(
+        &candidate,
+        atom,
+        &mut budget,
+    )?)?;
+    if (after >= before && shared_fragments == 0)
+        || read_names(source, names) != read_names(&candidate, names)
+    {
         return None;
     }
     let compared_graph_nodes = check(source, &candidate, atom, condition)?;
     Some((
         candidate,
         ContinuationEvidence {
-            removed_conditions: before - after,
+            removed_conditions,
+            shared_fragments,
             compared_graph_nodes,
         },
     ))
@@ -348,6 +464,7 @@ mod tests {
         let (candidate, e) = recover_with(&source, &atom, &cond, &names).unwrap();
         assert_eq!(candidate.len(), 2);
         assert_eq!(e.removed_conditions, 1);
+        assert_eq!(e.shared_fragments, 2);
         assert!(check(&source, &candidate, &atom, &cond).is_some());
     }
     #[test]
@@ -364,7 +481,12 @@ mod tests {
         };
         *condition = Expr::load(r(0), Width::U8);
         assert!(check(&source, &source[1..], &atom, &cond).is_none());
-        assert!(recover_with(&source, &atom, &cond, &BTreeMap::new()).is_none());
+        let (candidate, evidence) = recover_with(&source, &atom, &cond, &BTreeMap::new()).unwrap();
+        assert_eq!(evidence.removed_conditions, 0);
+        assert_eq!(evidence.shared_fragments, 2);
+        assert!(
+            matches!(candidate.first(), Some(Node::If { condition, .. }) if condition.uses_memory())
+        );
         assert!(!possible(&[Node::Loop(nodes())]));
     }
     #[test]
@@ -384,6 +506,58 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn terminal_suffixes_share_after_distinct_prefixes_and_keep_the_branch() {
+        let names = BTreeMap::from([(0, "a".into()), (1, "b".into()), (2, "p".into())]);
+        for memory_condition in [false, true] {
+            for layout in 0..3 {
+                let mut a = vec![
+                    step(10, 3),
+                    Node::Evaluate(Expr::load(r(2), Width::U8)),
+                    Node::Return(Expr::binary(BinaryOp::Add, r(0), r(1))),
+                ];
+                let mut b = a.clone();
+                b[0] = step(20, 4);
+                let condition = if memory_condition {
+                    Expr::load(r(0), Width::U8)
+                } else {
+                    r(0)
+                };
+                let return_node = a.last().unwrap().clone();
+                if layout == 2 {
+                    a.pop();
+                    b.pop();
+                }
+                let mut source = vec![Node::If {
+                    condition,
+                    taken: std::mem::take(&mut a),
+                    not_taken: if layout != 0 { b.clone() } else { vec![] },
+                }];
+                if layout == 0 {
+                    source.extend(b);
+                }
+                if layout == 2 {
+                    source.push(return_node);
+                }
+                assert!(possible(&source));
+                let (candidate, evidence) = recover_with(&source, &atom, &cond, &names).unwrap();
+                assert_eq!(evidence.removed_conditions, 0);
+                assert_eq!(evidence.shared_fragments, if layout == 2 { 1 } else { 2 });
+                assert_eq!(candidate.len(), 3);
+                assert!(check(&source, &candidate, &atom, &cond).is_some());
+                let mut swapped = candidate;
+                let Node::If {
+                    taken, not_taken, ..
+                } = &mut swapped[0]
+                else {
+                    panic!()
+                };
+                std::mem::swap(taken, not_taken);
+                assert!(check(&source, &swapped, &atom, &cond).is_none());
+            }
+        }
     }
 
     #[test]

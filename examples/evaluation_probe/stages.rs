@@ -194,9 +194,10 @@ impl Stages {
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
         let continuations = output.continuations.map_or("null".into(), |e| {
             format!(
-                "{{\"model\":\"{}\",\"removed_conditions\":{},\"compared_graph_nodes\":{}}}",
+                "{{\"model\":\"{}\",\"removed_conditions\":{},\"shared_fragments\":{},\"compared_graph_nodes\":{}}}",
                 nirvana::readable::CONTINUATION_MODEL_ID,
                 e.removed_conditions,
+                e.shared_fragments,
                 e.compared_graph_nodes
             )
         });

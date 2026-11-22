@@ -123,8 +123,21 @@ fn native_c_continuations_share_cleanup_and_preserve_first_faults() {
         })
         .collect();
     for width in [Width::U8, Width::U64] {
-        for (memory_condition, changed_write) in [(false, false), (true, false), (false, true)] {
-            let cleanup = store(r(0), width, load(b(BinaryOp::Add, r(0), c(1))));
+        for (memory_condition, changed_write, define_local) in [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let cleanup = store(
+                r(0),
+                width,
+                if define_local {
+                    r(2)
+                } else {
+                    load(b(BinaryOp::Add, r(0), c(1)))
+                },
+            );
             let mut taken_cleanup = cleanup.clone();
             if changed_write {
                 taken_cleanup.value = b(BinaryOp::Add, taken_cleanup.value, c(1));
@@ -134,34 +147,58 @@ fn native_c_continuations_share_cleanup_and_preserve_first_faults() {
             } else {
                 r(1)
             };
-            let result = b(BinaryOp::Add, r(1), load(r(0)));
+            let result = b(
+                BinaryOp::Add,
+                r(1),
+                if define_local { r(2) } else { load(r(0)) },
+            );
+            let definition = |value| {
+                if define_local {
+                    vec![Assignment {
+                        destination: Reg(2).into(),
+                        value: b(BinaryOp::Add, Expr::load(r(0), Width::U8), c(value)),
+                    }]
+                } else {
+                    vec![]
+                }
+            };
             let program = Program::new(
                 0,
-                2,
+                if define_local { 3 } else { 2 },
                 vec![
                     instruction(
                         0,
                         vec![store(c(0x100f), Width::U8, c(0x55))],
                         Control::Branch {
                             condition,
-                            target: 3,
+                            target: 4,
                         },
                     ),
-                    instruction(1, vec![cleanup.clone()], Control::Next),
-                    instruction(2, vec![], Control::Return(result.clone())),
-                    instruction(3, vec![taken_cleanup], Control::Next),
-                    instruction(4, vec![], Control::Return(result)),
+                    instruction(1, definition(7), Control::Next),
+                    instruction(2, vec![cleanup.clone()], Control::Next),
+                    instruction(3, vec![], Control::Return(result.clone())),
+                    instruction(4, definition(9), Control::Next),
+                    instruction(5, vec![taken_cleanup], Control::Next),
+                    instruction(6, vec![], Control::Return(result)),
                 ],
             )
             .unwrap();
-            let output =
-                emit_readable_c_with_options(&program, ReadableOptions::default()).unwrap();
-            assert_eq!(
-                output.continuations.is_some(),
-                !memory_condition && !changed_write,
-                "memory_condition={memory_condition}, changed_write={changed_write}: {}",
-                output.code
-            );
+            let output = emit_readable_c_with_options(
+                &program,
+                ReadableOptions {
+                    coalesce_locals: true,
+                    ..ReadableOptions::default()
+                },
+            )
+            .unwrap();
+            if !memory_condition && !changed_write && !define_local {
+                assert_eq!(output.continuations.unwrap().removed_conditions, 1);
+            } else if let Some(evidence) = output.continuations {
+                assert_eq!(evidence.removed_conditions, 0, "{}", output.code);
+            }
+            if define_local {
+                assert!(output.continuations.is_some(), "{}", output.code);
+            }
             compare(&program, &inputs);
         }
     }
