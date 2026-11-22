@@ -220,8 +220,9 @@ impl Stages {
             .map(|(a, b)| format!("[{a},{b}]"))
             .collect::<Vec<_>>()
             .join(",");
+        let parameter_registers: Vec<_> = output.parameters.iter().map(|reg| reg.0).collect();
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v1\",\"contract\":\"nirvana-entry-full-state-v1\",\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v1\",\"contract\":\"nirvana-entry-full-state-v1\",\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
             self.budgets,
             stages.join(","),
             output.structure_evidence.is_some(),

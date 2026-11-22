@@ -48,6 +48,11 @@ def validate(value, step_limit, directory, requested_cases):
     c = value['selected_c']
     require(all(type(c[k]) is bool for k in ['input_structure_checked', 'display_structure_checked', 'fallback_goto'])
             and type(c['saved_value_rounds']) is int and c['saved_value_rounds'] >= 0, 'selected C checks')
+    if 'parameter_registers' in c:
+        parameters = c['parameter_registers']
+        require(isinstance(parameters, list) and len(parameters) <= 1024
+                and all(type(n) is int and 0 <= n < 2**32 for n in parameters)
+                and len(parameters) == len(set(parameters)), 'selected C parameter registers')
     if c['predicates'] is not None:
         require(isinstance(c['predicates'], dict)
                 and set(c['predicates']) == {'pruned_branches', 'constant_assignments', 'blocks_before', 'blocks_after'}

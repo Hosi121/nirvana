@@ -188,6 +188,17 @@ class SemanticTests(unittest.TestCase):
                 else:
                     stages.validate(value, 4096, Path(directory), 24)
 
+    def test_argument_registers_preserve_order_and_reject_ambiguous_descriptors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for parameters in [[7], [1, 7], [], [7, 7], [True], [-1], [2**32], '7']:
+                value = architecture()
+                value['selected_c']['parameter_registers'] = parameters
+                if parameters in [[7], [1, 7], []]:
+                    self.assertEqual(stages.validate(value, 4096, Path(directory), 24)['selected_c']['parameter_registers'], parameters)
+                else:
+                    with self.subTest(parameters=parameters), self.assertRaises(semantics.ProtocolError):
+                        stages.validate(value, 4096, Path(directory), 24)
+
 
 if __name__ == '__main__':
     unittest.main()
