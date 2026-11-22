@@ -11,6 +11,7 @@ pub(super) struct Printer<'a> {
     pub(super) views: Option<MemoryViews>,
     pub(super) first_temporary: usize,
     pub(super) widths: BTreeMap<usize, Width>,
+    pub(super) signed_widths: BTreeMap<usize, Width>,
     pub(super) address_types: BTreeMap<usize, Width>,
     pub(super) address_uses: BTreeSet<usize>,
     pub(super) recover_objects: bool,
@@ -85,19 +86,13 @@ impl Printer<'_> {
                     value,
                     divisor,
                     bits,
-                } => {
-                    let op = match operation {
-                        crate::transform::word_signed_division::Operation::Quotient => "/",
-                        crate::transform::word_signed_division::Operation::Remainder => "%",
-                    };
-                    atom(
-                        format!(
-                            "(uint64_t)(nirvana_signed{bits}({}) {op} {divisor})",
-                            self.expression_at(value, point).text
-                        ),
-                        true,
-                    )
-                }
+                } => atom(
+                    format!(
+                        "(uint64_t)({})",
+                        self.signed_word_operation(operation, value, divisor, bits, point)
+                    ),
+                    true,
+                ),
                 idioms::View::WordSigned {
                     name,
                     value,
@@ -212,6 +207,9 @@ impl Printer<'_> {
             ),
             Expr::Const(value) if *value <= i32::MAX as u64 => atom(value.to_string(), false),
             Expr::Const(value) => atom(format!("UINT64_C(0x{value:x})"), true),
+            Expr::Register(reg) if self.signed_widths.contains_key(&reg.0) => {
+                atom(format!("(uint64_t){}", self.register(*reg)), true)
+            }
             Expr::Register(reg) => atom(
                 self.register(*reg),
                 self.widths.get(&reg.0).copied().unwrap_or(Width::U64) == Width::U64,
@@ -439,6 +437,7 @@ impl Printer<'_> {
         local_type(
             self.widths.get(&reg.0).copied().unwrap_or(Width::U64),
             self.address_types.get(&reg.0).copied(),
+            self.signed_widths.get(&reg.0).copied(),
         )
     }
 
@@ -598,6 +597,15 @@ impl Printer<'_> {
                         };
                         if let Some(value) = self.address_value(*reg, point, &assignment.value) {
                             line(code, indent, &format!("{prefix}{value};"));
+                        } else if let Some(&signed) = self.signed_widths.get(&reg.0) {
+                            self.signed_statement(
+                                code,
+                                indent,
+                                &assignment.value,
+                                point,
+                                &prefix,
+                                signed,
+                            )?;
                         } else {
                             let value = stored_value(&assignment.value, width);
                             if !initialize

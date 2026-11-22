@@ -14,6 +14,7 @@ pub mod parallel_copy;
 pub mod predicates;
 pub mod provenance;
 pub mod record_shapes;
+pub mod signed_width;
 pub mod source_locals;
 pub mod ssa;
 pub mod ssa_constants;

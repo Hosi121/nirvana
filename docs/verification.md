@@ -137,6 +137,8 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 
 signed wordへのC変換は、実際のhelperの式をClangで読み、全64-bit入力について返り値とcast・減算のdefinednessを[3問い合わせで照合](../tools/tests/test_state_value_solver.py)します。通常のC演算子で出す商・剰余と、境界helperへ残すゼロ・±1・大きい除数は、同じnativeハーネスでO0/O2・UBSan比較します。
 
+[signed保存範囲](../tests/verification/signed_width.rs)は、bit演算・算術シフト・Select・抽出の41問い合わせをUNSATで確認し、zero-extensionを同じ幅のsigned値と誤認した3対照のSATをIRで再現します。[SSAの検査](../tests/dataflow/signed_width.rs)は入口の未知値、ループphi、コピー後の上書き、資源上限を含みます。[Cの比較](../tests/codegen/typed_locals.rs)は、負数のunsigned比較・論理シフト、wrap、unsigned値への上書き、遅延LoadをO0/O2・UBSanで実行し、返り値・全RAM・最初のfaultを照合します。
+
 C値モデルの除算抽象化は、[SMT-LIBのsigned演算の定義](https://smt-lib.org/logics-all.shtml#QF_BV)に沿い、任意のunsigned商関数と`n-q*d`から四つの符号ケースを照合します。[対照](../tools/tests/test_state_value_helpers.py)は8/16/32/64-bitの280問い合わせがUNSAT、byteの全65,536組は実際のC商・剰余と一致します。`NIRVANA_VALUE_PROOFS=DIR`で問い合わせを保存できます。抽象化だけのSATを[通常の式へ戻す検査](../tools/tests/test_state_value_solver.py)と、問い合わせ区分を含む[保存結果の検査](../tools/tests/test_state_value_protocol.py)も行います。
 [全域商・剰余の検査](../tests/verification/division_ops.rs)は、符号の4通りを合わせて64-bit全入力の定義を照合し、除数ゼロ・±1と誤った変換の反例も検査します。8-bitの復元kernelは実際のIR演算との等式として照合します。
 [word値グラフの検査](../tests/model/semantic_ir/word.rs)は、上位bitを失った分子、レジスタの上書き、符号境界を跨ぐループについて、元レジスタ・RAM・履歴・fault・予算を比較します。[GCC入力](../tests/fixtures/recovery/word-signed-memory.c)もnative・IR・生成Cで比較します。

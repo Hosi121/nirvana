@@ -45,6 +45,8 @@ mod vector_lanes;
 #[path = "verification/verification.rs"]
 mod verification;
 
+#[path = "verification/signed_width.rs"]
+mod signed_width;
 #[path = "verification/word_correction.rs"]
 mod word_correction;
 #[path = "verification/word_signed.rs"]

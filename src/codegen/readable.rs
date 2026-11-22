@@ -32,6 +32,7 @@ mod loops;
 mod pipeline;
 mod prepare;
 mod printer;
+mod signed_locals;
 mod syntax;
 mod views;
 mod webs;
@@ -166,6 +167,9 @@ pub struct LocalValue {
     pub registers: Vec<Reg>,
     pub name: String,
     pub width: Width,
+    /// Optional signed C representation. The logical U64 value is recovered
+    /// by unsigned conversion at each ordinary IR read.
+    pub signed_width: Option<Width>,
     /// Uniform observed guest access width. Storage remains an unsigned u64
     /// address; this hint carries no host pointer or object-size assumption.
     pub address_width: Option<Width>,
@@ -234,10 +238,13 @@ impl Render {
     }
 }
 
-fn local_type(width: Width, address_width: Option<Width>) -> String {
+fn local_type(width: Width, address_width: Option<Width>, signed_width: Option<Width>) -> String {
     match address_width {
         Some(element) if width == Width::U64 => format!("nirvana_u{}_address", element.bits()),
-        _ => format!("uint{}_t", width.bits()),
+        _ => signed_width.map_or_else(
+            || format!("uint{}_t", width.bits()),
+            |w| format!("int{}_t", w.bits()),
+        ),
     }
 }
 

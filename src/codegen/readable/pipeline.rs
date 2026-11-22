@@ -365,6 +365,7 @@ fn emit_prepared_layout(
             writeln!(code, "typedef uint64_t nirvana_u{bits}_address;").unwrap();
         }
     }
+    let signed_widths = super::signed_locals::recover(program, &mut locals, &address_uses);
     if options.compact_memory
         && let (Some(views), Some(roles)) = (&mut views, &stack_roles)
     {
@@ -398,6 +399,7 @@ fn emit_prepared_layout(
             views: None,
             first_temporary: program.register_count(),
             widths: widths.clone(),
+            signed_widths: signed_widths.clone(),
             address_types: BTreeMap::new(),
             address_uses: address_uses.clone(),
             recover_objects: false,
@@ -447,6 +449,7 @@ fn emit_prepared_layout(
             views: None,
             first_temporary: program.register_count(),
             widths: widths.clone(),
+            signed_widths: signed_widths.clone(),
             address_types: BTreeMap::new(),
             address_uses: address_uses.clone(),
             recover_objects: false,
@@ -524,6 +527,7 @@ fn emit_prepared_layout(
         views,
         first_temporary: program.register_count(),
         widths,
+        signed_widths,
         address_types,
         address_uses,
         recover_objects: options.recover_objects,
@@ -562,7 +566,7 @@ fn emit_prepared_layout(
             1,
             &format!(
                 "{} {};",
-                local_type(local.width, local.address_width),
+                local_type(local.width, local.address_width, local.signed_width),
                 local.name
             ),
         );

@@ -34,6 +34,8 @@ mod parallel_copy;
 mod provenance;
 #[path = "dataflow/record_shapes.rs"]
 mod record_shapes;
+#[path = "dataflow/signed_width.rs"]
+mod signed_width;
 #[path = "dataflow/source_copy_locals.rs"]
 mod source_copy_locals;
 #[path = "dataflow/source_locals.rs"]

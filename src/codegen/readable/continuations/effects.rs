@@ -149,6 +149,7 @@ mod tests {
             views: None,
             first_temporary: 4,
             widths: BTreeMap::new(),
+            signed_widths: BTreeMap::new(),
             address_types: BTreeMap::new(),
             address_uses: BTreeSet::from([0]),
             recover_objects: false,
