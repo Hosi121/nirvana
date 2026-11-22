@@ -57,7 +57,8 @@ class StateValueAST(unittest.TestCase):
 
     def test_uninitialized_values_unknown_effects_control_and_addresses_are_rejected(self):
         for body in ['uint64_t x;return x;', 'return opaque(state[0]);', 'while(state[0])--state[0];return state[0];',
-                     'if(state[0])goto done;state[1]++;done:return state[0];',
+                     'again:if(state[0]){--state[0];goto again;}return state[0];',
+                     'if(state[0]){inside:state[1]++;}if(state[2])goto inside;return state[1];',
                      'return state[state[0]&3];', 'return state[4];',
                      'int64_t x=(int64_t)state[0];return (uint64_t)(x+1);']:
             with self.subTest(body=body), self.assertRaises(Unsupported): self.model(Graph(), body)
@@ -87,6 +88,8 @@ class StateValueAST(unittest.TestCase):
             'const int8_t n=-1;state[3]=(uint64_t)n;return state[0]+state[3];',
             'if(state[0]&1)state[1]+=state[2];else state[2]^=state[3];return state[1]+state[2];',
             'state[0]=(state[0]&~UINT64_C(65280))|UINT64_C(768);return state[0];',
+            'uint64_t v;if(state[0]&1)goto fail;v=state[1]+state[2];state[2]=v;goto done;'
+            'fail:state[0]|=2;done:state[3]+=state[2];return state[3];',
         ]
         rng = random.Random(17)
         vectors = [[0]*4, [2**64-1]*4, [1<<63,1,2,3], [1,2,3,4]] + [[rng.getrandbits(64) for _ in range(4)] for _ in range(16)]

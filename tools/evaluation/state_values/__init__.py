@@ -6,7 +6,8 @@ from .ast import observe
 from .terms import Graph, Unsupported
 from .solver import compare
 
-MODEL = 'nirvana-state4-values-v1'
+MODEL = 'nirvana-state4-values-v2'
+MEMORY_PROFILE = {'memory_base': 4096, 'memory_size': 512, 'state_pointer': 4224}
 
 
 @dataclass
@@ -29,8 +30,8 @@ def measure(source_text, generated_text, name, parameters, solver, seconds=2, *,
                 'scalar_declarations': model.scalar_declarations, **graph.summary(model.outputs)}
     report = {'model': MODEL, 'status': proof.status, 'solver_seconds': seconds,
               'completed_solver_wall_seconds': sum(n['wall_seconds'] for n in proof.responses),
-              'profile': {**memory['profile'], 'integer_abi': 'x86-64-lp64', 'pointer': 'valid-state-only',
-                          'control': 'closed-if-return', 'observations': ['return', 'state_bytes']},
+              'profile': {**memory['profile'], **MEMORY_PROFILE, 'integer_abi': 'x86-64-lp64', 'pointer': 'valid-state-only',
+                          'control': 'closed-forward-control', 'observations': ['return', 'state_bytes']},
               'source': summary(a), 'generated': summary(b), 'reason': proof.reason, 'witness': proof.witness}
     raw = {'schema': 'nirvana-state4-value-graph-v1', 'nodes': [asdict(n) for n in graph.nodes],
            'source_outputs': a.outputs, 'generated_outputs': b.outputs}

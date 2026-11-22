@@ -1,11 +1,13 @@
 """Translate a closed C11 if/return subset into immutable state values.
 
-This oracle owns local snapshots and 32 individual state bytes. Scalar calls,
-loops, goto, volatile objects and unresolved addresses stay unsupported. The
+This oracle owns local snapshots and 32 individual state bytes. Function-body
+forward gotos retain their snapshots; cycles, nested label scopes, scalar calls,
+volatile objects and unresolved addresses stay unsupported. The
 generated side uses the fixed Nirvana checked-memory helper contracts; C
 storage names and view field spellings do not identify values or addresses.
 """
 from dataclasses import dataclass
+from itertools import chain, islice
 
 from .. import c_footprint as cf, state_memory as sm
 from .terms import Graph, Type, U64, BYTE, BOOL, Unsupported
@@ -49,6 +51,7 @@ class Interpreter:
         self.memory_context = None
         self.parameters = [n for n in cf.children(self.root) if n.get('kind') == 'ParmVarDecl']
         self.returns, self.work, self.assignments, self.declarations = [], 10000, 0, set()
+        self.gotos, self.labels = [], {}
         if cf.type_key(self.root).split('(')[0].strip() not in ['uint64_t', 'unsigned long', 'unsigned long long']:
             raise Unsupported('return outside uint64_t profile')
         if source:
@@ -64,6 +67,25 @@ class Interpreter:
             node = pending.pop()
             if 'volatile' in cf.type_key(node): raise Unsupported('volatile object')
             pending.extend(cf.children(node))
+        bodies = [n for n in cf.children(self.root) if n.get('kind') == 'CompoundStmt']
+        if len(bodies) != 1: raise Unsupported('function body shape')
+        statements = self.statements = cf.children(bodies[0])
+        for index, statement in enumerate(statements):
+            if statement.get('kind') == 'LabelStmt':
+                parts = cf.children(statement)
+                if len(parts) != 1: raise Unsupported('label body shape')
+                self.labels[statement['declId']] = index
+        for index, statement in enumerate(statements):
+            pending = [statement]
+            while pending:
+                node = pending.pop()
+                if node.get('kind') == 'LabelStmt' and node is not statement:
+                    raise Unsupported('label outside function body sequence')
+                if node.get('kind') == 'GotoStmt':
+                    target = self.labels.get(node.get('targetLabelDeclId'))
+                    if target is None or target <= index:
+                        raise Unsupported('goto outside forward function-body control')
+                pending.extend(cf.children(node))
 
     def spend(self):
         self.work -= 1
@@ -197,6 +219,10 @@ class Interpreter:
             result = g.cast(self.value(parts[0], state), U64)
             words = [g.pack(state.memory[n:n + 8]) for n in range(0, 32, 8)]
             self.returns.append((state.guard, [result, *words])); return []
+        if kind == 'GotoStmt':
+            self.gotos.append((node['targetLabelDeclId'], state)); return []
+        if kind == 'LabelStmt' and len(parts) == 1:
+            return self.statement(parts[0], state)
         if kind == 'DeclStmt':
             for declaration in parts:
                 if declaration.get('kind') == 'VarDecl': self.declaration(declaration, state)
@@ -230,8 +256,9 @@ class Interpreter:
 
     def sequence(self, statements, states):
         for statement in statements:
+            if not states: break
             states = [next_state for state in states for next_state in self.statement(statement, state)]
-            if len(states) + len(self.returns) > 64: raise Unsupported('C path budget')
+            if len(states) + len(self.returns) + len(self.gotos) > 64: raise Unsupported('C path budget')
         return states
 
     def model(self):
@@ -239,6 +266,11 @@ class Interpreter:
         if len(bodies) != 1: raise Unsupported('function body shape')
         memory = [self.graph.extract(self.graph.inputs[n // 8], n % 8 * 8) for n in range(32)]
         active = self.statement(bodies[0], State(self.graph.const(1, BOOL), {}, memory))
+        while self.gotos:
+            target, state = self.gotos.pop()
+            index = self.labels[target]
+            continuation = chain(cf.children(self.statements[index]), islice(self.statements, index + 1, None))
+            active.extend(self.sequence(continuation, [state]))
         if active or not self.returns: raise Unsupported('function may fall through')
         outputs = self.returns[-1][1]
         for guard, values in reversed(self.returns[:-1]):

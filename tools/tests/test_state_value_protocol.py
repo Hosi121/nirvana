@@ -38,14 +38,14 @@ class StateValueProtocol(unittest.TestCase):
         (root/'source_ast.stdout.txt').write_text(a); (root/'generated_ast.stdout.txt').write_text(b)
         # Protocol-only fixture: the outer report tests bind actual probe JSON.
         row = {'function':'fixture', 'c_footprint':{'status':'measured'},
-               'semantics':{'prepare_stdout_sha256':'bound-by-outer-protocol'},
+               'semantics':{'prepare_stdout_sha256':'bound-by-outer-protocol','profile':dict(sv.MEMORY_PROFILE)},
                'stage_checks':{'selected_c':{'parameter_registers':[7]}}}
         args = argparse.Namespace(state_values=True, value_solver='/nonexistent/state-values-z3' if unknown else self.solver, value_seconds=2)
         sv.attach(args, row, root)
         return row
 
     def test_replay_rebuilds_values_queries_and_precise_metadata(self):
-        for variant in ['intact','float','count','profile','query','graph','solver','binding','abi']:
+        for variant in ['intact','float','count','profile','query','graph','solver','binding','abi','layout']:
             with self.subTest(variant=variant), tempfile.TemporaryDirectory() as directory:
                 root=Path(directory); row=self.prepare(root)
                 self.assertEqual(row['state_values']['status'],'equivalent_under_model')
@@ -64,6 +64,7 @@ class StateValueProtocol(unittest.TestCase):
                     record['sha256']=sv.sha(path)  # A matching hash is insufficient.
                 elif variant=='binding': row['semantics'].clear()
                 elif variant=='abi': row['stage_checks']['selected_c']['parameter_registers']=[1,7]
+                elif variant=='layout': row['semantics']['profile']['state_pointer']+=8
                 if variant=='intact': self.assertEqual(sv.replay(root,row),'equivalent_under_model')
                 else:
                     with self.assertRaises((ValueError,KeyError)): sv.replay(root,row)

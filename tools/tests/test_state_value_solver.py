@@ -61,6 +61,18 @@ class StateValueProofs(unittest.TestCase):
         self.assertIsNone(result.report['witness'])
         self.assertTrue(result.query)
 
+    def test_forward_cleanup_gotos_match_a_structured_continuation(self):
+        a = ('uint64_t v;if(state[0]&1)goto fail;v=state[1]+state[2];state[2]=v;goto done;'
+             'fail:state[0]|=2;done:state[3]+=state[2];return state[3];')
+        b = ('uint64_t a=nirvana_load(&m,address,8);'
+             'if(!(a&1))nirvana_store(&m,address+16,8,nirvana_load(&m,address+8,8)+nirvana_load(&m,address+16,8));'
+             'else nirvana_store(&m,address,8,a|2);'
+             'nirvana_store(&m,address+24,8,nirvana_load(&m,address+24,8)+nirvana_load(&m,address+16,8));'
+             'return nirvana_load(&m,address+24,8);')
+        result = self.compare(a,b)
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v2')
+
     def test_a_rare_branch_countermodel_replays_in_actual_source_and_generated_c(self):
         compiler = shutil.which('cc')
         if not compiler: self.skipTest('requires C compiler')

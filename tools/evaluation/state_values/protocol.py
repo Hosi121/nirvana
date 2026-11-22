@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from ..semantics import sha
-from . import MODEL, measure, Unsupported
+from . import MODEL, MEMORY_PROFILE, measure, Unsupported
 
 NAMES = {'graph': 'state-values.graph.json', 'query': 'state-values.smt2', 'solver': 'state-values.solver.json'}
 STATUSES = {'equivalent_under_model', 'counterexample_under_model', 'unknown', 'unsupported', 'unavailable', 'evaluator_error', 'not_run'}
@@ -26,12 +26,19 @@ def arguments(directory, row):
             row['function'], row['stage_checks']['selected_c']['parameter_registers'])
 
 
+def fixed_layout(row):
+    profile = row.get('semantics', {}).get('profile', {})
+    return all(type(profile.get(k)) is int and profile[k] == v for k,v in MEMORY_PROFILE.items())
+
+
 def attach(args, row, directory):
     row['state_values'] = {'status': 'not_run'}
     if not args.state_values: return
     if (row['c_footprint']['status'] != 'measured' or 'prepare_stdout_sha256' not in row['semantics']
             or 'parameter_registers' not in row.get('stage_checks', {}).get('selected_c', {})):
         row['state_values'] = {'model': MODEL, 'status': 'unavailable', 'reason': 'requires measured C AST and bound ABI metadata'}
+    elif not fixed_layout(row):
+        row['state_values'] = {'model': MODEL, 'status': 'unavailable', 'reason': 'requires fixed state[4] entry memory layout'}
     else:
         try:
             result = measure(*arguments(directory, row), args.value_solver, args.value_seconds)
@@ -59,6 +66,7 @@ def replay(directory, row):
             or 'prepare_stdout_sha256' not in row.get('semantics', {})
             or 'parameter_registers' not in row.get('stage_checks', {}).get('selected_c', {})):
         raise ValueError('state values require retained AST and bound ABI metadata')
+    if not fixed_layout(row): raise ValueError('state value entry memory layout')
     if value.get('model') != MODEL: raise ValueError('state value model')
     if status == 'unsupported':
         try: measure(*arguments(directory, row), None, 2, recorded=[], failure_reason='solver_unavailable')
