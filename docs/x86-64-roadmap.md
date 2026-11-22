@@ -78,7 +78,8 @@ manifestにはNirvana・compiler・solverの版、CPU機能、全フラグ、bin
 | 段階間の契約 | [抽象化の段階と保証](architecture.md#抽象化の段階と保証)、個別の対応検査 | 各corpus行に通過した検査・適用前提・不足する検査を結ぶ |
 
 **M0は部分的な評価手段が揃った段階**。完了条件は、上記の統合報告と構造評価器の対照検査を初回corpusで再現できることである。
-初回corpus `nirvana-structure-initial-v1` の24構成を測定し、全件で固定ABIのnative↔IR・生成C比較を通した。baselineは`041a1e2`、開発集合で選んだ経路条件回復の比較先は`87bb55c`で、同じ24個のobject hashを確認した。開発用Clang O2のループ脱出例は構造距離25→15、goto 8→0、他の23構成のグラフは同じだった。22構成で正確な距離、2構成で探索上限付きの区間を得た。
+初回corpus `nirvana-structure-initial-v1` の24構成を測定し、全件で固定ABIのnative↔IR・生成C比較を通した。baselineは`041a1e2`、開発集合で選んだ経路条件回復の比較先は`87bb55c`で、同じ24個のobject hashを確認した。開発用Clang O2のループ脱出例は構造距離25→15、goto 8→0、他の23構成のグラフは同じだった。探索器`3878e02`で保存グラフを再解析し、同じ予算で全24構成の正確な距離を得た。
+段階別の再構成・全状態比較をM0の各行へ結び、開発集合から得た[17組の固定入力](../tools/corpora/structure-branch-inputs-v1.txt)でも24構成を検査した。25,500件のLow IR/Middle IR比較、native・O0/O2生成Cの比較が全件通過した。手順と観測契約は[M0評価ガイド](evaluation.md)にまとめる。
 次は、block内の処理と条件の内容を評価へ結ぶ部分を進める。各段階の検査根拠と適用前提の統合も継続する。
 
 ## M2で早期に扱う制御フロー変換

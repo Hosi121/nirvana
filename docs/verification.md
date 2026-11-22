@@ -21,58 +21,7 @@ python3 -m unittest discover -s tools/tests
 
 ## 制御構造の部分評価
 
-M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-initial-v1.json)は開発用4ソース族とhold-outの2ソース族を分け、GCC/Clang × O2/O3の24構成へ固定しています。従来の[16構成のsmoke集合](../tools/corpora/structure-smoke.json)も個別の比較に使えます。
-
-```sh
-cargo build --locked --bin nirvana --example evaluation_probe
-python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.json \
-  --clang clang-18 --compiler gcc=cc --compiler clang18=clang-18 \
-  --semantic-probe target/debug/examples/evaluation_probe --measure-rss \
-  --out target/structure-baseline
-NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
-```
-
-入力のコンパイラと、生成Cを再コンパイルする`--c-compiler`（既定`cc`）を個別に固定します。元Cを各入力compilerで前処理し、そのCから作った機械語だけをNirvanaへ渡します。
-出力先は空のディレクトリを使い、`report.json`と各入力の前処理C・object・生成C・生のCFG・正規化グラフ・コマンド記録を保存します。
-compiler・実行ファイル・評価器・入力・グラフのhash、時間、探索予算を報告し、未対応・エラー・timeoutも要求した全構成に含めます。終了コード0は報告の生成を示します。
-
-指標`nirvana-control-topology-v1`は、入口・出口・return・分岐・残るflowをラベルにした有向多重グラフを使います。式・名前・分岐の極性を捨て、明示的に剪定された辺と入口から届かないblockを除きます。出口は保持し、単一後続のflowを縮約します。自己循環は残します。関数内のdispatcherも同じ規則で比較します。
-距離は入口・出口を対応させ、nodeの追加・削除・ラベル変更とedgeの追加・削除をそれぞれ1と数えます。`exact`と、探索予算で止まった`upper_bound`を区別し、下限・上限・対応表・停止理由を保存します。対応表は`control_graph.graph_from_json`と`mapping_cost`で再計算できます。
-探索の下限には、未対応ラベルの不足数と、固定した対応の内側・境界・残余に分けた辺数の差を使います。[全部分対応のoracle](../tools/tests/test_control_graph.py)で小グラフの下限と最短距離を照合します。
-
-この指標は制御の形を観測します。基本block内の演算・効果・処理の複製は別の評価対象です。`--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
-
-同じprobeの`stage_checks`は、Low IR→Middle IRの再構成、直接MIR実行と戻し変換、経路条件回復後のMIRを別々に記録します。0/1/2/4/8/16/32/64/128と指定上限の各予算で、全レジスタ・全RAM・最初のfault・PC・traceを元IRと照合します。総実行予算を超えた段階は未判定として残します。反例や観測器のエラーがあっても、native/Cの比較は独立に進めます。
-
-`low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。これらの対応検査と具体入力での一致は、生成C全体の一般的な同値性証明とは別の検証結果です。
-
-[追加入力の探索](../examples/evaluation_witnesses.rs)は、保存した実行prefixの分岐を反転し、checked-memoryモデルで4状態ワードの候補を求めます。512-byteの固定ABIメモリを使った元IRで、prefix・移転先・正常returnを再現した候補を採用します。UNSATは選んだprefixについての判定です。問い合わせ数と時間を制限し、未知・再現できた入力・再現できなかった候補を記録します。開発集合で得た行を固定し、`--semantic-inputs FILE --semantic-cases N`でnative・IR・生成Cを再評価できます。入力集合を変えた測定は、同じ集合同士で比較します。
-
-```sh
-cargo build --locked --example evaluation_witnesses
-NIRVANA_Z3=target/verification-venv/bin/z3 target/debug/examples/evaluation_witnesses \
-  target/structure-baseline/CASE/input.o \
-  target/structure-baseline/CASE/semantics/native-inputs.txt \
-  target/structure-witnesses/CASE 8 1000
-```
-
-`--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。block内の処理・条件の内容を含む構造指標はM0の継続対象です。
-[対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
-
-[報告の比較器](../tools/compare_structure_reports.py)は、corpus・binary・compiler・フラグ・観測契約を照合し、保存したdumpからの正規化、対応表の費用、具体実行の全ワードを再検査します。探索結果の最適性は記録したソルバの判定を使い、打切り区間が重なる結果は未判定として扱います。同じグラフ同士の比較では、打切り後も距離が等しいことを確認できます。失敗行も分母に保持します。
-
-```sh
-python3 tools/compare_structure_reports.py \
-  target/structure-baseline/report.json target/structure-candidate/report.json \
-  > target/structure-comparison.json
-```
-
-探索器を更新した場合は、[保存グラフの再解析](../tools/reanalyze_structure_report.py)で同じ入力を使えます。元の報告を保持したまま同じディレクトリへ別名で保存し、元報告のhash・新しい探索器のhash・新しい距離を記録します。native/Cのコマンド費用は元測定の値として保持します。
-
-```sh
-python3 tools/reanalyze_structure_report.py target/structure-baseline/report.json \
-  --out target/structure-baseline/report-refined.json
-```
+[M0評価ガイド](evaluation.md)に、固定corpus、native・IR・生成Cの観測、段階別検査、比較と再解析の手順をまとめています。
 
 ## 比較の境界
 
