@@ -49,6 +49,7 @@ FDEは関数の一部の場合もあるため、合成名`sub_ADDRESS`を持つ�
 `module-*`は8/16/32/64-bitのDIV/IDIVを、sourceのLoadとdivide error（#DE）を持つ命令として実行します。
 商・剰余・部分レジスタと停止位置の規則は[実行モデル](equivalence.md)にあります。
 `module-*`のSTOS・MOVSは8/16/32/64-bit、REP（F3）、CLD／STDを扱い、64-bitのアドレスとcountを使います。途中faultまでの書込みとcount・pointerの進捗を保持します。
+`module-*`のlegacy SSE2はXMM0〜15を二つの64-bit値で表し、MOVAPS/UPS/DQA/DQU、PXOR/XORPS、PUNPCKLQDQ、GPRとのMOVQ、m64からのMOVHPSを扱います。レジスタ形式のPADDQ・PSHUFD・即値PSRLQ/PSRLDQも扱います。シフト数がlane幅・vector幅以上なら結果は0です。メモリの全幅とalignmentを先に検査してから値を反映します。個別のprefix・オペランド制限は[vector lifter](../src/binary/x86/vector.rs)にまとめています。
 仕様は[Intel SDM Vol.1 §18.3.1](https://cdrdv2-public.intel.com/843827/253665-sdm-vol-1-dec-24.pdf)と、[命令リファレンス](https://cdrdv2-public.intel.com/782156/325383-sdm-vol-2abcd.pdf)を参照してください。
 CMOVのメモリsourceは、条件の真偽にかかわらず読み込みます。
 RETではRSPを進め、RAXを対象関数の返り値として実行を終えます。
@@ -59,7 +60,7 @@ RETではRSPを進め、RAXを対象関数の返り値として実行を終え�
 | --- | --- |
 | コード画像 | PE、関数境界の推定、汎用的なリンク・import解決 |
 | 関数間制御 | 関数境界の推定、呼出し規約・プロトタイプの回復、追加の外部効果 |
-| 命令と環境 | SIMD、memory BT・BTS/BTR/BTC、FS/GS base、追加のCPU例外 |
+| 命令と環境 | 追加のSIMD/FP・VEX/EVEX、memory BT・BTS/BTR/BTC、FS/GS base、追加のCPU例外 |
 
 ## CLI
 

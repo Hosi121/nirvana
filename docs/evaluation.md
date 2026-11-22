@@ -1,6 +1,6 @@
 # M0 Evaluation
 
-M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-initial-v1.json)は開発用4ソース族とhold-outの2ソース族を分け、GCC/Clang × O2/O3の24構成へ固定しています。従来の[16構成のsmoke集合](../tools/corpora/structure-smoke.json)も個別の比較に使えます。
+M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-initial-v1.json)は開発用4ソース族とhold-outの2ソース族を分け、GCC/Clang × O2/O3の24構成へ固定しています。[追加の整数corpus](../tools/corpora/structure-integer-v1.json)は、狭いsigned演算、反復中の添字とalias、ベクトル化の3族・12構成を開発用として保持します。従来の[16構成のsmoke集合](../tools/corpora/structure-smoke.json)も個別の比較に使えます。
 
 ```sh
 cargo build --locked --bin nirvana --example evaluation_probe
@@ -35,6 +35,8 @@ ASTの生データとhashを保持し、比較器が集計値とfingerprintを�
 
 `equivalent_under_model`は4状態ワードの全域に対するモデル下の結果です。SATは値グラフで再実行し、`counterexample_under_model`として入力と差を保存します。sourceの変数名や寿命、機械語全体の正しさはそれぞれ別の評価項目です。無効ポインタのfault、全RAM、PC・予算は既存の具体実行検査へ結びます。値グラフの規模・fingerprintは構文的な補助観測として扱います。
 
+値モデルv5は、生成Cのrecord・view・整数アドレスを宣言時の値として保存します。ループ内の宣言は各反復で捕捉し直します。signed演算は保守的な区間で候補を作り、幅を広げた独立のSMT式でcastの範囲・overflowなどの前提も検査します。前提の反例は`unknown / definedness_not_established`として再実行します。既知の整数helperには別の全域契約を使い、符号拡張、mask付き算術シフト、8/16/32-bitの商・剰余を扱います。C演算の未定義動作とhelperの全域定義を区別します。
+
 ```sh
 python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.json \
   --clang clang-18 --compiler gcc=cc --compiler clang18=clang-18 \
@@ -43,6 +45,19 @@ python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.j
 ```
 
 AST・ABI情報から値グラフと問い合わせを再構築し、hash付きのsolver出力とSAT入力を照合します。UNSATは保存したsolverの判定を使います。報告の評価器revisionとmodule hashを揃えて再解析します。solverの完了した起動ごとの時間を保存し、そのRSSは未計測として扱います。Z3の準備と正負対照は[検証ガイド](verification.md)にまとめています。
+
+## リンク済みleaf関数
+
+`evaluation_probe --module`は、リンク済みELFの`fixture`に固定の`state[4]`を渡します。通常入力と、各命令PCから0/1/2/4/8/16/32命令で停止する再開ケースを保存します。module IRとcore/readable/localsの生成CをO0/O2・UBSanで比較し、全80レジスタ・RAM・PC・停止結果・fault・命令開始数・残り予算を照合します。RAMは生成observer内でbyte比較し、保存行にはdigestを残します。native oracleとの比較対象は返り値と4状態ワードです。このleaf profileの観測項目は上記の状態で、命令traceや外部I/Oの列は別profileで評価します。
+
+```sh
+target/debug/examples/evaluation_probe --module input.elf inputs.txt target/module-leaf native-oracle
+python3 tools/compare_module_reports.py target/module-before target/module-after > target/module-comparison.json
+NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
+  python3 -m unittest discover -s tools/tests -p test_module_evaluation_probe.py
+```
+
+比較器は同名の構成ディレクトリを要求し、ELF・入力・profile・予算・nativeの観測を照合します。全行と期待RAMの再生、生成Cの保存行の比較を行い、未対応や評価器エラーも要求分母に残します。1関数256命令、4,096ケース、期待RAM計128 MiBを上限とします。追加整数corpusのベクトル化4構成は、閉じたET_RELでは定数の再配置が未対応です。同じobjectをリンクしたELFではSSE2のmodule経路で評価し、閉じた関数の回収率と別に報告します。
 
 `--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
 
