@@ -44,7 +44,7 @@ fn pair(prefix: Vec<Assignment>, a: Assignment, b: Assignment) -> (Program, Prog
 }
 fn check(root: &Path, name: &str, a: &Program, b: &Program) -> BlockVerdict {
     let regs: Vec<_> = (0..8).map(Reg).collect();
-    let query = block_query(a, b, 0, &regs, &[]).unwrap();
+    let query = block_query(a, b, 0, &regs, &regs).unwrap();
     std::fs::write(
         root.join(format!("{name}.smt2")),
         format!("{}(check-sat)\n", query.smt2()),
@@ -77,9 +77,69 @@ fn counterexample(root: &Path, name: &str, a: &Program, b: &Program) {
         )
         .unwrap();
     assert!(
-        before.exit != after.exit || before.state.memory != after.state.memory,
+        before.exit != after.exit
+            || before.state.memory != after.state.memory
+            || before.state.registers != after.state.registers,
         "{name}"
     );
+}
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn successful_read_allows_an_independent_scalar_update_before_a_store() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/verification/store-local-order");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut proved = 0;
+    for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        for op in [BinaryOp::Add, BinaryOp::And, BinaryOp::Or, BinaryOp::Xor] {
+            let (before, after) = pair(
+                vec![set(5, Expr::load(r(0), width))],
+                store(r(0), width, r(1)),
+                set(3, Expr::binary(op, r(3), r(2))),
+            );
+            assert_eq!(
+                check(
+                    &root,
+                    &format!("independent-{}-{op:?}", width.bits()),
+                    &before,
+                    &after
+                ),
+                BlockVerdict::EquivalentUnderModel
+            );
+            proved += 1;
+        }
+    }
+    // Each variant breaks a data dependency. SAT values are replayed in the
+    // real interpreter, including all registers on a normal exit. A total
+    // scalar update alone cannot change a preceding store's first fault.
+    let mut disproved = 0;
+    for (name, prefix, stored, updated) in [
+        (
+            "stored-value",
+            vec![set(5, Expr::load(r(0), Width::U64))],
+            store(r(0), Width::U64, r(3)),
+            set(3, add(r(3), c(1))),
+        ),
+        (
+            "rhs-memory",
+            vec![set(5, Expr::load(r(0), Width::U64))],
+            store(r(0), Width::U64, r(1)),
+            set(3, Expr::load(r(0), Width::U64)),
+        ),
+        (
+            "address",
+            vec![set(5, Expr::load(r(0), Width::U64))],
+            store(r(0), Width::U64, r(1)),
+            set(0, add(r(0), c(8))),
+        ),
+    ] {
+        let (before, after) = pair(prefix, stored, updated);
+        counterexample(&root, name, &before, &after);
+        disproved += 1;
+    }
+    std::fs::write(root.join("result.json"), format!(
+        "{{\"model\":\"checked-flat-rw-u64\",\"equivalent\":{proved},\"replayed_counterexamples\":{disproved}}}\n"
+    )).unwrap();
 }
 
 #[test]
