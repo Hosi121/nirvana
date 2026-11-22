@@ -66,6 +66,23 @@ pub fn emit_readable_c_with_options(
     program: &Program,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
+    let mut best = emit_readable_base(program, options)?;
+    if let Some(plan) = crate::dataflow::predicates::PredicatePlan::analyze(program)
+        && let Some((lowered, evidence)) = plan.lower(program)
+        && let Ok(mut candidate) = emit_readable_base(&lowered, options)
+        && candidate.parameters == best.parameters
+        && render_cost(&candidate) < render_cost(&best)
+    {
+        candidate.predicates = Some(evidence);
+        best = candidate;
+    }
+    Ok(best)
+}
+
+fn emit_readable_base(
+    program: &Program,
+    options: ReadableOptions,
+) -> Result<ReadableC, ReadableError> {
     let reduced = reduce(program)?;
     let parameters = reduced.parameters().to_vec();
     let mut best = emit_reduced_c(reduced, options);
@@ -564,6 +581,7 @@ fn emit_prepared_c(
         code.insert_str(start, &bit_helpers);
     }
     Ok(ReadableC {
+        predicates: None,
         code,
         middle_memory: None,
         middle_saved: None,

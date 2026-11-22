@@ -39,6 +39,10 @@ fn one(assignments: Vec<Assignment>, control: Control) -> Program {
 fn compare(source: &Program, inputs: &[Vec<u64>], memory: &[u8], limits: &[usize]) -> usize {
     let middle = Function::from_low(source).unwrap();
     let restored = middle.lower().unwrap();
+    let predicates = middle.recover_predicates().unwrap().map(|(middle, _)| {
+        let low = middle.lower().unwrap();
+        (middle, low)
+    });
     assert_eq!(restored.instructions(), source.instructions());
     let (refined, _) = middle.recover_memory_constants().unwrap();
     let refined_low = refined.lower().unwrap();
@@ -50,6 +54,16 @@ fn compare(source: &Program, inputs: &[Vec<u64>], memory: &[u8], limits: &[usize
     for input in inputs {
         for &limit in limits {
             let expected = source.run_with_memory(input, 4096, memory, limit).unwrap();
+            if let Some((middle, low)) = &predicates {
+                assert_eq!(
+                    middle.run_with_memory(input, 4096, memory, limit).unwrap(),
+                    expected
+                );
+                assert_eq!(
+                    low.run_with_memory(input, 4096, memory, limit).unwrap(),
+                    expected
+                );
+            }
             assert_eq!(
                 middle.run_with_memory(input, 4096, memory, limit).unwrap(),
                 expected,

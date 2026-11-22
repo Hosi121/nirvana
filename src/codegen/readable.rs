@@ -74,6 +74,8 @@ pub use views::{IndexedView, ObjectField, ObjectView, StackView};
 #[derive(Clone, Debug)]
 pub struct ReadableC {
     pub code: String,
+    /// Checked source-CFG path facts adopted before local-value reduction.
+    pub predicates: Option<crate::dataflow::predicates::PredicateEvidence>,
     /// Memory result refinements adopted from the source-bound middle IR.
     pub middle_memory: Option<crate::model::middle_ir::MemoryEvidence>,
     /// Saved snapshot identities materialized before readable C preparation.

@@ -27,10 +27,10 @@ pub use control_flow::{
 };
 pub use dataflow::{
     address_identity, allocation, allocation_verify, call_footprint, known_bits, local_identity,
-    memory_ssa, memory_values, module_local_plan, module_values, parallel_copy, provenance,
-    record_shapes, source_locals, ssa, ssa_constants, ssa_destroy, ssa_locals, ssa_storage, stack,
-    stack_cells, stack_role, stack_values, type_infer, value_graph, value_liveness, value_role,
-    value_width, web, web_verify,
+    memory_ssa, memory_values, module_local_plan, module_values, parallel_copy, predicates,
+    provenance, record_shapes, source_locals, ssa, ssa_constants, ssa_destroy, ssa_locals,
+    ssa_storage, stack, stack_cells, stack_role, stack_values, type_infer, value_graph,
+    value_liveness, value_role, value_width, web, web_verify,
 };
 pub use model::{
     effects, effects_observe, expression_ir, hir, ir, memory, middle_ir, module_ir, observe,

@@ -11,6 +11,7 @@ pub mod memory_values;
 pub mod module_local_plan;
 pub mod module_values;
 pub mod parallel_copy;
+pub mod predicates;
 pub mod provenance;
 pub mod record_shapes;
 pub mod source_locals;

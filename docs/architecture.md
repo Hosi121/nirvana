@@ -37,6 +37,8 @@ ELF / raw bytes
 
 compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作り、検査後にSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
 
+[経路条件の回復](../src/dataflow/predicates.rs)は、閉じたDAGのSSA値を使い、各block入口のゼロ・非ゼロの事実を求めます。別の検査器が元CFGの全流入辺から主張を確認し、純粋な条件分岐・代入・returnの変更を検査します。Loadは定義ごとに独立な値とし、メモリ効果・命令位置・予算を保ちます。契約は関数入口からの実行とそのprefixです。Middle IRの`recover_predicates()`は変更後のCFGからSSAと値IDを再構築し、readable Cは同じ引数契約で従来の出力と比較して候補を選びます。
+
 Middle IRはM1の段階間契約を実装する最初の共通表現です。保存場所IDと値IDを分け、各read/writeにレジスタSSAの版を対応付けます。値は64-bit bit列として計算し、Loadと抽出には幅を保持します。条件付きの式は子の評価領域を持ち、Storeはアドレスと右辺の領域を分けます。同じ領域の純粋な計算と同じSSA版の読取りを共有し、Loadは個別に保持します。戻し変換は式を再構成し、Loadの脱落・複製・順序変更を検査します。
 
 直接実行器とLow IRへの戻し変換を、全レジスタ・RAM・最初のfault・PC・命令予算で比較します。`--emit middle-ir`は値と領域・SSA版・CFGを表示し、`--emit middle-c`は検査済みの再構成を既存C backendへ渡します。型・元変数の回復とmoduleの外部効果は、この単一関数の契約から段階的に広げます。

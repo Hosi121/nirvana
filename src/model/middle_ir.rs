@@ -20,6 +20,7 @@ mod memory;
 pub use memory::{Load, LoadFlow, MemoryFacts, Store};
 mod recover_memory;
 pub use recover_memory::MemoryEvidence;
+mod recover_predicates;
 mod saved_values;
 pub use crate::dataflow::memory_values::{SavedSlice, SavedValueView, SnapshotId};
 pub use saved_values::{SavedEvidence, SavedLowering};
