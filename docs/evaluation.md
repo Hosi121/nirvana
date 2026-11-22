@@ -6,7 +6,7 @@ M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをCla
 cargo build --locked --bin nirvana --example evaluation_probe
 python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.json \
   --clang clang-18 --compiler gcc=cc --compiler clang18=clang-18 \
-  --semantic-probe target/debug/examples/evaluation_probe --measure-rss \
+  --semantic-probe target/debug/examples/evaluation_probe --c-footprint --measure-rss \
   --out target/structure-baseline
 NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
 ```
@@ -21,11 +21,15 @@ compiler・実行ファイル・評価器・入力・グラフのhash、時間�
 距離は入口・出口を対応させ、nodeの追加・削除・ラベル変更とedgeの追加・削除をそれぞれ1と数えます。`exact`と、探索予算で止まった`upper_bound`を区別し、下限・上限・対応表・停止理由を保存します。対応表は`control_graph.graph_from_json`と`mapping_cost`で再計算できます。
 探索の下限には、未対応ラベルの不足数と、固定した対応の内側・境界・残余に分けた辺数の差を使います。[全部分対応のoracle](../tools/tests/test_control_graph.py)で小グラフの下限と最短距離を照合します。
 
-この指標は制御の形を観測します。基本block内の演算・効果・処理の複製は別の評価対象です。`--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
+`--c-footprint`は[Clang JSON AST](https://clang.llvm.org/docs/IntroductionToTheClangAST.html)から`nirvana-c-ast-footprint-v1`を測ります。対象関数の演算・リテラル・型、条件式の規模、メモリ参照構文、checked read/write helperの呼出し箇所を記録します。局所変数を宣言順のIDへ対応付け、名前変更を吸収した条件・関数のfingerprintを保存します。`_Generic`は選択された式、`sizeof`は未評価のoperandを区別して数えます。重複条件は同じ構文の出現数で、可変な局所変数が各使用点で持つ値の同一性は別の解析対象です。helper呼出し箇所も静的な構文の観測です。元Cとの差分は指標ごとに示し、意味的な距離や総合点への換算は将来の対応解析で扱います。
+
+ASTの生データとhashを保持し、比較器が集計値とfingerprintを再計算します。Clang 18の版を固定し、対象外のAST構文・読取り失敗も全構成の分母に保持します。これにより、制御の距離だけでは見えない処理や条件の増減を確認できます。
+
+`--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
 
 同じprobeの`stage_checks`は、Low IR→Middle IRの再構成、直接MIR実行と戻し変換、経路条件回復後のMIRを別々に記録します。0/1/2/4/8/16/32/64/128と指定上限の各予算で、全レジスタ・全RAM・最初のfault・PC・traceを元IRと照合します。総実行予算を超えた段階は未判定として残します。反例や観測器のエラーがあっても、native/Cの比較は独立に進めます。
 
-`low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。これらの対応検査と具体入力での一致は、生成C全体の一般的な同値性証明とは別の検証結果です。
+`low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。`continuations`はC保存先の確定後に検査した終了処理の共有を、モデルID・削除条件数・照合グラフ規模で示します。MIRの全状態検査と、このC出力の観測境界は[設計](architecture.md#c保存先確定後の継続処理)で分けています。これらの対応検査と具体入力での一致は、生成C全体の一般的な同値性証明とは別の検証結果です。
 
 ## 追加入力
 
@@ -43,7 +47,7 @@ NIRVANA_Z3=target/verification-venv/bin/z3 target/debug/examples/evaluation_witn
 
 ## 測定費用と対象範囲
 
-`--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。block内の処理・条件の内容を含む構造指標はM0の継続対象です。
+`--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。演算・条件・効果と元ソースの値の対応を結ぶ指標はM0の継続対象です。
 [対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
 
 ## 比較と再解析
