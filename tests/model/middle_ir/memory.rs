@@ -1,4 +1,76 @@
 use super::*;
+
+#[test]
+fn checked_load_results_feed_predicates_while_every_read_and_fault_stays_in_place() {
+    let source = Program::new(
+        0,
+        8,
+        vec![
+            IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![
+                    store(r(7), Width::U8, c(3)),
+                    set(0, Expr::load(r(7), Width::U8)),
+                ],
+                control: Control::Next,
+            },
+            IrInstruction {
+                address: 1,
+                size: 1,
+                assignments: vec![],
+                control: Control::Branch {
+                    condition: r(0),
+                    target: 3,
+                },
+            },
+            IrInstruction {
+                address: 2,
+                size: 1,
+                assignments: vec![],
+                control: Control::Return(c(99)),
+            },
+            IrInstruction {
+                address: 3,
+                size: 1,
+                assignments: vec![],
+                control: Control::Return(r(0)),
+            },
+        ],
+    )
+    .unwrap();
+    let middle = Function::from_low(&source).unwrap();
+    let (constants, facts) = middle.recover_memory_constants().unwrap();
+    assert_eq!(facts.refined_loads, 1);
+    let (recovered, proof) = constants
+        .recover_predicates()
+        .unwrap()
+        .expect("KnownLoad value reaches the branch");
+    assert_eq!(proof.pruned_branches, 1);
+    let low = recovered.lower().unwrap();
+    assert_eq!(recovered.memory_facts().unwrap().loads().count(), 1);
+    for pointer in [4096, 4103, 4104, u64::MAX] {
+        for value in [0, 1, 255, u64::MAX] {
+            let input = [value, 5, 9, 7, 0, 0, 0, pointer];
+            for budget in 0..=5 {
+                let expected = source
+                    .run_with_memory(&input, 4096, &[0xa5; 8], budget)
+                    .unwrap();
+                assert_eq!(
+                    recovered
+                        .run_with_memory(&input, 4096, &[0xa5; 8], budget)
+                        .unwrap(),
+                    expected
+                );
+                assert_eq!(
+                    low.run_with_memory(&input, 4096, &[0xa5; 8], budget)
+                        .unwrap(),
+                    expected
+                );
+            }
+        }
+    }
+}
 use nirvana::address_identity::{Operand as SourceOperand, PathEdge};
 use nirvana::middle_ir::LoadFlow;
 

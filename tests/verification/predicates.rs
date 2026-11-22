@@ -241,3 +241,88 @@ fn actual_predicate_plans_preserve_all_pure_entry_prefixes_and_replay_a_bad_targ
     assert_eq!(proved, 51);
     println!("{proved} universal pure-DAG prefix comparisons; one full-state SAT witness replayed");
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn actual_masked_load_plans_preserve_checked_memory_and_replay_removed_reads() {
+    use nirvana::{
+        block_verify::{self, BlockVerdict},
+        ir::Width,
+    };
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/predicate-memory");
+    std::fs::create_dir_all(&root).unwrap();
+    let path = |p: &Program| {
+        let rows = [0, 1, 3]
+            .into_iter()
+            .enumerate()
+            .map(|(n, address)| {
+                let mut row = p.instructions()[address].clone();
+                row.address = n as u64;
+                row.size = 1;
+                if !matches!(row.control, Control::Return(_)) {
+                    row.control = Control::Next;
+                }
+                row
+            })
+            .collect();
+        Program::new(0, 8, rows).unwrap()
+    };
+    for width in [Width::U8, Width::U16, Width::U32, Width::U64] {
+        let source = program(vec![
+            (
+                vec![set(
+                    0,
+                    b(B::Or, b(B::And, Expr::load(r(7), width), c(0)), c(7)),
+                )],
+                Control::Next,
+            ),
+            (
+                vec![],
+                Control::Branch {
+                    condition: r(0),
+                    target: 3,
+                },
+            ),
+            (vec![], Control::Return(c(99))),
+            (vec![], Control::Return(r(0))),
+        ]);
+        let plan = PredicatePlan::analyze(&source).unwrap();
+        let (candidate, e) = plan.lower(&source).unwrap();
+        assert_eq!(e.pruned_branches, 1);
+        let regs = (0..8).map(Reg).collect::<Vec<_>>();
+        let check = |name: &str, before: &Program, after: &Program| {
+            let q =
+                block_verify::block_query(&path(before), &path(after), 0, &regs, &regs).unwrap();
+            std::fs::write(
+                root.join(format!("{name}.smt2")),
+                format!("{}(check-sat)\n", q.smt2()),
+            )
+            .unwrap();
+            let v = q.check(&solver);
+            std::fs::write(root.join(format!("{name}.out")), format!("{v:?}\n")).unwrap();
+            v
+        };
+        assert_eq!(
+            check(&format!("masked-{}", width.bits()), &source, &candidate),
+            BlockVerdict::EquivalentUnderModel
+        );
+        let mut rows = candidate.instructions().to_vec();
+        rows[0].assignments[0].value = c(7);
+        let bad = Program::new(0, 8, rows).unwrap();
+        assert!(predicates::validate(&source, &plan, &bad).is_err());
+        let BlockVerdict::Counterexample(w) =
+            check(&format!("removed-{}", width.bits()), &source, &bad)
+        else {
+            panic!("missing removed-read witness")
+        };
+        assert_ne!(
+            source
+                .run_with_memory(&w.before_registers, w.memory_base, &w.memory, 8)
+                .unwrap(),
+            bad.run_with_memory(&w.before_registers, w.memory_base, &w.memory, 8)
+                .unwrap()
+        );
+    }
+}

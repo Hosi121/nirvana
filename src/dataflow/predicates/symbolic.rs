@@ -1,5 +1,6 @@
 //! Source-bound pure value numbering for one acyclic execution. Every memory
-//! producing definition is a distinct opaque word; memory equality is unused.
+//! read is a distinct opaque word; memory equality is unused. Value facts hold
+//! after normal expression completion. Rewriting retains memory expressions.
 use super::*;
 use crate::model::ir::{BinaryOp, UnaryOp};
 
@@ -7,7 +8,7 @@ use crate::model::ir::{BinaryOp, UnaryOp};
 pub(super) enum Value {
     Constant(u64),
     Opaque(usize),
-    Control(u64),
+    Load(usize),
     Unary(UnaryOp, usize),
     Binary(BinaryOp, usize, usize),
     Select(usize, usize, usize),
@@ -32,6 +33,7 @@ pub(super) struct Values {
     ssa: Vec<Option<usize>>,
     intern: BTreeMap<Value, usize>,
     work: ssa::Budget,
+    loads: usize,
 }
 impl Values {
     pub fn build(
@@ -46,6 +48,7 @@ impl Values {
             ssa: vec![None; graph.values.len()],
             intern: BTreeMap::new(),
             work: ssa::Budget::new(),
+            loads: 0,
         };
         for (id, definition) in graph.values.iter().enumerate() {
             if matches!(definition, ssa::Definition::Initial { .. }) {
@@ -85,11 +88,7 @@ impl Values {
                         };
                         let point = points[&site];
                         let definition = point.definition.ok_or(invalid("predicate definition"))?;
-                        let node = if assignment.value.uses_memory() {
-                            values.node(Value::Opaque(definition.0))?
-                        } else {
-                            values.expression(&assignment.value, point)?
-                        };
+                        let node = values.expression(&assignment.value, point)?;
                         values.ssa[definition.0] = Some(node);
                         values.definitions.insert(site, node);
                     }
@@ -103,11 +102,7 @@ impl Values {
                         instruction: instruction.address,
                         assignment: None,
                     };
-                    let node = if value.uses_memory() {
-                        values.node(Value::Control(instruction.address))?
-                    } else {
-                        values.expression(value, points[&site])?
-                    };
+                    let node = values.expression(value, points[&site])?;
                     values.controls.insert(instruction.address, node);
                 }
             }
@@ -161,7 +156,14 @@ impl Values {
                     walk(values, taken, point, cursor)?,
                     walk(values, not_taken, point, cursor)?,
                 ),
-                Expr::Load { .. } => return Err(invalid("predicate load expansion")),
+                Expr::Load { address, .. } => {
+                    // Consume SSA reads in source order. Each occurrence gets
+                    // a fresh result, including lazy and nested-address reads.
+                    walk(values, address, point, cursor)?;
+                    let occurrence = values.loads;
+                    values.loads += 1;
+                    Value::Load(occurrence)
+                }
             };
             values.node(node)
         }
@@ -184,6 +186,9 @@ impl Values {
             }
             Value::Binary(op, a, b) => match (&self.nodes[a], &self.nodes[b]) {
                 (Value::Constant(x), Value::Constant(y)) => Value::Constant(op.evaluate(*x, *y)),
+                (Value::Constant(0), _) | (_, Value::Constant(0)) if op == BinaryOp::And => {
+                    Value::Constant(0)
+                }
                 _ => {
                     if matches!(op, BinaryOp::Eq | BinaryOp::Ne) && b < a {
                         Value::Binary(op, b, a)

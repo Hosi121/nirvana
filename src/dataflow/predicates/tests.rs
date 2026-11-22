@@ -156,6 +156,57 @@ fn distinct_loads_and_redefinitions_keep_unknown_predicates() {
 }
 
 #[test]
+fn masked_load_results_keep_lazy_reads_and_first_fault_state() {
+    let masked = |value| b(B::Or, b(B::And, value, c(0)), c(7));
+    let source = source(vec![
+        (
+            0,
+            vec![set(
+                0,
+                Expr::select(
+                    r(1),
+                    masked(Expr::load(r(7), Width::U64)),
+                    masked(Expr::load(c(u64::MAX), Width::U64)),
+                ),
+            )],
+            Control::Next,
+        ),
+        (
+            1,
+            vec![],
+            Control::Branch {
+                condition: r(0),
+                target: 3,
+            },
+        ),
+        (2, vec![], Control::Return(c(99))),
+        (3, vec![], Control::Return(r(0))),
+    ]);
+    let plan = PredicatePlan::analyze(&source).unwrap();
+    let (candidate, e) = plan.lower(&source).unwrap();
+    assert_eq!(e.pruned_branches, 1);
+    assert_eq!(candidate.instructions()[0], source.instructions()[0]);
+    let wrong = edited(&candidate, |s| s[0].assignments[0].value = c(7));
+    assert!(validate(&source, &plan, &wrong).is_err());
+    for flag in [0, 1, 2, u64::MAX] {
+        for pointer in [4096, 4097, u64::MAX] {
+            let input = [u64::MAX, flag, 2, 3, 4, 5, 6, pointer];
+            for budget in 0..=5 {
+                let expected = source
+                    .run_with_memory(&input, 4096, &[0xa5; 8], budget)
+                    .unwrap();
+                assert_eq!(
+                    candidate
+                        .run_with_memory(&input, 4096, &[0xa5; 8], budget)
+                        .unwrap(),
+                    expected
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn equal_phi_values_carry_identity_but_distinct_inputs_remain_distinct() {
     let source = source(vec![
         (
