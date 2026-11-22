@@ -7,7 +7,7 @@ use nirvana::{
     ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, Width},
     verify::Solver,
 };
-use std::{path::Path, time::Duration};
+use std::{path::Path, process::Command, time::Duration};
 
 fn add(a: Expr, b: Expr) -> Expr {
     Expr::binary(BinaryOp::Add, a, b)
@@ -132,6 +132,51 @@ fn successful_read_ranges_allow_disjoint_pure_store_permutations() {
             BlockVerdict::EquivalentUnderModel
         );
         proved += 1;
+    }
+    // The implementation accepts any relative offset, including wraparound.
+    // Bind the exact modular non-overlap premise to an otherwise arbitrary r6.
+    // All byte values, inputs, base and size retain the block model's domains.
+    for a_width in widths {
+        for b_width in widths {
+            let b = add(r(0), r(6));
+            let (before, after) = pair(
+                vec![
+                    set(3, Expr::load(r(0), a_width)),
+                    set(4, Expr::load(b.clone(), b_width)),
+                ],
+                store(r(0), a_width, r(1)),
+                store(b, b_width, r(2)),
+            );
+            let regs: Vec<_> = (0..8).map(Reg).collect();
+            let query = block_query(&before, &after, 0, &regs, &[]).unwrap();
+            let script = format!(
+                "{}; disjoint relative byte ranges modulo 2^64\n(assert (and (bvuge r6 (_ bv{} 64)) (bvuge (bvneg r6) (_ bv{} 64))))\n(check-sat)\n",
+                query.smt2(),
+                a_width.bytes(),
+                b_width.bytes()
+            );
+            let name = format!("arbitrary-offset-{}-{}", a_width.bits(), b_width.bits());
+            let path = root.join(format!("{name}.smt2"));
+            std::fs::write(&path, script).unwrap();
+            let output =
+                Command::new(std::env::var_os("NIRVANA_Z3").unwrap_or_else(|| "z3".into()))
+                    .args(["-T:10", "-smt2"])
+                    .arg(path)
+                    .output()
+                    .unwrap();
+            std::fs::write(root.join(format!("{name}.out")), &output.stdout).unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                String::from_utf8_lossy(&output.stdout).trim(),
+                "unsat",
+                "{name}"
+            );
+            proved += 1;
+        }
     }
     let b = add(r(0), c(24));
     let (before, after) = pair(
