@@ -10,21 +10,12 @@ use nirvana::{
     ir::{Program, RunReport, RunStatus, Width},
     verify::Solver,
 };
-use std::{collections::BTreeSet, fmt::Write, path::PathBuf, time::Duration};
+use std::{collections::BTreeSet, path::PathBuf, time::Duration};
 
-fn quote(value: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in value.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            c if c < ' ' => write!(out, "\\u{:04x}", c as u32).unwrap(),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
+#[path = "evaluation/json.rs"]
+mod json;
+use json::quote;
+
 fn run(program: &Program, words: [u64; 4], limit: usize) -> RunReport {
     program
         .run_with_memory(

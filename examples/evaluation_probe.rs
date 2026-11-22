@@ -6,6 +6,8 @@
 mod checked_c;
 #[path = "evaluation/fixture.rs"]
 mod fixture;
+#[path = "evaluation_probe/module.rs"]
+mod module;
 #[path = "evaluation_probe/stages.rs"]
 mod stages;
 
@@ -57,6 +59,9 @@ fn write_row(out: &mut String, words: &[u64]) {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let first = args.next().ok_or("object path required")?;
+    if first == "--module" {
+        return module::run(args);
+    }
     if first == "--version" {
         if args.next().is_some() {
             return Err("--version accepts no additional arguments".into());
