@@ -115,6 +115,59 @@ fn native_c_shared_branch_return_keeps_prefix_writes_and_first_fault() {
 }
 
 #[test]
+fn native_c_continuations_share_cleanup_and_preserve_first_faults() {
+    let inputs: Vec<_> = [0x1000, 0x1007, 0x1008, 0x100f, 0xffff, u64::MAX]
+        .into_iter()
+        .flat_map(|address| {
+            [0, 1, 3, 0x1000, 0x1001, 0x100f, u64::MAX].map(|condition| [address, condition])
+        })
+        .collect();
+    for width in [Width::U8, Width::U64] {
+        for (memory_condition, changed_write) in [(false, false), (true, false), (false, true)] {
+            let cleanup = store(r(0), width, load(b(BinaryOp::Add, r(0), c(1))));
+            let mut taken_cleanup = cleanup.clone();
+            if changed_write {
+                taken_cleanup.value = b(BinaryOp::Add, taken_cleanup.value, c(1));
+            }
+            let condition = if memory_condition {
+                b(BinaryOp::And, Expr::load(r(1), Width::U8), c(1))
+            } else {
+                r(1)
+            };
+            let result = b(BinaryOp::Add, r(1), load(r(0)));
+            let program = Program::new(
+                0,
+                2,
+                vec![
+                    instruction(
+                        0,
+                        vec![store(c(0x100f), Width::U8, c(0x55))],
+                        Control::Branch {
+                            condition,
+                            target: 3,
+                        },
+                    ),
+                    instruction(1, vec![cleanup.clone()], Control::Next),
+                    instruction(2, vec![], Control::Return(result.clone())),
+                    instruction(3, vec![taken_cleanup], Control::Next),
+                    instruction(4, vec![], Control::Return(result)),
+                ],
+            )
+            .unwrap();
+            let output =
+                emit_readable_c_with_options(&program, ReadableOptions::default()).unwrap();
+            assert_eq!(
+                output.continuations.is_some(),
+                !memory_condition && !changed_write,
+                "memory_condition={memory_condition}, changed_write={changed_write}: {}",
+                output.code
+            );
+            compare(&program, &inputs);
+        }
+    }
+}
+
+#[test]
 fn native_c_equal_branch_bodies_still_evaluate_ordered_faulting_condition() {
     let result = b(BinaryOp::Xor, load(c(0x1000)), r(1));
     for condition in [
