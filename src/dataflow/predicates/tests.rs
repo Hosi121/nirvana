@@ -241,6 +241,16 @@ fn verifier_rejects_forged_paths_targets_memory_and_source_versions() {
     let changed = edited(&source, |s| s[0].assignments[0].value = c(9));
     assert!(plan.lower(&changed).is_none());
     assert!(validate(&changed, &plan, &candidate).is_err());
+    let source = edited(&source, |s| s[1].control = Control::Jump(6));
+    let graph = ssa::SsaFunction::build(&source).unwrap();
+    let mut entries = vec![None; source.cfg().blocks().len()];
+    for id in super::order(&source).unwrap() {
+        entries[id.index()] = Some(Facts::empty());
+    }
+    let unreachable = source.cfg().block_at(2).unwrap();
+    entries[unreachable.index()] = Some(Facts::Known(BTreeMap::from([(usize::MAX, false)])));
+    let forged = PredicatePlan { graph, entries };
+    assert!(validate(&source, &forged, &source).is_err());
 }
 
 #[test]

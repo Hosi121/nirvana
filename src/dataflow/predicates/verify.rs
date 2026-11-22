@@ -13,6 +13,15 @@ pub(super) fn validate(
     if plan.entries.len() != source.cfg().blocks().len() {
         return Err(invalid("predicate entry dimensions"));
     }
+    let reachable: BTreeSet<_> = order.iter().copied().collect();
+    if source
+        .cfg()
+        .blocks()
+        .iter()
+        .any(|block| !reachable.contains(&block.id) && plan.entries[block.id.index()].is_some())
+    {
+        return Err(invalid("predicate facts outside entry reachability"));
+    }
     let mut work = ssa::Budget::new();
     let mut cells = 0;
     for &id in &order {
