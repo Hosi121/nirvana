@@ -91,6 +91,7 @@ fn all_register_codes_and_aliases_use_only_reserved_vector_registers() {
         (Some(0xf3), 0x7f),
         (None, 0x57),
         (Some(0x66), 0xef),
+        (Some(0x66), 0xd4),
         (Some(0x66), 0x6c),
     ] {
         for destination in 0..16 {
@@ -125,6 +126,12 @@ fn all_register_codes_and_aliases_use_only_reserved_vector_registers() {
                         expected[destination_low + 1] ^= registers[source_low + 1];
                     }
                     0x6c => expected[destination_low + 1] = registers[source_low],
+                    0xd4 => {
+                        expected[destination_low] =
+                            registers[destination_low].wrapping_add(registers[source_low]);
+                        expected[destination_low + 1] =
+                            registers[destination_low + 1].wrapping_add(registers[source_low + 1]);
+                    }
                     _ => expected[destination_low..destination_low + 2]
                         .copy_from_slice(&registers[source_low..source_low + 2]),
                 }
@@ -162,6 +169,76 @@ fn movq_all_gpr_xmm_codes_clears_high_lane_without_clobbering_gp_or_flags() {
                 0xfeed_face_cafe_beef
             );
             assert_eq!(result.registers[33 + destination as usize * 2], 0);
+        }
+    }
+}
+
+fn immediate_code(register: u8, group: u8, immediate: u8) -> Vec<u8> {
+    let mut bytes = vec![0x66];
+    if register >= 8 {
+        bytes.push(0x41);
+    }
+    bytes.extend([0x0f, 0x73, 0xc0 | (group << 3) | (register & 7), immediate]);
+    bytes
+}
+
+#[test]
+fn packed_shift_saturation_and_shuffle_aliases_cover_every_immediate_and_register() {
+    let registers: Vec<_> = (0..COUNT)
+        .map(|i| 0x0123456789abcdefu64.wrapping_mul(i as u64 + 1))
+        .collect();
+    for destination in 0_u8..16 {
+        let low = 32 + usize::from(destination) * 2;
+        let value = u128::from(registers[low]) | (u128::from(registers[low + 1]) << 64);
+        for count in 0..=255_u8 {
+            for group in [2, 3] {
+                let instruction =
+                    x86::decode_vector_at(&immediate_code(destination, group, count), 0).unwrap();
+                assert!(instruction.memory.is_none());
+                let actual = guarded(&instruction, &registers, 0, &[]).unwrap();
+                let mut expected = registers[..64].to_vec();
+                let (a, b) = if group == 2 {
+                    (
+                        registers[low].checked_shr(u32::from(count)).unwrap_or(0),
+                        registers[low + 1]
+                            .checked_shr(u32::from(count))
+                            .unwrap_or(0),
+                    )
+                } else {
+                    let shifted = value.checked_shr(u32::from(count) * 8).unwrap_or(0);
+                    (shifted as u64, (shifted >> 64) as u64)
+                };
+                expected[low] = a;
+                expected[low + 1] = b;
+                assert_eq!(
+                    actual.registers[..64],
+                    expected,
+                    "xmm{destination}, group {group}, count {count}"
+                );
+            }
+            for source in [destination, destination ^ 8] {
+                let mut bytes = register_code(Some(0x66), 0x70, destination, source);
+                bytes.push(count);
+                let instruction = x86::decode_vector_at(&bytes, 0).unwrap();
+                let actual = guarded(&instruction, &registers, 0, &[]).unwrap();
+                let base = 32 + usize::from(source) * 2;
+                let original =
+                    u128::from(registers[base]) | (u128::from(registers[base + 1]) << 64);
+                let mut result = 0_u128;
+                for lane in 0..4 {
+                    result |= ((original >> (((count >> (lane * 2)) & 3) * 32))
+                        & u128::from(u32::MAX))
+                        << (lane * 32);
+                }
+                let mut expected = registers[..64].to_vec();
+                expected[low] = result as u64;
+                expected[low + 1] = (result >> 64) as u64;
+                assert_eq!(
+                    actual.registers[..64],
+                    expected,
+                    "shuffle xmm{destination}, xmm{source}, {count}"
+                );
+            }
         }
     }
 }
@@ -298,6 +375,11 @@ fn legacy_decoders_remain_opt_out_and_unsupported_forms_fail_closed() {
         &[0x66, 0x48, 0x0f, 0x6e, 0xc0],
         &[0x66, 0x0f, 0x6c, 0xc0],
         &[0x0f, 0x16, 0x00],
+        &[0x66, 0x0f, 0xd4, 0xc1],
+        &[0x66, 0x0f, 0x73, 0xd0, 64],
+        &[0x66, 0x0f, 0x73, 0xd8, 16],
+        &[0x66, 0x0f, 0x70, 0xc1, 0xee],
+        &[0x66, 0x48, 0x0f, 0x7e, 0xc0],
     ] {
         assert!(x86::decode_at(bytes, 0).is_err());
         assert!(x86::decode_reference_at(bytes, 0).is_err());
@@ -321,6 +403,11 @@ fn legacy_decoders_remain_opt_out_and_unsupported_forms_fail_closed() {
         &[0x66, 0x66, 0x0f, 0xef, 0xc0],
         &[0x48, 0x66, 0x0f, 0xef, 0xc0],
         &[0x40, 0x48, 0x0f, 0x57, 0xc0],
+        &[0x66, 0x0f, 0xd4, 0x07], // PADDQ m128 remains outside this profile.
+        &[0x66, 0x0f, 0x70, 0x07, 0],
+        &[0x66, 0x0f, 0x73, 0x17, 0],
+        &[0x66, 0x0f, 0x73, 0xf0, 1], // PSLLQ is a distinct operation.
+        &[0x66, 0x44, 0x0f, 0x73, 0xd0, 1], // Extended group field.
     ] {
         assert!(x86::decode_vector_at(bytes, 0).is_err(), "{bytes:02x?}");
     }
@@ -338,6 +425,10 @@ fn every_truncated_prefix_modrm_sib_displacement_and_address_overflow_is_rejecte
         &[0x0f, 0x10, 0x05, 0x12, 0x34, 0x56, 0x78],
         &[0x66, 0x48, 0x0f, 0x6e, 0xc0],
         &[0x0f, 0x16, 0x04, 0x25, 0x12, 0x34, 0x56, 0x78],
+        &[0x66, 0x41, 0x0f, 0x73, 0xd0, 255],
+        &[0x66, 0x41, 0x0f, 0x73, 0xd8, 255],
+        &[0x66, 0x45, 0x0f, 0x70, 0xc1, 0xee],
+        &[0x66, 0x4d, 0x0f, 0x7e, 0xc1],
     ] {
         assert!(x86::decode_vector_at(bytes, 0).is_ok());
         for length in 0..bytes.len() {
@@ -359,6 +450,7 @@ struct OracleCase {
     source: Option<u8>,
     store: bool,
     gpr: Option<u8>,
+    immediate: Option<u8>,
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
@@ -402,15 +494,39 @@ fn native_oracle(
             format!("{width} ptr [r8+r9*2-16]")
         };
         writeln!(assembly, "push rdx\npopfq\n.global vector_op_{index}\n.type vector_op_{index}, @function\nvector_op_{index}:").unwrap();
-        if case.store {
+        if matches!(case.mnemonic, "psrlq" | "psrldq") {
+            writeln!(
+                assembly,
+                "{} xmm{destination}, {}",
+                case.mnemonic,
+                case.immediate.unwrap()
+            )
+            .unwrap();
+        } else if case.immediate.is_some() {
+            writeln!(
+                assembly,
+                "{} xmm{destination}, {operand}, {}",
+                case.mnemonic,
+                case.immediate.unwrap()
+            )
+            .unwrap();
+        } else if case.store {
             writeln!(assembly, "{} {operand}, xmm{destination}", case.mnemonic).unwrap();
         } else {
             writeln!(assembly, "{} xmm{destination}, {operand}", case.mnemonic).unwrap();
         }
         writeln!(assembly, ".size vector_op_{index}, .-vector_op_{index}").unwrap();
+        let gpr_output = case.store && case.gpr.is_some();
+        if gpr_output {
+            let gpr = ["rax", "r10", "r15"][case.gpr.unwrap() as usize];
+            writeln!(assembly, "mov [rsi+16], {gpr}").unwrap();
+        }
         assembly.push_str("pushfq\npop rax\nmov [rsi+32], rax\n");
         writeln!(assembly, "movdqu [rsi], xmm{destination}").unwrap();
-        assembly.push_str("mov rax, [rdi+32]\nmov [rsi+16], rax\nmov rax, [rdi+40]\nmov [rsi+24], rax\npop r15\nret\n");
+        if !gpr_output {
+            assembly.push_str("mov rax, [rdi+32]\nmov [rsi+16], rax\n");
+        }
+        assembly.push_str("mov rax, [rdi+40]\nmov [rsi+24], rax\npop r15\nret\n");
         writeln!(assembly, ".size {name}, .-{name}").unwrap();
     }
     assembly.push_str(".section .note.GNU-stack,\"\",@progbits\n");
@@ -499,6 +615,7 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
                     source: Some(source),
                     store: false,
                     gpr: None,
+                    immediate: None,
                 });
             }
         }
@@ -509,6 +626,7 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
                 source: None,
                 store: false,
                 gpr: None,
+                immediate: None,
             });
             if matches!(mnemonic, "movaps" | "movups" | "movdqa" | "movdqu") {
                 cases.push(OracleCase {
@@ -517,6 +635,7 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
                     source: None,
                     store: true,
                     gpr: None,
+                    immediate: None,
                 });
             }
         }
@@ -528,6 +647,7 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
             source: None,
             store: false,
             gpr: None,
+            immediate: None,
         });
         for gpr in 0..3 {
             cases.push(OracleCase {
@@ -536,6 +656,56 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
                 source: None,
                 store: false,
                 gpr: Some(gpr),
+                immediate: None,
+            });
+        }
+    }
+    for destination in [0, 7, 8, 15] {
+        for source in [0, 7, 8, 15] {
+            cases.push(OracleCase {
+                mnemonic: "paddq",
+                destination,
+                source: Some(source),
+                store: false,
+                gpr: None,
+                immediate: None,
+            });
+        }
+        for (mnemonic, counts) in [
+            ("psrlq", vec![0, 1, 7, 8, 31, 32, 63, 64, 65, 127, 255]),
+            ("psrldq", vec![0, 1, 7, 8, 9, 15, 16, 17, 255]),
+        ] {
+            for count in counts {
+                cases.push(OracleCase {
+                    mnemonic,
+                    destination,
+                    source: Some(destination),
+                    store: false,
+                    gpr: None,
+                    immediate: Some(count),
+                });
+            }
+        }
+        for gpr in 0..3 {
+            cases.push(OracleCase {
+                mnemonic: "movq",
+                destination,
+                source: None,
+                store: true,
+                gpr: Some(gpr),
+                immediate: None,
+            });
+        }
+    }
+    for (destination, source) in [(0, 1), (1, 1), (8, 15), (15, 15)] {
+        for immediate in 0..=255 {
+            cases.push(OracleCase {
+                mnemonic: "pshufd",
+                destination,
+                source: Some(source),
+                store: false,
+                gpr: None,
+                immediate: Some(immediate),
             });
         }
     }
@@ -600,11 +770,22 @@ fn assembler_encoded_forms_match_native_sse_results_memory_and_preserved_flags()
                 .flat_map(|word| word.to_le_bytes())
                 .collect();
             let actual = guarded(&instruction, &registers, BASE, &memory).unwrap();
-            assert_eq!(actual.registers[..32], registers[..32]);
+            let gpr_output = case
+                .gpr
+                .filter(|_| case.store)
+                .map(|g| [0, 10, 15][g as usize]);
+            let mut expected_gp = registers[..32].to_vec();
+            if let Some(gpr) = gpr_output {
+                expected_gp[gpr] = registers[32 + case.destination as usize * 2];
+            }
+            assert_eq!(actual.registers[..32], expected_gp);
             let output = [
                 actual.registers[32 + case.destination as usize * 2],
                 actual.registers[33 + case.destination as usize * 2],
-                u64::from_le_bytes(actual.memory[..8].try_into().unwrap()),
+                gpr_output.map_or_else(
+                    || u64::from_le_bytes(actual.memory[..8].try_into().unwrap()),
+                    |g| actual.registers[g],
+                ),
                 u64::from_le_bytes(actual.memory[8..16].try_into().unwrap()),
                 seed & 0x8d5,
             ];

@@ -1,4 +1,4 @@
-//! Opt-in legacy SSE data movement for the whole-module runner.
+//! Opt-in legacy SSE integer operations for the whole-module runner.
 //!
 //! XMM0..15 occupy pairs of 64-bit registers at 32..63. Scratch registers
 //! 64..68 are private to an instruction. The caller must charge its instruction
@@ -8,6 +8,8 @@
 
 use super::{Addressing, DecodeError};
 use crate::model::ir::{AccessKind, Assignment, BinaryOp, Expr, Place, Reg, Width};
+
+mod lanes;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VectorMemory {
@@ -60,9 +62,12 @@ enum Source {
 enum Operation {
     Move { store: bool, alignment: u32 },
     Xor,
+    AddQuadwords,
     UnpackLow,
-    MoveQuadword,
+    MoveQuadword { store: bool },
     MoveHigh,
+    ShiftImmediate,
+    ShuffleDwords,
 }
 
 struct Decoder<'a> {
@@ -139,7 +144,14 @@ impl Decoder<'_> {
             }),
             (None, 0x57) | (Some(0x66), 0xef) => Ok(Operation::Xor),
             (Some(0x66), 0x6c) => Ok(Operation::UnpackLow),
-            (Some(0x66), 0x6e) if self.rex & 8 != 0 => Ok(Operation::MoveQuadword),
+            (Some(0x66), 0xd4) => Ok(Operation::AddQuadwords),
+            (Some(0x66), 0x73) => Ok(Operation::ShiftImmediate),
+            (Some(0x66), 0x70) => Ok(Operation::ShuffleDwords),
+            (Some(0x66), opcode @ (0x6e | 0x7e)) if self.rex & 8 != 0 => {
+                Ok(Operation::MoveQuadword {
+                    store: opcode == 0x7e,
+                })
+            }
             // Observed in the non-PIE O2 HTTP fixture. The register form of
             // 0F16 is MOVLHPS and is intentionally not accepted as MOVHPS.
             (None, 0x16) => Ok(Operation::MoveHigh),
@@ -215,9 +227,11 @@ fn address_expr(address: Addressing, next: u64) -> Expr {
 ///
 /// This does not change `decode_at` or `decode_reference_at`. Supported forms
 /// are PXOR/XORPS, MOVAPS/UPS/DQA/DQU (register or m128), PUNPCKLQDQ (register
-/// or m128), MOVQ from a 64-bit GPR, and MOVHPS from m64. Legacy XOR/unpack
+/// or m128), MOVQ between a 64-bit GPR and XMM, and MOVHPS from m64. Register
+/// PADDQ, PSHUFD and immediate PSRLQ/PSRLDQ use explicit 64-bit lane values.
+/// Shifts saturate at the vector/lane width. Legacy XOR/unpack
 /// memory operands, MOVAPS, and MOVDQA require 16-byte alignment. Other SIMD,
-/// VEX/EVEX, memory MOVQ, and redundant prefixes return `DecodeError`.
+/// VEX/EVEX, memory MOVQ/PADDQ/PSHUFD, and redundant prefixes return `DecodeError`.
 pub fn decode_vector_at(bytes: &[u8], address: u64) -> Result<VectorInstruction, DecodeError> {
     let mut decoder = Decoder {
         bytes,
@@ -227,12 +241,27 @@ pub fn decode_vector_at(bytes: &[u8], address: u64) -> Result<VectorInstruction,
     };
     let operation = decoder.operation()?;
     let (register, source) = decoder.modrm()?;
-    if matches!(operation, Operation::MoveQuadword) && !matches!(source, Source::Register(_)) {
-        return Err(decoder.error("only GPR to XMM MOVQ is supported"));
+    if matches!(
+        operation,
+        Operation::MoveQuadword { .. }
+            | Operation::AddQuadwords
+            | Operation::ShuffleDwords
+            | Operation::ShiftImmediate
+    ) && !matches!(source, Source::Register(_))
+    {
+        return Err(decoder.error("vector operation requires a register operand"));
     }
     if matches!(operation, Operation::MoveHigh) && !matches!(source, Source::Memory(_)) {
         return Err(decoder.error("MOVLHPS register form is unsupported"));
     }
+    let immediate = if matches!(
+        operation,
+        Operation::ShiftImmediate | Operation::ShuffleDwords
+    ) {
+        Some(decoder.byte()?)
+    } else {
+        None
+    };
     let next = address
         .checked_add(decoder.pos as u64)
         .ok_or_else(|| decoder.error("address overflow"))?;
@@ -242,6 +271,34 @@ pub fn decode_vector_at(bytes: &[u8], address: u64) -> Result<VectorInstruction,
         assignments: Vec::new(),
         memory: None,
     };
+    if let Source::Register(operand) = source {
+        let result = match operation {
+            Operation::ShiftImmediate => {
+                if decoder.rex & 4 != 0 {
+                    return Err(decoder.error("extended opcode group is unsupported"));
+                }
+                match register {
+                    2 => Some((operand, lanes::shift_quadwords(operand, immediate.unwrap()))),
+                    3 => Some((operand, lanes::shift_bytes(operand, immediate.unwrap()))),
+                    _ => return Err(decoder.error("unsupported packed shift group")),
+                }
+            }
+            Operation::ShuffleDwords => {
+                Some((register, lanes::shuffle_dwords(operand, immediate.unwrap())))
+            }
+            Operation::MoveQuadword { store: true } => {
+                instruction
+                    .assignments
+                    .push(assign(usize::from(operand), r(lane(register, false))));
+                return Ok(instruction);
+            }
+            _ => None,
+        };
+        if let Some((destination, (low, high))) = result {
+            commit(&mut instruction.assignments, destination, low, high);
+            return Ok(instruction);
+        }
+    }
     if let Operation::Move {
         store: true,
         alignment,
@@ -289,7 +346,7 @@ pub fn decode_vector_at(bytes: &[u8], address: u64) -> Result<VectorInstruction,
     }
     let (source_low, source_high) = match source {
         Source::Register(source) => {
-            if matches!(operation, Operation::MoveQuadword) {
+            if matches!(operation, Operation::MoveQuadword { store: false }) {
                 (r(usize::from(source)), Expr::Const(0))
             } else {
                 (r(lane(source, false)), r(lane(source, true)))
@@ -322,13 +379,22 @@ pub fn decode_vector_at(bytes: &[u8], address: u64) -> Result<VectorInstruction,
         }
     };
     let (low, high) = match operation {
-        Operation::Move { .. } | Operation::MoveQuadword => (source_low, source_high),
+        Operation::Move { .. } | Operation::MoveQuadword { store: false } => {
+            (source_low, source_high)
+        }
         Operation::Xor => (
             Expr::binary(BinaryOp::Xor, r(lane(register, false)), source_low),
             Expr::binary(BinaryOp::Xor, r(lane(register, true)), source_high),
         ),
         Operation::UnpackLow => (r(lane(register, false)), source_low),
         Operation::MoveHigh => (r(lane(register, false)), source_low),
+        Operation::AddQuadwords => (
+            add(r(lane(register, false)), source_low),
+            add(r(lane(register, true)), source_high),
+        ),
+        Operation::MoveQuadword { store: true }
+        | Operation::ShiftImmediate
+        | Operation::ShuffleDwords => unreachable!(),
     };
     commit(&mut instruction.assignments, register, low, high);
     Ok(instruction)

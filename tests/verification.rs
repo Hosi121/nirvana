@@ -40,6 +40,8 @@ mod recovery_verification;
 mod store_order;
 #[path = "verification/unary_ops.rs"]
 mod unary_ops;
+#[path = "verification/vector_lanes.rs"]
+mod vector_lanes;
 #[path = "verification/verification.rs"]
 mod verification;
 
