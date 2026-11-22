@@ -31,6 +31,13 @@ pub(super) struct LoopHeader<'a> {
 }
 
 impl Printer<'_> {
+    pub(super) fn normalize_arithmetic(&self, expr: &Expr, point: Option<(u64, usize)>) -> Expr {
+        crate::transform::simplify::word_arithmetic(expr, |value| {
+            matches!(value, Expr::Load { .. })
+                || idioms::recognize(value).is_some()
+                || self.context_remainder(value, point).is_some()
+        })
+    }
     pub(super) fn context_remainder(
         &self,
         expression: &Expr,
@@ -161,6 +168,10 @@ impl Printer<'_> {
                     precedence: 11,
                 },
             };
+        }
+        let normalized = self.normalize_arithmetic(expr, point);
+        if normalized != *expr {
+            return self.expression_at(&normalized, point);
         }
         match expr {
             Expr::Unary(crate::model::ir::UnaryOp::Extract { start, width }, value) => {
@@ -607,7 +618,10 @@ impl Printer<'_> {
                                 signed,
                             )?;
                         } else {
-                            let value = stored_value(&assignment.value, width);
+                            // Normalize while the explicit word observer is
+                            // present, before spelling its truncation as a C type.
+                            let normalized = self.normalize_arithmetic(&assignment.value, point);
+                            let value = stored_value(&normalized, width);
                             if !initialize
                                 && self.compact_memory
                                 && let Some(statement) = self.compound(*reg, value, point)
@@ -835,7 +849,8 @@ impl Printer<'_> {
                         }
                         if self.read.contains(&reg.0) {
                             let width = self.widths.get(&reg.0).copied().unwrap_or(Width::U64);
-                            let value = stored_value(&assignment.value, width);
+                            let normalized = self.normalize_arithmetic(&assignment.value, point);
+                            let value = stored_value(&normalized, width);
                             if let Some(value) = self.address_value(*reg, point, value) {
                                 clauses.push(format!("{} = {value}", self.register(*reg)));
                             } else if update

@@ -88,6 +88,8 @@ impl Printer<'_> {
                 ");",
             );
         }
+        let normalized = self.normalize_arithmetic(value, point);
+        let value = &normalized;
         let text = match value {
             Expr::Const(n) => (*n as i64).to_string(),
             Expr::Register(reg) if self.signed_widths.get(&reg.0).is_some_and(|w| *w <= width) => {

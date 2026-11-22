@@ -257,3 +257,86 @@ fn projection_rewrites_match_universal_words_and_replayed_clipping_mutants() {
         "{proved} universal actual projection rewrites, 3 replayed clipping/sign-fill mutants"
     );
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn word_arithmetic_projections_preserve_full_words_and_keep_non_homomorphic_boundaries() {
+    let simplify = |expr: &Expr| nirvana::simplify::word_arithmetic(expr, |_| false);
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()))
+        .with_timeout(std::time::Duration::from_secs(3));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/word-arithmetic-projections");
+    std::fs::create_dir_all(&root).unwrap();
+    let save = |name: &str, a: &Expr, z: &Expr| {
+        let query = verify::pure_query(a, z).unwrap();
+        std::fs::write(
+            root.join(format!("{name}.smt2")),
+            format!("{}(check-sat)\n", query.smt2()),
+        )
+        .unwrap();
+        let verdict = solver.check_query(&query);
+        std::fs::write(root.join(format!("{name}.out")), format!("{verdict:?}\n")).unwrap();
+        verdict
+    };
+    let mut proved = 0;
+    for (name, before) in crate::support::projections::word_cases() {
+        let after = simplify(&before);
+        assert_ne!(
+            before, after,
+            "candidate must exercise the implementation: {name}"
+        );
+        assert_eq!(
+            save(&name, &before, &after),
+            Verdict::EquivalentUnderModel,
+            "{name}"
+        );
+        proved += 1;
+    }
+    let mut broken = 0;
+    for width in [Width::U8, Width::U16, Width::U32] {
+        let clip = |v| Expr::binary(B::And, v, c(width.mask()));
+        for (name, op, argument) in [
+            ("logical-right", B::Shr, c(1)),
+            ("arithmetic-right", B::AShr, c(1)),
+            ("high-product", B::UMulHigh, c(1 << 63)),
+            ("division", B::UDiv, c(2)),
+            ("comparison", B::Ult, r(1)),
+        ] {
+            let before = clip(Expr::binary(op, clip(r(0)), argument.clone()));
+            assert_eq!(simplify(&before), before);
+            let bad = clip(Expr::binary(op, r(0), argument));
+            let Verdict::Counterexample(w) =
+                save(&format!("wrong-{}-{name}", width.bits()), &before, &bad)
+            else {
+                panic!("missing {name} counterexample")
+            };
+            assert_ne!(w.before, w.after);
+            broken += 1;
+        }
+        if width != Width::U32 {
+            let wider = if width == Width::U8 {
+                Width::U16
+            } else {
+                Width::U32
+            };
+            let before = unary(wider, unary(width, r(0)));
+            // A wider observer still needs the narrower sign fill.
+            assert_eq!(nirvana::simplify::simplify(&before), unary(width, r(0)));
+            assert!(matches!(
+                save(
+                    &format!("wrong-widen-{}", width.bits()),
+                    &before,
+                    &unary(wider, r(0))
+                ),
+                Verdict::Counterexample(_)
+            ));
+            broken += 1;
+        }
+    }
+    assert_eq!((proved, broken), (243, 17));
+    std::fs::write(
+        root.join("result.json"),
+        format!("{{\"model\":\"pure-u64-v1\",\"unsat\":{proved},\"sat_replayed\":{broken}}}\n"),
+    )
+    .unwrap();
+}

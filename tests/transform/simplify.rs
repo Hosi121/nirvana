@@ -68,13 +68,21 @@ fn program(expression: Expr) -> Program {
 }
 
 fn check(expression: &Expr, inputs: &[[u64; 3]]) {
-    let simplified = simplify(expression);
+    check_with(expression, inputs, simplify);
+}
+
+fn late(expression: &Expr) -> Expr {
+    nirvana::simplify::word_arithmetic(expression, |_| false)
+}
+
+fn check_with(expression: &Expr, inputs: &[[u64; 3]], transform: fn(&Expr) -> Expr) {
+    let simplified = transform(expression);
     assert!(
         node_count(&simplified) <= node_count(expression),
         "{expression:?} -> {simplified:?}"
     );
     assert_eq!(
-        simplify(&simplified),
+        transform(&simplified),
         simplified,
         "not idempotent: {expression:?}"
     );
@@ -233,6 +241,7 @@ fn faulting_operands_are_never_discarded_duplicated_or_reordered() {
         b(B::Ule, c(0), first.clone()),
         b(B::UMulHigh, first.clone(), c(0)),
         b(B::Add, first.clone(), b(B::Mul, first.clone(), c(2))),
+        b(B::Sub, b(B::Mul, first.clone(), c(8)), first.clone()),
         b(B::Eq, b(B::Ult, first.clone(), second.clone()), c(0)),
         b(
             B::Or,
@@ -251,7 +260,11 @@ fn faulting_operands_are_never_discarded_duplicated_or_reordered() {
         loads(&expression, &mut before);
         loads(&changed, &mut after);
         assert_eq!(before, after, "{expression:?} -> {changed:?}");
+        let mut late_loads = vec![];
+        loads(&late(&expression), &mut late_loads);
+        assert_eq!(before, late_loads);
         check(&expression, &boundary_inputs());
+        check_with(&expression, &boundary_inputs(), late);
         assert!(matches!(
             program(changed).execute(&[0; 3], 1),
             Err(ExecutionError::MemoryAccess { .. })
@@ -436,8 +449,16 @@ fn projection_composition_keeps_load_order_faults_lazy_arms_and_full_words() {
     let inputs = boundary_inputs();
     let mut changed = 0;
     let mut checked = 0;
-    for (_, e) in crate::support::projections::cases() {
-        changed += usize::from(simplify(&e) != e);
+    for ((_, e), transform) in crate::support::projections::cases()
+        .into_iter()
+        .map(|e| (e, simplify as fn(&Expr) -> Expr))
+        .chain(
+            crate::support::projections::word_cases()
+                .into_iter()
+                .map(|e| (e, late as fn(&Expr) -> Expr)),
+        )
+    {
+        changed += usize::from(transform(&e) != e);
         for value in [
             r(0),
             Expr::load(r(2), Width::U64),
@@ -448,7 +469,7 @@ fn projection_composition_keeps_load_order_faults_lazy_arms_and_full_words() {
             ),
             Expr::select(r(1), Expr::load(r(2), Width::U64), r(0)),
         ] {
-            check(&replace(&e, &value), &inputs);
+            check_with(&replace(&e, &value), &inputs, transform);
             checked += inputs.len() * 6;
         }
     }
@@ -456,4 +477,50 @@ fn projection_composition_keeps_load_order_faults_lazy_arms_and_full_words() {
     println!(
         "{checked} full-state projection observations, {changed} scalar candidates simplified"
     );
+}
+
+#[test]
+fn late_word_arithmetic_retains_the_earlier_recovery_input_and_opaque_idioms() {
+    let sequenced_condition = Expr::select(r(0), r(1), r(1));
+    assert_eq!(
+        late(&sequenced_condition),
+        sequenced_condition,
+        "retain the condition temporary produced by the ordered-load plan"
+    );
+    let value = b(B::Sub, b(B::Mul, r(0), c(8)), r(0));
+    assert_eq!(
+        simplify(&value),
+        value,
+        "early reduction retains the recovery shape"
+    );
+    assert_eq!(late(&value), b(B::Mul, r(0), c(7)));
+    let protected = Expr::unary(nirvana::ir::UnaryOp::SignExtend(Width::U32), value);
+    let outer = b(
+        B::And,
+        b(B::Add, protected.clone(), c(1)),
+        c(u32::MAX as u64),
+    );
+    assert_eq!(
+        nirvana::simplify::word_arithmetic(&outer, |e| e == &protected),
+        outer
+    );
+    assert_ne!(late(&outer), outer);
+}
+
+#[test]
+fn late_coefficients_wrap_without_signed_overflow_assumptions() {
+    for (expression, expected) in [
+        (
+            b(B::Sub, b(B::Mul, r(0), c(8)), r(0)),
+            b(B::Mul, r(0), c(7)),
+        ),
+        (
+            b(B::Sub, r(0), b(B::Mul, c(3), r(0))),
+            b(B::Mul, r(0), c(u64::MAX - 1)),
+        ),
+        (b(B::Sub, b(B::Mul, r(0), c(2)), r(0)), r(0)),
+    ] {
+        assert_eq!(late(&expression), expected);
+        check_with(&expression, &boundary_inputs(), late);
+    }
 }

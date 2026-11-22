@@ -65,3 +65,50 @@ pub fn cases() -> Vec<(String, Expr)> {
     }
     result
 }
+
+/// Ring/bitwise candidates with full u64 inputs and an explicit word observer.
+pub fn word_cases() -> Vec<(String, Expr)> {
+    use nirvana::ir::{BinaryOp as B, UnaryOp as U, Width};
+    let mut result = Vec::new();
+    for width in [Width::U8, Width::U16, Width::U32] {
+        let clip = |kind, e| match kind {
+            0 => b(And, e, c(width.mask())),
+            1 => Expr::unary(U::Extract { start: 0, width }, e),
+            _ => Expr::unary(U::SignExtend(width), e),
+        };
+        for inner in 0..3 {
+            let a = clip(inner, r(0));
+            let z = clip(inner, r(1));
+            let mut forms = vec![
+                (
+                    "sub-coefficient",
+                    b(B::Sub, b(B::Mul, a.clone(), c(8)), a.clone()),
+                ),
+                (
+                    "wrapped-coefficient",
+                    b(B::Sub, b(B::Mul, a.clone(), c(u64::MAX)), a.clone()),
+                ),
+                ("constant-mul", b(B::Mul, a.clone(), c(7))),
+                ("variable-shift", b(B::Shl, a.clone(), r(1))),
+            ];
+            for (name, op) in [
+                ("add", B::Add),
+                ("sub", B::Sub),
+                ("and", B::And),
+                ("or", B::Or),
+                ("xor", B::Xor),
+            ] {
+                forms.push((name, b(op, a.clone(), z.clone())));
+            }
+            for outer in 0..3 {
+                for (name, form) in &forms {
+                    result.push((
+                        format!("word-{}-{inner}-{outer}-{name}", width.bits()),
+                        clip(outer, form.clone()),
+                    ));
+                }
+            }
+        }
+    }
+    result
+}

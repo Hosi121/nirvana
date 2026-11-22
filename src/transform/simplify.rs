@@ -5,6 +5,8 @@
 
 use crate::model::ir::{BinaryOp as B, Expr, UnaryOp as U};
 
+mod word;
+
 pub fn node_count(expression: &Expr) -> usize {
     match expression {
         Expr::Const(_) | Expr::Register(_) => 1,
@@ -27,27 +29,50 @@ pub fn node_count(expression: &Expr) -> usize {
 /// Preserve modulo-2^64 arithmetic, masked shifts, and the order/count of loads
 /// that can execute. In particular, zero multiplication does not erase a load.
 pub fn simplify(expression: &Expr) -> Expr {
+    simplify_impl(expression, false, &|_| false)
+}
+
+/// Normalize arithmetic after semantic/bit idiom recognition. Captured idioms
+/// marked by the callback retain their original expression and source binding.
+/// Full u64 values and ordered checked-memory evaluation remain unchanged.
+pub fn word_arithmetic(expression: &Expr, opaque: impl Fn(&Expr) -> bool) -> Expr {
+    simplify_impl(expression, true, &opaque)
+}
+
+fn simplify_impl(expression: &Expr, words: bool, opaque: &dyn Fn(&Expr) -> bool) -> Expr {
+    if opaque(expression) {
+        return expression.clone();
+    }
+    let child = |value: &Expr| simplify_impl(value, words, opaque);
     let mut result = match expression {
         Expr::Const(_) | Expr::Register(_) => expression.clone(),
-        Expr::Unary(op, value) => Expr::unary(*op, simplify(value)),
-        Expr::Load { address, width } => Expr::load(simplify(address), *width),
-        Expr::Binary(op, left, right) => Expr::binary(*op, simplify(left), simplify(right)),
+        Expr::Unary(op, value) => Expr::unary(*op, child(value)),
+        Expr::Load { address, width } => Expr::load(child(address), *width),
+        Expr::Binary(op, left, right) => Expr::binary(*op, child(left), child(right)),
         Expr::Select {
             condition,
             taken,
             not_taken,
         } => {
-            let condition = simplify(condition);
-            if let Expr::Const(value) = condition {
-                return simplify(if value != 0 { taken } else { not_taken });
+            let condition = child(condition);
+            if !words && let Expr::Const(value) = condition {
+                return child(if value != 0 { taken } else { not_taken });
             }
-            Expr::select(condition, simplify(taken), simplify(not_taken))
+            Expr::select(condition, child(taken), child(not_taken))
         }
     };
     // Most rewrites strictly reduce the tree. Shift normalization is same-size
     // and one-way; the fixed cap also bounds work if more rules are added.
     for _ in 0..16 {
-        let Some(next) = rewrite(&result) else { break };
+        if words && opaque(&result) {
+            break;
+        }
+        let next = if words {
+            word::rewrite(&result, opaque)
+        } else {
+            rewrite(&result)
+        };
+        let Some(next) = next else { break };
         if next == result || node_count(&next) > node_count(&result) {
             break;
         }

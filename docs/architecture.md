@@ -180,6 +180,7 @@ Loadのスナップショット、保存位置、全命令の代入順も採用�
 
 [readable](../src/codegen/readable.rs)は公開出力型を持ち、[pipeline](../src/codegen/readable/pipeline.rs)が変換と計画を組み立て、[printer](../src/codegen/readable/printer.rs)が描画します。
 共通の[sequence](../src/transform/sequence.rs)が式の規模・評価順の前提を確認し、複数Loadやlazy Selectは順序付きの処理へ展開します。
+語幅内の式の整理は、意味演算・rotate・文脈付き剰余を認識した後に行います。[word_arithmetic](../src/transform/simplify.rs)はこれらとLoadを境界にし、外側のmask・抽出・符号拡張が観測する下位bitを保って、加減乗算・bit演算の内側の射影を整理します。C型による切詰めへ移す前に係数をまとめるため、たとえば32-bitの`(x * 8 - x)`を`x * 7`へ戻せます。早いreductionに同じ規則を適用すると除算・rotateの認識形を失ったため、元の解析入力を保つ描画段階へ配置しています。
 ループ更新・共有末尾・有限/affine領域の表示も、元の制御と値の対応を検査して採用します。
 
 複数関数では[module_outline](../src/codegen/module_outline.rs)が全Stepからの再入を検査し、[module_readable](../src/codegen/module_readable.rs)が名前付き関数を描画します。
