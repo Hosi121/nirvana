@@ -11,6 +11,8 @@ from collections import Counter
 import hashlib
 import json
 import os
+import platform
+import resource
 from pathlib import Path
 import re
 import shutil
@@ -18,8 +20,10 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 
 from evaluation import control_graph as cg
+from evaluation import semantics
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
@@ -31,12 +35,13 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def capture(argv, timeout, **kwargs):
+def capture(argv, timeout, input=None, **kwargs):
     """Bound the command and its compiler children, including on interruption."""
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    with subprocess.Popen(argv, stdin=subprocess.PIPE if input is not None else None,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           text=True, start_new_session=True, **kwargs) as process:
         try:
-            stdout, stderr = process.communicate(timeout=timeout)
+            stdout, stderr = process.communicate(input=input, timeout=timeout)
         except BaseException as error:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -74,6 +79,8 @@ def load_cases(path):
         source = (ROOT / case['source']).resolve()
         if not source.is_relative_to(ROOT) or not source.is_file():
             raise ValueError('source must name an existing repository file')
+        if case.get('source_sha256') is not None and case['source_sha256'] != digest(source):
+            raise ValueError('corpus source hash mismatch; version the changed corpus')
     return cases
 
 
@@ -96,20 +103,36 @@ class CommandError(Exception):
         super().__init__(message)
 
 
-def invoke(argv, stage, directory, row, timeout):
+def invoke(argv, stage, directory, row, timeout, **kwargs):
     argv = list(map(str, argv))
     record = {'stage': stage, 'argv': argv, 'cwd': str(ROOT)}
     row['commands'].append(record)
     start = time.monotonic()
     try:
-        result = capture(argv, timeout, cwd=ROOT, env=dict(os.environ, LC_ALL='C'))
+        actual = argv
+        if row.get('measure_rss'):
+            if not shutil.which(argv[0]):
+                raise FileNotFoundError(f'executable unavailable: {argv[0]}')
+            resources = directory / f'{stage}.resources.txt'
+            actual = ['/usr/bin/time', '-q', '-f', '%M %U %S', '-o', str(resources), '--', *argv]
+            record['measurement_argv'] = actual
+        result = capture(actual, timeout, cwd=ROOT, env=dict(os.environ, LC_ALL='C'), **kwargs)
         record.update(returncode=result.returncode, wall_seconds=time.monotonic() - start)
+        if row.get('measure_rss'):
+            values = resources.read_text().split()
+            if len(values) == 3:
+                record['resources'] = {'max_rss_kib': int(values[0]),
+                                       'user_seconds': float(values[1]), 'system_seconds': float(values[2]),
+                                       'scope': 'largest process in this command and its waited children'}
         for name, content in [('stdout', result.stdout), ('stderr', result.stderr)]:
             path = directory / f'{stage}.{name}.txt'
             path.write_text(content)
             record[name] = path.name
         if result.returncode:
-            raise CommandError('tool_error', result.stderr[-2000:])
+            diagnostic = result.stderr.lower()
+            unsupported = (stage == 'decompile' and not any(s in diagnostic for s in ['panicked at', 'stack overflow'])
+                           and any(s in diagnostic for s in ['unsupported', 'not implemented', 'unresolved relocation', 'unresolved import']))
+            raise CommandError('unsupported' if unsupported else 'tool_error', result.stderr[-2000:])
         row['stages'][stage] = 'passed'
         return result
     except subprocess.TimeoutExpired as error:
@@ -129,7 +152,8 @@ def invoke(argv, stage, directory, row, timeout):
 
 def measure(case, tag, compiler, opt, args, out):
     row = {**case, 'id': f'{case["id"]}-{tag}-{opt}', 'compiler': tag, 'optimization': opt,
-           'stages': {}, 'commands': [], 'semantics': {'status': 'not_run'}}
+           'stages': {}, 'commands': [], 'semantics': {'status': 'not_run'},
+           'measure_rss': args.measure_rss}
     directory = out / row['id']
     directory.mkdir()
     row['artifacts'] = directory.name
@@ -140,6 +164,10 @@ def measure(case, tag, compiler, opt, args, out):
     row['source_sha256'] = digest(source)
     start = time.monotonic()
     stage = 'preprocess'
+    def failed(error, kind):
+        row.update(status=kind, failure_stage=stage, error=str(error))
+        row['stages'][stage] = kind
+        row.setdefault('failures', []).append({'stage': stage, 'status': kind, 'error': str(error)})
     try:
         flags = [*FLAGS, f'-{opt}']
         # Suppress GNU line markers so the retained C11 input can be compiled
@@ -150,7 +178,7 @@ def measure(case, tag, compiler, opt, args, out):
         invoke([compiler, *flags, '-c', preprocessed, '-o', obj], stage, directory, row, args.timeout)
         row['object_sha256'] = digest(obj)
         stage = 'decompile'
-        result = invoke([args.decompiler, obj, '--symbol', case['function'], '--emit', 'readable-c'],
+        result = invoke([args.decompiler, obj, '--symbol', case['function'], '--emit', args.emit],
                         stage, directory, row, args.timeout)
         generated.write_text(result.stdout)
         row['readable_sha256'] = digest(generated)
@@ -177,17 +205,48 @@ def measure(case, tag, compiler, opt, args, out):
         row['stages'][stage] = 'measured'
         row['status'] = 'measured'
     except (CommandError, cg.Unsupported) as error:
-        row['status'] = error.kind if isinstance(error, CommandError) else 'unsupported'
-        row['stages'][stage] = row['status']
-        row['failure_stage'] = stage
-        row['error'] = str(error)
+        failed(error, error.kind if isinstance(error, CommandError) else 'unsupported')
+        row['semantics']['reason'] = f'{stage}: {error}'
+    except Exception as error:
+        failed(error, 'evaluator_error')
+        (directory / 'evaluator.traceback.txt').write_text(traceback.format_exc())
+    row['structure_status'] = row['status']
+    # Graph-reader failures and bounded distance are independent of execution.
+    if args.semantic_probe and row['stages'].get('recompile') == 'passed':
+        stage = 'semantic_prepare'
+        try:
+            def observed(argv, name, **kwargs):
+                nonlocal stage
+                stage = name
+                return invoke(argv, name, directory, row, args.timeout, **kwargs)
+            semantics.run(args, row, directory, observed, FLAGS)
+            stage = 'semantics'
+            if row['semantics']['status'] != 'passed':
+                failed('semantic observations differ or remain incomplete', row['semantics']['status'])
+            else:
+                row['stages']['semantics'] = 'passed'
+        except (CommandError, semantics.ProtocolError, OSError) as error:
+            kind = error.kind if isinstance(error, CommandError) else 'tool_error'
+            failed(error, kind)
+            row['semantics'].update(status=kind, reason=f'{stage}: {error}')
+        except Exception as error:
+            failed(error, 'evaluator_error')
+            row['semantics'].update(status='evaluator_error', reason=f'{stage}: {error}')
+            (directory / 'evaluator.traceback.txt').write_text(traceback.format_exc())
     row['wall_seconds'] = time.monotonic() - start
     row['max_rss'] = None
+    samples = [command['resources']['max_rss_kib'] for command in row['commands'] if 'resources' in command]
+    row['command_max_rss_kib'] = max(samples) if samples else None
     (directory / 'row.json').write_text(json.dumps(row, indent=2) + '\n')
     return row
 
 
 def run(args):
+    for name, default in [('emit', 'readable-c'), ('measure_rss', False), ('semantic_probe', None),
+                          ('semantic_seed', 0x6e697276616e6130), ('semantic_cases', 16),
+                          ('semantic_steps', 4096), ('toolchain_manifest', None)]:
+        if not hasattr(args, name):
+            setattr(args, name, default)
     cases = load_cases(args.cases)
     compilers = []
     for setting in args.compiler or ['gcc=cc']:
@@ -218,6 +277,25 @@ def run(args):
               'compilers': {tag: provenance(compiler, args.timeout) for tag, compiler in compilers},
               'budgets': {'command_seconds': args.timeout, 'search_seconds': args.search_seconds, 'search_states': args.max_states},
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
+    report['emission'] = args.emit
+    report['semantic_probe'] = provenance(args.semantic_probe, args.timeout) if args.semantic_probe else None
+    report['budgets'].update(semantic_seed=args.semantic_seed, semantic_vectors=args.semantic_cases,
+                             low_step_limit=args.semantic_steps)
+    report['resources'] = {'enabled': args.measure_rss, 'unit': 'KiB',
+                           'scope': 'per-command largest process, not concurrent aggregate RSS'}
+    report['host'] = {'machine': platform.machine(), 'platform': platform.platform(),
+                      'cpu_affinity': sorted(os.sched_getaffinity(0))}
+    cpu = Path('/proc/cpuinfo')
+    if cpu.is_file():
+        for line in cpu.read_text().splitlines():
+            key, separator, value = line.partition(':')
+            if separator and key.strip() in ['model name', 'flags']:
+                report['host'].setdefault(key.strip().replace(' ', '_'), value.strip())
+    report['time_tool'] = provenance('/usr/bin/time', args.timeout) if args.measure_rss else None
+    if args.toolchain_manifest:
+        report['toolchain_manifest'] = {'path': str(args.toolchain_manifest.resolve()),
+                                        'sha256': digest(args.toolchain_manifest),
+                                        'manifest': json.loads(args.toolchain_manifest.read_text())}
     for case in cases:
         for tag, compiler in compilers:
             for opt in opts:
@@ -227,9 +305,13 @@ def run(args):
                 (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     report['summary'] = {'requested': len(report['rows']),
                          'status': dict(Counter(r['status'] for r in report['rows'])),
-                         'failures_by_stage': dict(Counter(r['failure_stage'] for r in report['rows'] if 'failure_stage' in r)),
+                         'failures_by_stage': dict(Counter(f['stage'] for r in report['rows'] for f in r.get('failures', []))),
                          'distances': dict(Counter(r['distance']['status'] for r in report['rows'] if 'distance' in r)),
                          'cohorts': dict(Counter(r['cohort'] for r in report['rows']))}
+    report['semantics'] = {'status': 'reported' if args.semantic_probe else 'not_run',
+                           'contract': semantics.CONTRACT if args.semantic_probe else None,
+                           'counts': dict(Counter(r['semantics']['status'] for r in report['rows']))}
+    report['resources']['runner_peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
@@ -240,6 +322,13 @@ def main():
     parser.add_argument('--decompiler', type=Path, default=ROOT / 'target/debug/nirvana')
     parser.add_argument('--compiler', action='append', help='TAG=EXECUTABLE; repeat for each binary-producing compiler')
     parser.add_argument('--c-compiler', default='cc', help='fixed compiler for all generated C profiles')
+    parser.add_argument('--emit', choices=['readable-c', 'middle-c'], default='readable-c')
+    parser.add_argument('--semantic-probe', type=Path, help='built examples/evaluation_probe executable')
+    parser.add_argument('--semantic-seed', type=int, default=0x6e697276616e6130)
+    parser.add_argument('--semantic-cases', type=int, default=16)
+    parser.add_argument('--semantic-steps', type=int, default=4096)
+    parser.add_argument('--measure-rss', action='store_true', help='measure command process RSS via /usr/bin/time')
+    parser.add_argument('--toolchain-manifest', type=Path)
     parser.add_argument('--clang', default=os.environ.get('NIRVANA_CLANG', 'clang'), help='evaluation CFG reader')
     parser.add_argument('--optimization', action='append', choices=['O0', 'O1', 'O2', 'O3', 'Os'])
     parser.add_argument('--out', type=Path, required=True)
@@ -249,6 +338,8 @@ def main():
     args = parser.parse_args()
     if not 0 < args.timeout < float('inf') or not 0 < args.search_seconds < float('inf') or args.max_states < 1:
         parser.error('require positive finite budgets')
+    if not (0 <= args.semantic_seed < 2**64 and 8 <= args.semantic_cases <= 256 and 1 <= args.semantic_steps <= 1_000_000):
+        parser.error('invalid semantic profile budgets')
     try:
         report = run(args)
     except (OSError, ValueError, KeyError) as error:

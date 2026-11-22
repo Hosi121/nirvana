@@ -46,11 +46,27 @@ pub fn source_with_size(
     initialized_words: usize,
     memory_size: usize,
 ) -> String {
+    source_with_stack(
+        output,
+        register_count,
+        initialized_words,
+        memory_size,
+        4096 + memory_size as u64,
+    )
+}
+
+pub fn source_with_stack(
+    output: &ReadableC,
+    register_count: usize,
+    initialized_words: usize,
+    memory_size: usize,
+    stack: u64,
+) -> String {
     assert!((1..=4).contains(&initialized_words));
     assert!((8..=65_536).contains(&memory_size) && memory_size & 7 == 0);
     let last_word = memory_size - 8;
     let words = memory_size / 8;
-    let stack = 4096 + memory_size;
+    assert!((4096..=4096 + memory_size as u64).contains(&stack));
     let code = instrument(&output.code);
     let mut arguments: Vec<_> = output
         .parameters

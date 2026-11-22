@@ -24,9 +24,11 @@ python3 -m unittest discover -s tools/tests
 M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-smoke.json)は既存4ソース族の開発集合です。GCC/Clang × O2/O3で16構成となります。
 
 ```sh
-cargo build --locked --bin nirvana
+cargo build --locked --bin nirvana --example evaluation_probe
 python3 tools/evaluate_structure.py --clang clang-18 \
-  --compiler gcc=cc --compiler clang=clang-18 --out target/structure-baseline
+  --compiler gcc=cc --compiler clang=clang-18 \
+  --semantic-probe target/debug/examples/evaluation_probe --measure-rss \
+  --out target/structure-baseline
 NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
 ```
 
@@ -37,7 +39,9 @@ compiler・実行ファイル・評価器・入力・グラフのhash、時間�
 指標`nirvana-control-topology-v1`は、入口・出口・return・分岐・残るflowをラベルにした有向多重グラフを使います。式・名前・分岐の極性を捨て、明示的に剪定された辺と入口から届かないblockを除きます。出口は保持し、単一後続のflowを縮約します。自己循環は残します。関数内のdispatcherも同じ規則で比較します。
 距離は入口・出口を対応させ、nodeの追加・削除・ラベル変更とedgeの追加・削除をそれぞれ1と数えます。`exact`と、探索予算で止まった`upper_bound`を区別し、下限・上限・対応表・停止理由を保存します。対応表は`control_graph.graph_from_json`と`mapping_cost`で再計算できます。
 
-この指標は制御の形を観測します。基本block内の演算・効果・処理の複製と、意味の同値性は別の評価対象です。初回報告の意味比較は`semantics: not_run`、最大RSSは`null`で、hold-outと既存の意味比較を統合する部分もM0の残作業です。
+この指標は制御の形を観測します。基本block内の演算・効果・処理の複製は別の評価対象です。`--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
+
+`--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。corpus全体の統合と、block内の処理・条件の内容を含む構造指標はM0の継続対象です。
 [対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
 
 ## 比較の境界
