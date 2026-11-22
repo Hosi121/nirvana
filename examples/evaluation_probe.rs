@@ -4,6 +4,8 @@
 #[path = "../tests/support/checked_c.rs"]
 #[allow(dead_code)]
 mod checked_c;
+#[path = "evaluation/fixture.rs"]
+mod fixture;
 #[path = "evaluation_probe/stages.rs"]
 mod stages;
 
@@ -14,10 +16,7 @@ use nirvana::{
 };
 use std::{fmt::Write, path::PathBuf};
 
-const BASE: u64 = 4096;
-const SIZE: usize = 512;
-const STACK: u64 = BASE + SIZE as u64 - 8;
-const POINTER: u64 = BASE + 128;
+use fixture::{BASE, POINTER, SIZE, STACK};
 
 fn vectors(seed: u64, count: usize) -> Vec<[u64; 4]> {
     let fixed = [
@@ -143,19 +142,8 @@ int main(void) {{
     };
     for words in vectors {
         for pointer in [POINTER, BASE + SIZE as u64 - 16, u64::MAX] {
-            let mut ram: Vec<_> = (0..SIZE).map(|n| (n * 29 + 7) as u8).collect();
-            for (n, value) in words.into_iter().enumerate() {
-                if let Some(offset) = pointer
-                    .checked_add(n as u64 * 8)
-                    .and_then(|p| p.checked_sub(BASE))
-                    .filter(|p| *p <= SIZE as u64 - 8)
-                {
-                    ram[offset as usize..offset as usize + 8].copy_from_slice(&value.to_le_bytes());
-                }
-            }
-            let mut regs = vec![0; source.register_count()];
-            regs[x86::RDI] = pointer;
-            regs[x86::RSP] = STACK;
+            let ram = fixture::memory(words, pointer);
+            let regs = fixture::registers(source.register_count(), pointer);
             let report = source.run_with_memory(&regs, BASE, &ram, limit)?;
             stages.observe(&source, &regs, &ram, &report);
             let mut row = match report.status {
