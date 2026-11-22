@@ -71,6 +71,38 @@ def fixture(root):
 
 
 class ReportTests(unittest.TestCase):
+    def test_probe_profile_and_stage_summaries_replay_the_retained_json(self):
+        for variant in ['intact', 'profile', 'continuation', 'coverage', 'raw_hash', 'legacy']:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                row = fixture(root)['rows'][0]
+                row['semantics']['profile'].update(step_limit=4096, requested_cases=3, seed=17)
+                row['stage_checks'] = dict(
+                    schema='nirvana-evaluation-stages-v1', contract='nirvana-entry-full-state-v1',
+                    status='passed', prefix_budgets=[0, 4096],
+                    execution=[dict(name='low_middle', status='passed', observations=12, witness=None),
+                               dict(name='middle_predicates', status='not_applied', observations=0, witness=None)],
+                    selected_c=dict(predicates=None, continuations=dict(model='c-fragment-continuation-v1',
+                                    removed_conditions=1, compared_graph_nodes=3),
+                                    input_structure_checked=True, display_structure_checked=True,
+                                    saved_value_rounds=0, fallback_goto=False),
+                    low_coverage=dict(steps_started=2, syntactic_steps=3, transfers_observed=1,
+                                      syntactic_transfers=2, unobserved_transfers=[[1, 2]]))
+                raw = {**row['semantics']['profile'], 'stage_checks': copy.deepcopy(row['stage_checks'])}
+                target = root / row['artifacts']
+                row['semantics']['prepare_stdout_sha256'] = save(target, 'semantic_prepare.stdout.txt', json.dumps(raw))
+                if variant == 'profile': row['semantics']['profile']['seed'] = 18
+                elif variant == 'continuation': row['stage_checks']['selected_c']['continuations']['removed_conditions'] = 2
+                elif variant == 'coverage': row['stage_checks']['low_coverage']['steps_started'] = 1
+                elif variant == 'raw_hash': (target / 'semantic_prepare.stdout.txt').write_text(json.dumps(raw) + ' ')
+                elif variant == 'legacy': row['semantics'].pop('prepare_stdout_sha256')
+                if variant in ['intact', 'legacy']:
+                    result = reports.replay(root, row)
+                    self.assertEqual(result['probe_metadata'], 'replayed' if variant == 'intact' else 'legacy_unbound')
+                else:
+                    with self.subTest(variant=variant), self.assertRaises(ValueError):
+                        reports.replay(root, row)
+
     def test_retained_content_is_recomputed_from_hashed_ast(self):
         with tempfile.TemporaryDirectory() as directory:
             a, b = Path(directory) / 'a', Path(directory) / 'b'

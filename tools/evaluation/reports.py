@@ -100,6 +100,17 @@ def replay(root, row):
         require(semantic['contract'] == semantics.CONTRACT, 'semantic contract')
         profile = semantic['profile']
         destination = directory / 'semantics'
+        result['probe_metadata'] = 'legacy_unbound'
+        if 'prepare_stdout_sha256' in semantic:
+            raw = hashed(directory / 'semantic_prepare.stdout.txt', semantic['prepare_stdout_sha256'])
+            prepared = json.loads(raw.read_text())
+            require(isinstance(prepared, dict), 'semantic prepare JSON shape')
+            recorded_stages = prepared.pop('stage_checks', None)
+            require(prepared == profile, 'semantic profile differs from retained probe JSON')
+            restored = {}
+            stages.attach(recorded_stages, restored, destination, profile['step_limit'], profile['requested_cases'])
+            require(restored['stage_checks'] == architecture, 'stage checks differ from retained probe JSON')
+            result['probe_metadata'] = 'replayed'
         for name in semantics.FILES:
             hashed(destination / name, semantic['inputs'][name])
         observed = {}

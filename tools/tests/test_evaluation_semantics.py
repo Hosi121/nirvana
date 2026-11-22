@@ -1,5 +1,6 @@
 """Semantic observations preserve full-word faults/RAM and all profile counts."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -87,6 +88,8 @@ class SemanticTests(unittest.TestCase):
             args.semantic_inputs.write_text('1 2 3 4\n' * count)
         row = {'function': 'fixture'}
         semantics.run(args, row, root, invoke, [])
+        self.assertEqual(row['semantics']['prepare_stdout_sha256'],
+                         hashlib.sha256(json.dumps(profile).encode()).hexdigest())
         return row, calls
 
     def test_fixed_input_file_keeps_an_explicit_generator_identity(self):

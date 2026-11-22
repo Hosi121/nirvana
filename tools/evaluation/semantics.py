@@ -75,6 +75,7 @@ def run(args, row, directory, invoke, flags):
     from . import stages
     stages.attach(profile.pop('stage_checks', None), row, destination, args.semantic_steps, profile['requested_cases'])
     row['semantics'] = {'status': 'running', 'contract': CONTRACT, 'profile': profile,
+                        'prepare_stdout_sha256': hashlib.sha256(result.stdout.encode()).hexdigest(),
                         'native_observations': 'return and state[4], valid pointer',
                         'generated_observations': 'return, all RAM words, first fault address/access/width',
                         'inputs': {name: sha(destination / name) for name in FILES}, 'checks': {}}

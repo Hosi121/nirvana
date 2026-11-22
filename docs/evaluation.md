@@ -52,7 +52,7 @@ NIRVANA_Z3=target/verification-venv/bin/z3 target/debug/examples/evaluation_witn
 
 ## 比較と再解析
 
-[報告の比較器](../tools/compare_structure_reports.py)は、corpus・binary・compiler・フラグ・観測契約を照合し、保存したdumpからの正規化、対応表の費用、具体実行の全ワードを再検査します。探索結果の最適性は記録したソルバの判定を使い、打切り区間が重なる結果は未判定として扱います。同じグラフ同士の比較では、打切り後も距離が等しいことを確認できます。失敗行も分母に保持します。
+[報告の比較器](../tools/compare_structure_reports.py)は、corpus・binary・compiler・フラグ・観測契約を照合し、保存したdumpからの正規化、対応表の費用、具体実行の全ワードを再検査します。probeの生JSONもhashを保持し、観測profileと段階別の検査結果を再解析して照合します。このhashを持つ報告は`probe_metadata: replayed`、従来の報告は`legacy_unbound`として区別します。探索結果の最適性は記録したソルバの判定を使い、打切り区間が重なる結果は未判定として扱います。同じグラフ同士の比較では、打切り後も距離が等しいことを確認できます。失敗行も分母に保持します。
 
 ```sh
 python3 tools/compare_structure_reports.py \
