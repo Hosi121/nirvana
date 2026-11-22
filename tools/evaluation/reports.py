@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from . import control_graph as cg, semantics, stages, c_footprint as cf
+from . import state_memory as sm
 
 
 class Incompatible(ValueError):
@@ -47,6 +48,8 @@ def index(report):
     if binding is not None:
         require(all('prepare_stdout_sha256' in row['semantics'] for row in rows
                     if 'profile' in row['semantics']), 'missing declared probe metadata binding')
+    if report.get('state_memory_sites', {}).get('enabled'):
+        require(all('state_memory_sites' in row for row in rows), 'missing state memory denominator')
     return result
 
 
@@ -101,6 +104,18 @@ def replay(root, row):
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
                         semantic['profile']['requested_cases'])
     result['architecture'] = architecture['status']
+    memory_sites = row.get('state_memory_sites', {'status': 'not_run'})
+    require(memory_sites['status'] in ['not_run', 'unavailable', 'unsupported', 'evaluator_error', 'measured', 'partial'],
+            'state memory status')
+    if memory_sites['status'] in ['measured', 'partial']:
+        require(footprint['status'] == 'measured' and 'prepare_stdout_sha256' in semantic,
+                'state memory sites require retained AST and bound probe metadata')
+        restored = sm.measure((directory / 'source_ast.stdout.txt').read_text(),
+                              (directory / 'generated_ast.stdout.txt').read_text(), row['function'],
+                              architecture['selected_c']['parameter_registers'])
+        require(json.dumps(restored, sort_keys=True) == json.dumps(memory_sites, sort_keys=True),
+                'state memory sites differ from retained AST or ABI')
+    result['state_memory_sites'] = memory_sites['status']
     if 'profile' in semantic:
         require(semantic['contract'] == semantics.CONTRACT, 'semantic contract')
         profile = semantic['profile']
@@ -184,6 +199,7 @@ def compare(before_path, after_path):
     for key in ['evaluation', 'budgets', 'emission']:
         require(before[key] == after[key], f'changed {key}')
     require(before.get('c_footprint') == after.get('c_footprint'), 'changed C footprint profile')
+    require(before.get('state_memory_sites') == after.get('state_memory_sites'), 'changed state memory profile')
     require(before['corpus']['sha256'] == after['corpus']['sha256'], 'changed corpus manifest')
     for key in ['clang', 'c_compiler']:
         require(tool_identity(before[key]) == tool_identity(after[key]), f'changed {key} tool')
@@ -225,9 +241,20 @@ def compare(before_path, after_path):
         if af.get('status') == bf.get('status') == 'measured':
             require(af['source']['function_fingerprint'] == bf['source']['function_fingerprint'], f'{key}: changed source AST')
             content_change = cf.delta(af['generated'], bf['generated'])
+        am, bm = a.get('state_memory_sites', {}), b.get('state_memory_sites', {})
+        memory_change = None
+        memory_regression = ar['state_memory_sites'] in ['measured', 'partial'] and br['state_memory_sites'] not in ['measured', 'partial']
+        if am.get('status') in ['measured', 'partial'] and bm.get('status') in ['measured', 'partial']:
+            fields = ['state_register', 'source_parameter', 'state_bytes', 'word_bytes']
+            require(all(am['profile'][field] == bm['profile'][field] for field in fields)
+                    and am['source'] == bm['source'], f'{key}: changed source memory profile')
+            memory_change = sm.delta(am['generated'], bm['generated'])
+            memory_regression |= am['generated']['status'] == 'measured' and bm['generated']['status'] != 'measured'
         rows.append({'id': key, 'cohort': a['cohort'],
                      'c_syntax_delta': content_change,
                      'c_footprint_regression': ar['c_footprint'] == 'measured' and br['c_footprint'] != 'measured',
+                     'state_memory_regression': memory_regression,
+                     'state_memory_delta': memory_change,
                      'distance': 'equal' if same_graphs else interval_change(a.get('distance'), b.get('distance')),
                      'distance_basis': 'identical_graphs' if same_graphs else 'recorded_search_intervals',
                      'before_interval': [a['distance']['lower_bound'], a['distance']['upper_bound']]
@@ -252,6 +279,7 @@ def compare(before_path, after_path):
             'candidate_semantics': dict(Counter(row['after_semantics'] for row in rows)),
             'architecture_regressions': sum(row['architecture_regression'] for row in rows),
             'c_footprint_regressions': sum(row['c_footprint_regression'] for row in rows),
+            'state_memory_regressions': sum(row['state_memory_regression'] for row in rows),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',

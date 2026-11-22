@@ -25,6 +25,7 @@ import traceback
 from evaluation import control_graph as cg
 from evaluation import semantics
 from evaluation import c_footprint as cf
+from evaluation import state_memory as sm
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
@@ -262,6 +263,26 @@ def measure(case, tag, compiler, opt, args, out):
             failed(error, 'evaluator_error')
             row['semantics'].update(status='evaluator_error', reason=f'{stage}: {error}')
             (directory / 'evaluator.traceback.txt').write_text(traceback.format_exc())
+    row['state_memory_sites'] = {'status': 'not_run'}
+    if args.state_memory_sites:
+        stage = 'state_memory_sites'
+        if (row['c_footprint']['status'] != 'measured'
+                or 'parameter_registers' not in row.get('stage_checks', {}).get('selected_c', {})
+                or 'prepare_stdout_sha256' not in row['semantics']):
+            row['state_memory_sites'] = {'status': 'unavailable', 'reason': 'requires measured C AST and bound ABI metadata'}
+        else:
+            try:
+                row['state_memory_sites'] = sm.measure((directory / 'source_ast.stdout.txt').read_text(),
+                    (directory / 'generated_ast.stdout.txt').read_text(), case['function'],
+                    row['stage_checks']['selected_c']['parameter_registers'])
+            except cf.Unsupported as error:
+                row['state_memory_sites'] = {'status': 'unsupported', 'reason': str(error)}
+                failed(error, 'unsupported')
+            except Exception as error:
+                row['state_memory_sites'] = {'status': 'evaluator_error', 'reason': str(error)}
+                failed(error, 'evaluator_error')
+                (directory / f'{stage}.traceback.txt').write_text(traceback.format_exc())
+        row['stages'][stage] = row['state_memory_sites']['status']
     row['wall_seconds'] = time.monotonic() - start
     row['max_rss'] = None
     samples = [command['resources']['max_rss_kib'] for command in row['commands'] if 'resources' in command]
@@ -274,9 +295,11 @@ def run(args):
     for name, default in [('emit', 'readable-c'), ('measure_rss', False), ('semantic_probe', None),
                           ('semantic_seed', 0x6e697276616e6130), ('semantic_cases', 16),
                           ('semantic_steps', 4096), ('toolchain_manifest', None), ('semantic_inputs', None),
-                          ('c_footprint', False)]:
+                          ('c_footprint', False), ('state_memory_sites', False)]:
         if not hasattr(args, name):
             setattr(args, name, default)
+    if args.state_memory_sites and (not args.c_footprint or not args.semantic_probe):
+        raise ValueError('state memory sites require --c-footprint and --semantic-probe')
     cases = load_cases(args.cases)
     compilers = []
     for setting in args.compiler or ['gcc=cc']:
@@ -316,6 +339,10 @@ def run(args):
                             'scope': 'C syntax counts and local-binding fingerprints; not a semantic distance.'}
     if args.c_footprint:
         report['evaluation']['c_footprint_sha256'] = digest(cf.__file__)
+    report['state_memory_sites'] = {'metric': sm.METRIC, 'enabled': args.state_memory_sites,
+                                  'scope': 'Static state[4] byte-range sites; unknown roots and indices retained.'}
+    if args.state_memory_sites:
+        report['evaluation']['state_memory_sha256'] = digest(sm.__file__)
     report['semantic_probe'] = provenance(args.semantic_probe, args.timeout) if args.semantic_probe else None
     if args.semantic_inputs:
         if not args.semantic_probe:
@@ -359,6 +386,7 @@ def run(args):
                            'counts': dict(Counter(r['semantics']['status'] for r in report['rows']))}
     report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
     report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
+    report['summary']['state_memory_sites'] = dict(Counter(r['state_memory_sites']['status'] for r in report['rows']))
     report['resources']['runner_peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
@@ -373,6 +401,7 @@ def main():
     parser.add_argument('--emit', choices=['readable-c', 'middle-c'], default='readable-c')
     parser.add_argument('--semantic-probe', type=Path, help='built examples/evaluation_probe executable')
     parser.add_argument('--c-footprint', action='store_true', help='observe C operators, literals and condition syntax using Clang AST JSON')
+    parser.add_argument('--state-memory-sites', action='store_true', help='align static memory sites through the fixed state[4] ABI; requires C AST and semantic probe')
     parser.add_argument('--semantic-inputs', type=Path, help='fixed four-word input rows; use matching --semantic-cases')
     parser.add_argument('--semantic-seed', type=int, default=0x6e697276616e6130)
     parser.add_argument('--semantic-cases', type=int, default=16)

@@ -27,7 +27,8 @@ class RunnerTests(unittest.TestCase):
             binary.write_text('#!' + sys.executable + '\nprint("#include <stdint.h>\\nuint64_t nirvana_readable(uint64_t a) { return a; }")\n')
             binary.chmod(0o755)
             args = self.args(root, cases=cases, compiler=['gcc=cc'], optimization=['O2'],
-                             decompiler=binary, semantic_probe=Path(sys.executable), c_footprint=True)
+                             decompiler=binary, semantic_probe=Path(sys.executable), c_footprint=True,
+                             state_memory_sites=True)
             def semantic(*args): args[1]['semantics'] = {'status': 'passed'}
             with mock.patch.object(tool.semantics, 'run', side_effect=semantic) as probe:
                 report = tool.run(args)
@@ -38,6 +39,14 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(report['summary']['c_footprint'], {'incomplete': 1})
             self.assertEqual(row['c_footprint']['source']['status'], 'unavailable')
             self.assertEqual(row['c_footprint']['generated']['status'], 'unavailable')
+            self.assertEqual(report['summary']['state_memory_sites'], {'unavailable': 1})
+
+    def test_state_memory_requires_both_ast_and_abi_evidence(self):
+        for settings in [dict(c_footprint=True), dict(semantic_probe=Path(sys.executable))]:
+            with tempfile.TemporaryDirectory() as directory:
+                args = self.args(Path(directory), state_memory_sites=True, **settings)
+                with self.assertRaisesRegex(ValueError, 'require --c-footprint and --semantic-probe'):
+                    tool.run(args)
 
     def args(self, root, **settings):
         defaults = dict(cases=tool.ROOT / 'tools/corpora/structure-smoke.json',
