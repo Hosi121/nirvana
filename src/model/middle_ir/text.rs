@@ -31,6 +31,18 @@ impl Text {
                     indent,
                     format_args!("%{id} = load{} %{}", width.bits(), address.0),
                 )?,
+                Operation::KnownLoad {
+                    address,
+                    width,
+                    value,
+                } => self.line(
+                    indent,
+                    format_args!(
+                        "%{id} = checked-load{} %{} => {value:#x}",
+                        width.bits(),
+                        address.0
+                    ),
+                )?,
                 Operation::Select {
                     condition,
                     taken,

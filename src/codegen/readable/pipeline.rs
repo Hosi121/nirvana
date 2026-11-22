@@ -1,6 +1,37 @@
 //! Preparation, evidence and render assembly for readable C.
 use super::*;
 
+/// Compare the existing render with checked MIR memory-result refinements.
+/// Preserve the input ABI and choose fewer locals, then shorter function text.
+pub fn emit_middle_c_with_options(
+    function: &crate::model::middle_ir::Function,
+    options: ReadableOptions,
+) -> Result<ReadableC, ReadableError> {
+    use crate::model::middle_ir::Error;
+    let source = function.lower().map_err(ReadableError::Middle)?;
+    let mut best = emit_readable_c_with_options(&source, options)?;
+    let (refined, evidence) = match function.recover_memory_constants() {
+        Ok(result) => result,
+        Err(
+            Error::Limit(_)
+            | Error::Ssa(crate::dataflow::ssa::SsaError::Unavailable(_))
+            | Error::Memory(_),
+        ) => return Ok(best),
+        Err(error) => return Err(ReadableError::Middle(error)),
+    };
+    if evidence.refined_loads > 0 {
+        let source = refined.lower().map_err(ReadableError::Middle)?;
+        if let Ok(mut candidate) = emit_readable_c_with_options(&source, options)
+            && candidate.parameters == best.parameters
+            && render_cost(&candidate) < render_cost(&best)
+        {
+            candidate.middle_memory = Some(evidence);
+            best = candidate;
+        }
+    }
+    Ok(best)
+}
+
 pub fn emit_readable_c(program: &Program) -> Result<ReadableC, ReadableError> {
     emit_readable_c_with_options(program, ReadableOptions::default())
 }
@@ -508,6 +539,7 @@ fn emit_prepared_c(
     }
     Ok(ReadableC {
         code,
+        middle_memory: None,
         parameters: reduced.parameters().to_vec(),
         uses_memory: program.uses_memory(),
         reduction_stats: reduced.stats(),

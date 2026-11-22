@@ -137,3 +137,126 @@ fn original_depth_limits_are_checked_before_recursive_lifting() {
     }
     assert!(Function::from_low(&source(expr)).is_err());
 }
+
+fn stored() -> Function {
+    use crate::model::ir::{Assignment, Place};
+    let mut low = source(Expr::load(Expr::Register(Reg(0)), Width::U32));
+    let mut instructions = low.instructions().to_vec();
+    instructions[0].assignments.push(Assignment {
+        destination: Place::Memory {
+            address: Expr::Register(Reg(0)),
+            width: Width::U32,
+        },
+        value: Expr::Const(17),
+    });
+    low = Program::new(0, 2, instructions).unwrap();
+    Function::from_low(&low).unwrap()
+}
+
+#[test]
+fn memory_recovery_checker_rejects_forged_facts_and_changed_base_programs() {
+    let original = stored();
+    let (valid, _) = original.recover_memory_constants().unwrap();
+    for change in 0..5 {
+        let mut candidate = valid.clone();
+        match change {
+            0 => {
+                let Operation::KnownLoad { value, .. } =
+                    &mut result(&mut candidate).bindings[1].operation
+                else {
+                    panic!()
+                };
+                *value = 18;
+            }
+            1 => {
+                let Statement::Store { value, .. } =
+                    &mut candidate.blocks[0].steps[0].statements[0]
+                else {
+                    panic!()
+                };
+                value.bindings[0].operation = Operation::Pure(Pure::Constant(18));
+                let Operation::KnownLoad { value, .. } =
+                    &mut result(&mut candidate).bindings[1].operation
+                else {
+                    panic!()
+                };
+                *value = 18; // Internally valid, but bound to the wrong source.
+            }
+            2 => {
+                let Operation::KnownLoad { width, .. } =
+                    &mut result(&mut candidate).bindings[1].operation
+                else {
+                    panic!()
+                };
+                *width = Width::U64; // Upper bytes have no writer.
+            }
+            3 => {
+                result(&mut candidate).bindings[0].operation = Operation::ReadStorage {
+                    storage: StorageId(1),
+                    version: Some(ssa::ValueId(1)),
+                }
+            }
+            _ => {
+                let region = result(&mut candidate);
+                region.bindings[1].operation = Operation::Pure(Pure::Constant(17));
+            }
+        }
+        assert!(
+            original.validate_memory_recovery(&candidate).is_err(),
+            "mutation {change}"
+        );
+        if change == 0 || change == 2 {
+            assert!(
+                candidate.lower().is_err(),
+                "lower must recheck claimed facts"
+            );
+        }
+    }
+}
+
+#[test]
+fn memory_recovery_facts_cannot_bootstrap_their_own_writer() {
+    use crate::model::ir::{Assignment, Place};
+    let low = Program::new(
+        0,
+        2,
+        vec![IrInstruction {
+            address: 0,
+            size: 1,
+            assignments: vec![Assignment {
+                destination: Place::Memory {
+                    address: Expr::Register(Reg(0)),
+                    width: Width::U64,
+                },
+                value: Expr::load(Expr::Register(Reg(0)), Width::U64),
+            }],
+            control: Control::Return(Expr::load(Expr::Register(Reg(0)), Width::U64)),
+        }],
+    )
+    .unwrap();
+    let original = Function::from_low(&low).unwrap();
+    let (candidate, evidence) = original.recover_memory_constants().unwrap();
+    assert_eq!(evidence.proved_loads, 0);
+    let mut forged = candidate;
+    let Statement::Store { value, .. } = &mut forged.blocks[0].steps[0].statements[0] else {
+        panic!()
+    };
+    let Operation::Load { address, width } = value.bindings[1].operation else {
+        panic!()
+    };
+    value.bindings[1].operation = Operation::KnownLoad {
+        address,
+        width,
+        value: 17,
+    };
+    let Operation::Load { address, width } = result(&mut forged).bindings[1].operation else {
+        panic!()
+    };
+    result(&mut forged).bindings[1].operation = Operation::KnownLoad {
+        address,
+        width,
+        value: 17,
+    };
+    assert!(forged.lower().is_err());
+    assert!(original.validate_memory_recovery(&forged).is_err());
+}

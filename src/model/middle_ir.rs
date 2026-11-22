@@ -18,6 +18,8 @@ mod lift;
 mod lower;
 mod memory;
 pub use memory::{Load, LoadFlow, MemoryFacts, Store};
+mod recover_memory;
+pub use recover_memory::MemoryEvidence;
 mod run;
 #[cfg(test)]
 mod tests;
@@ -55,6 +57,13 @@ pub enum Operation {
     Load {
         address: ValueId,
         width: Width,
+    },
+    /// Perform the checked read, then yield a source-bound proved value.
+    /// Memory recovery checks every byte against all reaching definitions.
+    KnownLoad {
+        address: ValueId,
+        width: Width,
+        value: u64,
     },
     Select {
         condition: ValueId,
@@ -159,7 +168,8 @@ impl Function {
         Ok(())
     }
     pub fn lower(&self) -> Result<Program, Error> {
-        lower::program(self)
+        recover_memory::validate_constants(self)?;
+        lower::program(self, true)
     }
     pub fn entry(&self) -> u64 {
         self.entry

@@ -20,6 +20,19 @@ fn partial_stores_reconstruct_unanimous_bytes_and_link_to_mir_rhs_values() {
     assert!(std::ptr::eq(facts.function(), &middle));
     let load = last_load(&facts);
     assert_eq!(facts.constant_load(load), Some(0x55bbaa22));
+    let (refined, evidence) = middle.recover_memory_constants().unwrap();
+    assert_eq!(
+        (
+            evidence.loads,
+            evidence.proved_loads,
+            evidence.refined_loads
+        ),
+        (1, 1, 1)
+    );
+    assert!(refined.to_text().unwrap().contains("=> 0x55bbaa22"));
+    let (again, repeated) = refined.recover_memory_constants().unwrap();
+    assert_eq!((repeated.proved_loads, repeated.refined_loads), (1, 0));
+    assert_eq!(again.to_text().unwrap(), refined.to_text().unwrap());
     let LoadFlow::Reaching { candidates, .. } = facts.flow(load).unwrap() else {
         panic!()
     };
@@ -48,6 +61,8 @@ fn partial_stores_reconstruct_unanimous_bytes_and_link_to_mir_rhs_values() {
             nirvana::ir::RunStatus::Returned(0x55bbaa22)
         );
     }
+    let inputs = [4095, 4096, 4104, 4120, u64::MAX].map(|p| vec![p, 0, 0, 0, 0, 0, 0, 0]);
+    compare(&source, &inputs, &[0; 32], &[0, 1, 2]);
 }
 
 #[test]
@@ -294,4 +309,8 @@ fn query_resource_failure_is_unavailable_not_an_empty_writer_set() {
         ));
         assert_eq!(facts.constant_load(load.value), None);
     }
+    let (refined, evidence) = middle.recover_memory_constants().unwrap();
+    assert_eq!(evidence.proved_loads, 0);
+    assert!(evidence.unavailable_reason.is_some());
+    assert_eq!(refined.to_text().unwrap(), middle.to_text().unwrap());
 }

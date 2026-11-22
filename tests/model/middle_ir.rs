@@ -40,6 +40,8 @@ fn compare(source: &Program, inputs: &[Vec<u64>], memory: &[u8], limits: &[usize
     let middle = Function::from_low(source).unwrap();
     let restored = middle.lower().unwrap();
     assert_eq!(restored.instructions(), source.instructions());
+    let (refined, _) = middle.recover_memory_constants().unwrap();
+    let refined_low = refined.lower().unwrap();
     let mut checked = 0;
     for input in inputs {
         for &limit in limits {
@@ -54,6 +56,18 @@ fn compare(source: &Program, inputs: &[Vec<u64>], memory: &[u8], limits: &[usize
                     .run_with_memory(input, 4096, memory, limit)
                     .unwrap(),
                 expected
+            );
+            assert_eq!(
+                refined.run_with_memory(input, 4096, memory, limit).unwrap(),
+                expected,
+                "refined MIR input={input:?}, budget={limit}"
+            );
+            assert_eq!(
+                refined_low
+                    .run_with_memory(input, 4096, memory, limit)
+                    .unwrap(),
+                expected,
+                "refined Low input={input:?}, budget={limit}"
             );
             checked += 1;
         }
@@ -381,3 +395,5 @@ fn canonical_values_share_pure_computation_and_keep_distinct_loads() {
 mod fixtures;
 #[path = "middle_ir/memory.rs"]
 mod memory;
+#[path = "middle_ir/memory_c.rs"]
+mod memory_c;

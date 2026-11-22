@@ -79,8 +79,8 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--emit c` | 全レジスタ形式のC。既定の出力 |
 | `--emit ssa-c` | 検査済みの局所値・φの辺上コピーと、全レジスタへの書込みを持つC |
 | `--emit readable-c` | 値引数、局所変数、メモリviewを使うC |
-| `--emit middle-ir` | 評価領域ごとの不変な値、Load/Store、保存場所のSSA版、CFGをテキストで出力 |
-| `--emit middle-c` | Middle IRを持ち上げ・再構成検査して、既存のreadable C backendへ接続 |
+| `--emit middle-ir` | 評価領域ごとの不変な値、根拠付きの既知Load、Store、保存場所のSSA版、CFGを出力 |
+| `--emit middle-c` | Middle IRの検査付きメモリ値回復を既存のreadable Cと比較し、同じ引数で小さい出力を選択 |
 | `--emit types` | SSA値の幅・使用制約と、フィールド・配列の候補をJSONで出力 |
 | `--emit record-types` | フィールド配置・ポインタの型互換性から構造体候補をC11の宣言で出力 |
 | `--emit references` | ELFの参照先・文字列候補・外部呼出しの引数レジスタをJSONで出力 |

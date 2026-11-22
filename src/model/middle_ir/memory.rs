@@ -44,7 +44,8 @@ pub struct MemoryFacts<'a> {
 }
 impl Function {
     pub fn memory_facts(&self) -> Result<MemoryFacts<'_>, Error> {
-        let source = self.lower()?;
+        // Analyze the original read, independent of any claimed KnownLoad.
+        let source = lower::program(self, false)?;
         let analysis = mem::analyze(&source, &self.ssa).map_err(Error::Memory)?;
         let constants = ssa_constants::ConstantPlan::analyze(&source).filter(|plan| {
             ssa_constants::validate_facts(&source, &self.ssa, plan.values()).is_ok()
@@ -255,7 +256,9 @@ fn constant(region: &Region, constants: &[ssa_constants::ConstantValue]) -> Opti
                 Some(ssa_constants::ConstantValue::Known(value)) => Some(*value),
                 _ => None,
             },
-            Operation::ReadStorage { version: None, .. } | Operation::Load { .. } => None,
+            Operation::ReadStorage { version: None, .. }
+            | Operation::Load { .. }
+            | Operation::KnownLoad { .. } => None,
         };
         values.insert(binding.id, value);
     }
@@ -373,6 +376,11 @@ impl<'a> Index<'a> {
             Operation::Load {
                 address: input,
                 width,
+            }
+            | Operation::KnownLoad {
+                address: input,
+                width,
+                ..
             } => {
                 self.child(*input, values, path, address::PathEdge::Address, loads)?;
                 let operand = match binding.origin.operand {

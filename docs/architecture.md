@@ -43,6 +43,8 @@ Middle IRはM1の段階間契約を実装する最初の共通表現です。保
 
 [Middle IRのメモリ情報](../src/model/middle_ir/memory.rs)は、一つの不変な関数に結び付く解析viewです。各Loadを元の式のpath・幅・位置でMemorySSAへ対応付け、到達するStoreをMIRの右辺値IDへ結びます。到達不能・照会の未判定・書込み候補を区別し、全候補のbyte値が一致したLoadには定数値を示します。Storeの世代は右辺評価後のcommitに対応し、右辺のLoadはその前の世代を参照します。
 
+[メモリ値の回復](../src/model/middle_ir/recover_memory.rs)は、その根拠から`KnownLoad`を作ります。検査器は元のMIRとの対応と全候補のbyte値を再計算します。既知値の根拠には元のLoadを使い、回復結果の循環した自己参照を防ぎます。実行と戻し変換は元のchecked readを保持します。`middle-ir`は回復後の値を表示し、`middle-c`は同じ引数契約で既存の出力と比較して、局所変数数・関数長の順で小さい出力を選びます。現在の対象は単一関数のscalar定数で、MemorySSA自体の検証境界は表の通りです。
+
 ## ソースの配置
 
 | ディレクトリ | 責務と入口 |

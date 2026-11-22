@@ -100,7 +100,7 @@ impl Builder {
         let key = match &operation {
             Operation::Pure(pure) => Some(Key::Pure(pure.clone())),
             Operation::ReadStorage { storage, version } => Some(Key::Read(*storage, *version)),
-            Operation::Load { .. } | Operation::Select { .. } => None,
+            Operation::Load { .. } | Operation::KnownLoad { .. } | Operation::Select { .. } => None,
         };
         if let Some(id) = key.as_ref().and_then(|key| intern.get(key)) {
             return Ok(*id);

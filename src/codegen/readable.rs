@@ -32,7 +32,7 @@ mod webs;
 use declarations::DeclarationPlan;
 use locals::LocalPlan;
 pub use pipeline::{
-    emit_readable_c, emit_readable_c_with_checked_reduction,
+    emit_middle_c_with_options, emit_readable_c, emit_readable_c_with_checked_reduction,
     emit_readable_c_with_checked_reduction_and_options, emit_readable_c_with_options,
 };
 use prepare::{PreparedFunction, is_break, is_continue};
@@ -41,6 +41,7 @@ use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReadableError {
+    Middle(crate::model::middle_ir::Error),
     Reduction(ReductionError),
     Sequencing(SequenceError),
     LoopLabelsUnavailable,
@@ -48,6 +49,7 @@ pub enum ReadableError {
 impl std::fmt::Display for ReadableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Middle(error) => error.fmt(f),
             Self::Reduction(error) => error.fmt(f),
             Self::Sequencing(error) => error.fmt(f),
             Self::LoopLabelsUnavailable => {
@@ -72,6 +74,8 @@ pub use views::{IndexedView, ObjectField, ObjectView, StackView};
 #[derive(Clone, Debug)]
 pub struct ReadableC {
     pub code: String,
+    /// Memory result refinements adopted from the source-bound middle IR.
+    pub middle_memory: Option<crate::model::middle_ir::MemoryEvidence>,
     /// Input machine-register indices in the emitted argument order.
     pub parameters: Vec<Reg>,
     pub uses_memory: bool,

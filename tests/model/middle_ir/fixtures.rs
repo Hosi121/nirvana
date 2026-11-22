@@ -39,6 +39,51 @@ fn real_gcc_functions_keep_full_state_across_middle_ir_and_back() {
 }
 
 #[test]
+fn real_byte_stores_recover_middle_values_at_optimized_load_sites() {
+    use crate::support::native;
+    let scratch = native::Scratch::new();
+    let path = scratch.0.join("byte-constants.c");
+    // Volatile keeps the reads in the machine-code input. The comparison uses
+    // the closed RAM model, including the retained reads and stack writes.
+    std::fs::write(
+        &path,
+        r#"#include <stdint.h>
+uint64_t fixture(uint64_t *state) {
+    volatile unsigned char *p = (volatile unsigned char *)state;
+    p[0] = 0x11;
+    p[1] = 0x22;
+    return (uint64_t)p[0] | ((uint64_t)p[1] << 8);
+}
+"#,
+    )
+    .unwrap();
+    for opt in ["-O0", "-O2", "-O3"] {
+        let object = path.with_extension(format!("{opt}.o"));
+        native::object(&path, &object, opt, "fixture");
+        let low = nirvana::frontend::lift_elf_auto(&std::fs::read(object).unwrap(), "fixture")
+            .unwrap()
+            .program;
+        let middle = Function::from_low(&low).unwrap();
+        let (_, evidence) = middle.recover_memory_constants().unwrap();
+        if opt != "-O0" {
+            assert_eq!((evidence.loads, evidence.proved_loads), (2, 2));
+        }
+        let inputs: Vec<_> = [8192u64, 69631, u64::MAX]
+            .map(|pointer| {
+                let mut regs = vec![0; low.register_count()];
+                regs[nirvana::x86::RDI] = pointer;
+                regs[nirvana::x86::RSP] = 69632;
+                regs
+            })
+            .into();
+        assert_eq!(
+            compare(&low, &inputs, &[0; 65536], &[0, 1, 2, 4, 8, 32, 128]),
+            21
+        );
+    }
+}
+
+#[test]
 #[ignore = "requires retained M0 input objects; set NIRVANA_MIDDLE_OBJECTS"]
 fn retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction() {
     let directory = std::path::PathBuf::from(
@@ -58,6 +103,8 @@ fn retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction
     let mut observations = 0;
     let mut source_values = 0;
     let mut canonical_values = 0;
+    let mut memory_loads = 0;
+    let mut proved_loads = 0;
     for object in objects {
         let source = nirvana::frontend::lift_elf_auto(&std::fs::read(&object).unwrap(), "fixture")
             .unwrap()
@@ -65,6 +112,20 @@ fn retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction
         let middle = Function::from_low(&source).unwrap();
         source_values += middle.source_value_count();
         canonical_values += middle.value_count();
+        let (_, evidence) = middle.recover_memory_constants().unwrap();
+        memory_loads += evidence.loads;
+        proved_loads += evidence.proved_loads;
+        println!(
+            "{}: {} loads, {} proved",
+            object
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            evidence.loads,
+            evidence.proved_loads
+        );
         for seed in 0u64..8 {
             let mut memory: Vec<_> = (0..65536)
                 .map(|n| (n as u8).wrapping_mul(29).wrapping_add(7))
@@ -101,6 +162,6 @@ fn retained_m0_objects_keep_direct_middle_execution_and_exact_low_reconstruction
     }
     assert_eq!(observations, 3840);
     println!(
-        "16 frozen M0 objects; {observations} direct MIR/lowered full-state prefix observations; {source_values} source values -> {canonical_values} canonical values"
+        "16 frozen M0 objects; {observations} original/refined MIR/lowered full-state prefix observations; {source_values} source values -> {canonical_values} canonical values; {proved_loads}/{memory_loads} memory loads proved"
     );
 }

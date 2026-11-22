@@ -13,6 +13,14 @@ fn evaluate(region: &Region, function: &Function, machine: &Machine) -> Result<u
                 machine.registers[function.storages[storage.0].0]
             }
             Operation::Load { address, width } => machine.load(values[address], *width)?,
+            Operation::KnownLoad {
+                address,
+                width,
+                value,
+            } => {
+                machine.load(values[address], *width)?;
+                *value
+            }
             Operation::Select {
                 condition,
                 taken,

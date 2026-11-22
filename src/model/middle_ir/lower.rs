@@ -33,6 +33,7 @@ struct Lower<'a> {
     points: BTreeMap<ssa::Site, &'a ssa::PointValues>,
     definitions: BTreeSet<ValueId>,
     work: ssa::Budget,
+    materialize_constants: bool,
 }
 impl Lower<'_> {
     fn spend(&mut self, n: usize) -> Result<(), Error> {
@@ -111,13 +112,26 @@ impl Lower<'_> {
                         depth: 1 + a.depth.max(b.depth),
                     }
                 }
-                Operation::Load { address, width } => {
+                Operation::Load { address, width }
+                | Operation::KnownLoad { address, width, .. } => {
                     let mut value = self.get(&values, *address)?;
                     value.expr = Expr::load(value.expr, *width);
                     value.effects.push(Effect::Load(binding.id));
                     expected_effects.push(Effect::Load(binding.id));
                     value.nodes += 1;
                     value.depth += 1;
+                    if self.materialize_constants
+                        && let Operation::KnownLoad { value: known, .. } = binding.operation
+                    {
+                        // Keep the original checked read and its exact position.
+                        value.expr = Expr::binary(
+                            BinaryOp::Or,
+                            Expr::binary(BinaryOp::And, value.expr, Expr::Const(0)),
+                            Expr::Const(known),
+                        );
+                        value.nodes += 4;
+                        value.depth += 2;
+                    }
                     value
                 }
                 Operation::Select {
@@ -220,7 +234,7 @@ impl Lower<'_> {
     }
 }
 
-pub(super) fn program(function: &Function) -> Result<Program, Error> {
+pub(super) fn program(function: &Function, materialize_constants: bool) -> Result<Program, Error> {
     if function.value_count > ssa::MAX_NODES
         || function.blocks.len() > ssa::MAX_BLOCKS
         || function.storages.len() > ssa::MAX_REGISTERS
@@ -246,6 +260,7 @@ pub(super) fn program(function: &Function) -> Result<Program, Error> {
             .collect(),
         definitions: BTreeSet::new(),
         work: ssa::Budget::new(),
+        materialize_constants,
     };
     let mut instructions = Vec::new();
     for block in &function.blocks {

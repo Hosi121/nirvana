@@ -103,7 +103,7 @@ manifestにはNirvana・compiler・solverの版、CPU機能、全フラグ、bin
 | --- | --- | --- |
 | 入力 | ELF64 LEのET_REL/ET_EXEC/ET_DYN、raw、再配置・PLT/GOT・BSS、検査済みFDE範囲 | unwindに依存しない発見、非連続な関数所属、開いた間接辺 |
 | 命令・実行 | 整数・部分レジスタ・flag、moduleのDIV/IDIV・REP STOS/MOVS、限定SSE搬送、CALL/RET・POSIX効果 | 追加の整数形式・SIMD/FP・TLS・起動処理・実行環境のプロファイル |
-| 値とメモリ | SSA、MemorySSA、保存値・bit射影・φ合流、関数間レジスタ効果、型・record候補 | alias・未知CALLの書換え、寿命と元変数、型候補の確定根拠 |
+| 値とメモリ | SSA、MemorySSA、Middle IRの値・効果・書込み元対応、検査付きの既知Load、保存値・bit射影・φ合流、関数間レジスタ効果、型・record候補 | alias・未知CALLの書換え、寿命と元変数、型候補の確定根拠 |
 | 構造 | if/loop、制限付き入口複製、guarded loop、局所変数・φコピー、moduleの途中再開 | compiler-awareな領域変換と、そのソース構造評価 |
 | 証拠 | 個別の対応検査、モデル付きSMT、native/IR/再コンパイルCの比較 | 段階ごとの証拠と品質を統合したM0報告、生成C全体の証明範囲 |
 
