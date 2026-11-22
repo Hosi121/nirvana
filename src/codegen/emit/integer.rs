@@ -24,6 +24,23 @@ const EXTEND_HELPERS: [(Width, &str, &str); 4] = [
     ),
 ];
 
+// All conversions to int64_t are in range; the subtraction fits the returned
+// signed word. No implementation-defined unsigned-to-signed conversion occurs.
+const SIGNED_WORD_HELPERS: [(&str, &str); 3] = [
+    (
+        "nirvana_signed8",
+        "\nstatic inline int8_t nirvana_signed8(uint64_t value) { return (int8_t)((int64_t)(value & UINT64_C(127)) - (int64_t)(value & UINT64_C(128))); }\n",
+    ),
+    (
+        "nirvana_signed16",
+        "\nstatic inline int16_t nirvana_signed16(uint64_t value) { return (int16_t)((int64_t)(value & UINT64_C(32767)) - (int64_t)(value & UINT64_C(32768))); }\n",
+    ),
+    (
+        "nirvana_signed32",
+        "\nstatic inline int32_t nirvana_signed32(uint64_t value) { return (int32_t)((int64_t)(value & UINT64_C(2147483647)) - (int64_t)(value & UINT64_C(2147483648))); }\n",
+    ),
+];
+
 pub(crate) fn unary_expression(op: UnaryOp, value: &str) -> String {
     match op {
         UnaryOp::SignExtend(width) => {
@@ -189,6 +206,11 @@ pub(crate) fn append_module_helpers(code: &mut String) {
 pub(crate) fn selected_helpers(code: &str) -> String {
     let mut out = definitions(|op| code.contains(&format!("{}(", helper_name(op).unwrap())));
     for (_, name, definition) in EXTEND_HELPERS {
+        if code.contains(&format!("{name}(")) {
+            out.push_str(definition);
+        }
+    }
+    for (name, definition) in SIGNED_WORD_HELPERS {
         if code.contains(&format!("{name}(")) {
             out.push_str(definition);
         }

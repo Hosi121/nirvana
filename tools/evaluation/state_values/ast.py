@@ -203,8 +203,9 @@ class Interpreter:
             return g.choose(c, a, b)
         if kind == 'CallExpr':
             if not self.source and sm.callee(node) in helpers.NAMES:
-                if ctype(node)!=U64: raise Unsupported('integer helper result type')
-                return helpers.lower(g,sm.callee(node),[self.value(n,state) for n in parts[1:]])
+                value=helpers.lower(g,sm.callee(node),[self.value(n,state) for n in parts[1:]])
+                if ctype(node)!=g.type(value): raise Unsupported('integer helper result type')
+                return value
             access, place, _ = self.helper_place(node, state)
             if access == 'read': return g.cast(self.load(state, place), U64)
             if access == 'check': return g.const(128 + place[0])

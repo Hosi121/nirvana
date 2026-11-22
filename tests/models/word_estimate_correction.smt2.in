@@ -30,3 +30,9 @@
 (assert (distinct remainder target_rem))
 (check-sat)
 (pop)
+(push)
+; Sign extension after a word projection preserves both mathematical results.
+(assert (or (distinct (- (mod (+ actual @HALF@) @BASE@) @HALF@) actual)
+            (distinct (- (mod (+ remainder @HALF@) @BASE@) @HALF@) remainder)))
+(check-sat)
+(pop)

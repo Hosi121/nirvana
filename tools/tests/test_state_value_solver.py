@@ -1,6 +1,7 @@
 import ctypes
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -71,7 +72,7 @@ class StateValueProofs(unittest.TestCase):
              'return nirvana_load(&m,address+24,8);')
         result = self.compare(a,b)
         self.assertEqual(result.report['status'],'equivalent_under_model')
-        self.assertEqual(result.report['model'],'nirvana-state4-values-v6')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v7')
 
     def test_loop_completion_is_proved_over_all_words_including_wraparound(self):
         a = ('while(1){++state[1];if(state[0]&1){state[2]=200;break;}'
@@ -156,6 +157,42 @@ class StateValueProofs(unittest.TestCase):
         words=result.report['witness']['input_words'];value=words[0]
         self.assertEqual(result.report['witness']['source'][0],value//3)
         self.assertEqual(result.report['witness']['generated'][0],value//5)
+
+    def test_signed_word_conversion_preserves_c_promotions_and_validates_its_result_type(self):
+        a,b=self.sources('int32_t n=(int32_t)(uint16_t)state[0]-32768;return (uint64_t)(n/-31);',
+                         'uint64_t n=nirvana_load(&m,address,2)-32768;return (uint64_t)(nirvana_signed32(n)/-31);')
+        result=measure(self.ast(a,'fixture'),self.ast('int32_t nirvana_signed32(uint64_t);'+b,'nirvana_readable'),
+                       'fixture',[7],self.solver)
+        self.assertEqual(result.report['status'],'equivalent_under_model')
+        from evaluation.state_values.terms import Unsupported
+        with self.assertRaisesRegex(Unsupported,'result type'):
+            measure(self.ast(a,'fixture'),self.ast('uint32_t nirvana_signed32(uint64_t);'+b,'nirvana_readable'),
+                    'fixture',[7],self.solver)
+
+    def test_actual_signed_conversion_bodies_are_defined_for_every_input_word(self):
+        from evaluation.state_values import helpers,definedness
+        from evaluation.state_values.terms import Graph,U64
+        from evaluation.state_values.ast import observe
+        implementation=(Path(__file__).resolve().parents[2]/'src/codegen/emit/integer.rs').read_text()
+        artifacts=Path(os.environ['NIRVANA_VALUE_PROOFS']) if 'NIRVANA_VALUE_PROOFS' in os.environ else None
+        if artifacts: artifacts.mkdir(parents=True,exist_ok=True)
+        for bits in [8,16,32]:
+            line=next(line for line in implementation.splitlines() if f'static inline int{bits}_t nirvana_signed{bits}' in line)
+            definition=json.loads(line.strip().removesuffix(','))
+            expression=re.search(r'\{ return (.*); \}',definition)[1]
+            source=('uint64_t fixture(uint64_t *state){uint64_t value=state[0];'
+                    f'return (uint64_t)(int{bits}_t)({expression});'+'}')
+            ast=self.ast(source,'fixture');g=Graph();model=observe(g,ast,'fixture')
+            expected=g.cast(helpers.lower(g,f'nirvana_signed{bits}',[g.inputs[0]]),U64)
+            bad=[f'(distinct v{expected} v{model.outputs[0]})']
+            bad.extend(f'(not {predicate})' for _,predicate in definedness.predicates(g))
+            script=g.smt()+'(assert (or '+' '.join(bad)+'))\n(check-sat)\n'
+            result=subprocess.run([self.solver,'-in'],input=script,capture_output=True,text=True,timeout=5)
+            if artifacts:
+                (artifacts/f'conversion-bits-{bits}.smt2').write_text(script)
+                (artifacts/f'conversion-bits-{bits}.out').write_text(result.stdout)
+                (artifacts/f'conversion-bits-{bits}.ast.json').write_text(ast)
+            self.assertEqual((result.returncode,result.stdout.strip()),(0,'unsat'),result.stderr)
 
     def test_a_rare_branch_countermodel_replays_in_actual_source_and_generated_c(self):
         compiler = shutil.which('cc')

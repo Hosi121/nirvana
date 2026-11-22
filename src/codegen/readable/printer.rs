@@ -80,6 +80,24 @@ impl Printer<'_> {
         }
         if let Some(view) = idioms::recognize(expr) {
             return match view {
+                idioms::View::WordSignedExtended {
+                    operation,
+                    value,
+                    divisor,
+                    bits,
+                } => {
+                    let op = match operation {
+                        crate::transform::word_signed_division::Operation::Quotient => "/",
+                        crate::transform::word_signed_division::Operation::Remainder => "%",
+                    };
+                    atom(
+                        format!(
+                            "(uint64_t)(nirvana_signed{bits}({}) {op} {divisor})",
+                            self.expression_at(value, point).text
+                        ),
+                        true,
+                    )
+                }
                 idioms::View::WordSigned {
                     name,
                     value,

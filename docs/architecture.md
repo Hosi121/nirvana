@@ -166,6 +166,7 @@ DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認して�
 [signed_division_expr](../src/transform/signed_division_expr.rs)は純粋な64-bit式の符号付き商・剰余を、正数・負数それぞれの誤差境界から復元します。C helperはunsignedの絶対値とbit列を使い、最小負数の入力も扱います。
 [semantic_ir](../src/model/semantic_ir.rs)はblock内の不変な値IDを使い、別々に保存された上位積・符号補正・商・剰余を結びます。分子を一度保存し、代入・メモリアドレス・分岐・返り値の部分式を、利用可能な意味付きの値へ置き換えます。独立した対応検査が、保存時点、元レジスタへの書込み、Load/Storeの順序、制御辺を照合します。
 [word用の認識器](../src/transform/word_signed_division/matcher.rs)は式と値グラフで共通です。[source adapter](../src/transform/word_signed_division/source.rs)が参照と値IDを型で分け、Loadの結果は不変な値として扱います。上位bitを失った分子も、必要なwordの一致と保存時点での利用可能性を確認して確保します。
+意味演算は、入力の語幅と結果の拡張を区別します。`SignedDivide(width)`と`SignedRemainder(width)`は下位word、`SignedDivideExtended(width)`と`SignedRemainderExtended(width)`はその符号拡張を表します。後者も元レジスタのword値を保持したまま実行IRへ下ろします。絶対値が2以上の認証済み除数では商・剰余がsigned word内に収まるため、Cでは範囲内の変換helperと通常の`/`・`%`を使えます。整数昇格と結果のunsigned変換を明示し、元の全状態比較とCの未定義動作検査を別々に通します。
 Loadのスナップショット、保存位置、全命令の代入順も採用条件です。
 
 [LocalPlan](../src/codegen/readable/locals.rs)は表示IRの幅・生存範囲・copy関係・値の系譜から名前と保存場所を決めます。

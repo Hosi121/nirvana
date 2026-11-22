@@ -32,6 +32,8 @@ class IntegerHelperContracts(unittest.TestCase):
         for line in integer.splitlines():
             if 'static inline uint64_t nirvana_sext' in line:
                 definitions.append(json.loads(line.strip().removesuffix(',')))
+            elif 'static inline int' in line and 'nirvana_signed' in line:
+                definitions.append(json.loads(line.strip().removesuffix(',')))
         wrappers='\n'.join(definitions).replace('static inline ','')
         source=Path(cls.directory.name)/'helpers.c'
         source.write_text('#include <stdint.h>\n'+wrappers)
@@ -43,7 +45,9 @@ class IntegerHelperContracts(unittest.TestCase):
                            check=True,capture_output=True,timeout=15)
             library=ctypes.CDLL(str(output))
             for name in helpers.NAMES:
-                function=getattr(library,name);function.restype=ctypes.c_uint64
+                function=getattr(library,name)
+                function.restype=(getattr(ctypes,'c_int'+name[len('nirvana_signed'):])
+                                 if name.startswith('nirvana_signed') else ctypes.c_uint64)
                 function.argtypes=([ctypes.c_uint64,ctypes.c_int64,ctypes.c_uint]
                                    if name.endswith('_word') else [ctypes.c_uint64]* (2 if 'ashr' in name else 1))
             cls.libraries.append(library)
@@ -51,8 +55,9 @@ class IntegerHelperContracts(unittest.TestCase):
     def check(self,g,root,words,name,args):
         expected=[getattr(lib,name)(*args) for lib in self.libraries]
         self.assertEqual(expected[0],expected[1],(name,args))
-        self.assertEqual(g.evaluate([root],words),expected[:1],(name,args))
-        return expected[0]
+        bits=g.type(root).bits;expected_bits=expected[0]%2**bits
+        self.assertEqual(g.evaluate([root],words),[expected_bits],(name,args))
+        return expected_bits
 
     def test_signed_word_division_preserves_full_divisor_and_total_edge_cases(self):
         rng=random.Random(301)
@@ -71,8 +76,9 @@ class IntegerHelperContracts(unittest.TestCase):
     def test_extensions_and_shift_counts_match_c_including_count_wrapping(self):
         values=[0,1,127,128,255,32768,2**31,2**63,2**64-1,0x8877665544332211]
         for bits in [8,16,32]:
-            g=Graph();name=f'nirvana_sext{bits}';root=helpers.lower(g,name,[g.inputs[0]])
-            for value in values: self.check(g,root,[value,0,0,0],name,[value])
+            for prefix in ['nirvana_sext','nirvana_signed']:
+                g=Graph();name=f'{prefix}{bits}';root=helpers.lower(g,name,[g.inputs[0]])
+                for value in values: self.check(g,root,[value,0,0,0],name,[value])
         g=Graph();root=helpers.lower(g,'nirvana_ashr64',g.inputs[:2])
         for count in [*range(130),2**63,2**64-1]:
             for value in values: self.check(g,root,[value,count,0,0],'nirvana_ashr64',[value,count])

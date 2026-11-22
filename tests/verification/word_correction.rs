@@ -8,6 +8,51 @@ use nirvana::{
 
 #[test]
 #[ignore = "requires Z3; set NIRVANA_Z3"]
+fn extended_word_results_fit_the_signed_word_for_every_admitted_divisor() {
+    let solver = std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into());
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/word-extended-results");
+    std::fs::create_dir_all(&root).unwrap();
+    for width in WIDTHS {
+        let half = 1u64 << (width.bits() - 1);
+        let base = half * 2;
+        // The magnitude equation characterizes Euclidean quotient/remainder.
+        // Keep both signs arbitrary and include the signed minimum magnitude.
+        let model = format!(
+            r#"(set-logic QF_NIA)
+(set-option :timeout 5000)
+(declare-fun magnitude () Int)
+(declare-fun divisor () Int)
+(declare-fun quotient () Int)
+(declare-fun remainder () Int)
+(declare-fun quotient_negative () Bool)
+(declare-fun remainder_negative () Bool)
+(assert (and (<= 0 magnitude) (<= magnitude {half}) (<= 2 divisor) (< divisor {half})))
+(assert (and (<= 0 quotient) (<= 0 remainder) (< remainder divisor)))
+(assert (= magnitude (+ (* quotient divisor) remainder)))
+(define-fun q () Int (ite quotient_negative (- quotient) quotient))
+(define-fun r () Int (ite remainder_negative (- remainder) remainder))
+(assert (or (distinct q (- (mod (+ q {half}) {base}) {half}))
+            (distinct r (- (mod (+ r {half}) {base}) {half}))))
+(check-sat)
+"#
+        );
+        let file = root.join(format!("bits-{}.smt2", width.bits()));
+        std::fs::write(&file, model).unwrap();
+        let result = std::process::Command::new(&solver)
+            .args(["-T:6", "-smt2"])
+            .arg(&file)
+            .output()
+            .unwrap();
+        std::fs::write(file.with_extension("out"), &result.stdout).unwrap();
+        assert!(result.status.success());
+        assert_eq!(String::from_utf8(result.stdout).unwrap().trim(), "unsat");
+    }
+    std::fs::write(root.join("result.json"),"{\"model\":\"word-extended-result-v1\",\"unsat\":3,\"divisors\":\"all magnitudes 2 <= d < signed half\"}\n").unwrap();
+}
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
 fn estimate_corrections_have_universal_integer_obligations_and_a_minimum_counterexample() {
     let solver = std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into());
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -81,7 +126,7 @@ fn estimate_corrections_have_universal_integer_obligations_and_a_minimum_counter
                 assert!(output.status.success(), "{text}");
                 assert_eq!(
                     text.lines().collect::<Vec<_>>(),
-                    ["unsat"; 4],
+                    ["unsat"; 5],
                     "{bits}/{signed_d}/{shift}: {text}"
                 );
                 profiles += 1;
@@ -115,8 +160,8 @@ fn estimate_corrections_have_universal_integer_obligations_and_a_minimum_counter
     .unwrap();
     assert_eq!(program.execute(&[128 - 13], 1).unwrap().value, 43);
     let result = format!(
-        "{{\"model\":\"word-estimate-correction-v1\",\"profiles\":{profiles},\"unsat\":{},\"sat_replayed\":1}}\n",
-        profiles * 4
+        "{{\"model\":\"word-estimate-correction-v2\",\"profiles\":{profiles},\"unsat\":{},\"sat_replayed\":1}}\n",
+        profiles * 5
     );
     std::fs::write(root.join("result.json"), &result).unwrap();
     print!("{result}");

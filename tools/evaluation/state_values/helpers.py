@@ -1,16 +1,18 @@
 """Total generated integer-helper contracts, separate from C signed operators."""
 from .terms import Type,U64,Node,Unsupported,number
 
-MODEL='nirvana-c-integer-helpers-v1'
-NAMES={'nirvana_sext8','nirvana_sext16','nirvana_sext32','nirvana_ashr64','nirvana_sdiv_word','nirvana_srem_word'}
+MODEL='nirvana-c-integer-helpers-v2'
+NAMES={'nirvana_sext8','nirvana_sext16','nirvana_sext32','nirvana_signed8','nirvana_signed16','nirvana_signed32',
+       'nirvana_ashr64','nirvana_sdiv_word','nirvana_srem_word'}
 
 
 def lower(g,name,args):
-    if name.startswith('nirvana_sext'):
+    if name.startswith('nirvana_sext') or name.startswith('nirvana_signed'):
         if len(args)!=1 or g.type(args[0])!=U64: raise Unsupported('integer helper signature')
-        bits=int(name[len('nirvana_sext'):]);value=g.cast(args[0],Type(bits))
+        conversion=name.startswith('nirvana_signed')
+        bits=int(name[len('nirvana_signed' if conversion else 'nirvana_sext'):]);value=g.cast(args[0],Type(bits))
         signed=g.intern(Node('bitcast',Type(bits,True),(value,)))
-        return g.cast(signed,U64)
+        return signed if conversion else g.cast(signed,U64)
     if name=='nirvana_ashr64':
         if len(args)!=2 or any(g.type(a)!=U64 for a in args): raise Unsupported('arithmetic shift helper signature')
         return g.intern(Node('total_ashr',U64,tuple(args)))

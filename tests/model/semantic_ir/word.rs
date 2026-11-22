@@ -61,6 +61,67 @@ fn estimate_corrected_word_captures_survive_input_overwrites_and_fault_cutoffs()
         }
     }
 }
+
+#[test]
+fn signed_extended_results_keep_the_original_low_word_and_full_machine_state() {
+    for width in WIDTHS {
+        for divisor in [31, -31] {
+            let q = corrected_kernel(width, divisor, 4, true, true);
+            let source = Program::new(
+                0,
+                8,
+                vec![
+                    IrInstruction {
+                        address: 0,
+                        size: 1,
+                        assignments: vec![set(1, q)],
+                        control: Control::Next,
+                    },
+                    IrInstruction {
+                        address: 1,
+                        size: 1,
+                        assignments: vec![set(2, Expr::unary(UnaryOp::SignExtend(width), r(1)))],
+                        control: Control::Next,
+                    },
+                    IrInstruction {
+                        address: 2,
+                        size: 1,
+                        assignments: vec![set(0, c(99)), store(8, r(2))],
+                        control: Control::Return(Expr::select(
+                            Expr::load(address(16), Width::U64),
+                            r(2),
+                            Expr::load(address(24), Width::U64),
+                        )),
+                    },
+                ],
+            )
+            .unwrap();
+            let plan = SemanticPlan::analyze(&source).unwrap();
+            assert!(plan.evidence().divisions >= 2);
+            let lowered = plan.lower(&source).unwrap();
+            assert!(validate(&source, &plan, &lowered));
+            for x in values(width) {
+                for pointer in [4096, 4144, 4159, u64::MAX] {
+                    let mut regs = vec![0xa123_ffff_7839_2084; 8];
+                    regs[0] = x;
+                    regs[x86::RDI] = pointer;
+                    let memory = [0xa9; 64];
+                    compare(&source, &lowered, &regs, &memory, true);
+                    if pointer == 4096 {
+                        let mut expanded = regs;
+                        expanded.resize(lowered.register_count(), 0);
+                        let run = lowered
+                            .execute_with_memory(&expanded, 4096, &memory, 100)
+                            .unwrap();
+                        let quotient = signed(x.wrapping_add(13), width) / divisor;
+                        assert_eq!(run.registers[1], quotient as u64 & width.mask());
+                        assert_eq!(run.registers[2], quotient as u64);
+                    }
+                }
+            }
+        }
+    }
+}
 fn source(width: Width, divisor: i64) -> Case {
     let expected_shift = if divisor.unsigned_abs() == 3 { 0 } else { 2 };
     let (_, shift) = cases(width)

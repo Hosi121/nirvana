@@ -243,7 +243,9 @@ fn gcc_word_quotients_remainders_and_widened_returns_keep_machine_bits() {
         assert_eq!(out.parameters, vec![nirvana::ir::Reg(x86::RDI)]);
         let body = out.code.split("uint64_t nirvana_readable(").nth(1).unwrap();
         assert!(
-            body.contains(if cases[i].2 {
+            body.contains(if cases[i].3 {
+                "nirvana_signed32("
+            } else if cases[i].2 {
                 "nirvana_srem_word("
             } else {
                 "nirvana_sdiv_word("

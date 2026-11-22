@@ -133,7 +133,9 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 [符号付き整数モデル](../tests/models/signed_integer.smt2)は、算術シフトの符号埋めと上位積の2の補数補正を、誤った変換の反例とともに検査します。
 [符号拡張の検査](../tests/verification/unary_ops.rs)は、各幅の補正式と入れ子の拡張を実際のSMTエンコーダで照合し、誤ったゼロ拡張の反例をIRで再実行します。
 [word除算の検査](../tests/verification/word_signed.rs)は、整数モデルで商・剰余を、bit-vectorモデルで幅への射影・右シフトの分割を検査します。[GCC入力](../tests/fixtures/recovery/word-signed-reciprocal.c)は、32-bitの結果と64-bitへ拡張した戻り値をnative・IR・生成Cで比較します。
-[途中値の符号補正](../tests/verification/word_correction.rs)は、8/16/32-bit・正負66組について、全積の範囲・補正値の範囲・商・剰余の264問い合わせをUNSATで確認します。最小負数に必要な厳しい誤差条件を外す対照はSATとなり、IRで商43と正しい42の差を再現します。[実行対照](../tests/transform/word_signed_division.rs)は264種の補正・分配形を独立した整数演算と比較し、[意味IR](../tests/model/semantic_ir/word.rs)は入力の上書き・fault・途中予算を含めて元の全状態を検査します。定数除算の背景は[LLVMの実装](https://llvm.org/doxygen/DivisionByConstantInfo_8cpp_source.html)を参照してください。
+[途中値の符号補正](../tests/verification/word_correction.rs)は、8/16/32-bit・正負66組について、全積・補正値の範囲、商・剰余、結果の符号拡張の330問い合わせをUNSATで確認します。別の3問い合わせは、認証対象の全除数を変数として商・剰余の範囲を検査します。最小負数に必要な厳しい誤差条件を外す対照はSATとなり、IRで商43と正しい42の差を再現します。[実行対照](../tests/transform/word_signed_division.rs)は264種の補正・分配形を独立した整数演算と比較し、[意味IR](../tests/model/semantic_ir/word.rs)は入力の上書き・fault・途中予算を含めて元の全状態を検査します。定数除算の背景は[LLVMの実装](https://llvm.org/doxygen/DivisionByConstantInfo_8cpp_source.html)を参照してください。
+
+signed wordへのC変換は、実際のhelperの式をClangで読み、全64-bit入力について返り値とcast・減算のdefinednessを[3問い合わせで照合](../tools/tests/test_state_value_solver.py)します。通常のC演算子で出す商・剰余と、境界helperへ残すゼロ・±1・大きい除数は、同じnativeハーネスでO0/O2・UBSan比較します。
 
 C値モデルの除算抽象化は、[SMT-LIBのsigned演算の定義](https://smt-lib.org/logics-all.shtml#QF_BV)に沿い、任意のunsigned商関数と`n-q*d`から四つの符号ケースを照合します。[対照](../tools/tests/test_state_value_helpers.py)は8/16/32/64-bitの280問い合わせがUNSAT、byteの全65,536組は実際のC商・剰余と一致します。`NIRVANA_VALUE_PROOFS=DIR`で問い合わせを保存できます。抽象化だけのSATを[通常の式へ戻す検査](../tools/tests/test_state_value_solver.py)と、問い合わせ区分を含む[保存結果の検査](../tools/tests/test_state_value_protocol.py)も行います。
 [全域商・剰余の検査](../tests/verification/division_ops.rs)は、符号の4通りを合わせて64-bit全入力の定義を照合し、除数ゼロ・±1と誤った変換の反例も検査します。8-bitの復元kernelは実際のIR演算との等式として照合します。

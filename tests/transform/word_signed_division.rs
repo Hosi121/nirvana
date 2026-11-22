@@ -366,7 +366,7 @@ fn views_bind_every_field_to_the_original_word_and_complete_source() {
 }
 
 #[test]
-fn selected_word_helpers_match_signed_c_oracles_under_ubsan() {
+fn selected_word_operators_and_helpers_match_signed_c_oracles_under_ubsan() {
     let scratch = native::Scratch::new();
     let mut source =
         String::from("#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n");
@@ -377,20 +377,48 @@ fn selected_word_helpers_match_signed_c_oracles_under_ubsan() {
             for negative in [false, true] {
                 let d = if negative { -d } else { d };
                 for rem in [false, true] {
-                    let q = kernel(width, d, s, true, true);
-                    let e = if rem { remainder(q, d, width, true) } else { q };
-                    let out = nirvana::readable::emit_readable_c(&program(e)).unwrap();
-                    let helper = if rem {
-                        "nirvana_srem_word("
-                    } else {
-                        "nirvana_sdiv_word("
-                    };
-                    assert!(out.code.contains(helper), "{}", out.code);
-                    let prefix = format!("probe_{}_", names.len());
-                    source.push_str(&out.code.replace("nirvana_", &prefix));
-                    names.push(format!("{prefix}readable"));
-                    cases.push((width, d, rem));
+                    for extended in [false, true] {
+                        let q = kernel(width, d, s, true, true);
+                        let e = if extended {
+                            b(
+                                if rem { B::SRem } else { B::SDiv },
+                                sext(r(0), width),
+                                c(d as u64),
+                            )
+                        } else if rem {
+                            remainder(q, d, width, true)
+                        } else {
+                            q
+                        };
+                        let out = nirvana::readable::emit_readable_c(&program(e)).unwrap();
+                        let helper = if extended {
+                            format!("nirvana_signed{}(", width.bits())
+                        } else if rem {
+                            "nirvana_srem_word(".to_owned()
+                        } else {
+                            "nirvana_sdiv_word(".to_owned()
+                        };
+                        assert!(out.code.contains(&helper), "{}", out.code);
+                        append_unary_probe(&mut source, &mut names, &out.code, &out.parameters);
+                        cases.push((width, d, rem, extended));
+                    }
                 }
+            }
+        }
+    }
+    for width in WIDTHS {
+        let half = 1i64 << (width.bits() - 1);
+        for d in [0, 1, -1, half, -half, i64::MIN, i64::MAX] {
+            for rem in [false, true] {
+                let e = b(
+                    if rem { B::SRem } else { B::SDiv },
+                    sext(r(0), width),
+                    c(d as u64),
+                );
+                let out = nirvana::readable::emit_readable_c(&program(e)).unwrap();
+                assert!(!out.code.contains("nirvana_signed"));
+                append_unary_probe(&mut source, &mut names, &out.code, &out.parameters);
+                cases.push((width, d, rem, true));
             }
         }
     }
@@ -411,9 +439,21 @@ fn selected_word_helpers_match_signed_c_oracles_under_ubsan() {
         expected.push(
             cases
                 .iter()
-                .map(|&(w, d, rem)| {
-                    let x = signed_value(x, w);
-                    (if rem { x % d } else { x / d }) as u64 & w.mask()
+                .map(|&(w, d, rem, extended)| {
+                    let x = i128::from(signed_value(x, w));
+                    let d = i128::from(d);
+                    let result = if d == 0 {
+                        if rem {
+                            x as u64
+                        } else if x < 0 {
+                            1
+                        } else {
+                            u64::MAX
+                        }
+                    } else {
+                        (if rem { x % d } else { x / d }) as u64
+                    };
+                    if extended { result } else { result & w.mask() }
                 })
                 .collect::<Vec<_>>(),
         );
@@ -437,6 +477,29 @@ fn selected_word_helpers_match_signed_c_oracles_under_ubsan() {
         "{} sanitized C word helper observations",
         2 * expected.len() * names.len()
     );
+}
+
+fn append_unary_probe(
+    source: &mut String,
+    names: &mut Vec<String>,
+    code: &str,
+    parameters: &[nirvana::ir::Reg],
+) {
+    let arguments = if parameters.is_empty() {
+        ""
+    } else {
+        assert_eq!(parameters, &[nirvana::ir::Reg(0)]);
+        "x"
+    };
+    let prefix = format!("probe_{}_", names.len());
+    source.push_str(&code.replace("nirvana_", &prefix));
+    let wrapper = format!("{prefix}entry");
+    writeln!(
+        source,
+        "static uint64_t {wrapper}(uint64_t x) {{ (void)x; return {prefix}readable({arguments}); }}"
+    )
+    .unwrap();
+    names.push(wrapper);
 }
 
 #[test]

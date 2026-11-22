@@ -22,19 +22,21 @@ pub(super) fn collect(
     for block in graph.blocks() {
         for (id, node) in block.nodes() {
             work.spend(1)?;
-            if !matches!(
-                node,
-                crate::dataflow::value_graph::ValueNode::Binary(B::And, ..)
-                    | crate::dataflow::value_graph::ValueNode::Unary(
-                        UnaryOp::Extract { start: 0, .. },
-                        _
-                    )
-            ) {
-                continue;
-            }
-            let Some(view) = word::recognize_value(block, id, work)? else {
+            use crate::dataflow::value_graph::ValueNode;
+            let (root, extended) = match node {
+                ValueNode::Binary(B::And, ..)
+                | ValueNode::Unary(UnaryOp::Extract { start: 0, .. }, _) => (id, None),
+                ValueNode::Unary(UnaryOp::SignExtend(w), inner) if w != Width::U64 => {
+                    (inner, Some(w))
+                }
+                _ => continue,
+            };
+            let Some(view) = word::recognize_value(block, root, work)? else {
                 continue;
             };
+            if extended.is_some_and(|w| w != view.width) {
+                continue;
+            }
             let point = block.origin(id)?;
             let input_point = block.origin(view.product)?;
             if block.order(input_point)? > block.order(point)? {
@@ -58,9 +60,13 @@ pub(super) fn collect(
                 point,
                 input,
                 input_point,
-                kind: match view.operation {
-                    Operation::Quotient => ArithmeticKind::SignedDivide(view.width),
-                    Operation::Remainder => ArithmeticKind::SignedRemainder(view.width),
+                kind: match (view.operation, extended.is_some()) {
+                    (Operation::Quotient, false) => ArithmeticKind::SignedDivide(view.width),
+                    (Operation::Remainder, false) => ArithmeticKind::SignedRemainder(view.width),
+                    (Operation::Quotient, true) => ArithmeticKind::SignedDivideExtended(view.width),
+                    (Operation::Remainder, true) => {
+                        ArithmeticKind::SignedRemainderExtended(view.width)
+                    }
                 },
                 divisor: view.divisor,
                 evidence: SignedDivisionEvidence {

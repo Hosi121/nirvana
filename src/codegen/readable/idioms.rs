@@ -12,6 +12,12 @@ use crate::transform::signed_expr::{self, SignedKind};
 use crate::transform::word_signed_division::{self, Operation};
 
 pub(super) enum View<'a> {
+    WordSignedExtended {
+        operation: Operation,
+        value: &'a Expr,
+        divisor: i64,
+        bits: u32,
+    },
     WordSigned {
         name: &'static str,
         value: &'a Expr,
@@ -48,6 +54,22 @@ pub(super) fn recognize(expression: &Expr) -> Option<View<'_>> {
             B::UDiv if d != 0 => return Some(View::Divide { value, divisor: d }),
             B::URem if d != 0 => return Some(View::Remainder { value, divisor: d }),
             B::SDiv | B::SRem => {
+                if let Expr::Unary(crate::model::ir::UnaryOp::SignExtend(width), input) = &**value
+                    && *width != crate::model::ir::Width::U64
+                    && (d as i64).unsigned_abs() >= 2
+                    && (d as i64).unsigned_abs() < (1 << (width.bits() - 1))
+                {
+                    return Some(View::WordSignedExtended {
+                        operation: if *op == B::SDiv {
+                            Operation::Quotient
+                        } else {
+                            Operation::Remainder
+                        },
+                        value: input,
+                        divisor: d as i64,
+                        bits: width.bits(),
+                    });
+                }
                 return Some(View::Signed {
                     name: if *op == B::SDiv {
                         "nirvana_sdiv64"

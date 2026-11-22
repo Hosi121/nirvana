@@ -22,6 +22,9 @@ pub enum ArithmeticKind {
     SignedRemainder64,
     SignedDivide(Width),
     SignedRemainder(Width),
+    /// Signed word input; the mathematical result is sign-extended to U64.
+    SignedDivideExtended(Width),
+    SignedRemainderExtended(Width),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -47,11 +50,13 @@ struct Equation {
 impl Equation {
     fn lower(self, input: Reg) -> Expr {
         use crate::model::ir::BinaryOp as B;
-        let (op, width) = match self.kind {
-            ArithmeticKind::SignedDivide64 => (B::SDiv, None),
-            ArithmeticKind::SignedRemainder64 => (B::SRem, None),
-            ArithmeticKind::SignedDivide(w) => (B::SDiv, Some(w)),
-            ArithmeticKind::SignedRemainder(w) => (B::SRem, Some(w)),
+        let (op, width, project) = match self.kind {
+            ArithmeticKind::SignedDivide64 => (B::SDiv, None, false),
+            ArithmeticKind::SignedRemainder64 => (B::SRem, None, false),
+            ArithmeticKind::SignedDivide(w) => (B::SDiv, Some(w), true),
+            ArithmeticKind::SignedRemainder(w) => (B::SRem, Some(w), true),
+            ArithmeticKind::SignedDivideExtended(w) => (B::SDiv, Some(w), false),
+            ArithmeticKind::SignedRemainderExtended(w) => (B::SRem, Some(w), false),
         };
         let value = if let Some(w) = width {
             Expr::unary(
@@ -62,7 +67,7 @@ impl Equation {
             Expr::Register(input)
         };
         let result = Expr::binary(op, value, Expr::Const(self.divisor as u64));
-        if let Some(w) = width {
+        if let Some(w) = width.filter(|_| project) {
             Expr::binary(B::And, result, Expr::Const(w.mask()))
         } else {
             result
@@ -268,12 +273,12 @@ fn counts(captures: &[Capture]) -> SemanticEvidence {
         match c.proof {
             Proof::Input(_) => evidence.inputs += 1,
             Proof::Operation { equation, .. } => match equation.kind {
-                ArithmeticKind::SignedDivide64 | ArithmeticKind::SignedDivide(_) => {
-                    evidence.divisions += 1
-                }
-                ArithmeticKind::SignedRemainder64 | ArithmeticKind::SignedRemainder(_) => {
-                    evidence.remainders += 1
-                }
+                ArithmeticKind::SignedDivide64
+                | ArithmeticKind::SignedDivide(_)
+                | ArithmeticKind::SignedDivideExtended(_) => evidence.divisions += 1,
+                ArithmeticKind::SignedRemainder64
+                | ArithmeticKind::SignedRemainder(_)
+                | ArithmeticKind::SignedRemainderExtended(_) => evidence.remainders += 1,
             },
         }
     }

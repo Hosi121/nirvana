@@ -8,7 +8,7 @@ from .solver import compare
 from . import definedness
 from . import helpers,division_abstraction
 
-MODEL = 'nirvana-state4-values-v6'
+MODEL = 'nirvana-state4-values-v7'
 MEMORY_PROFILE = {'memory_base': 4096, 'memory_size': 512, 'state_pointer': 4224}
 
 
