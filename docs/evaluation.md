@@ -44,7 +44,7 @@ ASTの生データとhashを保持し、比較器が集計値とfingerprintを�
 
 対象命令の先祖領域がDAGなら、[上限付きの全経路列挙](../src/verification/block_verify/paths/enumerate.rs)で全prefixを求めます。その全てがUNSATの場合だけ、固定入力profileでの到達不能を`infeasible_dag`と記録します。循環を含む領域では観測済みのprefixを使い、未知・列挙上限・問い合わせ上限を残します。構文上のcoverageの分母は維持し、到達不能の判定を別軸で報告します。これは有効ポインタ時の元IRに対する結果で、全ABIやnative命令の一般的な到達不能とは分けて扱います。
 
-`report.json`には各辺・列挙の完全性・問い合わせと入力、出力先には元object・初期入力のコピー、SMTとsolver結果、具体実行を保存します。問い合わせ数、1問い合わせのミリ秒、実行step数を順に指定できます。固定した追加入力は`--semantic-inputs FILE --semantic-cases N`でnative・IR・生成Cへ渡し、同じ入力集合で変更前後を比較します。hold-outで得た入力は、凍結済み実装の追加検証として扱います。
+`report.json`には各辺・列挙の完全性・問い合わせと入力、出力先には元object・初期入力のコピー、SMTとsolver結果、具体実行を保存します。問い合わせ数、solver起動ごとのミリ秒、実行step数を順に指定できます。固定した追加入力は`--semantic-inputs FILE --semantic-cases N`でnative・IR・生成Cへ渡し、同じ入力集合で変更前後を比較します。hold-outで得た入力は、凍結済み実装の追加検証として扱います。
 
 [17組の固定入力](../tools/corpora/structure-branch-inputs-v1.txt)は、既定の16組に、開発用Clang 18 O2のループ脱出例から得た`0 1 0 0`を加えた集合です。利用時は`--semantic-inputs tools/corpora/structure-branch-inputs-v1.txt --semantic-cases 17`を指定します。
 
