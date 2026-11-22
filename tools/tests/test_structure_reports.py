@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from evaluation import control_graph as cg, reports, semantics
+from evaluation import control_graph as cg, reports, semantics, c_footprint as cf
 import evaluate_structure
 
 
@@ -71,6 +71,28 @@ def fixture(root):
 
 
 class ReportTests(unittest.TestCase):
+    def test_retained_content_is_recomputed_from_hashed_ast(self):
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = Path(directory) / 'a', Path(directory) / 'b'
+            before, after = fixture(a), fixture(b)
+            for root, report in [(a, before), (b, after)]:
+                row = report['rows'][0]; sides = {}
+                for side, name in [('source', 'fixture'), ('generated', 'nirvana_readable')]:
+                    raw = json.dumps({'kind': 'FunctionDecl', 'name': name, 'inner': [
+                        {'kind': 'CompoundStmt', 'inner': [{'kind': 'ReturnStmt', 'inner': [
+                            {'kind': 'IntegerLiteral', 'type': {'qualType': 'int'}, 'value': '7'}]}]}]})
+                    sides[side] = {**cf.measure(raw, name), 'raw_ast_sha256': save(root / row['artifacts'], side + '_ast.stdout.txt', raw)}
+                row['c_footprint'] = dict(metric=cf.METRIC, status='measured', **sides,
+                                         source_generated_delta=cf.delta(sides['source'], sides['generated']))
+            result = self.compare(a, b, before, after)
+            self.assertEqual(result['rows'][0]['c_syntax_delta']['literals'], {})
+            row = after['rows'][0]
+            path = b / row['artifacts'] / 'generated_ast.stdout.txt'
+            changed = path.read_text().replace('"value": "7"', '"value": "8"')
+            row['c_footprint']['generated']['raw_ast_sha256'] = save(path.parent, path.name, changed)
+            with self.assertRaisesRegex(ValueError, 'footprint differs'):
+                self.compare(a, b, before, after)
+
     def test_reanalysis_retains_original_runs_and_failure_denominators(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

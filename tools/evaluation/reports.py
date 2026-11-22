@@ -8,7 +8,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
-from . import control_graph as cg, semantics, stages
+from . import control_graph as cg, semantics, stages, c_footprint as cf
 
 
 class Incompatible(ValueError):
@@ -80,6 +80,17 @@ def replay(root, row):
         require(cg.mapping_cost(*graphs, dict(pairs)) == hi, 'mapping witness cost')
         result['mapping_cost'] = hi
     semantic = row['semantics']
+    footprint = row.get('c_footprint', {'status': 'not_run'})
+    for side, function in [('source', row['function']), ('generated', 'nirvana_readable')]:
+        observed = footprint.get(side, {})
+        if observed.get('status') == 'measured':
+            raw = hashed(directory / f'{side}_ast.stdout.txt', observed['raw_ast_sha256'])
+            require(cf.measure(raw.read_text(), function) == {k: v for k, v in observed.items() if k != 'raw_ast_sha256'},
+                    'C footprint differs from retained AST')
+    if footprint.get('status') == 'measured':
+        require(footprint['source']['status'] == footprint['generated']['status'] == 'measured', 'C footprint coverage')
+        require(cf.delta(footprint['source'], footprint['generated']) == footprint['source_generated_delta'], 'C footprint delta')
+    result['c_footprint'] = footprint['status']
     architecture = row.get('stage_checks', {'status': 'not_run'})
     if 'schema' in architecture:
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
@@ -156,6 +167,7 @@ def compare(before_path, after_path):
     require(left.keys() == right.keys(), 'different requested profile IDs')
     for key in ['evaluation', 'budgets', 'emission']:
         require(before[key] == after[key], f'changed {key}')
+    require(before.get('c_footprint') == after.get('c_footprint'), 'changed C footprint profile')
     require(before['corpus']['sha256'] == after['corpus']['sha256'], 'changed corpus manifest')
     for key in ['clang', 'c_compiler']:
         require(tool_identity(before[key]) == tool_identity(after[key]), f'changed {key} tool')
@@ -192,7 +204,14 @@ def compare(before_path, after_path):
         same_graphs = all(a.get(stage, {}).get('graph_sha256') is not None
                           and a[stage]['graph_sha256'] == b.get(stage, {}).get('graph_sha256')
                           for stage in ['source_cfg', 'generated_cfg'])
+        content_change = None
+        af, bf = a.get('c_footprint', {}), b.get('c_footprint', {})
+        if af.get('status') == bf.get('status') == 'measured':
+            require(af['source']['function_fingerprint'] == bf['source']['function_fingerprint'], f'{key}: changed source AST')
+            content_change = cf.delta(af['generated'], bf['generated'])
         rows.append({'id': key, 'cohort': a['cohort'],
+                     'c_syntax_delta': content_change,
+                     'c_footprint_regression': ar['c_footprint'] == 'measured' and br['c_footprint'] != 'measured',
                      'distance': 'equal' if same_graphs else interval_change(a.get('distance'), b.get('distance')),
                      'distance_basis': 'identical_graphs' if same_graphs else 'recorded_search_intervals',
                      'before_interval': [a['distance']['lower_bound'], a['distance']['upper_bound']]
@@ -216,6 +235,7 @@ def compare(before_path, after_path):
             'structure_regressions': sum(row['structure_regression'] for row in rows),
             'candidate_semantics': dict(Counter(row['after_semantics'] for row in rows)),
             'architecture_regressions': sum(row['architecture_regression'] for row in rows),
+            'c_footprint_regressions': sum(row['c_footprint_regression'] for row in rows),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',

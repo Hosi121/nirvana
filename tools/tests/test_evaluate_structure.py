@@ -17,6 +17,28 @@ from evaluation import control_graph as cg
 
 
 class RunnerTests(unittest.TestCase):
+    def test_missing_ast_tools_keep_semantic_axis_and_content_denominator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = json.loads((tool.ROOT / 'tools/corpora/structure-smoke.json').read_text())
+            manifest['cases'] = manifest['cases'][:1]
+            cases = root / 'cases.json'; cases.write_text(json.dumps(manifest))
+            binary = root / 'decompiler'
+            binary.write_text('#!' + sys.executable + '\nprint("#include <stdint.h>\\nuint64_t nirvana_readable(uint64_t a) { return a; }")\n')
+            binary.chmod(0o755)
+            args = self.args(root, cases=cases, compiler=['gcc=cc'], optimization=['O2'],
+                             decompiler=binary, semantic_probe=Path(sys.executable), c_footprint=True)
+            def semantic(*args): args[1]['semantics'] = {'status': 'passed'}
+            with mock.patch.object(tool.semantics, 'run', side_effect=semantic) as probe:
+                report = tool.run(args)
+            probe.assert_called_once()
+            row = report['rows'][0]
+            self.assertEqual(row['semantics']['status'], 'passed')
+            self.assertEqual(report['summary']['requested'], 1)
+            self.assertEqual(report['summary']['c_footprint'], {'incomplete': 1})
+            self.assertEqual(row['c_footprint']['source']['status'], 'unavailable')
+            self.assertEqual(row['c_footprint']['generated']['status'], 'unavailable')
+
     def args(self, root, **settings):
         defaults = dict(cases=tool.ROOT / 'tools/corpora/structure-smoke.json',
                         compiler=['missing=/nonexistent/nirvana-evaluation-compiler'],

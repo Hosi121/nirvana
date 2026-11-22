@@ -24,6 +24,7 @@ import traceback
 
 from evaluation import control_graph as cg
 from evaluation import semantics
+from evaluation import c_footprint as cf
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
@@ -211,6 +212,34 @@ def measure(case, tag, compiler, opt, args, out):
         failed(error, 'evaluator_error')
         (directory / 'evaluator.traceback.txt').write_text(traceback.format_exc())
     row['structure_status'] = row['status']
+    row['c_footprint'] = {'status': 'not_run'}
+    if args.c_footprint:
+        sides = {}
+        for side, path, function, prerequisite in [
+                ('source', preprocessed, case['function'], 'preprocess'),
+                ('generated', generated, 'nirvana_readable', 'recompile')]:
+            stage = side + '_ast'
+            if row['stages'].get(prerequisite) != 'passed':
+                sides[side] = {'status': 'not_run', 'reason': prerequisite + ' not completed'}
+                continue
+            try:
+                result = invoke([args.clang, '-std=c11', '-Werror', '-fsyntax-only', '-Xclang',
+                                 '-ast-dump=json', '-Xclang', '-ast-dump-filter=' + function, path],
+                                stage, directory, row, args.timeout)
+                sides[side] = {**cf.measure(result.stdout, function),
+                               'raw_ast_sha256': digest(directory / f'{stage}.stdout.txt')}
+            except (CommandError, cf.Unsupported) as error:
+                kind = error.kind if isinstance(error, CommandError) else 'unsupported'
+                sides[side] = {'status': kind, 'reason': str(error)}
+                failed(error, kind)
+            except Exception as error:
+                sides[side] = {'status': 'evaluator_error', 'reason': str(error)}
+                failed(error, 'evaluator_error')
+                (directory / f'{stage}.traceback.txt').write_text(traceback.format_exc())
+        measured = all(value['status'] == 'measured' for value in sides.values())
+        row['c_footprint'] = {'metric': cf.METRIC, 'status': 'measured' if measured else 'incomplete', **sides}
+        if measured:
+            row['c_footprint']['source_generated_delta'] = cf.delta(sides['source'], sides['generated'])
     # Graph-reader failures and bounded distance are independent of execution.
     if args.semantic_probe and row['stages'].get('recompile') == 'passed':
         stage = 'semantic_prepare'
@@ -244,7 +273,8 @@ def measure(case, tag, compiler, opt, args, out):
 def run(args):
     for name, default in [('emit', 'readable-c'), ('measure_rss', False), ('semantic_probe', None),
                           ('semantic_seed', 0x6e697276616e6130), ('semantic_cases', 16),
-                          ('semantic_steps', 4096), ('toolchain_manifest', None), ('semantic_inputs', None)]:
+                          ('semantic_steps', 4096), ('toolchain_manifest', None), ('semantic_inputs', None),
+                          ('c_footprint', False)]:
         if not hasattr(args, name):
             setattr(args, name, default)
     cases = load_cases(args.cases)
@@ -280,6 +310,10 @@ def run(args):
               'budgets': {'command_seconds': args.timeout, 'search_seconds': args.search_seconds, 'search_states': args.max_states},
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
     report['emission'] = args.emit
+    report['c_footprint'] = {'metric': cf.METRIC, 'enabled': args.c_footprint,
+                            'scope': 'C syntax counts and local-binding fingerprints; not a semantic distance.'}
+    if args.c_footprint:
+        report['evaluation']['c_footprint_sha256'] = digest(cf.__file__)
     report['semantic_probe'] = provenance(args.semantic_probe, args.timeout) if args.semantic_probe else None
     if args.semantic_inputs:
         if not args.semantic_probe:
@@ -322,6 +356,7 @@ def run(args):
                            'contract': semantics.CONTRACT if args.semantic_probe else None,
                            'counts': dict(Counter(r['semantics']['status'] for r in report['rows']))}
     report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
+    report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
     report['resources']['runner_peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
@@ -335,6 +370,7 @@ def main():
     parser.add_argument('--c-compiler', default='cc', help='fixed compiler for all generated C profiles')
     parser.add_argument('--emit', choices=['readable-c', 'middle-c'], default='readable-c')
     parser.add_argument('--semantic-probe', type=Path, help='built examples/evaluation_probe executable')
+    parser.add_argument('--c-footprint', action='store_true', help='observe C operators, literals and condition syntax using Clang AST JSON')
     parser.add_argument('--semantic-inputs', type=Path, help='fixed four-word input rows; use matching --semantic-cases')
     parser.add_argument('--semantic-seed', type=int, default=0x6e697276616e6130)
     parser.add_argument('--semantic-cases', type=int, default=16)
