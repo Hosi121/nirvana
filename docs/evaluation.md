@@ -13,6 +13,7 @@ NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
 
 入力のコンパイラと、生成Cを再コンパイルする`--c-compiler`（既定`cc`）を個別に固定します。元Cを各入力compilerで前処理し、そのCから作った機械語だけをNirvanaへ渡します。
 出力先は空のディレクトリを使い、`report.json`と各入力の前処理C・object・生成C・生のCFG・正規化グラフ・コマンド記録を保存します。
+`nirvana --version`とprobeの`--version`は、ビルド時のcommitとRust入力の変更有無を返します。Git情報のないアーカイブはunknownです。報告の`workspace_revision`は評価器のcheckout、`decompiler.build`はbinaryが返した出所で、binaryのSHA256を別に保持します。比較形式v2も`evaluation_revision`と`binary_build`を分け、凍結した旧binaryの版を評価器の版から推測せずに残します。
 compiler・実行ファイル・評価器・入力・グラフのhash、時間、探索予算を報告し、未対応・エラー・timeoutも要求した全構成に含めます。終了コード0は報告の生成を示します。
 
 ## 観測と指標
@@ -30,7 +31,7 @@ ASTの生データとhashを保持し、比較器が集計値とfingerprintを�
 
 動的添字、書換えられるアドレス引数、未解決の参照元や呼出しは`partial`として件数を残します。整数の切詰め・wrapは幅を保って扱います。これはABIの状態ワードとの位置の対応で、元の局所変数・型・格納値の同一性は次の評価対象です。生ASTとhash付きのABI情報から対応と集計を再検査し、対応範囲の喪失を比較結果へ記録します。
 
-`--state-values`は、同じABIの元Cと生成Cを[型付きの値グラフ](../tools/evaluation/state_values/)へ変換し、返り値と32-byteの状態に差がある入力をSMTで探します。対象は整数演算、閉じた`if / return`、関数本体の後続ラベルへのgotoです。gotoは現在の値のsnapshotを後続処理へ渡します。局所変数への代入は値のsnapshotへ、メモリはbyte列へ対応付け、部分書込みとcastの幅を保持します。x86-64 LP64、有効な状態ポインタ、状態内の参照、既知のchecked-memory helper契約を前提にします。未知のsigned overflow・範囲外のsigned cast・ゼロ除算・未解決の参照・制御は、評価の未対応として記録します。
+`--state-values`は、同じABIの元Cと生成Cを[型付きの値グラフ](../tools/evaluation/state_values/)へ変換し、返り値と32-byteの状態に差がある入力をSMTで探します。対象は整数演算、閉じた`if / return`、関数本体の後続ラベルへのgotoと、`while / for / do`です。gotoは現在の値のsnapshotを後続処理へ渡します。ループは16回まで展開し、`break / continue`と反復ごとの局所値を保持します。展開後にも実行が続く入力をSMTの差分条件へ加え、全入力で展開内に終了するときに同値性を判定します。残る反復がある場合は`unknown / loop_bound_exhausted`と入力を保存します。局所変数への代入は値のsnapshotへ、メモリはbyte列へ対応付け、部分書込みとcastの幅を保持します。x86-64 LP64、有効な状態ポインタ、状態内の参照、既知のchecked-memory helper契約を前提にします。各反復で確定する添字も扱い、sourceのポインタ演算は中間位置も状態object内かone-pastかを検査します。未知のsigned overflow・範囲外のsigned cast・ゼロ除算・未解決の参照・制御は、評価の未対応として記録します。
 
 `equivalent_under_model`は4状態ワードの全域に対するモデル下の結果です。SATは値グラフで再実行し、`counterexample_under_model`として入力と差を保存します。sourceの変数名や寿命、機械語全体の正しさはそれぞれ別の評価項目です。無効ポインタのfault、全RAM、PC・予算は既存の具体実行検査へ結びます。値グラフの規模・fingerprintは構文的な補助観測として扱います。
 
