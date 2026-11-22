@@ -30,6 +30,8 @@ mod known_bits;
 mod memory_bits;
 #[path = "verification/memory_values.rs"]
 mod memory_values;
+#[path = "verification/path_inputs.rs"]
+mod path_inputs;
 #[path = "verification/predicates.rs"]
 mod predicates;
 #[path = "verification/recovery_verification.rs"]

@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use crate::control_flow::cfg::Target;
-use crate::model::ir::{BlockExit, BlockReport, Control, Expr, Place, Program, Reg, Width};
+use crate::model::ir::{
+    BlockExit, BlockReport, Control, Expr, IrInstruction, Place, Program, Reg, Width,
+};
 use crate::verification::verify::{
     Solver, UnknownReason, binary_term, parse_named_values, unary_term,
 };
@@ -15,6 +17,8 @@ const ARRAY: &str = "(Array (_ BitVec 64) (_ BitVec 8))";
 const WORD: &str = "(_ BitVec 64)";
 const REPLAY_BYTES: u64 = 65536;
 type Registers = BTreeSet<usize>;
+
+pub mod paths;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockCounterexample {
@@ -200,6 +204,61 @@ impl Builder {
             }
         })
     }
+    fn instruction(
+        &mut self,
+        instruction: &IrInstruction,
+        state: &mut State,
+    ) -> Result<(), UnknownReason> {
+        for assignment in &instruction.assignments {
+            match &assignment.destination {
+                Place::Register(Reg(index)) => {
+                    let value = self.expression(&assignment.value, state, "true", 0)?;
+                    // Registers are observed only at a normal block exit.
+                    // After a fault all effects and subsequent fault updates
+                    // are guarded off, so dead register values may be total.
+                    state.registers[*index] = value;
+                }
+                Place::Memory { address, width } => {
+                    let address = self.expression(address, state, "true", 0)?;
+                    self.check_access(state, &address, *width, true, "true");
+                    let value = self.expression(&assignment.value, state, "true", 0)?;
+                    let mut memory = state.memory.clone();
+                    for offset in 0..width.bytes() {
+                        let at = format!("(bvadd {address} {})", word(offset as u64));
+                        self.sample(at.clone())?;
+                        memory = format!(
+                            "(store {memory} {at} ((_ extract {} {}) {value}))",
+                            offset * 8 + 7,
+                            offset * 8
+                        );
+                    }
+                    state.memory = self.define(
+                        ARRAY,
+                        format!("(ite {} {memory} {})", state.alive, state.memory),
+                    );
+                }
+            }
+        }
+        state.exit_kind = word(0);
+        state.exit_value = match &instruction.control {
+            Control::Next => word(instruction.address + u64::from(instruction.size)),
+            Control::Jump(target) => word(*target),
+            Control::Branch { condition, target } => {
+                let condition = self.expression(condition, state, "true", 0)?;
+                self.value(format!(
+                    "(ite (distinct {condition} {}) {} {})",
+                    word(0),
+                    word(*target),
+                    word(instruction.address + u64::from(instruction.size))
+                ))
+            }
+            Control::Return(value) => {
+                state.exit_kind = word(1);
+                self.expression(value, state, "true", 0)?
+            }
+        };
+        Ok(())
+    }
     fn block(
         &mut self,
         program: &Program,
@@ -210,56 +269,8 @@ impl Builder {
             .cfg()
             .block_at(start)
             .ok_or(UnknownReason::BlockShape)?;
-        let block = program.cfg().block(id);
-        for instruction in &program.instructions()[block.instructions.clone()] {
-            for assignment in &instruction.assignments {
-                match &assignment.destination {
-                    Place::Register(Reg(index)) => {
-                        let value = self.expression(&assignment.value, state, "true", 0)?;
-                        // Registers are observed only at a normal block exit.
-                        // After a fault all effects and subsequent fault updates
-                        // are guarded off, so dead register values may be total.
-                        state.registers[*index] = value;
-                    }
-                    Place::Memory { address, width } => {
-                        let address = self.expression(address, state, "true", 0)?;
-                        self.check_access(state, &address, *width, true, "true");
-                        let value = self.expression(&assignment.value, state, "true", 0)?;
-                        let mut memory = state.memory.clone();
-                        for offset in 0..width.bytes() {
-                            let at = format!("(bvadd {address} {})", word(offset as u64));
-                            self.sample(at.clone())?;
-                            memory = format!(
-                                "(store {memory} {at} ((_ extract {} {}) {value}))",
-                                offset * 8 + 7,
-                                offset * 8
-                            );
-                        }
-                        state.memory = self.define(
-                            ARRAY,
-                            format!("(ite {} {memory} {})", state.alive, state.memory),
-                        );
-                    }
-                }
-            }
-            state.exit_kind = word(0);
-            state.exit_value = match &instruction.control {
-                Control::Next => word(instruction.address + u64::from(instruction.size)),
-                Control::Jump(target) => word(*target),
-                Control::Branch { condition, target } => {
-                    let condition = self.expression(condition, state, "true", 0)?;
-                    self.value(format!(
-                        "(ite (distinct {condition} {}) {} {})",
-                        word(0),
-                        word(*target),
-                        word(instruction.address + u64::from(instruction.size))
-                    ))
-                }
-                Control::Return(value) => {
-                    state.exit_kind = word(1);
-                    self.expression(value, state, "true", 0)?
-                }
-            };
+        for instruction in &program.instructions()[program.cfg().block(id).instructions.clone()] {
+            self.instruction(instruction, state)?;
         }
         Ok(())
     }
