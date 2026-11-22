@@ -72,10 +72,12 @@ def fixture(root):
 
 class ReportTests(unittest.TestCase):
     def test_probe_profile_and_stage_summaries_replay_the_retained_json(self):
-        for variant in ['intact', 'profile', 'continuation', 'coverage', 'raw_hash', 'legacy']:
+        for variant in ['intact', 'profile', 'continuation', 'coverage', 'raw_hash', 'legacy', 'missing_binding']:
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                row = fixture(root)['rows'][0]
+                report = fixture(root)
+                report['evaluation']['probe_metadata'] = 'hashed-probe-json-v1'
+                row = report['rows'][0]
                 row['semantics']['profile'].update(step_limit=4096, requested_cases=3, seed=17)
                 row['stage_checks'] = dict(
                     schema='nirvana-evaluation-stages-v1', contract='nirvana-entry-full-state-v1',
@@ -95,7 +97,13 @@ class ReportTests(unittest.TestCase):
                 elif variant == 'continuation': row['stage_checks']['selected_c']['continuations']['removed_conditions'] = 2
                 elif variant == 'coverage': row['stage_checks']['low_coverage']['steps_started'] = 1
                 elif variant == 'raw_hash': (target / 'semantic_prepare.stdout.txt').write_text(json.dumps(raw) + ' ')
-                elif variant == 'legacy': row['semantics'].pop('prepare_stdout_sha256')
+                elif variant in ['legacy', 'missing_binding']: row['semantics'].pop('prepare_stdout_sha256')
+                if variant == 'missing_binding':
+                    with self.assertRaisesRegex(ValueError, 'missing declared probe metadata'):
+                        reports.index(report)
+                    continue
+                if variant == 'legacy': report['evaluation'].pop('probe_metadata')
+                reports.index(report)
                 if variant in ['intact', 'legacy']:
                     result = reports.replay(root, row)
                     self.assertEqual(result['probe_metadata'], 'replayed' if variant == 'intact' else 'legacy_unbound')

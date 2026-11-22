@@ -310,6 +310,8 @@ def run(args):
               'budgets': {'command_seconds': args.timeout, 'search_seconds': args.search_seconds, 'search_states': args.max_states},
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
     report['emission'] = args.emit
+    if args.semantic_probe:
+        report['evaluation']['probe_metadata'] = 'hashed-probe-json-v1'
     report['c_footprint'] = {'metric': cf.METRIC, 'enabled': args.c_footprint,
                             'scope': 'C syntax counts and local-binding fingerprints; not a semantic distance.'}
     if args.c_footprint:

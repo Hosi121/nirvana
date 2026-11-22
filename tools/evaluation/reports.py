@@ -42,6 +42,11 @@ def index(report):
     require(bool(rows), 'empty report')
     require(dict(Counter(row['cohort'] for row in rows)) == report['summary']['cohorts'],
             'cohort denominator')
+    binding = report['evaluation'].get('probe_metadata')
+    require(binding in [None, 'hashed-probe-json-v1'], 'probe metadata profile')
+    if binding is not None:
+        require(all('prepare_stdout_sha256' in row['semantics'] for row in rows
+                    if 'profile' in row['semantics']), 'missing declared probe metadata binding')
     return result
 
 
