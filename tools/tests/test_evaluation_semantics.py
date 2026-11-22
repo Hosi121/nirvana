@@ -174,6 +174,20 @@ class SemanticTests(unittest.TestCase):
             with self.assertRaises(semantics.ProtocolError):
                 stages.validate(value, 4096, Path(directory), 24)
 
+    def test_c_continuation_v2_can_share_effects_while_retaining_the_condition(self):
+        evidence = dict(model='c-fragment-continuation-v2', removed_conditions=0,
+                        shared_fragments=3, compared_graph_nodes=10)
+        with tempfile.TemporaryDirectory() as directory:
+            for change in [{}, {'shared_fragments': 0}, {'shared_fragments': True},
+                           {'shared_fragments': 4097}, {'removed_conditions': -1}]:
+                value = architecture()
+                value['selected_c']['continuations'] = {**evidence, **change}
+                if change:
+                    with self.subTest(change=change), self.assertRaises(semantics.ProtocolError):
+                        stages.validate(value, 4096, Path(directory), 24)
+                else:
+                    stages.validate(value, 4096, Path(directory), 24)
+
 
 if __name__ == '__main__':
     unittest.main()

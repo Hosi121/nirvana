@@ -54,14 +54,21 @@ def validate(value, step_limit, directory, requested_cases):
                 and all(type(n) is int and n >= 0 for n in c['predicates'].values()), 'predicate evidence counts')
     continuation = c.get('continuations')
     if continuation is not None:
+        version = continuation.get('model') if isinstance(continuation, dict) else None
+        fields = {'model', 'removed_conditions', 'compared_graph_nodes'}
+        if version == 'c-fragment-continuation-v2':
+            fields.add('shared_fragments')
         require(isinstance(continuation, dict)
-                and set(continuation) == {'model', 'removed_conditions', 'compared_graph_nodes'}
-                and continuation['model'] == 'c-fragment-continuation-v1'
+                and set(continuation) == fields
+                and version in ['c-fragment-continuation-v1', 'c-fragment-continuation-v2']
                 and type(continuation['removed_conditions']) is int
-                and 0 < continuation['removed_conditions'] <= 4096
+                and 0 <= continuation['removed_conditions'] <= 4096
                 and type(continuation['compared_graph_nodes']) is int
                 and 0 < continuation['compared_graph_nodes'] <= 16384
                 and not c['fallback_goto'], 'C continuation evidence')
+        shared = continuation.get('shared_fragments', 0)
+        require(type(shared) is int and 0 <= shared <= 4096
+                and (shared > 0 or continuation['removed_conditions'] > 0), 'C continuation progress')
     return value
 
 
