@@ -26,6 +26,7 @@ impl MemoryRecovery {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PreparedFunction {
     pub program: Program,
     pub widths: ValueWidths,

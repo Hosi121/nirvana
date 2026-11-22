@@ -205,6 +205,31 @@ fn emit_prepared_c(
     options: ReadableOptions,
     prepared: PreparedFunction,
 ) -> Result<ReadableC, ReadableError> {
+    let try_continuations = prepared
+        .nodes
+        .as_deref()
+        .is_some_and(super::continuations::possible);
+    if !try_continuations {
+        return emit_prepared_layout(reduced, options, prepared, false);
+    }
+    let baseline = emit_prepared_layout(reduced, options, prepared.clone(), false)?;
+    if try_continuations
+        && let Ok(candidate) = emit_prepared_layout(reduced, options, prepared, true)
+        && candidate.continuations.is_some()
+        && candidate.parameters == baseline.parameters
+        && render_cost(&candidate) < render_cost(&baseline)
+    {
+        return Ok(candidate);
+    }
+    Ok(baseline)
+}
+
+fn emit_prepared_layout(
+    reduced: &ReducedFunction,
+    options: ReadableOptions,
+    prepared: PreparedFunction,
+    share_continuations: bool,
+) -> Result<ReadableC, ReadableError> {
     let PreparedFunction {
         program: presented,
         widths: value_widths,
@@ -471,37 +496,7 @@ fn emit_prepared_c(
             line(&mut code, 1, "};");
         }
     }
-    let eligible = locals.iter().map(|local| local.name.clone()).collect();
-    let declarations = Rc::new(DeclarationPlan::build(
-        display_nodes,
-        shared_nodes.as_deref(),
-        &names,
-        &read,
-        &eligible,
-    ));
-    for local in &locals {
-        if declarations.inline(&local.name) {
-            continue;
-        }
-        line(
-            &mut code,
-            1,
-            &format!(
-                "{} {};",
-                local_type(local.width, local.address_width),
-                local.name
-            ),
-        );
-    }
-    let stack_views = views
-        .as_ref()
-        .map(|v| v.stack_views().to_vec())
-        .unwrap_or_default();
-    let object_views = views
-        .as_ref()
-        .map(|v| v.objects.clone())
-        .unwrap_or_default();
-    let printer = Printer {
+    let mut printer = Printer {
         source_program: program,
         context_remainders: context_remainders.as_ref(),
         graph_remainders: graph_remainders.as_ref(),
@@ -516,20 +511,67 @@ fn emit_prepared_c(
         compact_memory: options.compact_memory,
         slots: printer_slots,
         initial_slots,
-        declarations,
+        declarations: Rc::new(DeclarationPlan::default()),
     };
+    let recovered = if share_continuations {
+        display_nodes.and_then(|nodes| super::continuations::recover(&printer, nodes))
+    } else {
+        None
+    };
+    let effective_nodes = recovered
+        .as_ref()
+        .map(|(nodes, _)| nodes.as_slice())
+        .or(display_nodes);
+    let eligible = locals.iter().map(|local| local.name.clone()).collect();
+    printer.declarations = Rc::new(DeclarationPlan::build(
+        effective_nodes,
+        if recovered.is_some() {
+            None
+        } else {
+            shared_nodes.as_deref()
+        },
+        &printer.names,
+        &printer.read,
+        &eligible,
+    ));
+    for local in &locals {
+        if printer.declarations.inline(&local.name) {
+            continue;
+        }
+        line(
+            &mut code,
+            1,
+            &format!(
+                "{} {};",
+                local_type(local.width, local.address_width),
+                local.name
+            ),
+        );
+    }
+    let stack_views = printer
+        .views
+        .as_ref()
+        .map(|v| v.stack_views().to_vec())
+        .unwrap_or_default();
+    let object_views = printer
+        .views
+        .as_ref()
+        .map(|v| v.objects.clone())
+        .unwrap_or_default();
     let mut finite_regions = Vec::new();
     let mut affine_regions = Vec::new();
+    let continuation_evidence = recovered.as_ref().map(|(_, evidence)| *evidence);
     let (fallback_reason, display_structure_evidence) = match structured {
         Ok(function) => {
             let nonlocal = LoopLabels::analyze(function.body())
                 .ok_or(ReadableError::LoopLabelsUnavailable)?
                 .has_transfers();
-            let nodes = display_nodes.expect("recovered nodes");
+            let nodes = effective_nodes.expect("recovered nodes");
             let mut selected = nodes;
             let mut body = String::new();
             printer.nodes(&mut body, nodes, 1, nonlocal)?;
-            if let Some(shared) = &shared_nodes
+            if continuation_evidence.is_none()
+                && let Some(shared) = &shared_nodes
                 && shared != nodes
             {
                 let mut candidate = String::new();
@@ -544,7 +586,10 @@ fn emit_prepared_c(
                     selected = shared;
                 }
             }
-            if !nonlocal && let Some(recovered) = loops::recover(&printer, selected, &locals) {
+            if continuation_evidence.is_none()
+                && !nonlocal
+                && let Some(recovered) = loops::recover(&printer, selected, &locals)
+            {
                 let mut candidate = String::new();
                 if printer
                     .nodes(&mut candidate, &recovered.nodes, 1, false)
@@ -581,6 +626,7 @@ fn emit_prepared_c(
         code.insert_str(start, &bit_helpers);
     }
     Ok(ReadableC {
+        continuations: continuation_evidence,
         predicates: None,
         code,
         middle_memory: None,

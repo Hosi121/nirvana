@@ -192,6 +192,14 @@ impl Stages {
             ));
         }
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
+        let continuations = output.continuations.map_or("null".into(), |e| {
+            format!(
+                "{{\"model\":\"{}\",\"removed_conditions\":{},\"compared_graph_nodes\":{}}}",
+                nirvana::readable::CONTINUATION_MODEL_ID,
+                e.removed_conditions,
+                e.compared_graph_nodes
+            )
+        });
         let status = if self.stages.iter().any(|s| s.status == "counterexample") {
             "counterexample"
         } else if self.stages.iter().any(|s| s.status == "rejected") {
@@ -212,7 +220,7 @@ impl Stages {
             .collect::<Vec<_>>()
             .join(",");
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v1\",\"contract\":\"nirvana-entry-full-state-v1\",\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v1\",\"contract\":\"nirvana-entry-full-state-v1\",\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
             self.budgets,
             stages.join(","),
             output.structure_evidence.is_some(),

@@ -19,7 +19,9 @@ use crate::transform::sequence::{Evaluation, SequenceError, sequence};
 use crate::verification::block_verify::Validation;
 use crate::verification::verify::Solver;
 
+mod continuations;
 mod declarations;
+pub use continuations::{ContinuationEvidence, MODEL_ID as CONTINUATION_MODEL_ID};
 mod idioms;
 mod locals;
 mod loops;
@@ -74,6 +76,9 @@ pub use views::{IndexedView, ObjectField, ObjectView, StackView};
 #[derive(Clone, Debug)]
 pub struct ReadableC {
     pub code: String,
+    /// C-scope sharing after names and memory views are fixed. This observes
+    /// return/RAM/first faults; original machine-step evidence stays separate.
+    pub continuations: Option<ContinuationEvidence>,
     /// Checked source-CFG path facts adopted before local-value reduction.
     pub predicates: Option<crate::dataflow::predicates::PredicateEvidence>,
     /// Memory result refinements adopted from the source-bound middle IR.
