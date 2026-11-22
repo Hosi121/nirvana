@@ -1,8 +1,8 @@
 //! Recover values saved to memory without removing their checked reloads.
 //!
 //! Reaching bytes agree on a slice of an SSA value or one pure Store RHS.
-//! A value captured in a block visited at most once from entry can replace uses
-//! of its successful reload. Original
+//! Captures in single-visit blocks, or checked invariant definitions in loops,
+//! replace uses of successful reloads through copies and equal phi inputs. Original
 //! registers, memory effects, source PCs and instruction budgets are retained;
 //! equivalence projects away the additional internal capture registers.
 use crate::dataflow::ssa::{
@@ -16,6 +16,7 @@ mod projection;
 mod rewrite;
 mod single_visit;
 mod stability;
+mod value_facts;
 mod verify;
 const MAX_CAPTURES: usize = 256;
 
@@ -91,6 +92,8 @@ pub struct MemoryValuePlan {
     source_registers: usize,
     proofs: Vec<LoadProof>,
     captures: Vec<Capture>,
+    /// Equal saved-word slices at each actual SSA definition, including phis.
+    facts: Vec<Option<Key>>,
     evidence: MemoryValueEvidence,
 }
 impl MemoryValuePlan {
@@ -136,6 +139,7 @@ impl MemoryValuePlan {
         allow_stored: bool,
     ) -> Option<Self> {
         let (proofs, captures) = analyze::collect(context, policy, allow_stored)?;
+        let facts = value_facts::solve(context, &proofs).ok()?;
         let mut plan = Self {
             source_registers: source.register_count(),
             evidence: MemoryValueEvidence {
@@ -146,6 +150,7 @@ impl MemoryValuePlan {
             },
             proofs,
             captures,
+            facts,
         };
         let (candidate, count) = rewrite::construct(source, &plan, context)?;
         if count == 0 {

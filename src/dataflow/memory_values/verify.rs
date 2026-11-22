@@ -57,9 +57,10 @@ pub(super) fn plan(
         }
         used.insert(proof.key.value);
     }
-    if used != keys || rewrite::mapping(plan, context).is_none() {
+    if used != keys || rewrite::mapping(plan).is_none() {
         return Err(invalid("memory value source classes"));
     }
+    super::value_facts::validate(context, &plan.proofs, &plan.facts)?;
     Ok(())
 }
 pub(super) fn check(
@@ -78,7 +79,7 @@ pub(super) fn check(
     {
         return Err(invalid("memory value candidate layout"));
     }
-    let mapping = rewrite::mapping(plan, context).ok_or(invalid("memory value mapping"))?;
+    let mapping = rewrite::mapping(plan).ok_or(invalid("memory value mapping"))?;
     let captures =
         rewrite::capture_map(plan, context).ok_or(invalid("memory value capture expression"))?;
     let mut count = 0;
@@ -121,8 +122,7 @@ pub(super) fn check(
                             width: bw,
                         },
                     ) if aw == bw => {
-                        count +=
-                            expression(a, b, point, context, &mapping, &mut cursor, &mut budget)?;
+                        count += expression(a, b, point, &mapping, &mut cursor, &mut budget)?;
                     }
                     _ => return Err(invalid("memory value destination")),
                 }
@@ -130,7 +130,6 @@ pub(super) fn check(
                     &assignment.value,
                     &other.value,
                     point,
-                    context,
                     &mapping,
                     &mut cursor,
                     &mut budget,
@@ -169,7 +168,7 @@ pub(super) fn check(
                 }
                 if let Some(point) = context.point(site) {
                     let mut cursor = 0;
-                    count += expression(a, b, point, context, &mapping, &mut cursor, &mut budget)?;
+                    count += expression(a, b, point, &mapping, &mut cursor, &mut budget)?;
                     if cursor != point.reads.len() {
                         return Err(invalid("memory value control reads"));
                     }
@@ -208,7 +207,6 @@ fn expression(
     a: &Expr,
     b: &Expr,
     point: &PointValues,
-    context: &Context<'_>,
     mapping: &BTreeMap<ValueId, Expr>,
     cursor: &mut usize,
     budget: &mut Budget,
@@ -225,22 +223,21 @@ fn expression(
             if *a != read.register {
                 return Err(invalid("memory value read source"));
             }
-            let class = context
-                .aliases
-                .get(read.value.0)
-                .ok_or(invalid("memory value read identity"))?;
-            let expected = mapping.get(class).cloned().unwrap_or(Expr::Register(*a));
+            let expected = mapping
+                .get(&read.value)
+                .cloned()
+                .unwrap_or(Expr::Register(*a));
             if *b != expected {
                 return Err(invalid("memory value wrong replacement"));
             }
             usize::from(Expr::Register(*a) != *b)
         }
         (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => {
-            expression(x, y, point, context, mapping, cursor, budget)?
+            expression(x, y, point, mapping, cursor, budget)?
         }
         (Expr::Binary(a, l, r), Expr::Binary(b, x, y)) if a == b => {
-            expression(l, x, point, context, mapping, cursor, budget)?
-                + expression(r, y, point, context, mapping, cursor, budget)?
+            expression(l, x, point, mapping, cursor, budget)?
+                + expression(r, y, point, mapping, cursor, budget)?
         }
         (
             Expr::Load {
@@ -251,7 +248,7 @@ fn expression(
                 address: b,
                 width: bw,
             },
-        ) if aw == bw => expression(a, b, point, context, mapping, cursor, budget)?,
+        ) if aw == bw => expression(a, b, point, mapping, cursor, budget)?,
         (
             Expr::Select {
                 condition: a,
@@ -264,9 +261,9 @@ fn expression(
                 not_taken: z,
             },
         ) => {
-            expression(a, x, point, context, mapping, cursor, budget)?
-                + expression(b, y, point, context, mapping, cursor, budget)?
-                + expression(c, z, point, context, mapping, cursor, budget)?
+            expression(a, x, point, mapping, cursor, budget)?
+                + expression(b, y, point, mapping, cursor, budget)?
+                + expression(c, z, point, mapping, cursor, budget)?
         }
         _ => return Err(invalid("memory value changed expression effects")),
     })
@@ -429,6 +426,7 @@ mod byte_mutants {
             }
             plan.proofs[0].key = key;
             plan.captures[0] = context.capture(key.value).unwrap();
+            plan.facts = value_facts::solve(&context, &plan.proofs).unwrap();
             let (candidate, _) = rewrite::construct(&source, &plan, &context).unwrap();
             assert!(matches!(
                 check(&source, &plan, &candidate, &context),
@@ -496,6 +494,7 @@ mod stored_mutants {
         });
         plan.proofs[0].key.value = wrong;
         plan.captures[0] = context.capture(wrong).unwrap();
+        plan.facts = value_facts::solve(&context, &plan.proofs).unwrap();
         let (candidate, _) = rewrite::construct(&source, &plan, &context).unwrap();
         assert!(matches!(
             check(&source, &plan, &candidate, &context),

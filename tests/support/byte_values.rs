@@ -192,7 +192,77 @@ pub fn programs() -> Vec<Program> {
     result.extend(after_loop_programs());
     result.extend(stored_expression_programs());
     result.extend(invariant_loop_programs());
+    result.extend(register_phi_programs());
     result
+}
+
+/// Equal checked reloads meet through copies, nested joins and a loop backedge.
+pub fn register_phi_programs() -> Vec<Program> {
+    let prefix = || {
+        vec![
+            set(0, load(0, Width::U64)),
+            set(1, load(24, Width::U64)),
+            store(32, Width::U64, r(0)),
+            set(0, c(0)),
+        ]
+    };
+    let branch = || Control::Branch {
+        condition: r(1),
+        target: 2,
+    };
+    let diamond = program(vec![
+        ins(0, prefix(), branch()),
+        ins(1, vec![set(2, load(33, Width::U16))], Control::Jump(3)),
+        ins(2, vec![set(2, load(33, Width::U16))], Control::Jump(3)),
+        ins(3, vec![], Control::Return(r(2))),
+    ]);
+    let nested = program(vec![
+        ins(0, prefix(), branch()),
+        ins(1, vec![set(2, load(33, Width::U16))], Control::Jump(3)),
+        ins(
+            2,
+            vec![set(3, load(33, Width::U16)), set(2, r(3))],
+            Control::Jump(3),
+        ),
+        ins(
+            3,
+            vec![set(6, r(2))],
+            Control::Branch {
+                condition: r(1),
+                target: 5,
+            },
+        ),
+        ins(4, vec![set(3, r(6))], Control::Jump(6)),
+        ins(5, vec![set(3, load(33, Width::U16))], Control::Jump(6)),
+        ins(6, vec![], Control::Return(r(3))),
+    ]);
+    let mut initial = prefix();
+    initial.extend([
+        set(1, b(B::And, load(8, Width::U64), c(3))),
+        set(2, load(33, Width::U16)),
+    ]);
+    let looped = program(vec![
+        ins(0, initial, Control::Jump(1)),
+        ins(
+            1,
+            vec![],
+            Control::Branch {
+                condition: r(1),
+                target: 3,
+            },
+        ),
+        ins(2, vec![], Control::Return(r(2))),
+        ins(
+            3,
+            vec![
+                set(6, r(2)),
+                set(2, load(33, Width::U16)),
+                set(1, b(B::Sub, r(1), c(1))),
+            ],
+            Control::Jump(1),
+        ),
+    ]);
+    vec![diamond, nested, looped]
 }
 
 /// Disjoint stores whose contiguous source bits cross SSA producer definitions.

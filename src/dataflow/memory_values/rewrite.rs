@@ -2,10 +2,7 @@ use super::analyze::Context;
 use super::*;
 use crate::model::ir::{Control, IrInstruction, Place};
 
-pub(super) fn mapping(
-    plan: &MemoryValuePlan,
-    context: &Context<'_>,
-) -> Option<BTreeMap<ValueId, Expr>> {
+pub(super) fn mapping(plan: &MemoryValuePlan) -> Option<BTreeMap<ValueId, Expr>> {
     let captures = plan
         .captures
         .iter()
@@ -13,15 +10,10 @@ pub(super) fn mapping(
         .map(|(index, capture)| (capture.value, Reg(plan.source_registers + index)))
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::new();
-    for proof in &plan.proofs {
-        let register = *captures.get(&proof.key.value)?;
-        let replacement = word(proof.key, Expr::Register(register));
-        let class = context.root_class(proof.site)?;
-        if result
-            .insert(class, replacement.clone())
-            .is_some_and(|old| old != replacement)
-        {
-            return None;
+    for (id, key) in plan.facts.iter().enumerate() {
+        if let Some(key) = key {
+            let register = *captures.get(&key.value)?;
+            result.insert(ValueId(id), word(*key, Expr::Register(register)));
         }
     }
     Some(result)
@@ -48,7 +40,7 @@ pub(super) fn construct(
     if registers > ssa::MAX_REGISTERS {
         return None;
     }
-    let mapping = mapping(plan, context)?;
+    let mapping = mapping(plan)?;
     let captures = capture_map(plan, context)?;
     let mut instructions = Vec::with_capacity(source.instructions().len());
     let mut count = 0;
@@ -75,7 +67,6 @@ pub(super) fn construct(
                         address: expression(
                             address,
                             point,
-                            context,
                             &mapping,
                             &mut cursor,
                             &mut count,
@@ -87,7 +78,6 @@ pub(super) fn construct(
                 let value = expression(
                     &assignment.value,
                     point,
-                    context,
                     &mapping,
                     &mut cursor,
                     &mut count,
@@ -118,7 +108,6 @@ pub(super) fn construct(
                 Control::Return(e) => Control::Return(expression(
                     e,
                     point,
-                    context,
                     &mapping,
                     &mut cursor,
                     &mut count,
@@ -128,7 +117,6 @@ pub(super) fn construct(
                     condition: expression(
                         condition,
                         point,
-                        context,
                         &mapping,
                         &mut cursor,
                         &mut count,
@@ -165,7 +153,6 @@ pub(super) fn construct(
 fn expression(
     e: &Expr,
     point: &PointValues,
-    context: &Context<'_>,
     mapping: &BTreeMap<ValueId, Expr>,
     cursor: &mut usize,
     count: &mut usize,
@@ -180,7 +167,7 @@ fn expression(
             if *register != read.register {
                 return None;
             }
-            if let Some(target) = mapping.get(context.aliases.get(read.value.0)?) {
+            if let Some(target) = mapping.get(&read.value) {
                 *count += 1;
                 target.clone()
             } else {
@@ -189,15 +176,15 @@ fn expression(
         }
         Expr::Unary(op, value) => Expr::unary(
             *op,
-            expression(value, point, context, mapping, cursor, count, budget)?,
+            expression(value, point, mapping, cursor, count, budget)?,
         ),
         Expr::Binary(op, a, b) => Expr::binary(
             *op,
-            expression(a, point, context, mapping, cursor, count, budget)?,
-            expression(b, point, context, mapping, cursor, count, budget)?,
+            expression(a, point, mapping, cursor, count, budget)?,
+            expression(b, point, mapping, cursor, count, budget)?,
         ),
         Expr::Load { address, width } => Expr::load(
-            expression(address, point, context, mapping, cursor, count, budget)?,
+            expression(address, point, mapping, cursor, count, budget)?,
             *width,
         ),
         Expr::Select {
@@ -205,9 +192,9 @@ fn expression(
             taken,
             not_taken,
         } => Expr::select(
-            expression(condition, point, context, mapping, cursor, count, budget)?,
-            expression(taken, point, context, mapping, cursor, count, budget)?,
-            expression(not_taken, point, context, mapping, cursor, count, budget)?,
+            expression(condition, point, mapping, cursor, count, budget)?,
+            expression(taken, point, mapping, cursor, count, budget)?,
+            expression(not_taken, point, mapping, cursor, count, budget)?,
         ),
     })
 }

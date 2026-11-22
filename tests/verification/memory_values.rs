@@ -1,3 +1,5 @@
+#[path = "memory_values/phis.rs"]
+mod phis;
 use crate::support::ir::{c, r};
 use nirvana::ir::{BinaryOp as B, Expr, UnaryOp as U, Width};
 use nirvana::verify::{self, Solver, Verdict};

@@ -1,3 +1,5 @@
+#[path = "memory_values/phis.rs"]
+mod phis;
 use crate::support::ir::{c, r};
 use nirvana::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width};
 use nirvana::memory_values::{self, MemoryValuePlan};
