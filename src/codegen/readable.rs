@@ -21,7 +21,10 @@ use crate::verification::verify::Solver;
 
 mod continuations;
 mod declarations;
-pub use continuations::{ContinuationEvidence, MODEL_ID as CONTINUATION_MODEL_ID};
+pub use continuations::{
+    ContinuationEvidence, MODEL_ID as CONTINUATION_MODEL_ID,
+    STORE_ORDER_MODEL_ID as CONTINUATION_STORE_ORDER_MODEL_ID, StoreOrderEvidence,
+};
 mod idioms;
 mod locals;
 mod loops;

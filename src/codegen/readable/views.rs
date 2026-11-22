@@ -371,6 +371,28 @@ impl MemoryViews {
             .unwrap_or_default()
     }
 
+    /// Coordinates of the const input field actually selected for C rendering.
+    /// This describes an address; successful accesses supply separate bounds.
+    pub(super) fn fixed_input_at(
+        &self,
+        point: Option<(u64, usize)>,
+        address: &Expr,
+    ) -> Option<(Reg, i64)> {
+        let AccessView::Fixed(selected) = self.at(point, address)? else {
+            return None;
+        };
+        let (pc, assignment) = point?;
+        let origin = self
+            .origins
+            .as_ref()?
+            .origin_before(pc, assignment, address)?;
+        let &(o, f) = self.by_origin.get(&(origin.register.0, origin.offset))?;
+        let object = &self.objects[o];
+        let field = &object.fields[f];
+        (selected == format!("{}.{}", object.name, field.name))
+            .then_some((object.register, field.offset))
+    }
+
     /// Role names describe a location's observed use, never its source name or
     /// ownership. They change neither its address nor any checked access.
     pub(super) fn name_stack_roles(&mut self, roles: &crate::dataflow::stack_role::StackRoles) {

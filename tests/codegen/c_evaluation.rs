@@ -33,6 +33,151 @@ fn instruction(address: u64, assignments: Vec<Assignment>, control: Control) -> 
 }
 
 #[test]
+fn native_c_store_permutations_require_successful_prefix_reads() {
+    let slot = b(BinaryOp::Add, r(0), c(8));
+    let ret = b(BinaryOp::Add, b(BinaryOp::Add, r(2), r(3)), r(1));
+    let program = Program::new(
+        0,
+        4,
+        vec![
+            instruction(
+                0,
+                vec![Assignment {
+                    destination: Reg(2).into(),
+                    value: load(r(0)),
+                }],
+                Control::Next,
+            ),
+            instruction(
+                1,
+                vec![Assignment {
+                    destination: Reg(3).into(),
+                    value: load(slot.clone()),
+                }],
+                Control::Branch {
+                    condition: r(1),
+                    target: 5,
+                },
+            ),
+            instruction(
+                2,
+                vec![store(r(0), Width::U64, b(BinaryOp::Add, r(2), c(1)))],
+                Control::Next,
+            ),
+            instruction(
+                3,
+                vec![store(slot.clone(), Width::U64, r(3))],
+                Control::Next,
+            ),
+            instruction(4, vec![], Control::Return(ret.clone())),
+            instruction(5, vec![store(slot, Width::U64, r(3))], Control::Next),
+            instruction(
+                6,
+                vec![store(r(0), Width::U64, b(BinaryOp::Add, r(2), c(2)))],
+                Control::Next,
+            ),
+            instruction(7, vec![], Control::Return(ret)),
+        ],
+    )
+    .unwrap();
+    let output = emit_readable_c_with_options(
+        &program,
+        ReadableOptions {
+            coalesce_locals: true,
+            compact_memory: true,
+            recover_objects: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        output
+            .continuations
+            .is_some_and(|e| e.store_order.is_some()),
+        "{}",
+        output.code
+    );
+    let inputs: Vec<_> = [0x1000, 0x1001, 0x1008, 0x100f, 0xffff, u64::MAX]
+        .into_iter()
+        .flat_map(|address| [0, 1, 3, u64::MAX].map(|condition| [address, condition]))
+        .collect();
+    compare(&program, &inputs);
+    // Every variant breaks a load-bearing premise. In particular, view field
+    // extents reflect observed accesses, rather than a successful bounds check.
+    for variant in 0..7 {
+        let mut instructions = program.instructions().to_vec();
+        match variant {
+            0 => {
+                for instruction in &mut instructions[..2] {
+                    instruction.assignments[0].value = Expr::load(
+                        if instruction.address == 0 {
+                            r(0)
+                        } else {
+                            b(BinaryOp::Add, r(0), c(8))
+                        },
+                        Width::U8,
+                    );
+                }
+            }
+            1 => {
+                for instruction in &mut instructions[..2] {
+                    let value = instruction.assignments[0].value.clone();
+                    instruction.assignments[0].value = Expr::select(r(1), value, c(0));
+                }
+            }
+            2 => instructions[1].assignments.push(Assignment {
+                destination: Reg(0).into(),
+                value: b(BinaryOp::Add, r(0), c(16)),
+            }),
+            3 | 4 => {
+                let address = if variant == 3 {
+                    b(BinaryOp::Add, r(0), c(4))
+                } else {
+                    r(1)
+                };
+                instructions[1].assignments[0].value = load(address.clone());
+                for pc in [3, 5] {
+                    instructions[pc].assignments[0].destination = Place::Memory {
+                        address: address.clone(),
+                        width: Width::U64,
+                    };
+                }
+            }
+            5 => instructions[5].assignments[0].value = load(r(0)),
+            6 => {
+                for instruction in &mut instructions[..2] {
+                    instruction.assignments[0].value = c(0);
+                }
+            }
+            _ => unreachable!(),
+        }
+        let broken = Program::new(0, 4, instructions).unwrap();
+        let output = emit_readable_c_with_options(
+            &broken,
+            ReadableOptions {
+                coalesce_locals: true,
+                compact_memory: true,
+                recover_objects: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            output.continuations.is_none_or(|e| e.store_order.is_none()),
+            "variant {variant}: {}",
+            output.code
+        );
+        let inputs: Vec<_> = [0x1000, 0x1001, 0x1008, 0x100f, 0xffff, u64::MAX]
+            .into_iter()
+            .flat_map(|address| {
+                [0, 1, 3, 0x1000, 0x1004, u64::MAX].map(|condition| [address, condition])
+            })
+            .collect();
+        compare(&broken, &inputs);
+    }
+}
+
+#[test]
 fn native_c_sequences_binary_select_and_nested_address_faults() {
     let expressions = [
         b(BinaryOp::Add, load(r(0)), load(r(1))),

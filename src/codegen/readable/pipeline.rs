@@ -210,25 +210,30 @@ fn emit_prepared_c(
         .as_deref()
         .is_some_and(super::continuations::possible);
     if !try_continuations {
-        return emit_prepared_layout(reduced, options, prepared, false);
+        return emit_prepared_layout(reduced, options, prepared, None);
     }
-    let baseline = emit_prepared_layout(reduced, options, prepared.clone(), false)?;
-    if try_continuations
-        && let Ok(candidate) = emit_prepared_layout(reduced, options, prepared, true)
-        && candidate.continuations.is_some()
-        && candidate.parameters == baseline.parameters
-        && render_cost(&candidate) < render_cost(&baseline)
-    {
-        return Ok(candidate);
+    let mut best = emit_prepared_layout(reduced, options, prepared.clone(), None)?;
+    for strategy in [
+        continuations::Strategy::Exact,
+        continuations::Strategy::CheckedStores,
+    ] {
+        if let Ok(candidate) =
+            emit_prepared_layout(reduced, options, prepared.clone(), Some(strategy))
+            && candidate.continuations.is_some()
+            && candidate.parameters == best.parameters
+            && render_cost(&candidate) < render_cost(&best)
+        {
+            best = candidate;
+        }
     }
-    Ok(baseline)
+    Ok(best)
 }
 
 fn emit_prepared_layout(
     reduced: &ReducedFunction,
     options: ReadableOptions,
     prepared: PreparedFunction,
-    share_continuations: bool,
+    share_continuations: Option<continuations::Strategy>,
 ) -> Result<ReadableC, ReadableError> {
     let PreparedFunction {
         program: presented,
@@ -513,8 +518,8 @@ fn emit_prepared_layout(
         initial_slots,
         declarations: Rc::new(DeclarationPlan::default()),
     };
-    let recovered = if share_continuations {
-        display_nodes.and_then(|nodes| super::continuations::recover(&printer, nodes))
+    let recovered = if let Some(strategy) = share_continuations {
+        display_nodes.and_then(|nodes| super::continuations::recover(&printer, nodes, strategy))
     } else {
         None
     };

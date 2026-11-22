@@ -193,9 +193,13 @@ impl Stages {
         }
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
         let continuations = output.continuations.map_or("null".into(), |e| {
+            let order = e.store_order.map_or(String::new(), |o| format!(
+                ",\"store_order\":{{\"prefix_nodes\":{},\"range_witnesses\":{},\"swapped_pairs\":{}}}",
+                o.prefix_nodes, o.range_witnesses, o.swapped_pairs
+            ));
             format!(
-                "{{\"model\":\"{}\",\"removed_conditions\":{},\"shared_fragments\":{},\"compared_graph_nodes\":{}}}",
-                nirvana::readable::CONTINUATION_MODEL_ID,
+                "{{\"model\":\"{}\",\"removed_conditions\":{},\"shared_fragments\":{},\"compared_graph_nodes\":{}{order}}}",
+                e.model(),
                 e.removed_conditions,
                 e.shared_fragments,
                 e.compared_graph_nodes

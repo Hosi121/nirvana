@@ -3,6 +3,7 @@
 //! PCs and machine-register traces are provenance, outside this projection.
 use super::*;
 
+mod order;
 mod propose;
 #[cfg(test)]
 mod tests;
@@ -11,6 +12,20 @@ const MAX_ITEMS: usize = 4096;
 const MAX_WORK: usize = 262144;
 const MAX_BYTES: usize = 1024 * 1024;
 pub const MODEL_ID: &str = "c-fragment-continuation-v2";
+pub const STORE_ORDER_MODEL_ID: &str = "c-fragment-continuation-v3";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoreOrderEvidence {
+    pub prefix_nodes: usize,
+    pub range_witnesses: usize,
+    pub swapped_pairs: usize,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Strategy {
+    Exact,
+    CheckedStores,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContinuationEvidence {
@@ -19,6 +34,16 @@ pub struct ContinuationEvidence {
     /// Static nonempty Step/Evaluate/Return fragments shared between paths.
     pub shared_fragments: usize,
     pub compared_graph_nodes: usize,
+    pub store_order: Option<StoreOrderEvidence>,
+}
+impl ContinuationEvidence {
+    pub fn model(&self) -> &'static str {
+        if self.store_order.is_some() {
+            STORE_ORDER_MODEL_ID
+        } else {
+            MODEL_ID
+        }
+    }
 }
 
 fn shape(nodes: &[Node]) -> Option<(usize, usize)> {
@@ -113,12 +138,25 @@ fn recover_with(
     condition: &impl Fn(&Expr) -> Option<String>,
     names: &BTreeMap<usize, String>,
 ) -> Option<(Vec<Node>, ContinuationEvidence)> {
+    recover_candidate(source, source, atom, condition, names, None, None)
+}
+
+type StoreProbe<'a> = dyn Fn(&Node) -> Option<order::Span> + 'a;
+fn recover_candidate(
+    source: &[Node],
+    seed: &[Node],
+    atom: &impl Fn(&Node) -> Option<String>,
+    condition: &impl Fn(&Expr) -> Option<String>,
+    names: &BTreeMap<usize, String>,
+    ordering: Option<(&order::Facts, &StoreProbe<'_>)>,
+    store_order: Option<StoreOrderEvidence>,
+) -> Option<(Vec<Node>, ContinuationEvidence)> {
     let (before, _) = shape(source)?;
     let mut budget = Budget {
         work: MAX_WORK,
         bytes: MAX_BYTES,
     };
-    let candidate = propose::fold(source, &[], atom, &mut budget)?;
+    let candidate = propose::fold(seed, &[], atom, &mut budget)?;
     let (after, _) = shape(&candidate)?;
     let removed_conditions = before.checked_sub(after)?;
     fn fragments(
@@ -153,13 +191,18 @@ fn recover_with(
     {
         return None;
     }
-    let compared_graph_nodes = verify::check(source, &candidate, atom, condition)?;
+    let compared_graph_nodes = if let Some((facts, store)) = ordering {
+        verify::check_ordered(source, &candidate, atom, condition, facts, store)?
+    } else {
+        verify::check(source, &candidate, atom, condition)?
+    };
     Some((
         candidate,
         ContinuationEvidence {
             removed_conditions,
             shared_fragments,
             compared_graph_nodes,
+            store_order,
         },
     ))
 }
@@ -167,6 +210,7 @@ fn recover_with(
 pub(super) fn recover(
     printer: &Printer<'_>,
     nodes: &[Node],
+    strategy: Strategy,
 ) -> Option<(Vec<Node>, ContinuationEvidence)> {
     let atom = |node: &Node| {
         let mut out = String::new();
@@ -182,5 +226,21 @@ pub(super) fn recover(
             .ok()?;
         Some(out)
     };
-    recover_with(nodes, &atom, &condition, &printer.names)
+    match strategy {
+        Strategy::Exact => recover_with(nodes, &atom, &condition, &printer.names),
+        Strategy::CheckedStores => {
+            let facts = order::facts(printer, nodes, &atom)?;
+            let store = |node: &Node| order::store(printer, node);
+            let (ordered, evidence) = order::propose(nodes, &facts, &store)?;
+            recover_candidate(
+                nodes,
+                &ordered,
+                &atom,
+                &condition,
+                &printer.names,
+                Some((&facts, &store)),
+                Some(evidence),
+            )
+        }
+    }
 }
