@@ -100,6 +100,9 @@ pub struct ReadableC {
     pub memory_values: Option<crate::dataflow::memory_values::MemoryValueEvidence>,
     /// Checked sequential stages, in order, before final C storage allocation.
     pub memory_value_rounds: Vec<crate::dataflow::memory_values::MemoryValueEvidence>,
+    /// Leading saved-value stages applied to the input before the reported
+    /// local-value reduction. Remaining stages operate on display IR.
+    pub pre_reduction_memory_rounds: usize,
     pub web_recovery: WebRecovery,
     /// Named guest-memory locations, not recovered source variables or types.
     pub stack_views: Vec<StackView>,

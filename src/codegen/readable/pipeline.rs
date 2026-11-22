@@ -9,7 +9,31 @@ pub fn emit_readable_c_with_options(
     program: &Program,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
-    emit_reduced_c(reduce(program)?, options)
+    let reduced = reduce(program)?;
+    let parameters = reduced.parameters().to_vec();
+    let mut best = emit_reduced_c(reduced, options);
+    if !program.uses_memory() {
+        return best;
+    }
+    // A checked source rewrite can expose copies that the first local-value
+    // reduction would otherwise fold into larger expressions. Keep both orders.
+    if let Some(plan) = crate::dataflow::memory_values::MemoryValuePlan::analyze(program)
+        && let Some(lowered) = plan.lower(program)
+        && let Ok(reduced) = reduce(&lowered)
+        && reduced.parameters() == parameters
+        && let Ok(mut candidate) = emit_reduced_c(reduced, options)
+    {
+        candidate.memory_value_rounds.insert(0, plan.evidence());
+        candidate.memory_values = candidate.memory_value_rounds.first().copied();
+        candidate.pre_reduction_memory_rounds = 1;
+        if best
+            .as_ref()
+            .map_or(true, |old| render_cost(&candidate) < render_cost(old))
+        {
+            best = Ok(candidate);
+        }
+    }
+    best
 }
 
 /// Validate only the IR reduction. Structuring and C emission have their own
@@ -498,6 +522,7 @@ fn emit_prepared_c(
         known_bits,
         memory_values,
         memory_value_rounds,
+        pre_reduction_memory_rounds: 0,
         web_recovery,
         stack_views,
         object_views,

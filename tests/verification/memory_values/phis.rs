@@ -191,3 +191,86 @@ fn composed_phi_memory_plans_preserve_checked_paths_and_replay_a_bad_last_stage(
         "{proved} universal composed phi/memory path checks; 1 replayed last-stage SAT control"
     );
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn source_memory_recovery_then_reduction_keeps_return_ram_and_first_faults() {
+    use nirvana::block_verify::{self, BlockVerdict};
+    use nirvana::ir::{Control, Program, Reg};
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap_or_else(|_| "z3".into()));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/source-memory-reduction");
+    std::fs::create_dir_all(&root).unwrap();
+    let inputs: Vec<_> = (0..8).map(Reg).collect();
+    let mut proved = 0;
+    for (family, source) in crate::support::byte_values::resaved_phi_programs()
+        .into_iter()
+        .enumerate()
+    {
+        let plan = nirvana::memory_values::MemoryValuePlan::analyze(&source).unwrap();
+        let captured = plan.lower(&source).unwrap();
+        let reduced = nirvana::reduce::reduce(&captured).unwrap();
+        assert!(
+            reduced
+                .parameters()
+                .iter()
+                .all(|r| r.0 < source.register_count())
+        );
+        let candidate = reduced.program();
+        for (index, addresses) in family_paths(family).iter().enumerate() {
+            let query = block_verify::block_query(
+                &path(&source, addresses),
+                &path(candidate, addresses),
+                0,
+                &inputs,
+                &[],
+            )
+            .unwrap();
+            let name = format!("family-{family}-path-{index}");
+            std::fs::write(
+                root.join(format!("{name}.smt2")),
+                format!("{}(check-sat)\n", query.smt2()),
+            )
+            .unwrap();
+            let verdict = query.check(&solver);
+            std::fs::write(root.join(format!("{name}.out")), format!("{verdict:?}\n")).unwrap();
+            assert_eq!(verdict, BlockVerdict::EquivalentUnderModel, "{name}");
+            proved += 1;
+        }
+        if family == 0 {
+            let mut rows = candidate.instructions().to_vec();
+            let Control::Return(value) = &mut rows[3].control else {
+                unreachable!()
+            };
+            *value = b(B::Xor, value.clone(), c(1));
+            let bad = Program::new(0, candidate.register_count(), rows).unwrap();
+            let query = block_verify::block_query(
+                &path(&source, &[0, 1, 3]),
+                &path(&bad, &[0, 1, 3]),
+                0,
+                &inputs,
+                &[],
+            )
+            .unwrap();
+            std::fs::write(
+                root.join("bad-reduced-return.smt2"),
+                format!("{}(check-sat)\n", query.smt2()),
+            )
+            .unwrap();
+            let verdict = query.check(&solver);
+            std::fs::write(
+                root.join("bad-reduced-return.out"),
+                format!("{verdict:?}\n"),
+            )
+            .unwrap();
+            assert!(
+                matches!(verdict, BlockVerdict::Counterexample(_)),
+                "{verdict:?}"
+            );
+        }
+    }
+    assert_eq!(proved, 10);
+    println!(
+        "{proved} universal source-memory/reduction return/RAM/first-fault path checks; 1 replayed bad-return SAT control"
+    );
+}

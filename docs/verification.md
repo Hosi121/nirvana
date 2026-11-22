@@ -102,12 +102,14 @@ Clang比較は各fixtureのREADMEにあるコマンドで実行します。
 | [メモリbit](../tests/verification/memory_bits.rs)・[byte対応表](../tests/verification/byte_memory.rs) | 部分Store、alias、φの書込み候補を配列SMTと実行時の書込み元tagで照合 |
 | [保存値と保存式](../tests/verification/memory_values.rs) | 幅・位置、分割Store、SSA定義、純粋な右辺から作った実際の候補について、返り値・元レジスタ・RAM・最初のfaultを検査 |
 | [保存値の寿命](../tests/dataflow/memory_values.rs)・[不変条件](../src/dataflow/memory_values/stability.rs) | 停止予算ごとの実行比較、捕捉の初期化、循環と不変値の閉じた主張を検査。SMTは1〜4回に展開した反復経路を照合 |
-| [保存値のφ合流](../tests/dataflow/memory_values/phis.rs)・[経路SMT](../tests/verification/memory_values/phis.rs) | copy・bit抽出・入れ子の合流・ループ戻り辺と、検査済み段階の合成を検査。異なる射影・初期値・ゼロ拡張を失う主張を拒否し、SMTは分岐経路と0〜3回のループ経路を照合 |
+| [保存値のφ合流](../tests/dataflow/memory_values/phis.rs)・[経路SMT](../tests/verification/memory_values/phis.rs) | copy・bit抽出・入れ子の合流・ループ戻り辺と、検査済み段階の合成を検査。還元前の復元は返り値・RAM・最初のfaultを照合。異なる射影・初期値・ゼロ拡張を失う主張を拒否し、SMTは分岐経路と0〜3回のループ経路を照合 |
 | [射影](../tests/verification/unary_ops.rs)・[実行比較](../tests/transform/simplify.rs) | 全開始位置・幅と、mask・符号拡張を合成した候補を検査。Load・lazy Selectの状態とfaultも比較 |
 | [bit挿入](../tests/verification/bit_insert.rs) | 全位置・幅の純粋式と、両operandのLoad・Store順序を検査 |
 | [lifterの切詰め](../src/binary/x86/lift/clipping_proofs.rs)・[native比較](../tests/binary/x86.rs) | 実際の構築関数を従来のmaskと照合。幅付きLoad、ネストしたアドレス読込み、nativeとの比較を含む |
 
 保存値の実行比較は入口から始め、追加レジスタを射影した元の状態を照合します。出所検査にはSSA値・位置・反復を取り違えた候補を渡し、SMTの反例もIRで再実行します。一回だけ通るブロックの判定は、4頂点の全有向グラフで独立した到達可能性計算と照合します。
+
+[実GCCのstack alias比較](../tests/end_to_end/recovery_fixture/aliases.rs)は、入力領域をcalleeのstackへ重ね、還元前の保存値復元を元レジスタ・RAM・PC・停止予算で照合します。生成Cは同じ入力について全RAM・返り値・最初のfaultをUBSan付きで比較します。
 
 [符号付き逆数除算モデル](../tests/models/signed_reciprocal.smt2.in)は、20種類の正負の除数について、整数上の上位積の正規化・範囲・商・剰余と、誤った係数の反例・最小負数の到達を検査します。
 適用範囲は各モデルの算術・分岐選択と停止済みprefixです。C全体とISAの対応は実行比較でも確認します。

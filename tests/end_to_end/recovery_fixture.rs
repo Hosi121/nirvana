@@ -3,6 +3,9 @@
 //! Native C observes the return and four state words. Recompiled readable C
 //! additionally matches an IR digest over every guest byte, including stack.
 
+#[path = "recovery_fixture/aliases.rs"]
+mod aliases;
+
 use crate::support::native;
 
 use native::{Scratch, fixture_root, link, object, run, run_fields};
@@ -236,6 +239,12 @@ fn independent_recovery_sources_match_native_ir_and_readable_c() {
                 compact_memory: true,
             };
             let output = readable::emit_readable_c_with_options(&program, options).unwrap();
+            if optimization == "-O0" && name == "signed-compare" {
+                assert!(
+                    output.locals.len() <= 7,
+                    "early saved-value recovery shares signed operands"
+                );
+            }
             if optimization == "-O0" && name == "spilled-flags" {
                 let bits = output
                     .known_bits
