@@ -379,3 +379,5 @@ fn canonical_values_share_pure_computation_and_keep_distinct_loads() {
 
 #[path = "middle_ir/fixtures.rs"]
 mod fixtures;
+#[path = "middle_ir/memory.rs"]
+mod memory;

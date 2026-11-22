@@ -41,6 +41,8 @@ Middle IRはM1の段階間契約を実装する最初の共通表現です。保
 
 直接実行器とLow IRへの戻し変換を、全レジスタ・RAM・最初のfault・PC・命令予算で比較します。`--emit middle-ir`は値と領域・SSA版・CFGを表示し、`--emit middle-c`は検査済みの再構成を既存C backendへ渡します。型・元変数の回復とmoduleの外部効果は、この単一関数の契約から段階的に広げます。
 
+[Middle IRのメモリ情報](../src/model/middle_ir/memory.rs)は、一つの不変な関数に結び付く解析viewです。各Loadを元の式のpath・幅・位置でMemorySSAへ対応付け、到達するStoreをMIRの右辺値IDへ結びます。到達不能・照会の未判定・書込み候補を区別し、全候補のbyte値が一致したLoadには定数値を示します。Storeの世代は右辺評価後のcommitに対応し、右辺のLoadはその前の世代を参照します。
+
 ## ソースの配置
 
 | ディレクトリ | 責務と入口 |

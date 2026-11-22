@@ -16,6 +16,8 @@ use std::fmt;
 
 mod lift;
 mod lower;
+mod memory;
+pub use memory::{Load, LoadFlow, MemoryFacts, Store};
 mod run;
 #[cfg(test)]
 mod tests;
@@ -123,6 +125,7 @@ pub enum Error {
     Invalid(&'static str),
     Ssa(ssa::SsaError),
     Program(ir::ProgramError),
+    Memory(String),
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -131,6 +134,7 @@ impl fmt::Display for Error {
             Self::Invalid(s) => write!(f, "invalid middle IR: {s}"),
             Self::Ssa(e) => e.fmt(f),
             Self::Program(e) => e.fmt(f),
+            Self::Memory(e) => write!(f, "middle IR memory analysis: {e}"),
         }
     }
 }
