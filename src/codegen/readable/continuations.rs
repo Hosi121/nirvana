@@ -14,6 +14,7 @@ pub const MODEL_ID: &str = "c-fragment-continuation-v2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContinuationEvidence {
+    /// Static If nodes removed, including copies whose evaluation is shared.
     pub removed_conditions: usize,
     /// Static nonempty Step/Evaluate/Return fragments shared between paths.
     pub shared_fragments: usize,
