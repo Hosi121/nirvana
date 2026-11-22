@@ -69,9 +69,10 @@ class SemanticTests(unittest.TestCase):
             output = json.dumps(profile) if stage == 'semantic_prepare' else ''
             if stage == 'native_run':
                 output = native
+                if wrong == 'native': output = output.replace('0 1 2 3 4', '0 1 2 3 5', 1)
             elif stage.endswith('_run'):
                 output = checked
-                if wrong and stage == 'generated_O2_run':
+                if wrong is True and stage == 'generated_O2_run':
                     # Mutate one RAM word, leaving return/fault fields untouched.
                     lines = output.splitlines()
                     fields = lines[0].split()
@@ -114,6 +115,16 @@ class SemanticTests(unittest.TestCase):
             self.assertEqual(observed['profile']['requested_cases'], 24)
             self.assertEqual(observed['profile']['checked_cases'], 22)
             self.assertEqual(observed['profile']['suspended'], 2)
+
+    def test_native_ir_counterexample_keeps_both_ir_c_comparisons(self):
+        with tempfile.TemporaryDirectory() as directory:
+            row, calls = self.protocol(Path(directory), wrong='native')
+            checks = row['semantics']['checks']
+            self.assertEqual(row['semantics']['status'], 'counterexample')
+            self.assertEqual(checks['native']['status'], 'counterexample')
+            self.assertEqual(checks['generated_O0']['status'], 'passed')
+            self.assertEqual(checks['generated_O2']['status'], 'passed')
+            self.assertIn('generated_O2_run', calls)
 
     def test_architecture_failure_keeps_native_and_generated_comparisons(self):
         for status in ['passed', 'counterexample', 'malformed']:

@@ -100,8 +100,6 @@ def run(args, row, directory, invoke, flags):
         observed = invoke([argv[-1]], f'{label}_run', input=inputs)
         check = compare(expected, observed.stdout, inputs, width)
         row['semantics']['checks'][label] = check
-        if check['status'] != 'passed':
-            row['semantics']['status'] = 'counterexample'
-            return
-    row['semantics']['status'] = ('passed' if profile['suspended'] == 0
+    row['semantics']['status'] = ('counterexample' if any(c['status'] == 'counterexample' for c in row['semantics']['checks'].values())
+                                  else 'passed' if profile['suspended'] == 0
                                   and profile['native_cases'] == args.semantic_cases else 'inconclusive')
