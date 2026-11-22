@@ -68,6 +68,13 @@ class NativeModularServer(unittest.TestCase):
         relocations = (self.binary.parent / "relocations.txt").read_text()
         self.assertGreaterEqual(relocations.count("R_X86_64_RELATIVE"), 4)
 
+    def test_rejected_oversized_input_receives_a_complete_response_before_close(self):
+        case=next(c for c in MODULE.native_cases() if c['name']=='oversized')
+        for _ in range(20):
+            result=MODULE.run_native_case(self.binary,case)
+            self.assertEqual(result['status'],'passed',result)
+            self.assertFalse(result['connection_reset'])
+
     def test_timeout_path_reaps_server_process(self):
         real_popen = subprocess.Popen
         processes = []

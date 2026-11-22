@@ -23,6 +23,27 @@ static int write_all(int descriptor, const char *bytes, size_t length) {
     return 1;
 }
 
+static void finish_response(int client) {
+    char discarded[256];
+    size_t remaining = HTTP_REQUEST_CAPACITY * 8u;
+    /* Send FIN, then consume bounded trailing input before close. Unread
+       request bytes at close can reset TCP and discard the error response. */
+    if (shutdown(client, SHUT_WR) != 0) {
+        return;
+    }
+    while (remaining != 0) {
+        size_t capacity = remaining < sizeof(discarded) ? remaining : sizeof(discarded);
+        ssize_t received = recv(client, discarded, capacity, 0);
+        if (received < 0 && errno == EINTR) {
+            continue;
+        }
+        if (received <= 0) {
+            return;
+        }
+        remaining -= (size_t)received;
+    }
+}
+
 static int announce_port(unsigned port) {
     char digits[8];
     char line[8];
@@ -104,10 +125,10 @@ int http_serve_once(void) {
     output_length = http_render_response(&response, output, sizeof(output));
     if (output_length != 0 && write_all(client, output, output_length)) {
         exit_code = 0;
+        finish_response(client);
     }
 cleanup:
     if (client >= 0) {
-        (void)shutdown(client, SHUT_RDWR);
         (void)close(client);
     }
     if (listener >= 0) {

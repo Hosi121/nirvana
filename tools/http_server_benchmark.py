@@ -51,7 +51,7 @@ def native_cases():
         case("long-path", b"GET /" + b"x" * 128 + b" HTTP/1.1\r\n\r\n", 400,
              b"bad request\n"),
         case("oversized", b"GET /health HTTP/1.1\r\nX-Pad: " + b"x" * 1024 + b"\r\n\r\n",
-             400, b"bad request\n", allow_reset=True),
+             400, b"bad request\n"),
         case("incomplete", b"GET /health HTTP/1.1\r\nHost: localhost", 400,
              b"bad request\n"),
         case("empty", b"", 400, b"bad request\n"),
