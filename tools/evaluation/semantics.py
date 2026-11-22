@@ -43,15 +43,19 @@ def compare(expected, actual, inputs, width):
 def run(args, row, directory, invoke, flags):
     """invoke records real commands, timeouts, stdout/stderr and optional RSS."""
     destination = directory / 'semantics'
-    result = invoke([args.semantic_probe, directory / 'input.o', directory / 'readable.c',
+    argv = [args.semantic_probe, directory / 'input.o', directory / 'readable.c',
                      destination, row['function'], args.emit, args.semantic_seed,
-                     args.semantic_cases, args.semantic_steps], 'semantic_prepare')
+                     args.semantic_cases, args.semantic_steps]
+    input_file = getattr(args, 'semantic_inputs', None)
+    if input_file:
+        argv.append(input_file)
+    result = invoke(argv, 'semantic_prepare')
     try:
         profile = json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise ProtocolError('invalid semantic probe JSON') from error
     if (not isinstance(profile, dict) or profile.get('schema') != 'nirvana-evaluation-probe-v1'
-            or profile.get('generator') != 'fixture-state4-seeds-v1'
+            or profile.get('generator') != ('fixture-state4-input-file-v1' if input_file else 'fixture-state4-seeds-v1')
             or profile.get('vectors') != args.semantic_cases
             or profile.get('seed') != args.semantic_seed
             or profile.get('step_limit') != args.semantic_steps

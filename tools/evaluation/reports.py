@@ -162,6 +162,8 @@ def compare(before_path, after_path):
     require({k: tool_identity(v) for k, v in before['compilers'].items()}
             == {k: tool_identity(v) for k, v in after['compilers'].items()}, 'changed input compiler')
     require(before['semantics']['contract'] == after['semantics']['contract'], 'changed observation contract')
+    require((before.get('semantic_inputs') or {}).get('sha256')
+            == (after.get('semantic_inputs') or {}).get('sha256'), 'changed semantic input file')
     require((before.get('toolchain_manifest') or {}).get('sha256')
             == (after.get('toolchain_manifest') or {}).get('sha256'), 'changed toolchain manifest')
     rows = []

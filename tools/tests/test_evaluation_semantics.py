@@ -40,7 +40,7 @@ class SemanticTests(unittest.TestCase):
             with self.assertRaises(semantics.ProtocolError):
                 semantics.compare(expected, actual, 'first\nsecond\n', 6)
 
-    def protocol(self, root, *, wrong=False, suspended=0, stage_checks=None):
+    def protocol(self, root, *, wrong=False, suspended=0, stage_checks=None, input_file=False):
         destination = root / 'semantics'
         destination.mkdir()
         count = 8
@@ -54,6 +54,7 @@ class SemanticTests(unittest.TestCase):
             profile['stage_checks'] = stage_checks
             if stage_checks['status'] == 'counterexample':
                 (destination / 'low_middle.witness.txt').write_text('actual full-state counterexample')
+        if input_file: profile['generator'] = 'fixture-state4-input-file-v1'
         native = ('0 1 2 3 4\n' * count)
         checked = (' '.join(['0'] * 69) + '\n') * profile['checked_cases']
         files = {'native-inputs.txt': '1 2 3 4\n' * count, 'native-expected.txt': native,
@@ -80,9 +81,18 @@ class SemanticTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, output, '')
         args = argparse.Namespace(semantic_probe='probe', emit='readable-c', semantic_seed=17,
                                   semantic_cases=count, semantic_steps=4096, c_compiler='cc')
+        if input_file:
+            args.semantic_inputs = root / 'fixed-inputs.txt'
+            args.semantic_inputs.write_text('1 2 3 4\n' * count)
         row = {'function': 'fixture'}
         semantics.run(args, row, root, invoke, [])
         return row, calls
+
+    def test_fixed_input_file_keeps_an_explicit_generator_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            row, _ = self.protocol(Path(directory), input_file=True)
+            self.assertEqual(row['semantics']['profile']['generator'], 'fixture-state4-input-file-v1')
+            self.assertEqual(row['semantics']['status'], 'passed')
 
     def test_all_three_comparisons_have_independent_coverage_and_witnesses(self):
         for wrong in [False, True]:

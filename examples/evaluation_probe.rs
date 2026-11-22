@@ -65,6 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seed: u64 = args.next().ok_or("seed required")?.parse()?;
     let count: usize = args.next().ok_or("case count required")?.parse()?;
     let limit: usize = args.next().ok_or("step limit required")?.parse()?;
+    let input_file = args.next();
     if args.next().is_some()
         || !(8..=256).contains(&count)
         || !(1..=1_000_000).contains(&limit)
@@ -124,7 +125,23 @@ int main(void) {{
     let mut statuses = [0usize; 4];
     let mut native_cases = 0;
     let mut stages = stages::Stages::new(&source, limit);
-    for words in vectors(seed, count) {
+    let (generator, vectors) = if let Some(path) = input_file {
+        let mut vectors = Vec::new();
+        for line in std::fs::read_to_string(path)?.lines() {
+            let words = line
+                .split_whitespace()
+                .map(str::parse)
+                .collect::<Result<Vec<u64>, _>>()?;
+            vectors.push(<[u64; 4]>::try_from(words).map_err(|_| "expected four input words")?);
+        }
+        if vectors.len() != count {
+            return Err("input vector count differs from profile".into());
+        }
+        ("fixture-state4-input-file-v1", vectors)
+    } else {
+        ("fixture-state4-seeds-v1", vectors(seed, count))
+    };
+    for words in vectors {
         for pointer in [POINTER, BASE + SIZE as u64 - 16, u64::MAX] {
             let mut ram: Vec<_> = (0..SIZE).map(|n| (n * 29 + 7) as u8).collect();
             for (n, value) in words.into_iter().enumerate() {
@@ -189,7 +206,7 @@ int main(void) {{
         std::fs::write(out.join(name), text)?;
     }
     println!(
-        "{{\"schema\":\"nirvana-evaluation-probe-v1\",\"generator\":\"fixture-state4-seeds-v1\",\"seed\":{seed},\"vectors\":{count},\"requested_cases\":{},\"checked_cases\":{},\"native_cases\":{native_cases},\"returned\":{},\"read_faults\":{},\"write_faults\":{},\"suspended\":{},\"step_limit\":{limit},\"memory_base\":{BASE},\"memory_size\":{SIZE},\"stack_pointer\":{STACK},\"state_pointer\":{POINTER},\"register_count\":{},\"row_words\":{},\"stage_checks\":{}}}",
+        "{{\"schema\":\"nirvana-evaluation-probe-v1\",\"generator\":\"{generator}\",\"seed\":{seed},\"vectors\":{count},\"requested_cases\":{},\"checked_cases\":{},\"native_cases\":{native_cases},\"returned\":{},\"read_faults\":{},\"write_faults\":{},\"suspended\":{},\"step_limit\":{limit},\"memory_base\":{BASE},\"memory_size\":{SIZE},\"stack_pointer\":{STACK},\"state_pointer\":{POINTER},\"register_count\":{},\"row_words\":{},\"stage_checks\":{}}}",
         count * 3,
         statuses[0] + statuses[1] + statuses[2],
         statuses[0],

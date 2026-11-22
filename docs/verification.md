@@ -46,6 +46,16 @@ compiler・実行ファイル・評価器・入力・グラフのhash、時間�
 
 `low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。これらの対応検査と具体入力での一致は、生成C全体の一般的な同値性証明とは別の検証結果です。
 
+[追加入力の探索](../examples/evaluation_witnesses.rs)は、保存した実行prefixの分岐を反転し、checked-memoryモデルで4状態ワードの候補を求めます。512-byteの固定ABIメモリを使った元IRで、prefix・移転先・正常returnを再現した候補を採用します。UNSATは選んだprefixについての判定です。問い合わせ数と時間を制限し、未知・再現できた入力・再現できなかった候補を記録します。開発集合で得た行を固定し、`--semantic-inputs FILE --semantic-cases N`でnative・IR・生成Cを再評価できます。入力集合を変えた測定は、同じ集合同士で比較します。
+
+```sh
+cargo build --locked --example evaluation_witnesses
+NIRVANA_Z3=target/verification-venv/bin/z3 target/debug/examples/evaluation_witnesses \
+  target/structure-baseline/CASE/input.o \
+  target/structure-baseline/CASE/semantics/native-inputs.txt \
+  target/structure-witnesses/CASE 8 1000
+```
+
 `--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。block内の処理・条件の内容を含む構造指標はM0の継続対象です。
 [対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
 

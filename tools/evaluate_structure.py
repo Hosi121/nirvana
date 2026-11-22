@@ -244,7 +244,7 @@ def measure(case, tag, compiler, opt, args, out):
 def run(args):
     for name, default in [('emit', 'readable-c'), ('measure_rss', False), ('semantic_probe', None),
                           ('semantic_seed', 0x6e697276616e6130), ('semantic_cases', 16),
-                          ('semantic_steps', 4096), ('toolchain_manifest', None)]:
+                          ('semantic_steps', 4096), ('toolchain_manifest', None), ('semantic_inputs', None)]:
         if not hasattr(args, name):
             setattr(args, name, default)
     cases = load_cases(args.cases)
@@ -281,6 +281,14 @@ def run(args):
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
     report['emission'] = args.emit
     report['semantic_probe'] = provenance(args.semantic_probe, args.timeout) if args.semantic_probe else None
+    if args.semantic_inputs:
+        if not args.semantic_probe:
+            raise ValueError('semantic input rows require --semantic-probe')
+        text = args.semantic_inputs.read_text()
+        rows = [line.split() for line in text.splitlines()]
+        if (len(rows) != args.semantic_cases or any(len(row) != 4 or any(not word.isascii() or not word.isdecimal() or not 0 <= int(word) < 2**64 for word in row) for row in rows)):
+            raise ValueError('semantic input file must match the declared four-word vector count')
+        report['semantic_inputs'] = {'path': str(args.semantic_inputs.resolve()), 'sha256': digest(args.semantic_inputs)}
     report['budgets'].update(semantic_seed=args.semantic_seed, semantic_vectors=args.semantic_cases,
                              low_step_limit=args.semantic_steps)
     report['resources'] = {'enabled': args.measure_rss, 'unit': 'KiB',
@@ -327,6 +335,7 @@ def main():
     parser.add_argument('--c-compiler', default='cc', help='fixed compiler for all generated C profiles')
     parser.add_argument('--emit', choices=['readable-c', 'middle-c'], default='readable-c')
     parser.add_argument('--semantic-probe', type=Path, help='built examples/evaluation_probe executable')
+    parser.add_argument('--semantic-inputs', type=Path, help='fixed four-word input rows; use matching --semantic-cases')
     parser.add_argument('--semantic-seed', type=int, default=0x6e697276616e6130)
     parser.add_argument('--semantic-cases', type=int, default=16)
     parser.add_argument('--semantic-steps', type=int, default=4096)
