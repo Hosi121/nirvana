@@ -29,12 +29,14 @@ ELF / raw bytes
 | Register SSA | [定義・使用・φ](../src/dataflow/ssa.rs)による値の識別 | 各readを元IRの定義へ結び、仮想入口と全先行辺を保持する。[独立検査](../src/dataflow/ssa/verify.rs)を通した値IDを変換の根拠にする |
 | Middle IR | [不変な値ID・保存場所・評価領域・CFG](../src/model/middle_ir.rs) | 単一関数の実行IRを持ち上げ、元の式・命令・SSA対応を再構成して照合する。Loadの順序とlazyな枝、Store先の先行検査、guest命令のPC・予算を保持する |
 | MemorySSA | [メモリ世代とbyteごとの到達書込み候補](../src/dataflow/memory_ssa.rs) | may-alias・初期メモリ・未知CALLの寄与を保持する。現在の検査は[書込み元tagの独立実行比較](../tests/dataflow/memory_ssa.rs)などで、グラフ全体に対する一般の独立検査器は追加対象 |
-| Semantic IR | [保存時点と値IDに結び付けた意味付き演算](../src/model/semantic_ir.rs) | 現在はblock内の商・剰余などを回復する。入力の保存時点、置換箇所、元の効果と制御を照合して実行IRへ下ろす。関数全体の型付きIRは到達目標 |
+| Semantic IR | [保存時点と値IDに結び付けた意味付き演算](../src/model/semantic_ir.rs) | 現在はblock内の商・剰余などを回復する。入力の保存時点、置換箇所、元の効果と制御を照合して実行IRへ下ろす。検査済みの`Lowering`に実入力・計画・出力を結び、入力の全状態と追加レジスタの射影を観測できる。関数全体の型付きIRは到達目標 |
 | Structured AST | [Step・If・Loop・脱出](../src/control_flow/structure.rs)による制御の構成 | [ASTをグラフへ戻す検査](../src/control_flow/structure_verify.rs)で元PC、代入、条件、移転先を照合する。条件の集約・移動には追加の意味検査を結ぶ |
 | C continuation graph | [保存先確定後のC断片と継続先](../src/codegen/readable/continuations.rs) | 閉じた非循環領域で、順序付きC断片と返り値の対応を検査する。同一の継続先を持つ純粋な条件を除き、重複した終了処理を共有する |
 | C | 保存先・宣言・型表記と再コンパイル可能な出力 | 単一関数は返り値・RAM・最初のfault、moduleはレジスタ・PC・予算・外部効果も比較する。現在は個別の対応検査と再コンパイル実行比較を組み合わせる |
 
 元変数の同定、非aliasの証明、Cの型や所有権の確定は、それぞれ追加の回復主張です。値ID・メモリ世代・viewの名前から得られる事実と、[実行契約](equivalence.md)を保つ根拠を分けて記録します。
+
+`ReadableC.semantic_lowering`は、採用した意味IRの段階を`Arc`で共有します。複数の配置候補で同じ入力・計画・下ろしたIRを参照し、表示用DCEの前の状態を保持します。評価器は生成C本文との一致を確認してから、この段階の入力と出力を照合します。入力は前段の表示IRのレジスタ空間で、機械レジスタとの対応・元変数の同定はそれぞれの契約へ結びます。
 
 compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作り、検査後にSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
 

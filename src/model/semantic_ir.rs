@@ -103,7 +103,53 @@ pub struct SemanticPlan {
     evidence: SemanticEvidence,
 }
 
+/// A checked transition bound to its actual input IR. The input may already be
+/// display IR; its register IDs are kept separate from machine-register IDs.
+#[derive(Clone, Debug)]
+pub struct Lowering {
+    source: Program,
+    program: Program,
+    plan: SemanticPlan,
+}
+impl Lowering {
+    pub fn source(&self) -> &Program {
+        &self.source
+    }
+    pub fn program(&self) -> &Program {
+        &self.program
+    }
+    pub fn evidence(&self) -> SemanticEvidence {
+        self.plan.evidence()
+    }
+    pub fn validate(&self) -> bool {
+        validate(&self.source, &self.plan, &self.program)
+    }
+    /// Preserve every register of this transition's input, projecting only the
+    /// new semantic captures. Reports from a different register file are rejected.
+    pub fn project_report(
+        &self,
+        mut report: crate::model::ir::RunReport,
+    ) -> Option<crate::model::ir::RunReport> {
+        if report.state.registers.len() != self.program.register_count() {
+            return None;
+        }
+        report
+            .state
+            .registers
+            .truncate(self.source.register_count());
+        Some(report)
+    }
+}
+
 impl SemanticPlan {
+    pub fn lowering(&self, source: &Program) -> Option<Lowering> {
+        let program = self.lower(source)?;
+        Some(Lowering {
+            source: source.clone(),
+            program,
+            plan: self.clone(),
+        })
+    }
     pub fn analyze(source: &Program) -> Option<Self> {
         let mut work = Work::new();
         value_graph::preflight(source, &mut work)?;

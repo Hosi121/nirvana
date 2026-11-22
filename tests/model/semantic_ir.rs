@@ -109,6 +109,39 @@ fn compare(source: &Program, target: &Program, input: &[u64], memory: &[u8], ful
         }
     }
 }
+
+#[test]
+fn retained_lowering_binds_its_input_and_projects_only_its_own_capture_file() {
+    let source = source();
+    let plan = SemanticPlan::analyze(&source).unwrap();
+    let lowering = plan.lowering(&source).unwrap();
+    assert_eq!(lowering.source().instructions(), source.instructions());
+    assert_eq!(lowering.source().register_count(), source.register_count());
+    assert_eq!(lowering.evidence(), plan.evidence());
+    assert!(lowering.validate());
+    let mut input = vec![0; source.register_count()];
+    input[x86::RDI] = 4096;
+    let memory: Vec<_> = (0..64).collect();
+    for budget in [0, 1, 2] {
+        let expected = source
+            .run_with_memory(&input, 4096, &memory, budget)
+            .unwrap();
+        assert!(lowering.project_report(expected.clone()).is_none());
+        for initial in [0, u64::MAX] {
+            let mut extended = input.clone();
+            extended.resize(lowering.program().register_count(), initial);
+            let actual = lowering
+                .program()
+                .run_with_memory(&extended, 4096, &memory, budget)
+                .unwrap();
+            assert_eq!(lowering.project_report(actual).unwrap(), expected);
+        }
+    }
+    let mut changed = source.instructions().to_vec();
+    changed[0].assignments[2].value = b(B::SMulHigh, c(0x6666_6666_6666_6666), r(0));
+    let changed = Program::new(0, source.register_count(), changed).unwrap();
+    assert!(plan.lowering(&changed).is_none());
+}
 fn inputs() -> Vec<u64> {
     let mut values = vec![
         0,

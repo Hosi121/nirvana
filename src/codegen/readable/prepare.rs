@@ -39,6 +39,7 @@ pub(super) struct PreparedFunction {
     pub load_mask_evidence: Option<crate::transform::load_mask::LoadMaskEvidence>,
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
     pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
+    pub semantic_lowering: Option<std::sync::Arc<crate::model::semantic_ir::Lowering>>,
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
     pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
     pub memory_values: Option<crate::dataflow::memory_values::MemoryValueEvidence>,
@@ -206,11 +207,17 @@ fn prepare_selected(
         None => (program, widths, structure, None),
     };
     let semantic = crate::model::semantic_ir::SemanticPlan::analyze(&program).and_then(|plan| {
-        checked_display(plan.lower(&program)?, structure.is_ok(), plan.evidence())
+        let lowering = std::sync::Arc::new(plan.lowering(&program)?);
+        let (p, w, s, e) = checked_display(
+            lowering.program().clone(),
+            structure.is_ok(),
+            lowering.evidence(),
+        )?;
+        Some((p, w, s, e, lowering))
     });
-    let (program, widths, structure, semantic_evidence) = match semantic {
-        Some((p, w, s, e)) => (p, w, s, Some(e)),
-        None => (program, widths, structure, None),
+    let (program, widths, structure, semantic_evidence, semantic_lowering) = match semantic {
+        Some((p, w, s, e, lowering)) => (p, w, s, Some(e), Some(lowering)),
+        None => (program, widths, structure, None, None),
     };
     let candidates = structure.as_ref().ok().map(|function| {
         let nodes = if expression_evidence.is_some()
@@ -252,6 +259,7 @@ fn prepare_selected(
         load_mask_evidence: masked.map(|(_, evidence)| evidence),
         expression_evidence,
         semantic_evidence,
+        semantic_lowering,
         ssa_constants,
         known_bits,
         memory_values,

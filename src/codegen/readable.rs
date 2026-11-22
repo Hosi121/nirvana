@@ -110,6 +110,9 @@ pub struct ReadableC {
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
     /// Certified semantic values, captured and substituted before allocation.
     pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
+    /// Actual input and checked lowering of the selected semantic stage, before
+    /// display DCE. Shared across layout candidates for reproducible observation.
+    pub semantic_lowering: Option<std::sync::Arc<crate::model::semantic_ir::Lowering>>,
     /// Source-bound constants proved across SSA predecessor and loop phi edges.
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
     /// Checked partial-bit SSA invariants used for load-free constant fragments.
