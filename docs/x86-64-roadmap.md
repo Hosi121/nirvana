@@ -71,16 +71,15 @@ manifestにはNirvana・compiler・solverの版、CPU機能、全フラグ、bin
 
 | 項目 | 既存の根拠 | M0で仕上げる部分 |
 | --- | --- | --- |
-| 意味の比較 | [検証ガイド](verification.md)、[end-to-end](../tests/end_to_end.rs)、独立oracle・SMT | corpus全体で観測契約と未判定理由を統一して集計する |
-| 入力の広さ | [ジャンプテーブル比較](../tests/fixtures/input-breadth/README.md)の24 C構成＋2 assembly構成 | 構造復元用の初回24構成へ失敗段階を含むmanifestを用意する |
+| 意味の比較 | [検証ガイド](verification.md)、初回24構成のnative・IR・O0/O2生成Cの統合報告 | 追加ABI・外部効果へ観測契約を広げる |
+| 入力の広さ | [初回24構成のmanifest](../tools/corpora/structure-initial-v1.json)、開発用4族・hold-out 2族、失敗分類 | corpusの追加時も分母・集合の分離・再現条件を維持する |
 | 元変数との対応 | [source recovery評価](../tools/measure_source_recovery.py)のGCC O0・DWARF照合 | 最適化済み入力への対応と、構造評価との統合 |
-| 構造と出力の規模 | [制御構造の部分評価](verification.md#制御構造の部分評価)の有向グラフ距離・対照検査、[readable比較](../tools/compare_readable_output.py)の変数・goto・文字数 | 意味比較との統合、block内の処理・条件の内容、hold-out。既存の個数集計は補助指標として使う |
+| 構造と出力の規模 | [制御構造の部分評価](verification.md#制御構造の部分評価)の有向グラフ距離・統合報告・対応表の再検査 | block内の処理・条件の内容。変数・goto・文字数は補助指標として使う |
 | 段階間の契約 | [抽象化の段階と保証](architecture.md#抽象化の段階と保証)、個別の対応検査 | 各corpus行に通過した検査・適用前提・不足する検査を結ぶ |
 
 **M0は部分的な評価手段が揃った段階**。完了条件は、上記の統合報告と構造評価器の対照検査を初回corpusで再現できることである。
-制御構造の部分評価器は、既存fixtureの開発用4ソース族からなるsmoke集合、正規化したグラフ、正負対照、baselineの記録を持つ。この16構成を足場に、上で定めたM0合格用24構成のcorpusとhold-outを固定する。
-次の実装は、M0合格用corpus、意味比較との統合、block内の処理と条件の内容を評価へ結ぶ部分を対象にする。
-その結果から最初のM2候補を選ぶ。
+初回corpus `nirvana-structure-initial-v1` の24構成を測定し、全件で固定ABIのnative↔IR・生成C比較を通した。baselineは`041a1e2`、開発集合で選んだ経路条件回復の比較先は`87bb55c`で、同じ24個のobject hashを確認した。開発用Clang O2のループ脱出例は構造距離25→15、goto 8→0、他の23構成のグラフは同じだった。22構成で正確な距離、2構成で探索上限付きの区間を得た。
+次は、block内の処理と条件の内容を評価へ結ぶ部分を進める。各段階の検査根拠と適用前提の統合も継続する。
 
 ## M2で早期に扱う制御フロー変換
 

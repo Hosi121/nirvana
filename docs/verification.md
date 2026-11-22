@@ -21,12 +21,12 @@ python3 -m unittest discover -s tools/tests
 
 ## 制御構造の部分評価
 
-M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-smoke.json)は既存4ソース族の開発集合です。GCC/Clang × O2/O3で16構成となります。
+M0の[構造評価器](../tools/evaluate_structure.py)は、元Cと生成CをClang 18の[debug.DumpCFG](https://clang.llvm.org/docs/analyzer/developer-docs/DebugChecks.html)で読み、制御の形を比較します。[初回corpus](../tools/corpora/structure-initial-v1.json)は開発用4ソース族とhold-outの2ソース族を分け、GCC/Clang × O2/O3の24構成へ固定しています。従来の[16構成のsmoke集合](../tools/corpora/structure-smoke.json)も個別の比較に使えます。
 
 ```sh
 cargo build --locked --bin nirvana --example evaluation_probe
-python3 tools/evaluate_structure.py --clang clang-18 \
-  --compiler gcc=cc --compiler clang=clang-18 \
+python3 tools/evaluate_structure.py --cases tools/corpora/structure-initial-v1.json \
+  --clang clang-18 --compiler gcc=cc --compiler clang18=clang-18 \
   --semantic-probe target/debug/examples/evaluation_probe --measure-rss \
   --out target/structure-baseline
 NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
@@ -41,8 +41,16 @@ compiler・実行ファイル・評価器・入力・グラフのhash、時間�
 
 この指標は制御の形を観測します。基本block内の演算・効果・処理の複製は別の評価対象です。`--semantic-probe`は、同じobjectのnative実行とIRの返り値・4状態ワード、IRと生成Cの全RAM・最初のfaultを各行へ結びます。入力は固定境界値とseed付きの16組で、正常・末尾境界・無効pointerを使います。生成CはO0/O2・UBSanで比較し、停止予算切れを未判定として分母に保持します。構造の読取りに失敗した行でも、意味の比較を別に進めます。
 
-`--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。corpus全体の統合と、block内の処理・条件の内容を含む構造指標はM0の継続対象です。
+`--measure-rss`はGNU timeでコマンドごとの最大RSS（KiB）とCPU時間を記録します。RSSはそのコマンドと待機した子のうち最大の単一プロセスの値で、同時実行プロセスの合計とは区別します。意味比較を省略した実行は`semantics: not_run`として残ります。block内の処理・条件の内容を含む構造指標はM0の継続対象です。
 [対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
+
+[報告の比較器](../tools/compare_structure_reports.py)は、corpus・binary・compiler・フラグ・観測契約を照合し、保存したdumpからの正規化、対応表の費用、具体実行の全ワードを再検査します。探索結果の最適性は記録したソルバの判定を使い、打切り区間が重なる結果は未判定として扱います。同じグラフ同士の比較では、打切り後も距離が等しいことを確認できます。失敗行も分母に保持します。
+
+```sh
+python3 tools/compare_structure_reports.py \
+  target/structure-baseline/report.json target/structure-candidate/report.json \
+  > target/structure-comparison.json
+```
 
 ## 比較の境界
 
