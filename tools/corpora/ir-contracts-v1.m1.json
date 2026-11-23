@@ -275,6 +275,18 @@
   "coverage_notes": [
     "M1 remains partial; these are concrete prefix comparisons, alongside separately modeled source-value proofs",
     "The integer corpus retains four closed-ET_REL constant-relocation failures; linked ELF module observations use a separate profile",
-    "M0 initial-profile completion remains fixed in structure-initial-v1.m0.json"
-  ]
+    "M0 initial-profile completion remains fixed in structure-initial-v1.m0.json",
+    "Generated C execution is validated with GCC; Clang strict warning cleanliness for unused view helpers is a further compiler profile"
+  ],
+  "additional_probes": {
+    "generated_c_warning_profile": {
+      "artifact": {
+        "file": "target/night-evaluation-20261123/generated-c-compiler-smoke.json",
+        "sha256": "797962ded5bbe4c7bc1c5ee06147b636b0594a2c475b3b6ea674d0cf9de94068"
+      },
+      "gcc": "passed strict syntax check",
+      "clang18": "unused static view helper warning treated as error",
+      "scope": "Additional smoke; fixed corpus generated-C execution uses GCC"
+    }
+  }
 }
