@@ -1,4 +1,6 @@
 use super::*;
+#[path = "query_tests.rs"]
+mod query_tests;
 use crate::model::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Reg, Width};
 fn r(n: usize) -> Expr {
     Expr::Register(Reg(n))

@@ -33,7 +33,7 @@ python3 -m unittest discover -s tools/tests
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |
-| MemorySSA | 元IRを別にたどる世代グラフ検査でaccess・commit・φの流入辺・opaque効果を照合。byte tagの独立実行で候補maskを比較し、部分Store・alias・ループ・未知への拡大を含む |
+| MemorySSA | 世代グラフと、各Loadの先行状態・全候補byteを覆う閉じた証跡を独立に検査。部分Store・alias・φ・ループ・未知への拡大をbyte tagと配列SMTでも照合 |
 | C継続グラフ | 保存先とメモリviewの確定後、前後のASTから順序付きC断片と継続先を照合。メモリ条件の削除・アクセス幅の変更・効果の脱落や並替えを対照で拒否する。観測境界とprinterへの依存は[設計](architecture.md#c保存先確定後の継続処理)を参照 |
 | IR→再コンパイルC | 返り値・RAM・fault、モデルに応じた全レジスタ・PC・予算・外部結果の消費・途中再開 |
 
@@ -65,7 +65,7 @@ NIRVANA_Z3=target/verification-venv/bin/z3 cargo test --locked --test verificati
 Cの型幅と描画は再コンパイル後の実行で確認します。
 
 [Middle IRの比較](../tests/model/middle_ir.rs)は、Store先の先行検査、選ばれた枝の読込み、部分的な書込み、φとループを含みます。検査器にはLoadの脱落・複製・並べ替え、scope外の値、誤ったSSA版を渡します。直接MIR実行器とLow IR実行器は、scalar演算とchecked memoryの基本処理を共有し、式と制御の評価を別々に実装しています。
-[メモリ値の回復](../tests/model/middle_ir/memory.rs)は部分Store・may-alias・照会上限を含み、偽の既知値と循環した根拠を拒否します。回復前後のMIRと戻し変換の全状態を照合し、[生成C](../tests/model/middle_ir/memory_c.rs)はO0/O2・UBSanでRAMと最初のfaultを比較します。byteの一致判定はMemorySSAの書込み候補を前提とし、その候補解析は上表の独立実行比較で検査します。
+[メモリ値の回復](../tests/model/middle_ir/memory.rs)は部分Store・may-alias・照会上限を含み、偽の既知値と循環した根拠を拒否します。回復前後のMIRと戻し変換の全状態を照合し、[生成C](../tests/model/middle_ir/memory_c.rs)はO0/O2・UBSanでRAMと最初のfaultを比較します。byteの一致判定はMemorySSAの書込み候補を前提とし、その候補解析は閉じた被覆証跡と独立実行比較で検査します。アドレス恒等式は既存の解析を共有します。byteの区間判定と列挙した等式の対応は、任意の64-bit offsetを持つモデルでSMT照合し、境界とsource位置を誤るモデルをSATと実行で確認します。
 [保存値の同一性](../tests/model/middle_ir/saved.rs)は、共通の保存値fixtureを使い、コピー・部分抽出・φ・ループ・上書きとsnapshotの初期化を検査します。通常のMIRは全状態を直接比較し、保存値を展開したLow IRは追加レジスタを除いて比較します。異なるφ入力、偽のslice、古いsnapshot、根拠を欠くreadを拒否し、[同じC比較](../tests/codegen/byte_values_backend.rs)で元の出力・保存値展開・候補選択を照合します。
 [snapshot統合の対照](../src/dataflow/memory_values/roots/tests.rs)は、bit境界、循環、偽のSSA事実、入れ子の根拠、入力変更を検査します。誤ったoffsetは拒否した上で、生成された候補が異なる返り値を出す反例も実行します。
 [経路条件の対照](../src/dataflow/predicates/tests.rs)は、全流入辺の主張、異なるLoad・φ入力・再定義、booleanと一般のwordに対するXORを検査します。誤った分岐先は拒否した上で具体実行の差も確認します。元IR・変換後IR・再構築したMiddle IRの入口実行を、全レジスタ・RAM・fault・PC・予算について比較します。純粋式の値番号付けとscalar演算は検査器の共有する信頼基盤です。

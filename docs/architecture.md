@@ -28,7 +28,7 @@ ELF / raw bytes
 | Executable IR | [単一関数](../src/model/ir.rs)・[module](../src/model/module_ir.rs)のbit演算、順序付き効果、PCとゲスト状態 | 幅・flag・Load/Store・CALL/RET・最初のfaultを明示する。native/oracle比較で命令意味を検査し、moduleでは予算と途中再開も照合する |
 | Register SSA | [定義・使用・φ](../src/dataflow/ssa.rs)による値の識別 | 各readを元IRの定義へ結び、仮想入口と全先行辺を保持する。[独立検査](../src/dataflow/ssa/verify.rs)を通した値IDを変換の根拠にする |
 | Middle IR | [不変な値ID・保存場所・評価領域・CFG](../src/model/middle_ir.rs) | 単一関数の実行IRを持ち上げ、元の式・命令・SSA対応を再構成して照合する。Loadの順序とlazyな枝、Store先の先行検査、guest命令のPC・予算を保持する |
-| MemorySSA | [メモリ世代とbyteごとの到達書込み候補](../src/dataflow/memory_ssa.rs) | may-alias・初期メモリ・未知CALLの寄与を保持する。[世代グラフの独立検査](../src/dataflow/memory_ssa/verify.rs)で元IRのread/commit順序、全流入辺、仮想入口とopaque効果を照合する。書込み候補は[byte tagの独立実行比較](../tests/dataflow/memory_ssa.rs)で検査し、候補集合の完全性の検査を追加する |
+| MemorySSA | [メモリ世代とbyteごとの到達書込み候補](../src/dataflow/memory_ssa.rs) | may-alias・初期メモリ・未知CALLの寄与を保持する。[独立検査](../src/dataflow/memory_ssa/verify.rs)で元IRのread/commit順序・全流入辺・仮想入口・opaque効果と、候補集合の被覆を照合する。[byte tagの独立実行比較](../tests/dataflow/memory_ssa.rs)も併用する |
 | Semantic IR | [保存時点と値IDに結び付けた意味付き演算](../src/model/semantic_ir.rs) | 現在はblock内の商・剰余などを回復する。入力の保存時点、置換箇所、元の効果と制御を照合して実行IRへ下ろす。検査済みの`Lowering`に実入力・計画・出力を結び、入力の全状態と追加レジスタの射影を観測できる。関数全体の型付きIRは到達目標 |
 | Structured AST | [Step・If・Loop・脱出](../src/control_flow/structure.rs)による制御の構成 | [ASTをグラフへ戻す検査](../src/control_flow/structure_verify.rs)で元PC、代入、条件、移転先を照合する。条件の集約・移動には追加の意味検査を結ぶ |
 | C continuation graph | [保存先確定後のC断片と継続先](../src/codegen/readable/continuations.rs) | 閉じた非循環領域で、順序付きC断片と返り値の対応を検査する。同一の継続先を持つ純粋な条件を除き、重複した終了処理を共有する |
@@ -52,6 +52,8 @@ Middle IRはM1の段階間契約を実装する最初の共通表現です。保
 [Middle IRのメモリ情報](../src/model/middle_ir/memory.rs)は、一つの不変な関数に結び付く解析viewです。各Loadを元の式のpath・幅・位置でMemorySSAへ対応付け、到達するStoreをMIRの右辺値IDへ結びます。到達不能・照会の未判定・書込み候補を区別し、全候補のbyte値が一致したLoadには定数値を示します。Storeの世代は右辺評価後のcommitに対応し、右辺のLoadはその前の世代を参照します。
 
 世代グラフの検査器は元IRの式を別にたどり、Loadのpath・幅・SSA結果とStoreの確定位置を照合します。各blockのφは実CFGの全先行辺と、入口blockの仮想初期辺へ結びます。メモリ世代IDとblockの保存順は任意で、定義とaccessを一度ずつ対応付けます。記号アドレスの恒等式は既存のアドレス解析を共有します。資源上限は未判定として返し、`graph_evidence`は世代グラフを検査した範囲を示します。
+
+候補の被覆は、Loadごとにメモリ世代・記号アドレス・未確定byteの状態集合を証跡として保持します。検査器は入口状態と各状態の先行辺を照合し、確実に重なるStoreだけが古い寄与を消すこと、残る全候補とStore内のbyte位置が含まれることを確認します。φではアドレスを各流入辺へ同時置換し、ループで広がるアドレスは未知状態へ拡大します。探索の発見順を再現する代わりに、有限な状態集合が必要な先行状態を覆うことを検査します。`validate()`と`query_evidence`はこの範囲を示し、照会・証跡・検査の上限到達は候補集合全体を未判定として残します。
 
 [メモリ値の回復](../src/model/middle_ir/recover_memory.rs)は、その根拠から`KnownLoad`を作ります。検査器は元のMIRとの対応と全候補のbyte値を再計算します。既知値の根拠には元のLoadを使い、回復結果の循環した自己参照を防ぎます。実行と戻し変換は元のchecked readを保持します。`middle-ir`は回復後の値を表示し、`middle-c`は同じ引数契約で既存の出力と比較して、局所変数数・関数長の順で小さい出力を選びます。この定数回復は単一関数のscalar値を対象とし、MemorySSA自体の検証境界は表の通りです。
 

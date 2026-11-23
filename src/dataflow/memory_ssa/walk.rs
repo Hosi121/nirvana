@@ -9,11 +9,13 @@ pub(super) fn queries(
     analysis: &Analysis,
     graph: &SsaFunction,
     values: &BTreeMap<crate::dataflow::ssa::ValueId, ModularAddress>,
-) -> Result<Vec<Query>, String> {
+) -> Result<QueryResult, String> {
     let translation = super::translate::Translation::new(graph, values);
     let mut remaining = MAX_WORK;
     let mut retained = 0usize;
     let mut queries = Vec::new();
+    let mut certificates = Vec::new();
+    let mut stored_members = analysis.members();
     for (index, access) in analysis.accesses.iter().enumerate() {
         if access.source.kind != AccessKind::Read {
             continue;
@@ -126,6 +128,30 @@ pub(super) fn queries(
         if retained > MAX_CANDIDATES {
             return Err("memory SSA candidate storage limit".into());
         }
+        stored_members = stored_members
+            .checked_add(
+                2 + candidates.len()
+                    + seen.len()
+                    + seen
+                        .keys()
+                        .map(|(_, address)| address.as_ref().map_or(0, |a| a.terms.len()))
+                        .sum::<usize>(),
+            )
+            .ok_or("memory SSA certificate storage limit")?;
+        if stored_members > MAX_MEMBERS {
+            return Err("memory SSA certificate storage limit".into());
+        }
+        certificates.push(QueryCertificate {
+            access: index,
+            states: seen
+                .into_iter()
+                .map(|((memory, address), byte_mask)| QueryState {
+                    memory,
+                    address,
+                    byte_mask,
+                })
+                .collect(),
+        });
         queries.push(Query {
             access: index,
             candidates: candidates.into_values().collect(),
@@ -133,7 +159,10 @@ pub(super) fn queries(
             address_widened,
         });
     }
-    Ok(queries)
+    Ok(QueryResult {
+        queries,
+        certificates,
+    })
 }
 
 fn relation(

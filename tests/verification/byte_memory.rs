@@ -249,3 +249,74 @@ fn production_byte_maps_cover_array_store_read_values_and_replay_broken_maps() {
         "{proved} universal production byte-map claims; 2 SAT broken maps with fixed relevant inputs replayed in checked IR"
     );
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn modular_interval_and_byte_equality_models_agree_for_arbitrary_offsets() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/verification/memory-query-coverage");
+    let terms=(0..8).map(|n| format!(
+        "(ite (and (bvult (_ bv{n} 64) width) (= position (bvadd b (_ bv{n} 64)))) #x{:02x} #x00)",1u8<<n)).collect::<Vec<_>>();
+    let enumerated = terms
+        .into_iter()
+        .fold("#x00".to_owned(), |a, b| format!("(bvor {a} {b})"));
+    let model = format!(
+        r#"
+(declare-const width (_ BitVec 64))
+(declare-const index (_ BitVec 64))
+(assert (or (= width (_ bv1 64)) (= width (_ bv2 64)) (= width (_ bv4 64)) (= width (_ bv8 64))))
+(assert (bvult index (_ bv8 64)))
+(define-fun position () (_ BitVec 64) (bvadd a index))
+(define-fun delta () (_ BitVec 64) (bvsub position b))
+(define-fun enumerated () (_ BitVec 8) {enumerated})
+(define-fun interval () (_ BitVec 8) (ite (bvult delta width) (bvshl #x01 ((_ extract 7 0) delta)) #x00))
+"#
+    );
+    check_at(
+        &root,
+        "all-offsets-and-widths",
+        &format!("{model}\n(assert (distinct enumerated interval))"),
+        "unsat",
+    );
+    check_at(
+        &root,
+        "off-by-one-kill",
+        &format!(
+            r#"{model}
+(assert (= a (_ bv64 64))) (assert (= b (_ bv63 64)))
+(assert (= width (_ bv1 64))) (assert (= index (_ bv0 64)))
+(assert (distinct (bvult delta (bvadd width (_ bv1 64))) (distinct enumerated #x00)))
+"#
+        ),
+        "sat",
+    );
+    assert_eq!(
+        program(Width::U8, Width::U8, -1)
+            .execute_with_memory(&[64, 0x33, 0], 0, &[0x55; 128], 4)
+            .unwrap()
+            .value,
+        0x55
+    );
+    check_at(
+        &root,
+        "wrong-source-shift",
+        &format!(
+            r#"{model}
+(assert (= a (_ bv64 64))) (assert (= b (_ bv64 64)))
+(assert (= width (_ bv2 64))) (assert (= index (_ bv0 64)))
+(assert (distinct enumerated (bvshl interval #x01)))
+"#
+        ),
+        "sat",
+    );
+    assert_eq!(
+        program(Width::U8, Width::U16, 0)
+            .execute_with_memory(&[64, 0x4433, 0], 0, &[0x55; 128], 4)
+            .unwrap()
+            .value,
+        0x33
+    );
+    println!(
+        "Arbitrary 64-bit offsets: interval/equality masks UNSAT; 2 SAT broken models replayed in checked IR"
+    );
+}

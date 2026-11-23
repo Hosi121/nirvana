@@ -9,8 +9,15 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
         "{\"schema\":\"nirvana-memory-ssa-v1\",\"status\":\"analyzed\",\"scope\":\"function-entry-normal-continuations\",\"reads\":\"syntactic-possible\"",
     );
     if let Some(e) = analysis.graph_evidence() {
-        write!(out, ",\"verification\":{{\"model\":\"nirvana-memory-ssa-graph-v1\",\"scope\":\"source-bound-generations\",\"blocks\":{},\"definitions\":{},\"accesses\":{},\"phi_inputs\":{},\"opaque_effects\":{}}}",
+        write!(out, ",\"verification\":{{\"model\":\"nirvana-memory-ssa-graph-v1\",\"scope\":\"source-bound-generations\",\"blocks\":{},\"definitions\":{},\"accesses\":{},\"phi_inputs\":{},\"opaque_effects\":{},\"query_coverage\":",
             e.blocks,e.definitions,e.accesses,e.phi_inputs,e.opaque_effects).unwrap();
+        if let Some(q) = analysis.query_evidence() {
+            write!(out,"{{\"model\":\"nirvana-memory-ssa-coverage-v1\",\"queries\":{},\"states\":{},\"links\":{},\"candidate_bytes\":{}}}",
+                q.queries,q.states,q.links,q.candidate_bytes).unwrap();
+        } else {
+            out.push_str("null");
+        }
+        out.push('}');
     }
     out.push_str(",\"definitions\":[");
     for (id, definition) in analysis.definitions.iter().enumerate() {
@@ -153,23 +160,7 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
             }
         }
         out.push_str(",\"identity\":");
-        if let Some(address) = &access.address {
-            write!(out, "{{\"offset\":{},\"terms\":[", address.offset).unwrap();
-            for (i, (value, coefficient)) in address.terms.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                write!(
-                    out,
-                    "{{\"value\":{},\"coefficient\":{coefficient}}}",
-                    value.0
-                )
-                .unwrap();
-            }
-            out.push_str("]}");
-        } else {
-            out.push_str("null");
-        }
+        modular(&mut out, access.address.as_ref());
         out.push('}');
         bound(&out)?;
     }
@@ -205,6 +196,28 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
                 out.push_str("]}");
                 bound(&out)?;
             }
+            out.push_str("],\"certificates\":[");
+            for (i, proof) in analysis.query_certificates().iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write!(out, "{{\"access\":{},\"states\":[", proof.access).unwrap();
+                for (n, state) in proof.states.iter().enumerate() {
+                    if n > 0 {
+                        out.push(',');
+                    }
+                    write!(
+                        out,
+                        "{{\"memory\":{},\"byte_mask\":{},\"address\":",
+                        state.memory.0, state.byte_mask
+                    )
+                    .unwrap();
+                    modular(&mut out, state.address.as_ref());
+                    out.push('}');
+                    bound(&out)?;
+                }
+                out.push_str("]}");
+            }
             out.push(']');
         }
         Err(reason) => {
@@ -215,6 +228,26 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
     out.push_str("}}");
     bound(&out)?;
     Ok(out)
+}
+
+fn modular(out: &mut String, address: Option<&crate::dataflow::address_identity::ModularAddress>) {
+    if let Some(address) = address {
+        write!(out, "{{\"offset\":{},\"terms\":[", address.offset).unwrap();
+        for (i, (value, coefficient)) in address.terms.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            write!(
+                out,
+                "{{\"value\":{},\"coefficient\":{coefficient}}}",
+                value.0
+            )
+            .unwrap();
+        }
+        out.push_str("]}");
+    } else {
+        out.push_str("null");
+    }
 }
 
 fn bound(out: &str) -> Result<(), String> {

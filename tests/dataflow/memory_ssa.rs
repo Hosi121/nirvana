@@ -157,6 +157,47 @@ fn concrete_byte_tags_never_introduce_a_writer_missing_from_the_candidates() {
 }
 
 #[test]
+fn reports_retain_checked_query_coverage_and_their_closed_state_certificates() {
+    let (_, analysis) = analyze(vec![
+        ins(100, vec![store(r(0), Width::U8, 1)], Control::Next),
+        ins(101, vec![], Control::Return(Expr::load(r(0), Width::U64))),
+    ]);
+    let mut child = Command::new("python3")
+        .args([
+            "-c",
+            r#"
+import json,sys
+r=json.load(sys.stdin)
+v=r['verification']
+assert v['model']=='nirvana-memory-ssa-graph-v1'
+c=v['query_coverage']
+assert c['model']=='nirvana-memory-ssa-coverage-v1'
+reads={i for i,a in enumerate(r['accesses']) if a['kind']=='read'}
+proofs=r['queries']['certificates']
+assert c['queries']==len(reads)==len(proofs)
+assert c['states']==sum(len(p['states']) for p in proofs)
+assert {p['access'] for p in proofs}==reads
+for proof in proofs:
+    for state in proof['states']:
+        assert 0<=state['memory']<len(r['definitions'])
+        assert 0<state['byte_mask']<=255
+        a=state['address']
+        assert a is None or set(a)=={'offset','terms'}
+"#,
+        ])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(analysis.to_json().unwrap().as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn diamond_phis_keep_both_writers_and_the_virtual_initial_path() {
     for write_false in [false, true] {
         let (_, a) = analyze(vec![

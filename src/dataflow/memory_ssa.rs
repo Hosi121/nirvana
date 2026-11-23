@@ -16,7 +16,9 @@ mod report;
 mod translate;
 mod verify;
 mod walk;
-pub use verify::{GraphEvidence, ValidationError, validate_graph};
+pub use verify::{
+    Evidence, GraphEvidence, QueryEvidence, ValidationError, validate, validate_graph,
+};
 
 const MAX_EFFECTS: usize = 32768;
 const MAX_MEMBERS: usize = 1_000_000;
@@ -85,6 +87,8 @@ pub struct Block {
 
 /// Relations concern byte intervals after successful address evaluation.
 /// Exact requires identical intervals. Different symbolic bases remain May.
+/// Query candidates join contributing path labels; Overlap conservatively
+/// includes exact intervals, and May includes every overlapping relation.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Alias {
     Disjoint,
@@ -119,13 +123,33 @@ pub struct Query {
     pub address_widened: bool,
 }
 
+/// Pending bytes at one backwards memory state. `None` covers every address.
+/// A finite closed set of these states certifies reaching-writer coverage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryState {
+    pub memory: MemoryId,
+    pub address: Option<crate::dataflow::address_identity::ModularAddress>,
+    pub byte_mask: u8,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryCertificate {
+    pub access: usize,
+    pub states: Vec<QueryState>,
+}
+struct QueryResult {
+    queries: Vec<Query>,
+    certificates: Vec<QueryCertificate>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Analysis {
     definitions: Vec<Definition>,
     blocks: Vec<Block>,
     accesses: Vec<Access>,
     queries: Result<Vec<Query>, String>,
+    query_certificates: Vec<QueryCertificate>,
     graph_evidence: Option<GraphEvidence>,
+    query_evidence: Option<QueryEvidence>,
 }
 
 impl Analysis {
@@ -143,6 +167,12 @@ impl Analysis {
     }
     pub fn graph_evidence(&self) -> Option<&GraphEvidence> {
         self.graph_evidence.as_ref()
+    }
+    pub fn query_certificates(&self) -> &[QueryCertificate] {
+        &self.query_certificates
+    }
+    pub fn query_evidence(&self) -> Option<&QueryEvidence> {
+        self.query_evidence.as_ref()
     }
     pub fn to_json(&self) -> Result<String, String> {
         report::render(self)
@@ -169,6 +199,19 @@ impl Analysis {
             + self.queries.as_ref().map_or(0, |q| {
                 q.len() + q.iter().map(|q| q.candidates.len()).sum::<usize>()
             })
+            + self.query_certificates.len()
+            + self
+                .query_certificates
+                .iter()
+                .map(|proof| {
+                    proof.states.len()
+                        + proof
+                            .states
+                            .iter()
+                            .map(|s| s.address.as_ref().map_or(0, |a| a.terms.len()))
+                            .sum::<usize>()
+                })
+                .sum::<usize>()
     }
 }
 
@@ -233,7 +276,9 @@ pub(crate) fn analyze_with_effects(
         blocks: Vec::new(),
         accesses: Vec::with_capacity(accesses.len()),
         queries: Ok(Vec::new()),
+        query_certificates: Vec::new(),
         graph_evidence: None,
+        query_evidence: None,
     };
     let mut entries = BTreeMap::new();
     for id in &reachable {
@@ -330,10 +375,17 @@ pub(crate) fn analyze_with_effects(
     if result.members() > MAX_MEMBERS {
         return Err("memory SSA storage limit".into());
     }
-    result.queries = match addresses.phi_values {
-        Ok(values) => walk::queries(&result, graph, &values),
-        Err(reason) => Err(reason),
+    let queries = match &addresses.phi_values {
+        Ok(values) => walk::queries(&result, graph, values),
+        Err(reason) => Err(reason.clone()),
     };
+    match queries {
+        Ok(queries) => {
+            result.queries = Ok(queries.queries);
+            result.query_certificates = queries.certificates;
+        }
+        Err(reason) => result.queries = Err(reason),
+    }
     if result.members() > MAX_MEMBERS {
         return Err("memory SSA query storage limit".into());
     }
@@ -341,6 +393,14 @@ pub(crate) fn analyze_with_effects(
         verify::graph_with_facts(source, graph, &result, effects, &accesses, &addresses.forms)
             .map_err(|e| e.to_string())?,
     );
+    match verify::query_coverage(&result, graph, &addresses.phi_values) {
+        Ok(evidence) => result.query_evidence = evidence,
+        Err(ValidationError::Unavailable(reason)) => {
+            result.queries = Err(format!("memory SSA coverage check unavailable: {reason}"));
+            result.query_certificates.clear();
+        }
+        Err(error) => return Err(error.to_string()),
+    }
     Ok(result)
 }
 
