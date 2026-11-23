@@ -125,7 +125,7 @@ impl Lowering {
         validate(&self.source, &self.plan, &self.program)
     }
     /// Preserve every register of this transition's input, projecting only the
-    /// new semantic captures. Reports from a different register file are rejected.
+    /// new semantic captures. Reports with a different register count are rejected.
     pub fn project_report(
         &self,
         mut report: crate::model::ir::RunReport,

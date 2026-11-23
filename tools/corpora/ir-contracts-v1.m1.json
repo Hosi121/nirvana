@@ -1,0 +1,280 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Source-bound selected Semantic IR transitions and replayable concrete state prefixes",
+  "reference_revision": "9bb6a3db5a8c0ccc6c2151dc4cff1b9545fb5981",
+  "candidate_revision": "635e32704727225c92f00191d425f89ab3b4db51",
+  "evaluator_revision": "635e32704727225c92f00191d425f89ab3b4db51",
+  "evidence_root": "target/night-evaluation-20261123",
+  "evidence_storage": "Local retained artifacts; this manifest fixes their hashes",
+  "reproduction": {
+    "evaluator_archive": {
+      "file": "target/night-evaluation-20261123/evaluator-final/tools.tar",
+      "sha256": "2b4593c199767736b7938db677dac941e79d91260d99ff69b140b630d11701e5"
+    },
+    "reference_tools": {
+      "file": "target/night-evaluation-20261123/late-word-tools/build.json",
+      "sha256": "87b0a4270ed9a0354a8b9cc0e99d93a3dac7f10ef2f457eae84b8904bc3f64e1"
+    },
+    "candidate_tools": {
+      "file": "target/night-evaluation-20261123/semantic-pairs-tools/build.json",
+      "sha256": "e2d3c6796084325f902960a7f8e0679f51583e60cee981860d8f696308f7355c"
+    },
+    "toolchain": {
+      "file": "target/night-evaluation-20261123/toolchain/manifest.json",
+      "sha256": "862dc08c0effdf0ef8c7e87fc95d9331005368f06d8881229933dd0051798b26"
+    },
+    "portable_replay": {
+      "file": "target/night-evaluation-20261123/final-portable-integer-comparison.json",
+      "sha256": "9c7c9a945a434ec98802a6f25c6e32973208eba1b652814e8318f84fe1d83be0"
+    }
+  },
+  "contracts": {
+    "low_middle": "All original machine registers, RAM, fault, PC and trace at fixed entry budgets",
+    "selected_semantic": "All registers of the selected display-IR input, RAM, fault, PC and trace; only new semantic captures are projected out",
+    "fresh_initializers": [
+      0,
+      18446744073709551615
+    ],
+    "prefix_budgets": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      4096
+    ],
+    "state_pairs": "selected-semantic-state-pairs-v1; flat 512-byte RAM; fixed x86-64 state[4] entry profile",
+    "source_values": "nirvana-state4-values-v7; return and 32 state bytes under the valid-pointer C model"
+  },
+  "profiles": [
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-initial-v1.json",
+        "sha256": "6b5ece7ac0c9b15fe8081f519cff0c1d7ee48475a6f894d5775ba9de28df8184"
+      },
+      "input_vectors": {
+        "file": "target/night-evaluation-20261123/holdout-branch-inputs-v1.txt",
+        "sha256": "d9826735f9bc2a6f273dd3089dd0741b0e65a7e9e15b49b113be6d722694f79d"
+      },
+      "requested_profiles": 24,
+      "cohorts": {
+        "development": 16,
+        "holdout": 8
+      },
+      "reports": {
+        "before": {
+          "file": "target/night-evaluation-20261123/semantic-pairs-final-initial-before-v7/report.json",
+          "sha256": "2bd3a7609f0b5c6de2528c84ce296d186d2349f98f884d6590c60973b8c07444"
+        },
+        "after": {
+          "file": "target/night-evaluation-20261123/semantic-pairs-final-initial-after-v7/report.json",
+          "sha256": "53ead04b4ae9a26d0eadd792af03463fa61a04b0c2f6db559102432543416d54"
+        },
+        "comparison": {
+          "file": "target/night-evaluation-20261123/semantic-pairs-final-initial-comparison-v7.json",
+          "sha256": "ea9a8ee7fcdc26318e51276af4faa94d3f0473049231539665d343f6148fb972"
+        }
+      },
+      "observations": {
+        "native_comparisons": 576,
+        "generated_c_comparisons": 3456,
+        "stage_comparisons": 36000,
+        "semantic_state_pairs": 0
+      },
+      "c_text_hashes_unchanged": 24,
+      "stage_statuses": {
+        "low_middle": {
+          "passed": 24
+        },
+        "middle_predicates": {
+          "not_applied": 23,
+          "passed": 1
+        },
+        "selected_semantic": {
+          "not_applied": 24
+        }
+      },
+      "source_values": {
+        "equivalent_under_model": 17,
+        "unsupported": 7
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    },
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-integer-v1.json",
+        "sha256": "4dc0f89266b4341874b14da12e15a99e2adc31ca0bb3108a505a4f9f9276a213"
+      },
+      "input_vectors": {
+        "file": "tools/corpora/structure-branch-inputs-v1.txt",
+        "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+      },
+      "requested_profiles": 12,
+      "cohorts": {
+        "development": 12
+      },
+      "reports": {
+        "before": {
+          "file": "target/night-evaluation-20261123/semantic-pairs-final-integer-before-v7/report.json",
+          "sha256": "35d105973a5d0564e1deb400d942b897df60d288af84e1daa1f544dab28f70bb"
+        },
+        "after": {
+          "file": "target/night-evaluation-20261123/semantic-pairs-final-integer-after-v7/report.json",
+          "sha256": "d55f0f99f384e6dde39761824efd06ed4b04f75eed3efca3aaf296200a9840ec"
+        },
+        "comparison": {
+          "file": "target/night-evaluation-20261123/semantic-pairs-final-integer-comparison-v7.json",
+          "sha256": "9c7c9a945a434ec98802a6f25c6e32973208eba1b652814e8318f84fe1d83be0"
+        }
+      },
+      "observations": {
+        "native_comparisons": 136,
+        "generated_c_comparisons": 816,
+        "stage_comparisons": 12240,
+        "semantic_state_pairs": 4080
+      },
+      "c_text_hashes_unchanged": 8,
+      "stage_statuses": {
+        "low_middle": {
+          "passed": 8,
+          "not_run": 4
+        },
+        "middle_predicates": {
+          "not_applied": 8,
+          "not_run": 4
+        },
+        "selected_semantic": {
+          "passed": 4,
+          "not_applied": 4,
+          "not_run": 4
+        }
+      },
+      "source_values": {
+        "equivalent_under_model": 8,
+        "unavailable": 4
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    }
+  ],
+  "selected_transitions": [
+    {
+      "profile": "narrow-signed-gcc-O2",
+      "source_registers": 238,
+      "lowered_registers": 244,
+      "inputs": 1,
+      "divisions": 3,
+      "remainders": 2,
+      "replaced_subtrees": 9,
+      "model": "selected-semantic-state-pairs-v1",
+      "file": "selected-semantic-states.jsonl",
+      "sha256": "0feccf5160ec415d00707ea06e16eb322c39e56be2da14e1689873fa0d46fe2e",
+      "rows": 1020,
+      "mismatches": 0,
+      "input_binding": "native-vectors"
+    },
+    {
+      "profile": "narrow-signed-gcc-O3",
+      "source_registers": 238,
+      "lowered_registers": 244,
+      "inputs": 1,
+      "divisions": 3,
+      "remainders": 2,
+      "replaced_subtrees": 9,
+      "model": "selected-semantic-state-pairs-v1",
+      "file": "selected-semantic-states.jsonl",
+      "sha256": "0feccf5160ec415d00707ea06e16eb322c39e56be2da14e1689873fa0d46fe2e",
+      "rows": 1020,
+      "mismatches": 0,
+      "input_binding": "native-vectors"
+    },
+    {
+      "profile": "narrow-signed-clang18-O2",
+      "source_registers": 307,
+      "lowered_registers": 313,
+      "inputs": 1,
+      "divisions": 3,
+      "remainders": 2,
+      "replaced_subtrees": 6,
+      "model": "selected-semantic-state-pairs-v1",
+      "file": "selected-semantic-states.jsonl",
+      "sha256": "1058d6d6f4f3b60c2242090026416d0480178ad6a1cfe29ba69aaf526acef976",
+      "rows": 1020,
+      "mismatches": 0,
+      "input_binding": "native-vectors"
+    },
+    {
+      "profile": "narrow-signed-clang18-O3",
+      "source_registers": 307,
+      "lowered_registers": 313,
+      "inputs": 1,
+      "divisions": 3,
+      "remainders": 2,
+      "replaced_subtrees": 6,
+      "model": "selected-semantic-state-pairs-v1",
+      "file": "selected-semantic-states.jsonl",
+      "sha256": "1058d6d6f4f3b60c2242090026416d0480178ad6a1cfe29ba69aaf526acef976",
+      "rows": 1020,
+      "mismatches": 0,
+      "input_binding": "native-vectors"
+    }
+  ],
+  "checks": {
+    "rust": {
+      "artifact": {
+        "file": "target/night-evaluation-20261123/final-rust-full.log",
+        "sha256": "1901591b3d1adfb34fdd26c698753b30843ff7f7a82e7905281922ba9fb1ae05"
+      },
+      "suites": 25,
+      "passed": 1413,
+      "failed": 0,
+      "ignored": 56
+    },
+    "python": {
+      "artifact": {
+        "file": "target/night-evaluation-20261123/final-python-full.log",
+        "sha256": "ccf6379d1cfb9d43b8275f7b97cadf475dd229d4e4b9d7870c33e5a620a70b9e"
+      },
+      "run": 158,
+      "passed": 156,
+      "skipped": 2
+    },
+    "clippy": {
+      "artifact": {
+        "file": "target/night-evaluation-20261123/semantic-pairs-clippy.log",
+        "sha256": "d217adadbc1e07e971d6d8d5ca1ca801bab6560228a6a73576526fe9a15d741c"
+      },
+      "all_targets": true,
+      "warnings_denied": true
+    }
+  },
+  "next_boundaries": [
+    "Connect further memory/saved-value transitions to their actual input IR and observation contract",
+    "Extend independent MemorySSA graph checking and module/external-effect profiles",
+    "Measure optimized source-variable/type correspondence separately from generated C storage types"
+  ],
+  "coverage_notes": [
+    "M1 remains partial; these are concrete prefix comparisons, alongside separately modeled source-value proofs",
+    "The integer corpus retains four closed-ET_REL constant-relocation failures; linked ELF module observations use a separate profile",
+    "M0 initial-profile completion remains fixed in structure-initial-v1.m0.json"
+  ]
+}
