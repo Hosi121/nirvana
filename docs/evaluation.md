@@ -65,9 +65,11 @@ NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
 
 同じprobeの`stage_checks`は、Low IR→Middle IRの再構成、直接MIR実行と戻し変換、経路条件回復後のMIRを別々に記録します。0/1/2/4/8/16/32/64/128と指定上限の各予算で、全レジスタ・全RAM・最初のfault・PC・traceを元IRと照合します。総実行予算を超えた段階は未判定として残します。反例や観測器のエラーがあっても、native/Cの比較は独立に進めます。
 
-段階形式v2の`selected_semantic`は、選ばれたC出力が保持する[実際の意味IRの入力と下ろし変換](../src/model/semantic_ir.rs)を比較します。入力は幅・変数の整理後の表示IRで、その全レジスタを保存し、追加した意味演算の捕捉レジスタだけを除いて照合します。入力側の仮想レジスタと捕捉レジスタを0/`UINT64_MAX`の2パターンで初期化し、同じ予算ごとのRAM・fault・PC・traceも比較します。機械レジスタと表示IRの値IDは別の範囲です。前段の還元を含む返り値・RAM・faultは、同じ行のnative/IR/C比較で扱います。
+段階形式v3は`middle_memory`と`middle_saved`を加えます。前者はメモリ定数を回復したMIRの直接実行とLow IRへの戻し変換、後者は保存値を回復したMIRの直接実行とsnapshot展開後のLow IRを、元の機械レジスタ空間で照合します。snapshot用の追加レジスタは0/`UINT64_MAX`で初期化し、その内部レジスタだけを除いて比較します。各段階の入力・MIR・出力dump、回復件数、全状態のJSON Linesを保存し、再検査時にhash・入力・比較順・件数・状態の一致を確認します。適用なし・未判定・反例を区別します。
 
-意味IRの入力・出力dumpとhash、捕捉数・置換数、観測件数を保持します。`architecture_execution`は各段階の状態を要求した全構成から集計し、未適用・未実行も残します。比較器は保存データを再検査し、通過していた段階の脱落を回帰、prefix予算の変更を比較条件の変更として扱います。従来の段階形式v1も読み取れます。
+段階形式v2以降の`selected_semantic`は、選ばれたC出力が保持する[実際の意味IRの入力と下ろし変換](../src/model/semantic_ir.rs)を比較します。入力は幅・変数の整理後の表示IRで、その全レジスタを保存し、追加した意味演算の捕捉レジスタだけを除いて照合します。入力側の仮想レジスタと捕捉レジスタを0/`UINT64_MAX`の2パターンで初期化し、同じ予算ごとのRAM・fault・PC・traceも比較します。機械レジスタと表示IRの値IDは別の範囲です。前段の還元を含む返り値・RAM・faultは、同じ行のnative/IR/C比較で扱います。
+
+意味IRの入力・出力dumpとhash、捕捉数・置換数、観測件数を保持します。`architecture_execution`は各段階の状態を要求した全構成から集計し、未適用・未実行も残します。比較器は保存データを再検査し、通過していた段階の脱落を回帰、prefix予算の変更を比較条件の変更として扱います。従来の段階形式v1/v2も読み取れます。
 
 `state_pairs`は、各ケース・予算・初期値で比較した全状態をJSON Linesへ保存します。再検査器はレジスタ・全RAM・返り値/fault・PC・traceを比較し、件数・順序・幅・初期状態を確認します。nativeの入力ベクトルが全件ある場合は、初期RAMも共通の512-byte profileへ結び、`input_binding: native-vectors`と記録します。それ以外は`stage-profile`です。記録量は1行4 MiB・1構成128 MiBを上限とし、上限到達は未判定となります。以前の件数だけの報告は`metadata_only`として区別し、保存済み状態の検査が脱落した比較を回帰に含めます。これらは記録した入力・予算での具体比較です。
 
@@ -92,6 +94,8 @@ NIRVANA_Z3=target/verification-venv/bin/z3 target/debug/examples/evaluation_witn
   target/structure-baseline/CASE/semantics/native-inputs.txt \
   target/structure-witnesses/CASE 8 1000
 ```
+
+[メモリ変換corpus](../tools/corpora/structure-memory-v1.json)は、定数Store・部分byte更新・保存値の再利用をGCC/ClangのO0/O1/O2で比較する開発用の追加profileです。`--cases tools/corpora/structure-memory-v1.json --optimization O0 --optimization O1 --optimization O2`で選び、上記17組の固定入力を使います。初回corpusのhold-outと分母を分けて集計します。
 
 ## 測定費用と対象範囲
 

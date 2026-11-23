@@ -1,0 +1,36 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-memory-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O0",
+    "gcc-O1",
+    "gcc-O2",
+    "clang18-O0",
+    "clang18-O1",
+    "clang18-O2"
+  ],
+  "cohort_policy": "Development extension for MIR memory transitions across optimization levels. Initial holdout remains separate.",
+  "cases": [
+    {
+      "id": "memory-constant",
+      "family": "memory-constant",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/memory-constant.c",
+      "source_sha256": "5c77e22b776b414089b8b0c36e1ea2e647d5e654f189f982249108407a472c86",
+      "function": "fixture",
+      "shape": "constant stores with a partial-byte overwrite",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "memory-snapshot",
+      "family": "memory-snapshot",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/memory-snapshot.c",
+      "source_sha256": "93c43f8b7d789f8442ddb04fe0724eb0fe6b545db5171cb8ba1edf0a3919dc4c",
+      "function": "fixture",
+      "shape": "saved values with partial overwrite and conditional use",
+      "origin": "repository-authored fixture"
+    }
+  ]
+}

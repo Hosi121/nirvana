@@ -49,9 +49,16 @@ def index(report):
     require(bool(rows), 'empty report')
     require(dict(Counter(row['cohort'] for row in rows)) == report['summary']['cohorts'],
             'cohort denominator')
+    memory_stages = any(row.get('stage_checks', {}).get('schema') == 'nirvana-evaluation-stages-v3'
+                        for row in rows)
+    require(not memory_stages or 'architecture_execution' in report['summary'],
+            'missing architecture execution denominator')
     if 'architecture_execution' in report['summary']:
         observed = report['summary']['architecture_execution']
-        require(observed == stages.execution_summary(rows)
+        require(isinstance(observed, dict) and set(observed) <= set(stages.EXECUTION_NAMES)
+                and set(stages.LEGACY_NAMES) <= set(observed)
+                and (not memory_stages or set(observed) == set(stages.EXECUTION_NAMES))
+                and observed == stages.execution_summary(rows, names=observed)
                 and all(type(n) is int for counts in observed.values() for n in counts.values()),
                 'architecture execution denominator')
     binding = report['evaluation'].get('probe_metadata')
@@ -138,6 +145,11 @@ def replay(root, row):
         result['semantic_state_pairs'] = ('metadata_only' if selected.get('semantic')
                                           else selected.get('status', 'not_run'))
     result['semantic_state_pair_rows'] = state_pairs['rows'] if state_pairs else 0
+    result['middle_state_pairs'] = {
+        e['name']: dict(status='replayed' if e['status'] == 'passed' else e['status'],
+                        rows=e['transition']['state_pairs']['rows'])
+        for e in architecture.get('execution', [])
+        if e['name'] in ['middle_memory', 'middle_saved'] and e.get('transition')}
     memory_sites = row.get('state_memory_sites', {'status': 'not_run'})
     require(memory_sites['status'] in ['not_run', 'unavailable', 'unsupported', 'evaluator_error', 'measured', 'partial'],
             'state memory status')

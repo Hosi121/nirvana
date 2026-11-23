@@ -6,8 +6,7 @@ use nirvana::{
 };
 use std::sync::Arc;
 
-#[path = "semantic_records.rs"]
-mod records;
+use super::records;
 
 pub(super) struct Stage {
     pub status: &'static str,
@@ -146,7 +145,7 @@ impl Stage {
             "null".into()
         };
         Ok(format!(
-            "{{\"name\":\"selected_semantic\",\"status\":\"{}\",\"observations\":{},\"witness\":{witness},\"semantic\":{semantic}}}",
+            "{{\"name\":\"selected_semantic\",\"status\":\"{}\",\"observations\":{},\"witness\":{witness},\"comparisons\":[\"lowered_zero\",\"lowered_ones\"],\"semantic\":{semantic}}}",
             self.status, self.observations
         ))
     }

@@ -5,7 +5,7 @@ pub(super) const MAX_BYTES: usize = 128 * 1024 * 1024;
 pub(super) const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const FILE: &str = "selected-semantic-states.jsonl";
 
-fn snapshot(report: &RunReport) -> Option<String> {
+pub(super) fn snapshot(report: &RunReport) -> Option<String> {
     if report.state.memory_layout.is_some() {
         return None;
     }
@@ -30,6 +30,21 @@ fn snapshot(report: &RunReport) -> Option<String> {
     Some(format!(
         "{{\"status\":{status:?},\"registers\":{:?},\"memory_base\":{},\"memory\":{:?},\"instruction\":{pc},\"trace\":{:?}}}",
         report.state.registers, report.state.memory_base, report.state.memory, report.state.trace
+    ))
+}
+
+pub(super) fn middle_pair(
+    case: usize,
+    budget: usize,
+    variant: &str,
+    input: &[u64],
+    expected: &RunReport,
+    actual: &RunReport,
+) -> Option<String> {
+    Some(format!(
+        "{{\"case\":{case},\"budget\":{budget},\"variant\":\"{variant}\",\"input\":{input:?},\"expected\":{},\"actual\":{}}}\n",
+        snapshot(expected)?,
+        snapshot(actual)?
     ))
 }
 

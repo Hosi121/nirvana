@@ -10,6 +10,7 @@
 | `cases/*.c` | 基本の分岐・ループ・演算・メモリアクセス |
 | `cases.tsv` | fixture ID、手書きIRとの対応、特徴 |
 | `recovery/*.c` | 幅、alias、添字、複数入口、途中脱出、変数の再利用 |
+| `evaluation/*.c` | [固定corpus](../../docs/evaluation.md)の構造・整数演算・メモリ回復を比較する入力 |
 | [`algorithms/*.c`](algorithms/README.md) | BFS・DFS・リングキュー・連結リスト・二分探索木 |
 | [`input-breadth/*.c`](input-breadth/README.md) | 密なswitch、負の下限、入れ子のジャンプテーブルを含むリンク済みELF |
 | [`dispatch-programs/*.c`](dispatch-programs/README.md) | 分類表、状態機械、stack再利用によるdispatchと実行境界の比較 |

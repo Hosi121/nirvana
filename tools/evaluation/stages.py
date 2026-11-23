@@ -1,15 +1,19 @@
 """Source-entry architecture checks and Low IR coverage, independent of C ABI."""
 from .semantics import ProtocolError, sha
 from collections import Counter
-from . import semantic_pairs
+from . import semantic_pairs, middle_pairs
 
-EXECUTION_NAMES = ('low_middle', 'middle_predicates', 'selected_semantic')
+LEGACY_NAMES = ('low_middle', 'middle_predicates', 'selected_semantic')
+EXECUTION_NAMES = ('low_middle', 'middle_predicates', 'middle_memory', 'middle_saved', 'selected_semantic')
+COMPARISONS = {name: ['direct_middle', 'lowered'] for name in EXECUTION_NAMES}
+COMPARISONS['middle_saved'] = ['direct_middle', 'saved_zero', 'saved_ones']
+COMPARISONS['selected_semantic'] = ['lowered_zero', 'lowered_ones']
 
 
-def execution_summary(rows):
+def execution_summary(rows, names=EXECUTION_NAMES):
     return {name: dict(Counter(next((e['status'] for e in row.get('stage_checks', {}).get('execution', [])
                                      if e['name'] == name), 'not_run') for row in rows))
-            for name in EXECUTION_NAMES}
+            for name in names}
 
 
 def validate(value, step_limit, directory, requested_cases, original_registers=None):
@@ -17,10 +21,12 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
         if not condition:
             raise ProtocolError(message)
     versions = [('nirvana-evaluation-stages-v1', 'nirvana-entry-full-state-v1'),
-                ('nirvana-evaluation-stages-v2', 'nirvana-stage-input-state-v2')]
+                ('nirvana-evaluation-stages-v2', 'nirvana-stage-input-state-v2'),
+                ('nirvana-evaluation-stages-v3', 'nirvana-stage-input-state-v3')]
     require(isinstance(value, dict)
             and (value.get('schema'), value.get('contract')) in versions, 'stage check schema or contract')
-    extended = value['schema'] == versions[1][0]
+    extended = value['schema'] != versions[0][0]
+    memory_stages = value['schema'] == versions[2][0]
     if extended:
         require(type(original_registers) is int and 0 <= original_registers <= 4096
                 and type(value['original_registers']) is int
@@ -30,17 +36,56 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
             and budgets == sorted(set(budgets)) and budgets[0] == 0 and budgets[-1] == step_limit,
             'stage prefix budgets')
     execution = value['execution']
-    names = list(EXECUTION_NAMES if extended else EXECUTION_NAMES[:2])
+    names = list(EXECUTION_NAMES if memory_stages else LEGACY_NAMES if extended else LEGACY_NAMES[:2])
     require([entry['name'] for entry in execution] == names, 'stage execution names')
     statuses = []
     for entry in execution:
         status = entry['status']
+        comparisons = COMPARISONS[entry['name']] if memory_stages else ['direct', 'lowered']
+        if memory_stages:
+            require(entry['comparisons'] == comparisons, 'stage comparison variants')
+        count = requested_cases * len(budgets) * len(comparisons)
         require(status in ['passed', 'not_applied', 'unavailable', 'budget_exhausted', 'rejected', 'counterexample'], 'stage status')
         require(type(entry['observations']) is int and entry['observations'] >= 0
-                and entry['observations'] <= requested_cases * len(budgets) * 2
-                and (status != 'passed' or entry['observations'] == requested_cases * len(budgets) * 2)
+                and entry['observations'] <= count
+                and (status != 'passed' or entry['observations'] == count)
                 and (status != 'not_applied' or entry['observations'] == 0), 'stage observation count')
         require(entry['name'] != 'low_middle' or status != 'not_applied', 'missing base Middle IR check')
+        if entry['name'] in ['middle_memory', 'middle_saved']:
+            evidence = entry['transition']
+            require((status not in ['passed', 'counterexample'] or evidence is not None)
+                    and (status != 'not_applied' or evidence is None), 'MIR transition evidence')
+            if evidence is not None:
+                fields = {'model', 'source_registers', 'lowered_registers', 'input_ir', 'lowered_ir',
+                          'middle_ir', 'facts', 'state_pairs'}
+                require(isinstance(evidence, dict)
+                        and set(evidence) - {'input_ir_sha256', 'lowered_ir_sha256', 'middle_ir_sha256'} == fields
+                        and evidence['model'] == 'middle-memory-transition-v1', 'MIR transition model')
+                require(type(evidence['source_registers']) is int and evidence['source_registers'] == original_registers
+                        and type(evidence['lowered_registers']) is int
+                        and original_registers <= evidence['lowered_registers'] <= 1_000_000,
+                        'MIR transition register projection')
+                facts = evidence['facts']
+                if entry['name'] == 'middle_memory':
+                    require(isinstance(facts, dict) and set(facts) == {'loads', 'proved_loads', 'refined_loads', 'analysis_complete'}
+                            and all(type(facts[k]) is int and 0 <= facts[k] <= 2**32 - 1
+                                    for k in ['loads', 'proved_loads', 'refined_loads'])
+                            and 0 < facts['refined_loads'] <= facts['proved_loads'] <= facts['loads']
+                            and type(facts['analysis_complete']) is bool
+                            and evidence['lowered_registers'] == original_registers, 'MIR memory facts')
+                else:
+                    require(isinstance(facts, dict) and set(facts) == {'annotated_reads', 'phi_values', 'merged_snapshots',
+                                'proved_loads', 'snapshot_values', 'replaced_reads'}
+                            and all(type(n) is int and 0 <= n <= 2**32 - 1 for n in facts.values())
+                            and min(facts['annotated_reads'], facts['proved_loads'], facts['replaced_reads']) > 0,
+                            'MIR saved-value facts')
+                for field, suffix in [('input_ir', 'input.ir.txt'), ('lowered_ir', 'lowered.ir.txt'), ('middle_ir', 'mir.txt')]:
+                    require(evidence[field] == entry['name'] + '.' + suffix, 'MIR transition artifact name')
+                    digest = sha(directory / evidence[field])
+                    require(evidence.get(field + '_sha256', digest) == digest, 'MIR transition artifact hash')
+                    evidence[field + '_sha256'] = digest
+                evidence['state_pairs'] = middle_pairs.validate(evidence['state_pairs'], entry, evidence,
+                    budgets, requested_cases, directory, original_registers)
         if entry['name'] == 'selected_semantic':
             evidence = entry['semantic']
             require((status not in ['passed', 'counterexample'] or evidence is not None)
