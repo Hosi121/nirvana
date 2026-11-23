@@ -469,7 +469,8 @@ pub(super) fn collect(
 }
 
 /// The caller supplies independently checked maximum-bit hulls. This private
-/// function checks representation bounds, then uses only canonical atom IDs.
+/// function checks source-bound alias equations and representation bounds,
+/// then uses only canonical atom IDs. Affine arithmetic remains shared here.
 pub(crate) fn collect_with_bounds(
     source: &Program,
     graph: &SsaFunction,
@@ -535,11 +536,8 @@ fn collect_impl<'a>(
     opaque: &'a std::collections::BTreeSet<Site>,
     memory: bool,
 ) -> Option<Collector<'a>> {
-    ssa::validate(source, graph).ok()?;
+    super::verify::validate(source, graph, aliases, opaque)?;
     if bits.len() != graph.values.len() || bits.iter().any(|&n| n > 64) {
-        return None;
-    }
-    if aliases.len() != graph.values.len() || aliases.iter().any(|id| id.0 >= graph.values.len()) {
         return None;
     }
     let mut assignments = BTreeMap::new();

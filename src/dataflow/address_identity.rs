@@ -4,6 +4,7 @@ use crate::dataflow::ssa::{Site, SsaFunction, ValueId};
 use crate::model::ir::{AccessKind, Program, Width};
 mod aliases;
 mod collect;
+mod verify;
 pub(crate) use collect::collect_with_bounds;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operand {
@@ -70,8 +71,7 @@ pub(crate) fn ordered_memory_addresses(
     graph: &SsaFunction,
     opaque: &std::collections::BTreeSet<Site>,
 ) -> Option<MemoryAddresses> {
-    crate::dataflow::ssa::validate(source, graph).ok()?;
-    let aliases = aliases::collect(source, graph, opaque)?;
+    let aliases = aliases(source, graph, opaque)?;
     collect::collect_memory(
         source,
         graph,
@@ -86,5 +86,8 @@ pub(crate) fn aliases(
     graph: &SsaFunction,
     opaque: &std::collections::BTreeSet<Site>,
 ) -> Option<Vec<ValueId>> {
-    aliases::collect(source, graph, opaque)
+    crate::dataflow::ssa::validate(source, graph).ok()?;
+    let candidate = aliases::collect(source, graph, opaque)?;
+    verify::validate(source, graph, &candidate, opaque)?;
+    Some(candidate)
 }
