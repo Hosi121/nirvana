@@ -6,8 +6,13 @@ const MAX_REPORT_BYTES: usize = 16 * 1024 * 1024;
 
 pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
     let mut out = String::from(
-        "{\"schema\":\"nirvana-memory-ssa-v1\",\"status\":\"analyzed\",\"scope\":\"function-entry-normal-continuations\",\"reads\":\"syntactic-possible\",\"definitions\":[",
+        "{\"schema\":\"nirvana-memory-ssa-v1\",\"status\":\"analyzed\",\"scope\":\"function-entry-normal-continuations\",\"reads\":\"syntactic-possible\"",
     );
+    if let Some(e) = analysis.graph_evidence() {
+        write!(out, ",\"verification\":{{\"model\":\"nirvana-memory-ssa-graph-v1\",\"scope\":\"source-bound-generations\",\"blocks\":{},\"definitions\":{},\"accesses\":{},\"phi_inputs\":{},\"opaque_effects\":{}}}",
+            e.blocks,e.definitions,e.accesses,e.phi_inputs,e.opaque_effects).unwrap();
+    }
+    out.push_str(",\"definitions\":[");
     for (id, definition) in analysis.definitions.iter().enumerate() {
         if id > 0 {
             out.push(',');

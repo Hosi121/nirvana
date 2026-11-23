@@ -33,7 +33,7 @@ python3 -m unittest discover -s tools/tests
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |
-| MemorySSA | byteに書込み元tagを置く独立した実行で候補maskを照合。部分Store、alias、φ、ループ、未知への拡大を含む |
+| MemorySSA | 元IRを別にたどる世代グラフ検査でaccess・commit・φの流入辺・opaque効果を照合。byte tagの独立実行で候補maskを比較し、部分Store・alias・ループ・未知への拡大を含む |
 | C継続グラフ | 保存先とメモリviewの確定後、前後のASTから順序付きC断片と継続先を照合。メモリ条件の削除・アクセス幅の変更・効果の脱落や並替えを対照で拒否する。観測境界とprinterへの依存は[設計](architecture.md#c保存先確定後の継続処理)を参照 |
 | IR→再コンパイルC | 返り値・RAM・fault、モデルに応じた全レジスタ・PC・予算・外部結果の消費・途中再開 |
 

@@ -14,7 +14,9 @@ use crate::model::ir::{AccessKind, Program};
 
 mod report;
 mod translate;
+mod verify;
 mod walk;
+pub use verify::{GraphEvidence, ValidationError, validate_graph};
 
 const MAX_EFFECTS: usize = 32768;
 const MAX_MEMBERS: usize = 1_000_000;
@@ -123,6 +125,7 @@ pub struct Analysis {
     blocks: Vec<Block>,
     accesses: Vec<Access>,
     queries: Result<Vec<Query>, String>,
+    graph_evidence: Option<GraphEvidence>,
 }
 
 impl Analysis {
@@ -137,6 +140,9 @@ impl Analysis {
     }
     pub fn queries(&self) -> &Result<Vec<Query>, String> {
         &self.queries
+    }
+    pub fn graph_evidence(&self) -> Option<&GraphEvidence> {
+        self.graph_evidence.as_ref()
     }
     pub fn to_json(&self) -> Result<String, String> {
         report::render(self)
@@ -227,6 +233,7 @@ pub(crate) fn analyze_with_effects(
         blocks: Vec::new(),
         accesses: Vec::with_capacity(accesses.len()),
         queries: Ok(Vec::new()),
+        graph_evidence: None,
     };
     let mut entries = BTreeMap::new();
     for id in &reachable {
@@ -330,6 +337,10 @@ pub(crate) fn analyze_with_effects(
     if result.members() > MAX_MEMBERS {
         return Err("memory SSA query storage limit".into());
     }
+    result.graph_evidence = Some(
+        verify::graph_with_facts(source, graph, &result, effects, &accesses, &addresses.forms)
+            .map_err(|e| e.to_string())?,
+    );
     Ok(result)
 }
 
