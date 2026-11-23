@@ -1,0 +1,337 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Original-state execution and retained replay for MIR memory constants and saved-value materialization",
+  "reference_revision": "bdf49941c56a026be88dd13d7a41a0a3bd38b474",
+  "candidate_revision": "019483d0a68df113f5bdda85b6e714917f5efd60",
+  "evaluator_revision": "019483d0a68df113f5bdda85b6e714917f5efd60",
+  "previous_checkpoint": {
+    "file": "tools/corpora/ir-contracts-v1.m1.json",
+    "sha256": "755e6445d4c71a1cc764961f00c0d1798c6870c606376e6baf95a26132da01a9"
+  },
+  "evidence_storage": "Local retained artifacts; this manifest fixes their hashes",
+  "reproduction": {
+    "reference_tools": {
+      "file": "target/memory-contracts-20261123/tools/before/build.json",
+      "sha256": "f9a2e8dff0856d1cfb3b461866f270a906a20b22c3ed5e09cbc39ea49541f654"
+    },
+    "candidate_tools": {
+      "file": "target/memory-contracts-20261123/tools/after/build.json",
+      "sha256": "26542668f330dc02060dae5633d68a2f39cccb9577d8d75e3d0d95297b21536d"
+    },
+    "evaluator_archive": {
+      "file": "target/memory-contracts-20261123/evaluator/tools.tar",
+      "sha256": "38385fc7d50453e9ecdeab0b42a26fcb6c42dbd6f2ff8f090a5da16b88450ab5"
+    },
+    "run_profile": {
+      "file": "target/memory-contracts-20261123/run-profile.sh",
+      "sha256": "9c3292fa0ff07d02085a75c3d2176144b31ae9ccb7de493a11698324a20e3ed1"
+    },
+    "toolchain": {
+      "file": "target/night-evaluation-20261123/toolchain/manifest.json",
+      "sha256": "862dc08c0effdf0ef8c7e87fc95d9331005368f06d8881229933dd0051798b26"
+    }
+  },
+  "contracts": {
+    "stage_schema": "nirvana-evaluation-stages-v3",
+    "state_pairs": "middle-state-pairs-v1",
+    "input": "Original 32 machine registers and the fixed 512-byte state[4] RAM profile",
+    "observations": [
+      "registers",
+      "RAM",
+      "return/fault/suspension",
+      "PC",
+      "instruction trace"
+    ],
+    "middle_memory": [
+      "direct_middle",
+      "lowered"
+    ],
+    "middle_saved": [
+      "direct_middle",
+      "saved_zero",
+      "saved_ones"
+    ],
+    "projection": "Only the saved-value capture registers are removed; every original register remains",
+    "prefix_budgets": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      4096
+    ],
+    "record_limits": {
+      "row_bytes": 4194304,
+      "profile_bytes": 134217728
+    }
+  },
+  "totals": {
+    "native_comparisons": 899,
+    "generated_c_comparisons": 5394,
+    "stage_comparisons": 66600,
+    "memory_state_pairs": 7140,
+    "semantic_state_pairs": 4080,
+    "c_text_hashes_unchanged": 43
+  },
+  "profiles": [
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-initial-v1.json",
+        "sha256": "6b5ece7ac0c9b15fe8081f519cff0c1d7ee48475a6f894d5775ba9de28df8184"
+      },
+      "inputs": {
+        "file": "target/night-evaluation-20261123/holdout-branch-inputs-v1.txt",
+        "sha256": "d9826735f9bc2a6f273dd3089dd0741b0e65a7e9e15b49b113be6d722694f79d"
+      },
+      "reports": {
+        "before": {
+          "file": "target/memory-contracts-20261123/final-initial-before/report.json",
+          "sha256": "5cebef633023f9ffda64532c019934a37e7d2b370ad0c991b3f85a025d5c3faf"
+        },
+        "after": {
+          "file": "target/memory-contracts-20261123/final-initial-after/report.json",
+          "sha256": "33f39d0c14da3818751cfb830e3bf73ddab853205f8fafe102bc9c1c64c29041"
+        },
+        "comparison": {
+          "file": "target/memory-contracts-20261123/final-initial-comparison.json",
+          "sha256": "27eb288ac51520753394138d45f509b0e5ab2098db8cf6b78b0e6fa30b3bd085"
+        }
+      },
+      "requested": 24,
+      "generated_c": 24,
+      "stage_statuses": {
+        "low_middle": {
+          "passed": 24
+        },
+        "middle_predicates": {
+          "not_applied": 23,
+          "passed": 1
+        },
+        "middle_memory": {
+          "not_applied": 24
+        },
+        "middle_saved": {
+          "not_applied": 24
+        },
+        "selected_semantic": {
+          "not_applied": 24
+        }
+      },
+      "observations": {
+        "native_comparisons": 576,
+        "generated_c_comparisons": 3456,
+        "stage_comparisons": 36000,
+        "memory_state_pairs": 0,
+        "semantic_state_pairs": 0,
+        "c_text_hashes_unchanged": 24
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    },
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-integer-v1.json",
+        "sha256": "4dc0f89266b4341874b14da12e15a99e2adc31ca0bb3108a505a4f9f9276a213"
+      },
+      "inputs": {
+        "file": "tools/corpora/structure-branch-inputs-v1.txt",
+        "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+      },
+      "reports": {
+        "before": {
+          "file": "target/memory-contracts-20261123/final-integer-before/report.json",
+          "sha256": "890b8f54c4fbc9c60d4029df42e7be4b382264f68591dca5c0fce15c7a431737"
+        },
+        "after": {
+          "file": "target/memory-contracts-20261123/final-integer-after/report.json",
+          "sha256": "65b46189f9c94c64533290fc8fd58dbbabb8c4c1cabb415c44430b979d763b01"
+        },
+        "comparison": {
+          "file": "target/memory-contracts-20261123/final-integer-comparison.json",
+          "sha256": "154c100954003fdb765ec33cecb2991d4f3f2492812746b78219842ed3c0b6c6"
+        }
+      },
+      "requested": 12,
+      "generated_c": 8,
+      "stage_statuses": {
+        "low_middle": {
+          "passed": 8,
+          "not_run": 4
+        },
+        "middle_predicates": {
+          "not_applied": 8,
+          "not_run": 4
+        },
+        "middle_memory": {
+          "not_applied": 8,
+          "not_run": 4
+        },
+        "middle_saved": {
+          "not_applied": 8,
+          "not_run": 4
+        },
+        "selected_semantic": {
+          "passed": 4,
+          "not_applied": 4,
+          "not_run": 4
+        }
+      },
+      "observations": {
+        "native_comparisons": 136,
+        "generated_c_comparisons": 816,
+        "stage_comparisons": 12240,
+        "memory_state_pairs": 0,
+        "semantic_state_pairs": 4080,
+        "c_text_hashes_unchanged": 8
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    },
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-memory-v1.json",
+        "sha256": "f789fefa795053ef9cb27fdcf1d81432782f95c054e44f80e72b58b5ab83460c"
+      },
+      "inputs": {
+        "file": "tools/corpora/structure-branch-inputs-v1.txt",
+        "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+      },
+      "reports": {
+        "before": {
+          "file": "target/memory-contracts-20261123/final-memory-before/report.json",
+          "sha256": "8a426ddbadbe4c44a142507789af2fb22fb5f9ab73c7239803da723b96bbec38"
+        },
+        "after": {
+          "file": "target/memory-contracts-20261123/final-memory-after/report.json",
+          "sha256": "062888df0eab6a5143f56d3e6a6e2fa2641f3cec12020c0bd1eb635d9e5da52b"
+        },
+        "comparison": {
+          "file": "target/memory-contracts-20261123/final-memory-comparison.json",
+          "sha256": "9d5d6d66e4136fd0712afc7aeab699e8cb7f72e92df2cfc0e249812f2990cebb"
+        }
+      },
+      "requested": 12,
+      "generated_c": 11,
+      "stage_statuses": {
+        "low_middle": {
+          "passed": 11,
+          "not_run": 1
+        },
+        "middle_predicates": {
+          "not_applied": 11,
+          "not_run": 1
+        },
+        "middle_memory": {
+          "not_applied": 10,
+          "passed": 1,
+          "not_run": 1
+        },
+        "middle_saved": {
+          "passed": 4,
+          "not_applied": 7,
+          "not_run": 1
+        },
+        "selected_semantic": {
+          "not_applied": 11,
+          "not_run": 1
+        }
+      },
+      "observations": {
+        "native_comparisons": 187,
+        "generated_c_comparisons": 1122,
+        "stage_comparisons": 18360,
+        "memory_state_pairs": 7140,
+        "semantic_state_pairs": 0,
+        "c_text_hashes_unchanged": 11
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    }
+  ],
+  "checks": {
+    "rust": {
+      "artifact": {
+        "file": "target/memory-contracts-20261123/rust-tests.log",
+        "sha256": "74231b0e7f504a1a5b262f63f65b2ba0e7209d839cfc9a9f7fb7d24763e8d5fc"
+      },
+      "suites": 25,
+      "passed": 1415,
+      "failed": 0,
+      "ignored": 56
+    },
+    "probe": {
+      "artifact": {
+        "file": "target/memory-contracts-20261123/probe-tests.log",
+        "sha256": "781b8f5e24a895fee3c24500e8bee40d13803d0244c8f60e8f02e7a80c60b8ed"
+      },
+      "passed": 7
+    },
+    "python": {
+      "artifact": {
+        "file": "target/memory-contracts-20261123/python-tests.log",
+        "sha256": "a1180aea59eaefaa8988ce9e7ccff4f0faa9748d4a4aa52b69158a6ff8c17804"
+      },
+      "run": 162,
+      "passed": 160,
+      "skipped": 2
+    },
+    "build_identity": {
+      "positive": {
+        "file": "target/memory-contracts-20261123/identity-tests.log",
+        "sha256": "2ddab663a289d388f71a8ca9b254897a0d843fde26c16d3555888515f2c51be7"
+      },
+      "negative": {
+        "file": "target/memory-contracts-20261123/identity-negative-control.log",
+        "sha256": "abd5200b4f525327fd1e19077752d13e8d470086ed5d6f369584683d4e71c7a7"
+      },
+      "control": "Backdated Git refs/index fail before 39cf178 and pass after; packed refs, archives and worktrees also pass"
+    },
+    "clippy": {
+      "file": "target/memory-contracts-20261123/clippy.log",
+      "sha256": "89cc41aed6c0846b2229d88f84db6f27948871c18297e3c39b1f08b81418fc34"
+    },
+    "cli": {
+      "artifact": {
+        "file": "target/memory-contracts-20261123/cli-tests.log",
+        "sha256": "817387f7c1dff70e3c1d50701d0516b96a1323ca48440a2588cd857095515a69"
+      },
+      "passed": 7
+    }
+  },
+  "scope": [
+    "Concrete fixed-input prefix comparisons; full-input equivalence and original variable/type recovery remain separate claims",
+    "Initial and integer profiles retain their prior denominators; the memory extension is development-only",
+    "Four integer ET_REL constant-relocation failures and one memory GCC O2 unsupported 0f 6e opcode remain in the denominator",
+    "The new memory cases are outside the current source-value model; successful native/IR/C and MIR checks are reported separately",
+    "Memory stages exercise the recovery APIs from the original Low IR; selected readable C is checked by the native/IR/C profile"
+  ],
+  "next_boundaries": [
+    "Independent MemorySSA graph verification",
+    "Module/external-effect stage profiles",
+    "Source-variable and type correspondence under optimization"
+  ]
+}
