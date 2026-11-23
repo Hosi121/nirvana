@@ -117,6 +117,8 @@ strip入力の数値入口は、[eh_frame](../src/binary/eh_frame.rs)のFDE範�
 CALLの戻り先Store、PLT targetのLoad、RET、DIV/IDIV、STOS・MOVSの部分進捗を明示し、faultと命令予算を同じ順序で処理します。
 POSIXアダプタはゲスト構造体とホストABIを変換します。TLS guardとstream handleの規則は実行モデルにあります。
 
+[module解析の対応検査](../src/dataflow/module_values/memory_verify.rs)は、元の命令と解析用イベントの代入・読取り・継続先を照合します。CALLのopaque効果、PLT読取り前のstack効果、DIVとREPの未知レジスタ出力を対応付け、入口から到達する効果がMemorySSAへ残ることを確認します。`FunctionValues.memory_projection()`とJSONの`memory_projection`は、その命令・代入・opaque出力・効果の件数を示します。閉じた呼出しのレジスタ効果は`call_footprint`の契約を使い、faultとREPの部分進捗はmodule実行の比較で扱います。
+
 ## CFGの構造化
 
 [cfg](../src/control_flow/cfg.rs)・支配/後支配解析・自然ループ解析から、`If`・`Loop`・脱出を持つ[Node](../src/control_flow/structure.rs)を組み立てます。

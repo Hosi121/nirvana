@@ -14,6 +14,8 @@ use crate::dataflow::value_liveness::{self, Liveness};
 use crate::model::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width};
 use crate::model::module_ir::{self, Instruction, Target};
 
+mod memory_verify;
+pub use memory_verify::Evidence as MemoryProjectionEvidence;
 mod report;
 
 const MAX_FUNCTIONS: usize = 512;
@@ -86,6 +88,7 @@ pub struct FunctionValues {
     guest_registers: usize,
     locals: Result<crate::dataflow::ssa_destroy::Recovery, String>,
     memory: Option<Result<crate::dataflow::memory_ssa::Analysis, String>>,
+    memory_projection: Option<MemoryProjectionEvidence>,
 }
 
 impl FunctionValues {
@@ -113,6 +116,9 @@ impl FunctionValues {
     }
     pub fn memory(&self) -> Option<&Result<crate::dataflow::memory_ssa::Analysis, String>> {
         self.memory.as_ref()
+    }
+    pub fn memory_projection(&self) -> Option<&MemoryProjectionEvidence> {
+        self.memory_projection.as_ref()
     }
 }
 
@@ -639,7 +645,14 @@ fn analyze_function(
     .map_err(|e| e.to_string())?;
     let graph = SsaFunction::build(&event_program)
         .ok_or("module value SSA unavailable: control or resource limit")?;
-    let memory = memory.then(|| memory_values(source, &event_program, &graph, &projection.roles));
+    let (memory, memory_projection) = if memory {
+        match memory_values(source, &event_program, &graph, &projection.roles, summaries) {
+            Ok((analysis, evidence)) => (Some(Ok(analysis)), Some(evidence)),
+            Err(reason) => (Some(Err(reason)), None),
+        }
+    } else {
+        (None, None)
+    };
     let lifetimes = value_liveness::analyze(&event_program, &graph).map_err(|e| e.to_string())?;
     let excluded_copies = projection
         .roles
@@ -753,6 +766,7 @@ fn analyze_function(
         guest_registers: program.register_count(),
         locals,
         memory,
+        memory_projection,
     })
 }
 
@@ -761,7 +775,14 @@ fn memory_values(
     events: &Program,
     graph: &SsaFunction,
     roles: &BTreeMap<Site, PointRole>,
-) -> Result<crate::dataflow::memory_ssa::Analysis, String> {
+    summaries: &call_footprint::Analysis,
+) -> Result<
+    (
+        crate::dataflow::memory_ssa::Analysis,
+        MemoryProjectionEvidence,
+    ),
+    String,
+> {
     use crate::dataflow::memory_ssa::{Effect, EffectKind, Phase};
     let mut effects = Vec::new();
     for instruction in source {
@@ -805,5 +826,11 @@ fn memory_values(
         .iter()
         .filter_map(|(site, role)| matches!(role, PointRole::OpaqueOutput { .. }).then_some(*site))
         .collect();
-    crate::dataflow::memory_ssa::analyze_with_effects(events, graph, &effects, &opaque)
+    let candidate =
+        crate::dataflow::memory_ssa::analyze_with_effects(events, graph, &effects, &opaque)?;
+    let evidence = memory_verify::validate(
+        source, events, roles, summaries, &effects, &opaque, &candidate,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok((candidate, evidence))
 }

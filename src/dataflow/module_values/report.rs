@@ -207,6 +207,22 @@ impl Json {
             }
             None => self.raw("{\"status\":\"not-requested\"}")?,
         }
+        self.raw(",\"memory_projection\":")?;
+        if let Some(evidence) = values.memory_projection() {
+            self.raw("{\"model\":\"nirvana-module-memory-projection-v1\",\"status\":\"checked\",\"instructions\":")?;
+            self.number(evidence.instructions)?;
+            self.raw(",\"assignments\":")?;
+            self.number(evidence.assignments)?;
+            self.raw(",\"opaque_outputs\":")?;
+            self.number(evidence.opaque_outputs)?;
+            self.raw(",\"declared_effects\":")?;
+            self.number(evidence.declared_effects)?;
+            self.raw(",\"reachable_effects\":")?;
+            self.number(evidence.reachable_effects)?;
+            self.raw("}")?;
+        } else {
+            self.raw("null")?;
+        }
         self.raw(",\"local_recovery\":{")?;
         match &values.locals {
             Err(reason) => {

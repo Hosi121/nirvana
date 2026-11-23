@@ -65,6 +65,18 @@ rep stosq
 mov (%rdi),%rax
 ret
 .size string_caller,.-string_caller
+.type move_caller,@function
+move_caller:
+rep movsq
+mov (%rdi),%rax
+ret
+.size move_caller,.-move_caller
+.type indirect_caller,@function
+indirect_caller:
+call *(%rdi)
+mov (%rdi),%rax
+ret
+.size indirect_caller,.-indirect_caller
 .type division_caller,@function
 division_caller:
 div %rcx
@@ -122,6 +134,8 @@ ret
     for (name, kind) in [
         ("plt_caller", Some(EffectKind::Call)),
         ("string_caller", Some(EffectKind::StringStore)),
+        ("move_caller", Some(EffectKind::StringMove)),
+        ("indirect_caller", Some(EffectKind::Call)),
         ("division_caller", None),
     ] {
         let v = values(&analysis, name);
@@ -173,6 +187,30 @@ ret
             matches!(plt.definitions()[id.0],Definition::Opaque{effect,..} if effect.kind==EffectKind::CallStack && effect.phase==Phase::Before)
         );
     }
+    let indirect = memory(values(&analysis, "indirect_caller"));
+    let target_read = indirect
+        .accesses()
+        .iter()
+        .find(|a| {
+            a.source.kind == AccessKind::Read
+                && values(&analysis, "indirect_caller")
+                    .roles()
+                    .get(&a.source.site)
+                    == Some(&PointRole::Target)
+        })
+        .unwrap();
+    let block = indirect
+        .blocks()
+        .iter()
+        .find(|b| b.start == target_read.source.site.instruction)
+        .unwrap();
+    assert!(
+        matches!(
+            block.events.as_slice(),
+            [Event::Access(_), Event::Effect(_)]
+        ),
+        "ordinary indirect target memory is read before the call's stack/callee clobber"
+    );
 
     // Check all serialized dependency wires independently of construction.
     let mut child=Command::new("python3").args(["-c",r#"
@@ -183,6 +221,11 @@ for function in report['functions']:
     if function['status']!='analyzed': continue
     m=function['memory_ssa']
     assert m['status']=='analyzed',m
+    p=function['memory_projection']
+    assert p['model']=='nirvana-module-memory-projection-v1' and p['status']=='checked'
+    assert p['instructions']==function['source_instructions']
+    assert p['reachable_effects']==sum(d['kind']=='opaque' for d in m['definitions'])
+    assert p['declared_effects']>=p['reachable_effects']
     defs=m['definitions']; accesses=m['accesses']
     assert defs[0]['kind']=='initial'
     assert [d['id'] for d in defs]==list(range(len(defs)))
