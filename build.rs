@@ -1,5 +1,8 @@
 //! Build identity for retained evaluation binaries, without timestamps.
-use std::{path::Path, process::Command};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 const INPUTS: &[&str] = &[
     "src",
@@ -22,11 +25,12 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
-    for input in INPUTS {
-        if Path::new(input).exists() {
-            println!("cargo::rerun-if-changed={input}");
-        }
-    }
+    // Git refs/index can have mtimes older than Cargo's last output after a
+    // clock adjustment. A deliberately absent output path refreshes this small
+    // identity probe on every invocation, without modifying the checkout.
+    let trigger = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"))
+        .join("refresh-build-identity");
+    println!("cargo::rerun-if-changed={}", trigger.display());
     // Archives may be extracted inside somebody else's repository. Only this
     // package's own checkout is a source of Git identity; worktree .git files
     // are supported through git-path rather than assuming .git is a directory.
@@ -46,25 +50,6 @@ fn main() {
     } else {
         "unknown"
     };
-    if checkout {
-        let mut paths = vec![
-            "HEAD".to_owned(),
-            "index".into(),
-            "refs".into(),
-            "packed-refs".into(),
-        ];
-        if let Some(reference) = git(&["symbolic-ref", "-q", "HEAD"]) {
-            paths.push(reference.trim().to_owned());
-        }
-        for name in paths {
-            if let Some(path) = git(&["rev-parse", "--git-path", &name]) {
-                let path = path.trim();
-                if name == "index" || Path::new(path).exists() {
-                    println!("cargo::rerun-if-changed={path}");
-                }
-            }
-        }
-    }
     println!("cargo::rustc-env=NIRVANA_BUILD_REVISION={revision}");
     println!("cargo::rustc-env=NIRVANA_SOURCE_DIRTY={dirty}");
 }

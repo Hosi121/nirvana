@@ -61,6 +61,10 @@ class CargoBuildIdentity(unittest.TestCase):
             main=root/'src/main.rs';main.write_text(main.read_text()+'\n')
             self.assertEqual(self.build(root),[revision,'true'])
             newer=self.commit(root);self.assertNotEqual(newer,revision)
+            # Git updates may carry older mtimes after clock adjustments. The
+            # build identity must reflect the new contents, not cached env vars.
+            for relative in ['HEAD','index','refs','refs/heads','refs/heads/main']:
+                os.utime(root/'.git'/relative,ns=(1,1))
             self.assertEqual(self.build(root),[newer,'false'])
             self.command(root,'git','pack-refs','--all','--prune')
             self.assertEqual(self.build(root),[newer,'false'])
