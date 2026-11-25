@@ -418,6 +418,18 @@ impl Lifter {
             Operand::Immediate(_) => unreachable!("decoded writable destination"),
         }
     }
+    fn write_rmw(&mut self, destination: Operand, flags_start: usize) {
+        if matches!(destination, Operand::Memory { .. }) {
+            // Inputs, address and RESULT are frozen before this pure flag
+            // suffix. A failed Store must retain architectural input flags;
+            // keep the suffix intact because OF can depend on the new CF.
+            let flags = self.assignments.split_off(flags_start);
+            self.write(destination, r(RESULT));
+            self.assignments.extend(flags);
+        } else {
+            self.write(destination, r(RESULT));
+        }
+    }
     // Signed 128-bit product of sign-extended operands, shared by explicit
     // and implicit IMUL. CF/OF test representability in one operand.
     fn signed_product(&mut self, left: Expr, right: Expr, width: Width) {
@@ -471,7 +483,14 @@ impl Lifter {
         let parity = self.parity();
         self.set(PF, parity);
     }
-    fn alu_core(&mut self, kind: Alu, width: Width, left: Expr, right: Expr, preserve_carry: bool) {
+    fn alu_core(
+        &mut self,
+        kind: Alu,
+        width: Width,
+        left: Expr,
+        right: Expr,
+        preserve_carry: bool,
+    ) -> usize {
         self.set(A, mask(left, width));
         self.set(V, mask(right, width));
         self.set(
@@ -492,6 +511,7 @@ impl Lifter {
             Alu::And | Alu::Test => and(r(A), r(V)),
         };
         self.set(RESULT, mask(result, width));
+        let flags_start = self.assignments.len();
         if !preserve_carry {
             let carry = if !arithmetic {
                 k(0)
@@ -518,6 +538,7 @@ impl Lifter {
         };
         self.set(OF, overflow);
         self.result_flags(width);
+        flags_start
     }
     fn shift(&mut self, kind: Shift, destination: Operand, count: Operand) {
         let width = destination.width().unwrap();
@@ -537,6 +558,7 @@ impl Lifter {
             Shift::ArithmeticRight => b(B::AShr, sext(r(A), width), r(C)),
         };
         self.set(RESULT, mask(result, width));
+        let flags_start = self.assignments.len();
         let new_carry = match kind {
             Shift::Left => and(b(B::Shr, r(A), sub(k(u64::from(width.bits())), r(C))), k(1)),
             Shift::Right => and(b(B::Shr, r(A), sub(r(C), k(1))), k(1)),
@@ -567,7 +589,7 @@ impl Lifter {
         );
         let parity = self.parity();
         self.set(PF, Expr::select(eq(r(C), k(0)), r(PF), parity));
-        self.write(destination, r(RESULT));
+        self.write_rmw(destination, flags_start);
     }
     // Intel SDM vol.2B SHLD/SHRD: defined nonzero counts, a preserved zero
     // count, and OF available only for a one-bit shift. AF is outside this IR.
@@ -588,6 +610,7 @@ impl Lifter {
             or(b(B::Shr, r(A), k(count)), b(B::Shl, r(V), k(complement)))
         };
         self.set(RESULT, mask(value, width));
+        let flags_start = self.assignments.len();
         self.set(
             CF,
             bit(
@@ -611,7 +634,7 @@ impl Lifter {
             },
         );
         self.result_flags(width);
-        self.write(destination, r(RESULT));
+        self.write_rmw(destination, flags_start);
     }
     // Intel SDM vol. 2B, RCL/RCR/ROL/ROR operation and flags (4-529/4-530).
     // https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf
@@ -635,6 +658,7 @@ impl Lifter {
             Rotate::Right => (b(B::Shr, r(A), r(V)), b(B::Shl, r(A), complement)),
         };
         self.set(RESULT, mask(or(first, second), width));
+        let flags_start = self.assignments.len();
         let carry = match kind {
             Rotate::Left => bit(r(RESULT), 0),
             Rotate::Right => bit(r(RESULT), width.bits() - 1),
@@ -657,7 +681,7 @@ impl Lifter {
         );
         // ZF/SF/PF are untouched. Retain the read and write even at zero count:
         // memory still faults, and a 32-bit destination still clears upper32.
-        self.write(destination, r(RESULT));
+        self.write_rmw(destination, flags_start);
     }
     fn swapped_bytes(&mut self, value: Expr, width: Width) -> Expr {
         // Shared by BSWAP and MOVBE. Capture the source exactly once, then
@@ -775,9 +799,9 @@ impl Lifter {
             } => {
                 let width = destination.width().unwrap();
                 let (destination, left) = self.snapshot_destination(destination);
-                self.alu_core(kind, width, left, self.read(source), false);
+                let flags_start = self.alu_core(kind, width, left, self.read(source), false);
                 if !matches!(kind, Alu::Cmp | Alu::Test) {
-                    self.write(destination, r(RESULT));
+                    self.write_rmw(destination, flags_start);
                 }
             }
             Operation::Unary { kind, destination } => {
@@ -789,11 +813,11 @@ impl Lifter {
                         self.write(destination, xor(r(A), k(width.mask())));
                     }
                     Unary::Neg => {
-                        self.alu_core(Alu::Sub, width, k(0), value, false);
-                        self.write(destination, r(RESULT));
+                        let flags_start = self.alu_core(Alu::Sub, width, k(0), value, false);
+                        self.write_rmw(destination, flags_start);
                     }
                     Unary::Inc | Unary::Dec => {
-                        self.alu_core(
+                        let flags_start = self.alu_core(
                             if kind == Unary::Inc {
                                 Alu::Add
                             } else {
@@ -804,7 +828,7 @@ impl Lifter {
                             k(1),
                             true,
                         );
-                        self.write(destination, r(RESULT));
+                        self.write_rmw(destination, flags_start);
                     }
                 }
             }

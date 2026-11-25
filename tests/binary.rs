@@ -42,6 +42,8 @@ mod x86_movbe;
 mod x86_movs;
 #[path = "binary/x86_mul.rs"]
 mod x86_mul;
+#[path = "binary/x86_rmw_fault_flags.rs"]
+mod x86_rmw_fault_flags;
 #[path = "binary/x86_rotate.rs"]
 mod x86_rotate;
 #[path = "binary/x86_shift_cf.rs"]
