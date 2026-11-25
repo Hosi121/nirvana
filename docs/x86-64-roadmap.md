@@ -111,6 +111,8 @@ MemorySSAの世代グラフは、元IRを別にたどる検査器でLoad/Store�
 
 [選択した保存幅のcheckpoint](../tools/corpora/ir-selected-storage-v1.m1.json)は、C候補が実際に解析した表示IR・幅証跡・局所変数・生成C本文を結んだ。[条件付き上限の比較](../tools/corpora/ir-guarded-storage-v1.m1.json)では、前向きの値追跡と独立な後方定義参照で分岐の上限を検査した。同じ65入力の入れ子ループで、counterの保存幅64→8bit、局所変数8個を維持、式node数272→270となった。初回24構成のC本文・構造と意味比較も維持した。元ソースの型の同定と、全入力のC同値性は別の評価対象として残る。
 
+[signed保存表現のcheckpoint](../tools/corpora/ir-signed-storage-v1.m1.json)では、共有転送による固定点の確認に加え、独立なi128演算と元SSAのread/write検査を用意した。最終displayから選んだsigned localを証跡へ結び、既存の4構成で各3個を検査した。推論・C本文とC値モデルの証明4件を保ち、初回24構成でもC本文・構造・意味を維持した。
+
 M0の段階形式v4は、この世代グラフと候補被覆の検査を各行へ結びます。元Low IRとMemorySSAの保存データ、検査器、根拠の件数、未判定理由を保持し、具体的な実行prefixの比較と別に集計します。旧probeでの未実行と、新probeで通過した検査の脱落も比較対象に含めます。
 
 [v4統合の開発用checkpoint](../tools/corpora/structure-analysis-v1.m0.json)では、GCC/Clang O2の4構成で世代グラフ・候補被覆の両検査を記録し、v3と同じ生成C・構造・具体実行の結果を保ちました。moduleの閉じた呼出しは別profileで観測し、アドレス式の根拠も対応する入力と契約を固定して追加します。

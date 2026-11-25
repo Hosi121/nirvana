@@ -33,6 +33,7 @@ python3 -m unittest discover -s tools/tests
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
 | 選択したCのunsigned保存幅 | 実際の表示IRと幅証跡を保持して再検査し、局所変数の所属レジスタ・幅と生成Cのhashを対応付ける。[固定比較](../tools/corpora/ir-selected-storage-v1.m1.json)は開発用6構成、[条件付き上限](../tools/corpora/ir-guarded-storage-v1.m1.json)は比較時の値・全先行辺・入口条件を記録 |
+| 選択したCのsigned保存表現 | 最終display IRとSSAを独立なi128演算で再検査し、全read/writeの符号拡張条件とlocalの全メンバを照合。[固定比較](../tools/corpora/ir-signed-storage-v1.m1.json)は既存推論・C本文・値モデルの証明を維持 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |
 | MemorySSA | 世代グラフと、各Loadの先行状態・全候補byteを覆う閉じた証跡を独立に検査。部分Store・alias・φ・ループ・未知への拡大をbyte tagと配列SMTでも照合 |
 | C継続グラフ | 保存先とメモリviewの確定後、前後のASTから順序付きC断片と継続先を照合。メモリ条件の削除・アクセス幅の変更・効果の脱落や並替えを対照で拒否する。観測境界とprinterへの依存は[設計](architecture.md#c保存先確定後の継続処理)を参照 |

@@ -1,0 +1,548 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Independent signed-storage sign-extension invariants and the actual selected final display source",
+  "reference_revision": "141e4bb84165147b6983410ab170c002dc92536c",
+  "candidate_revision": "40555f7019cfa7c99019f6f7afa414a76598ca63",
+  "implementation_revisions": {
+    "independent_signed_checker": "1ee7386",
+    "selected_signed_capture": "5b6aa95",
+    "evaluation_v8": "40555f7"
+  },
+  "contract": {
+    "model": "nirvana-signed-storage-v1",
+    "scope": "source-entry-sign-extension-observations",
+    "invariant": "Every observed raw u64 value equals sign_extend_W(low_W(value)); arbitrary initial values and all phi alternatives participate",
+    "producer": "Existing SSA State fixed point and width observation inference unchanged; shared validation remains an early sanity gate",
+    "checker": "Existing independent source SSA validation, then distinct i128 interval/exact u128 arithmetic replay and source read/write aggregation. No State transfer or ssa_facts evaluator or IR operator evaluate calls in the checker.",
+    "constant_ops": "All IR unary/binary operations, including total zero division/remainder, signedMIN/-1 wrap, high products, masked shifts and clipped Insert/Extract",
+    "observations": "Original ordered assignments, source reads, Load/Store addresses, control and both syntactic Select arms; unused registers report U64",
+    "source_limits": {
+      "registers": 4096,
+      "blocks": 2048,
+      "instructions": 16384,
+      "assignments": 16384,
+      "expression_nodes": 65536,
+      "expression_depth": 128,
+      "ssa_values": 65536,
+      "phi_inputs": 262144,
+      "state_cells": 1000000,
+      "ssa_work": 8000000,
+      "signed_checker_work": 32000000
+    },
+    "failure": "Unavailable/Invalid reason retained; no partial facts/SSA/widths exposed and width queries use U64"
+  },
+  "selected_contract": {
+    "model": "nirvana-selected-signed-storage-v1",
+    "scope": "selected-c-sign-extension-observations",
+    "checker": "signed_width::validate+selected_signed_storage::validate_locals",
+    "source": "Same final PreparedFunction.program Arc passed to signed_locals::recover; separate from optional earlier unsigned source",
+    "capture": "Existing opt-in storage API captures both proofs; default emission drops signed facts after use, without extra Program clone or capture scan",
+    "retention_bytes": 16777216,
+    "representation": "A signed C local has unsigned slot width64, a narrow signed width, no address role and source member widths all covered by its signed width",
+    "stage_schema": "nirvana-evaluation-stages-v8",
+    "legacy": "v4-v7 accepted; seventh analysis check has explicit added/lost/unknown denominator",
+    "identity": "Replay identity hashes selected unsigned and signed helper modules, in addition to dispatcher"
+  },
+  "evaluation": {
+    "signed_development": {
+      "corpus": "tools/corpora/structure-signed-storage-v1.json",
+      "corpus_sha256": "9bf05b5dc8e75212fc29a6568712e42a47d5a2ec977dc0e15073cb012610adfc",
+      "profiles": 4,
+      "vectors": 17,
+      "input_file": "tools/corpora/structure-branch-inputs-v1.txt",
+      "input_sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94",
+      "native": 68,
+      "generated_O0": 204,
+      "generated_O2": 204,
+      "stage_comparisons": 8160,
+      "identical_generated_c": 4,
+      "signed_locals_per_profile": 3,
+      "state_value_model": "nirvana-state4-values-v8",
+      "state_value_equivalent_under_model_before": 4,
+      "state_value_equivalent_under_model_after": 4,
+      "state_value_solver_seconds": 3,
+      "structure": {
+        "equal": 4
+      },
+      "analysis": {
+        "memory_ssa_graph": {
+          "passed": 4
+        },
+        "memory_ssa_queries": {
+          "passed": 4
+        },
+        "memory_addresses": {
+          "passed": 4
+        },
+        "unsigned_bounds": {
+          "passed": 4
+        },
+        "storage_widths": {
+          "passed": 4
+        },
+        "selected_storage": {
+          "passed": 4
+        },
+        "selected_signed_storage": {
+          "passed": 4
+        }
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      },
+      "rows": [
+        {
+          "id": "narrow-signed-gcc-O2",
+          "object_sha256": "d2b09c8d0d736a70ebbae040b92276e9acedf15d09fd7968b93fbec67f7dab4e",
+          "identical_generated_c_sha256": "c71ba415b1e01fd009e21e31f95d03b7fc408ad1faa07cf5e49cafccf7ba3e82",
+          "distance": 0,
+          "unsigned_source_phase": "display-after-dce",
+          "unsigned_source_registers": 244,
+          "signed_source_phase": "prepared-display",
+          "signed_source_registers": 244,
+          "signed_evidence": {
+            "registers": 244,
+            "narrow_registers": 4,
+            "values": 14,
+            "constants": 0,
+            "blocks": 1,
+            "phi_inputs": 1,
+            "assignments": 6,
+            "reads": 16,
+            "expressions": 46
+          },
+          "signed_locals": [
+            {
+              "name": "value0",
+              "registers": [
+                207
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "quotient",
+              "registers": [
+                240
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "value2",
+              "registers": [
+                243
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            }
+          ],
+          "artifacts": {
+            "selected-signed-input.ir.txt": "bd22d624fc14dd1e29a9464cc721d41259f3bf1249be0c88de7545eee52d0515",
+            "selected-signed-ssa.txt": "b9cb1dc103b1c643388601cbb4d269f1d57aced50e17880bc696c141964e817b",
+            "selected-signed-storage.json": "be0a9d038c796f90379b53a009d8cf1e3e886883e1774eca1a0b3ba6a6bd09aa",
+            "selected-signed-readable.c": "c71ba415b1e01fd009e21e31f95d03b7fc408ad1faa07cf5e49cafccf7ba3e82"
+          }
+        },
+        {
+          "id": "narrow-signed-gcc-O3",
+          "object_sha256": "d2b09c8d0d736a70ebbae040b92276e9acedf15d09fd7968b93fbec67f7dab4e",
+          "identical_generated_c_sha256": "c71ba415b1e01fd009e21e31f95d03b7fc408ad1faa07cf5e49cafccf7ba3e82",
+          "distance": 0,
+          "unsigned_source_phase": "display-after-dce",
+          "unsigned_source_registers": 244,
+          "signed_source_phase": "prepared-display",
+          "signed_source_registers": 244,
+          "signed_evidence": {
+            "registers": 244,
+            "narrow_registers": 4,
+            "values": 14,
+            "constants": 0,
+            "blocks": 1,
+            "phi_inputs": 1,
+            "assignments": 6,
+            "reads": 16,
+            "expressions": 46
+          },
+          "signed_locals": [
+            {
+              "name": "value0",
+              "registers": [
+                207
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "quotient",
+              "registers": [
+                240
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "value2",
+              "registers": [
+                243
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            }
+          ],
+          "artifacts": {
+            "selected-signed-input.ir.txt": "bd22d624fc14dd1e29a9464cc721d41259f3bf1249be0c88de7545eee52d0515",
+            "selected-signed-ssa.txt": "b9cb1dc103b1c643388601cbb4d269f1d57aced50e17880bc696c141964e817b",
+            "selected-signed-storage.json": "be0a9d038c796f90379b53a009d8cf1e3e886883e1774eca1a0b3ba6a6bd09aa",
+            "selected-signed-readable.c": "c71ba415b1e01fd009e21e31f95d03b7fc408ad1faa07cf5e49cafccf7ba3e82"
+          }
+        },
+        {
+          "id": "narrow-signed-clang18-O2",
+          "object_sha256": "45039a271be7d168e2562f71c906d0bb49aaf36b628028daa94502e38a4b93b1",
+          "identical_generated_c_sha256": "9fd5b3e185633527b1a65bedf1f2fabe3e96a662d122a8f5a4d4e2efe2a050ad",
+          "distance": 0,
+          "unsigned_source_phase": "display-after-dce",
+          "unsigned_source_registers": 313,
+          "signed_source_phase": "prepared-display",
+          "signed_source_registers": 313,
+          "signed_evidence": {
+            "registers": 313,
+            "narrow_registers": 6,
+            "values": 18,
+            "constants": 0,
+            "blocks": 1,
+            "phi_inputs": 1,
+            "assignments": 8,
+            "reads": 18,
+            "expressions": 45
+          },
+          "signed_locals": [
+            {
+              "name": "quotient",
+              "registers": [
+                309
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "value1",
+              "registers": [
+                48,
+                278,
+                307
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "value2",
+              "registers": [
+                312
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            }
+          ],
+          "artifacts": {
+            "selected-signed-input.ir.txt": "c8d610ab68e7b7888fdb80263b84c8ba760d07525964510fd20d15817916b3e9",
+            "selected-signed-ssa.txt": "4a0ffd3665e15d4036a950a8aca099f51fa1fd6ccaf2c3d3840ad756c5ebc392",
+            "selected-signed-storage.json": "564d0daaa071265d9f3a06c1657de0228a1f8681cd448e02309178573bca9eb1",
+            "selected-signed-readable.c": "9fd5b3e185633527b1a65bedf1f2fabe3e96a662d122a8f5a4d4e2efe2a050ad"
+          }
+        },
+        {
+          "id": "narrow-signed-clang18-O3",
+          "object_sha256": "45039a271be7d168e2562f71c906d0bb49aaf36b628028daa94502e38a4b93b1",
+          "identical_generated_c_sha256": "9fd5b3e185633527b1a65bedf1f2fabe3e96a662d122a8f5a4d4e2efe2a050ad",
+          "distance": 0,
+          "unsigned_source_phase": "display-after-dce",
+          "unsigned_source_registers": 313,
+          "signed_source_phase": "prepared-display",
+          "signed_source_registers": 313,
+          "signed_evidence": {
+            "registers": 313,
+            "narrow_registers": 6,
+            "values": 18,
+            "constants": 0,
+            "blocks": 1,
+            "phi_inputs": 1,
+            "assignments": 8,
+            "reads": 18,
+            "expressions": 45
+          },
+          "signed_locals": [
+            {
+              "name": "quotient",
+              "registers": [
+                309
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "value1",
+              "registers": [
+                48,
+                278,
+                307
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            },
+            {
+              "name": "value2",
+              "registers": [
+                312
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": 32,
+              "address_bits": null
+            }
+          ],
+          "artifacts": {
+            "selected-signed-input.ir.txt": "c8d610ab68e7b7888fdb80263b84c8ba760d07525964510fd20d15817916b3e9",
+            "selected-signed-ssa.txt": "4a0ffd3665e15d4036a950a8aca099f51fa1fd6ccaf2c3d3840ad756c5ebc392",
+            "selected-signed-storage.json": "564d0daaa071265d9f3a06c1657de0228a1f8681cd448e02309178573bca9eb1",
+            "selected-signed-readable.c": "9fd5b3e185633527b1a65bedf1f2fabe3e96a662d122a8f5a4d4e2efe2a050ad"
+          }
+        }
+      ]
+    },
+    "initial24": {
+      "profiles": 24,
+      "vectors": 17,
+      "native": 408,
+      "generated_O0": 1224,
+      "generated_O2": 1224,
+      "stage_comparisons": 25500,
+      "cohorts": {
+        "development": {
+          "profiles": 16,
+          "identical_c": 16,
+          "native": 272,
+          "stage_comparisons": 17340
+        },
+        "holdout": {
+          "profiles": 8,
+          "identical_c": 8,
+          "native": 136,
+          "stage_comparisons": 8160
+        }
+      },
+      "holdout_policy": "Frozen candidate black-box verification; only aggregate status/hashes/counts inspected, no source/output tuning",
+      "structure": {
+        "equal": 24
+      },
+      "analysis": {
+        "memory_ssa_graph": {
+          "passed": 24
+        },
+        "memory_ssa_queries": {
+          "passed": 24
+        },
+        "memory_addresses": {
+          "passed": 24
+        },
+        "unsigned_bounds": {
+          "passed": 24
+        },
+        "storage_widths": {
+          "passed": 24
+        },
+        "selected_storage": {
+          "passed": 24
+        },
+        "selected_signed_storage": {
+          "passed": 24
+        }
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    }
+  },
+  "tests": {
+    "source_revision": "40555f7019cfa7c99019f6f7afa414a76598ca63",
+    "rust": {
+      "targets": 25,
+      "passed": 1569,
+      "ignored": 59,
+      "failed": 0
+    },
+    "signed_unit": 15,
+    "readable_unit": 40,
+    "signed_capture_integration": 1,
+    "probe_example": 12,
+    "smt": {
+      "model": "pure-u64-v1",
+      "unsat": 65,
+      "sat_ir_replays": 9,
+      "added_signed_division_remainder_unsat": 24,
+      "added_overflow_unsigned_division_sat": 6
+    },
+    "python": {
+      "total": 224,
+      "passed": 221,
+      "skipped": 3
+    },
+    "clippy_all_targets": "passed",
+    "rustfmt": "passed"
+  },
+  "controls": [
+    "Forged constant/narrow claim, wrong source, malformed SSA defs/reads/phi and virtual entry",
+    "Positive unsigned128/255/65535 need their proper signed representation width; earlier wide reads/writes survive later narrow values",
+    "Both Select arms and memory addresses are observed; source/control/work/size errors preserve typed fallback",
+    "Signed local overlap/parameter overlap/address role/too-small type, mismatched source/SSA dimensions and C bytes rejected",
+    "On/off readable and Middle C bytes/locals identical while actual signed locals are required; known rejection remains rejected on optional capture budget failure",
+    "Raw probe JSON hash and all four signed artifacts retained/replayed; relocation and loss/addition of proof are explicit"
+  ],
+  "audit": "Read-only independent audit found no unsound signed kernel or observation case. An independent Python formula sample802976 passed; this is neither Rust execution nor a universal implementation proof.",
+  "limits": [
+    "The certificate checks source-entry sign-extension observations, not original C type identity or arbitrary-PC reentry/full-register snapshots.",
+    "Signed storage compatibility and C integer promotions/definedness are distinct boundaries; the four C value proofs use fixed state[4], LP64, valid-pointer and helper contracts.",
+    "Native/IR/C and prefix comparisons are concrete fixed vectors/budgets. The state[4] C model proves return and32 state bytes under its declared model, not all native machine states.",
+    "The independent checker preserves existing inference precision; it does not add a signed range inference algorithm.",
+    "Quint/TLA+ work remains a documented research proposal; no formal model or new formal tool installation is part of this checkpoint."
+  ],
+  "artifacts": {
+    "signed-reference/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-reference/report.json",
+      "sha256": "9ed48aeda0567020f5d9d5dc38dbc182f40e94e59994aa05c10d8fe6e542512a"
+    },
+    "signed-candidate/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-candidate/report.json",
+      "sha256": "3e396a9b68e954bb68f6f663fa3d0ba77acad876a3fdb80a789334176b0c465b"
+    },
+    "signed-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-comparison.json",
+      "sha256": "b010ab045764b5a63e68d595383ae85eb1f8b0be41512421dc5d3e3ba0f3734e"
+    },
+    "signed-initial-before/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-initial-before/report.json",
+      "sha256": "bbfa3c85aa5af4e3c3f822555d79a25a6b8ae3569bd6f7bf387adcc065bf3d18"
+    },
+    "signed-initial-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-initial-after/report.json",
+      "sha256": "ee35187bdcdf8a4b0d95dd2c7baa044e225b35f52cced1f2ed30024dbf55c85e"
+    },
+    "signed-initial-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-initial-comparison.json",
+      "sha256": "adda578883ed8f1de0725f7f66ff854e602c36b0b2a4ce453e2cd97eb6e65414"
+    },
+    "signed-reference-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-reference-tools.json",
+      "sha256": "2f67c726457867b0cef24bfa3546d4a986692c587579a53b9daad0cf83760da0"
+    },
+    "signed-candidate-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-candidate-tools.json",
+      "sha256": "3be46e2afdbf6b2e5122f15b3caf1109f749335c86f3a323230074a7da2521cb"
+    },
+    "signed-initial-reference-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-initial-reference-tools.json",
+      "sha256": "91239ab0a77e71be5f392a1d6c17668dc3ec296a7c6afaf3edf780bc86c3b067"
+    },
+    "signed-initial-candidate-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/signed-initial-candidate-tools.json",
+      "sha256": "fe58b340f912b8fc5cd0ac44779cb9ae7a15abb0df953596e6e6a9c65c58ad83"
+    },
+    "toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/toolchain.json",
+      "sha256": "d8771035ad1a17e0417d63b2ad04ae13cd6a11771866170be79e0b3e88733551"
+    },
+    "z3-toolchain-verification.json": {
+      "file": "target/runs/run-a37yw4tm/out/z3-toolchain-verification.json",
+      "sha256": "26f4972bd6ea162f3c9396779ab65d12f96694218e009baeb5ccc24fbbcf6188"
+    },
+    "signed-checks/rust-signed-capture-codegen.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-signed-capture-codegen.log",
+      "sha256": "b5a36f9170220d540a6d00b65d78c1f5415eaea383e4d5d372baec2b46cb87e5"
+    },
+    "signed-checks/rust-signed-capture-lib.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-signed-capture-lib.log",
+      "sha256": "e5aecde307559e8939f81cc8b470b467142dba678fdd1959b155c6b0dbc22820"
+    },
+    "signed-checks/evaluate-signed-candidate.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/evaluate-signed-candidate.log",
+      "sha256": "e86c204413517d348c14902f87ee3944894c4326df5923455d0927395c9d1633"
+    },
+    "signed-checks/python-signed-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/python-signed-full.log",
+      "sha256": "80a4f006b7a30d0a0b99f5c24bb9b1fbe48b984540894652809463866c44e5c8"
+    },
+    "signed-checks/rust-signed-width-smt-final.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-signed-width-smt-final.log",
+      "sha256": "f84255cd8ff204c74bcfe8c425bdc96d18005a17a2a4e4feacb04ceb97664ee5"
+    },
+    "signed-checks/rust-signed-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-signed-full.log",
+      "sha256": "de34106623c5b8111ca0de8683de28c6ddec454d7e2692d3fcd6889f49f029c8"
+    },
+    "signed-checks/evaluate-signed-initial-before.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/evaluate-signed-initial-before.log",
+      "sha256": "0df6d02b5c3857b57e404a5bab938a98f2624231805999ce3e80f6ca6acf2ec9"
+    },
+    "signed-checks/rust-signed-width-smt.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-signed-width-smt.log",
+      "sha256": "7407a0d904d87a2c0257d6feba621205b2c024f310beda07703fd0782deb02f9"
+    },
+    "signed-checks/build-signed-candidate.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/build-signed-candidate.log",
+      "sha256": "0b97f4c1c1b3713176faf47ef9e2f3821dea8262e4547521a70a0200a9b1bf02"
+    },
+    "signed-checks/evaluate-signed-initial-after.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/evaluate-signed-initial-after.log",
+      "sha256": "452a63672465718c52f267f2fd817b73fcd0ffc94463a7562b5958da028f39fe"
+    },
+    "signed-checks/rust-signed-width-lib.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-signed-width-lib.log",
+      "sha256": "0dd41ecd0a8d3fe16475967da5717ad1940ddd0e125429fa27713fec0330bfc3"
+    },
+    "signed-checks/clippy-signed.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/clippy-signed.log",
+      "sha256": "f2c9f407e03e53622dfed02def09641d8eed64666067b0df60b2b6fbe4af4eb5"
+    },
+    "signed-checks/build-signed-reference-initial24.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/build-signed-reference-initial24.log",
+      "sha256": "00ea7650cc9c2d1065971985ebe705b4d40fb10c8a732198f5ce0d62343d52d0"
+    },
+    "signed-checks/rust-selected-signed-stage.log": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-selected-signed-stage.log",
+      "sha256": "23077cc6b300966dae0c43338dc718e1ff85a046bd232edebf25e825c6a42090"
+    }
+  },
+  "storage": {
+    "managed_run_mib_at_last_check": 485,
+    "limit_mib": 512,
+    "old_run": "run-fy5x4uwj was automatically evicted by retention policy after signed reference required49MiB; essential checkpoint logs had already been retained in active run",
+    "cold_archives": "cold/manifest.json; nine completed historical datasets are gzip tar archives with per-member byte/SHA verification before original-directory removal; restore recovers original files and paths",
+    "source_worktrees": "Reference141 checkout removed after baseline; main only"
+  },
+  "reproduction": "Build reference141 and candidate405 main/probe sequentially in shared target. Run same current evaluator and fixed17 inputs on narrow-signed GCC/Clang O2/O3 with3sec state-value model, and initial24 separately. Compare reports, seventh signed check and exact C bytes. Rerun ignored signed_width SMT tests using pinned solver."
+}

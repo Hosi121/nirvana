@@ -192,7 +192,9 @@ Loadのスナップショット、保存位置、全命令の代入順も採用�
 
 [ValueWidths](../src/dataflow/value_width.rs)は、入口から実行されるread/writeの値がunsignedの保存幅に収まる候補を求めます。[独立した検査器](../src/dataflow/value_width/verify.rs)がu128の数値上限で逐次代入と全後続辺を照合し、入口の任意u64値・戻り辺・Select両腕・メモリアドレスも検査します。検査を通した幅だけをCの保存先と表示変換へ渡し、未判定ではU64を使います。`storage-widths.json`に幅・block入口の不変条件・検査件数を保存します。この契約は入口からの値の使用を対象とし、未使用の初期レジスタや任意PCからの再開は別の実行契約で扱います。
 
-[SignedWidths](../src/dataflow/signed_width.rs)は、全64-bit値が指定幅の符号拡張と一致するという保存範囲を、既存のSSA固定点で求めます。初期値は任意のu64とし、全phi入力・逐次代入・read/writeを検査してから公開します。unsigned幅とは別の性質です。Cの保存先は、共有する全値が範囲内に収まり、アドレス用の保存先から分離できる場合に`int8_t/16_t/32_t`を選びます。`LocalValue.signed_width`がこの表現を示し、通常のIR演算で読むたびにu64へ戻します。代入時の変換とLoadの順序も保持します。これは生成Cの保存表現の検査で、元ソースの変数型との対応はM3で評価します。
+[SignedWidths](../src/dataflow/signed_width.rs)は、全64-bit値が指定幅の符号拡張と一致するという保存範囲をSSA固定点で求めます。[独立検査器](../src/dataflow/signed_width/verify.rs)は、元IRと対応を確認したSSAから、任意の初期値・全phi入力・逐次式・read/writeを再検査します。演算には推論器と独立なi128区間と定数計算を使います。検査済みのSSA・事実・幅を保持し、未判定では理由とU64の保存幅を返します。
+
+Cの保存先は、共有する全値が範囲内に収まり、アドレス用の保存先から分離できる場合に`int8_t/16_t/32_t`を選びます。`LocalValue.signed_width`がこの表現を示し、通常のIR演算で読むたびにu64へ戻します。opt-inの証跡は、この判断に使った最終displayの`Arc<Program>`と同じsigned事実を保持します。unsigned証跡にもそれぞれの解析位置があり、M0は実入力を個別に結びます。[固定比較](../tools/corpora/ir-signed-storage-v1.m1.json)に、既存推論とC本文を保った検査結果を記録しています。Cの整数昇格・代入変換・Load順序と、元ソース型の対応は、それぞれの契約とM3で評価します。
 [allocation_verify](../src/dataflow/allocation_verify.rs)は各readの値を、[DeclarationPlan](../src/codegen/readable/declarations.rs)は宣言・初期化の位置を照合します。
 [stack_values](../src/dataflow/stack_values.rs)は部分Storeとaliasを含む到達書込み、[stack_role](../src/dataflow/stack_role.rs)はspill/reloadの系譜を供給します。
 メモリviewは同じゲストRAMへの表示名として使い、互いのaliasを許します。

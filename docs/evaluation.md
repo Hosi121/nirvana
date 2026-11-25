@@ -84,6 +84,8 @@ v6は`storage_widths`を加え、Cの保存幅と表示変換が使う`ValueWidt
 
 v7の`selected_storage`は、採用されたCの保存幅を、その候補が実際に解析した表示IRへ結びます。`selected-storage-input.ir.txt`・`selected-storage.json`・`selected-readable.c`を保持し、同じ入力への幅検査、unsigned局所変数と所属レジスタの幅、CLI出力との本文一致を確認します。解析位置は表示変換前とDCE後を区別します。[固定比較](../tools/corpora/ir-selected-storage-v1.m1.json)では開発用6構成で検査を通し、同じデコンパイラのv6/v7比較でC本文と構造を保ちました。signed表現・Cの整数昇格・途中PCからの再開は、それぞれの契約で評価します。
 
+v8の`selected_signed_storage`は、signed局所変数を選んだ最終display IR・SSA・符号拡張の証跡・生成Cを対応付けます。各localの全メンバが選択したsigned幅へ収まることを再検査し、`prepared-display`という解析位置を記録します。再検査helperのhashも評価器の版へ含めます。[固定比較](../tools/corpora/ir-signed-storage-v1.m1.json)では、既存のsigned例4構成で各3個のsigned localを検査し、初回24構成とともにC本文と意味比較を維持しました。旧v4〜v7の結果も同じ評価器で読み、検査の追加・脱落・未判定を分けて集計します。
+
 [v4統合のcheckpoint](../tools/corpora/structure-analysis-v1.m0.json)は、[開発用2ソース](../tools/corpora/structure-analysis-v1.json)のGCC/Clang O2、計4構成を固定しています。同じobject・デコンパイラ・8入力・4096-step上限でv3/v4を比較し、2種類の解析検査が各4件の未記録から通過へ進みました。生成Cと正規化グラフは同じで、native 32件・O0/O2生成C 192件・IRの全状態比較2,400件を維持しています。保存した実データへの5種類の欠落・改変も拒否しました。checkpointには版・hash・再現条件を残し、生データは[容量管理](../README.md#開発)付きの短期保存へ置きます。
 
 `low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。
