@@ -1,0 +1,525 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Checked source-local conditional unsigned bounds for source-entry C storage observations",
+  "reference_revision": "605eab99b3894e917da641c2796b926d730f08ca",
+  "candidate_revision": "141e4bb84165147b6983410ab170c002dc92536c",
+  "contract": {
+    "model": "nirvana-storage-widths-v1",
+    "entry": "Arbitrary u64 source entry registers, including virtual entry at a loop header; unused initial storage is outside observations",
+    "invariant": "Each original successor restricted by its actual branch condition is covered by the proposed incoming cap; source reads/writes are observed before edge refinement",
+    "producer": "Forward block-local immutable value snapshots; existing bit-cap worklist/joins/observations",
+    "checker": "Independent backward last-writer/copy/literal references, lazy writer-reference path compression and u128 numeric cap replay; no producer guard code or proposed alias identities imported",
+    "grammar": "Direct Ult/Ule Reg/Const operands, actual relational boolean copies and proven0/1 normalization; stop at block entry",
+    "rules": [
+      "Ult true: left<=upper(right)-1 when positive",
+      "Ult false: right<=upper(left)",
+      "Ule true: left<=upper(right)",
+      "Ule false: right<=upper(left)-1 when positive"
+    ],
+    "guards": "Only current aliases of the captured operand may narrow; all predecessor and same-target successor occurrences remain checked",
+    "limits": {
+      "guard_registers": 4096,
+      "guard_structural_work": 1000000,
+      "source_points": 100000,
+      "state_cells": 1000000,
+      "expression_depth": 256,
+      "producer_work": 10000000,
+      "checker_work": 32000000
+    },
+    "failure": "Unsupported or exhausted optional guard planning uses unconditional caps; incomplete/unvalidated proposals expose U64 fallback with retained status"
+  },
+  "evaluation": {
+    "nested_development": {
+      "profiles": 2,
+      "vectors": 65,
+      "input_file": "tools/corpora/structure-nested-v1.inputs.txt",
+      "input_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+      "native": 130,
+      "generated_O0": 390,
+      "generated_O2": 390,
+      "stage_comparisons": 7800,
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      },
+      "structure": {
+        "equal": 2
+      },
+      "analysis": {
+        "memory_ssa_graph": {
+          "passed": 2
+        },
+        "memory_ssa_queries": {
+          "passed": 2
+        },
+        "memory_addresses": {
+          "passed": 2
+        },
+        "unsigned_bounds": {
+          "passed": 2
+        },
+        "storage_widths": {
+          "passed": 2
+        },
+        "selected_storage": {
+          "passed": 2
+        }
+      }
+    },
+    "core_development": {
+      "profiles": 4,
+      "vectors": 8,
+      "native": 32,
+      "generated_O0": 96,
+      "generated_O2": 96,
+      "stage_comparisons": 2400,
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      },
+      "structure": {
+        "equal": 4
+      },
+      "analysis": {
+        "memory_ssa_graph": {
+          "passed": 4
+        },
+        "memory_ssa_queries": {
+          "passed": 4
+        },
+        "memory_addresses": {
+          "passed": 4
+        },
+        "unsigned_bounds": {
+          "passed": 4
+        },
+        "storage_widths": {
+          "passed": 4
+        },
+        "selected_storage": {
+          "passed": 4
+        }
+      }
+    },
+    "initial24": {
+      "corpus": "tools/corpora/structure-initial-v1.json",
+      "profiles": 24,
+      "vectors": 17,
+      "input_file": "tools/corpora/structure-branch-inputs-v1.txt",
+      "input_sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94",
+      "native": 408,
+      "generated_O0": 1224,
+      "generated_O2": 1224,
+      "stage_comparisons": 25500,
+      "cohorts": {
+        "development": {
+          "profiles": 16,
+          "identical_c": 16,
+          "native": 272,
+          "stage_comparisons": 17340
+        },
+        "holdout": {
+          "profiles": 8,
+          "identical_c": 8,
+          "native": 136,
+          "stage_comparisons": 8160
+        }
+      },
+      "holdout_policy": "Frozen candidate black-box evaluation; only aggregate holdout status, hashes and counts inspected; no source/output tuning",
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      },
+      "structure": {
+        "equal": 24
+      },
+      "analysis": {
+        "memory_ssa_graph": {
+          "passed": 24
+        },
+        "memory_ssa_queries": {
+          "passed": 24
+        },
+        "memory_addresses": {
+          "passed": 24
+        },
+        "unsigned_bounds": {
+          "passed": 24
+        },
+        "storage_widths": {
+          "passed": 24
+        },
+        "selected_storage": {
+          "passed": 24
+        }
+      }
+    },
+    "development_rows": [
+      {
+        "id": "nested-transfers-gcc-O2",
+        "object_sha256": "ad2bff275509b14d2cce1fa82bf7fd1e4d7371da96ba438f039fed4269ed2baa",
+        "before": {
+          "distance": 15,
+          "gotos": 3,
+          "expression_nodes": 272,
+          "locals": 8,
+          "narrow_registers": 1,
+          "counter": [
+            {
+              "name": "counter",
+              "registers": [
+                8
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": null,
+              "address_bits": null
+            }
+          ],
+          "generated_c_sha256": "69c0277dbee7a82d293f9e12ca22800433ac4be46eb5d1a929988773ff532c14",
+          "source_sha256": "147d00333157f34d909c48666cf10ff8bcf5ec8c498f4a1ab3e04728f5b9aa2f",
+          "certificate_sha256": "be9da54f2cc1c526e1dc3ca6fd837ad60c4d48ddb4d969bd5409b7863dc5b74b"
+        },
+        "after": {
+          "distance": 15,
+          "gotos": 3,
+          "expression_nodes": 270,
+          "locals": 8,
+          "narrow_registers": 3,
+          "counter": [
+            {
+              "name": "counter",
+              "registers": [
+                8
+              ],
+              "unsigned_bits": 8,
+              "signed_bits": null,
+              "address_bits": null
+            }
+          ],
+          "generated_c_sha256": "7e6d3cb856a0e6c68e0aa30acd508a2b7367b8a37842452b0ae05b44c026c1cc",
+          "source_sha256": "147d00333157f34d909c48666cf10ff8bcf5ec8c498f4a1ab3e04728f5b9aa2f",
+          "certificate_sha256": "e7a171c0a8982ff937167beb383ede95d4861e7358aad1e241f55fb46ee38e9a"
+        }
+      },
+      {
+        "id": "nested-transfers-clang18-O2",
+        "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+        "before": {
+          "distance": 30,
+          "gotos": 16,
+          "expression_nodes": 443,
+          "locals": 8,
+          "narrow_registers": 3,
+          "counter": [],
+          "generated_c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a",
+          "source_sha256": "56565e4b3a462187b954ae1190b368066df4d3d475c1dc960653e400a2f24742",
+          "certificate_sha256": "d65542d25760d3ea672773515711bb59be4c7e24befa31ae94a58d96cecb5bfb"
+        },
+        "after": {
+          "distance": 30,
+          "gotos": 16,
+          "expression_nodes": 443,
+          "locals": 8,
+          "narrow_registers": 3,
+          "counter": [],
+          "generated_c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a",
+          "source_sha256": "56565e4b3a462187b954ae1190b368066df4d3d475c1dc960653e400a2f24742",
+          "certificate_sha256": "d65542d25760d3ea672773515711bb59be4c7e24befa31ae94a58d96cecb5bfb"
+        }
+      },
+      {
+        "id": "shared-cleanup-gcc-O2",
+        "object_sha256": "a789198829fe0f3d4ec423f64c5d030410d16433655db06bfab4197ad514f9eb",
+        "before": {
+          "distance": 0,
+          "gotos": 0,
+          "expression_nodes": 132,
+          "locals": 3,
+          "narrow_registers": 0,
+          "counter": [],
+          "generated_c_sha256": "998f11396b08163103166142aca9ebfaa3efa8396a17ebeb258f38bd3692235e",
+          "source_sha256": "b067210c3cdcba8ffe9c11ee6a2546a6e02a341af887da4d2e11fec0ed3eee13",
+          "certificate_sha256": "3b9663bfbd6a7b88d13cfdfbb43daeb82418bf3d561fc96689daa151b73e092b"
+        },
+        "after": {
+          "distance": 0,
+          "gotos": 0,
+          "expression_nodes": 132,
+          "locals": 3,
+          "narrow_registers": 0,
+          "counter": [],
+          "generated_c_sha256": "998f11396b08163103166142aca9ebfaa3efa8396a17ebeb258f38bd3692235e",
+          "source_sha256": "b067210c3cdcba8ffe9c11ee6a2546a6e02a341af887da4d2e11fec0ed3eee13",
+          "certificate_sha256": "3b9663bfbd6a7b88d13cfdfbb43daeb82418bf3d561fc96689daa151b73e092b"
+        }
+      },
+      {
+        "id": "shared-cleanup-clang18-O2",
+        "object_sha256": "61b3bc14c08f6cafa1e36c20a78b086f80641cc2ade4a062fd48989875a16b97",
+        "before": {
+          "distance": 0,
+          "gotos": 0,
+          "expression_nodes": 182,
+          "locals": 3,
+          "narrow_registers": 0,
+          "counter": [],
+          "generated_c_sha256": "0dfb944722a622d3bba6584a465936447a1bdcdb6c9c7c7f909790933de31e97",
+          "source_sha256": "489ded3ae940d00a3749cf374e50acf43f52822abe6d91c8708bd52d534d5cec",
+          "certificate_sha256": "fdd88b6455052edd16083346a253185e373ec6e822b7f312c1ddd0827eb5c5bb"
+        },
+        "after": {
+          "distance": 0,
+          "gotos": 0,
+          "expression_nodes": 182,
+          "locals": 3,
+          "narrow_registers": 0,
+          "counter": [],
+          "generated_c_sha256": "0dfb944722a622d3bba6584a465936447a1bdcdb6c9c7c7f909790933de31e97",
+          "source_sha256": "489ded3ae940d00a3749cf374e50acf43f52822abe6d91c8708bd52d534d5cec",
+          "certificate_sha256": "fdd88b6455052edd16083346a253185e373ec6e822b7f312c1ddd0827eb5c5bb"
+        }
+      },
+      {
+        "id": "loop-shared-exit-gcc-O2",
+        "object_sha256": "1cff8565c83f8a192108b6ad1b8d51b9b9c85dcc5dc74365f5a3df9a2cb00439",
+        "before": {
+          "distance": 6,
+          "gotos": 0,
+          "expression_nodes": 92,
+          "locals": 2,
+          "narrow_registers": 1,
+          "counter": [
+            {
+              "name": "counter",
+              "registers": [
+                0,
+                32
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": null,
+              "address_bits": null
+            }
+          ],
+          "generated_c_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+          "source_sha256": "0b209f8711fa9d883b51fdf142dd7b1414afd480a96681df229cdca8fc55bc55",
+          "certificate_sha256": "e50426f4b8e0019f8d9dfc8df8cb93c10ac43825373b0cb2e9e5b417e0b3fb46"
+        },
+        "after": {
+          "distance": 6,
+          "gotos": 0,
+          "expression_nodes": 92,
+          "locals": 2,
+          "narrow_registers": 1,
+          "counter": [
+            {
+              "name": "counter",
+              "registers": [
+                0,
+                32
+              ],
+              "unsigned_bits": 64,
+              "signed_bits": null,
+              "address_bits": null
+            }
+          ],
+          "generated_c_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+          "source_sha256": "0b209f8711fa9d883b51fdf142dd7b1414afd480a96681df229cdca8fc55bc55",
+          "certificate_sha256": "f555cd530f9646d934c37f9053913e51dc308038833b678007c02b1e55166f46"
+        }
+      },
+      {
+        "id": "loop-shared-exit-clang18-O2",
+        "object_sha256": "ee9e696f98a0c5198a6d18cda528f1604c1af476b6c82e57a21e2e399eb6cf98",
+        "before": {
+          "distance": 4,
+          "gotos": 0,
+          "expression_nodes": 77,
+          "locals": 5,
+          "narrow_registers": 1,
+          "counter": [],
+          "generated_c_sha256": "70eb2a75a6c78d964eafb8d4c380899025577ed8c029209ab2a49f21e88a2a0f",
+          "source_sha256": "efe48ff5759a0042daf8f068944e0423fa91be4b0c2c67b31fb1a42e2030d96c",
+          "certificate_sha256": "d3e208819c5c2079c21f472c7af445a82c0e8e2455b14770c69306ffdf9a7e88"
+        },
+        "after": {
+          "distance": 4,
+          "gotos": 0,
+          "expression_nodes": 77,
+          "locals": 5,
+          "narrow_registers": 1,
+          "counter": [],
+          "generated_c_sha256": "70eb2a75a6c78d964eafb8d4c380899025577ed8c029209ab2a49f21e88a2a0f",
+          "source_sha256": "efe48ff5759a0042daf8f068944e0423fa91be4b0c2c67b31fb1a42e2030d96c",
+          "certificate_sha256": "883de39c7eba42551cc6bbd89b0d0d74e29428f8eb5f504b53cc571aa9744279"
+        }
+      }
+    ]
+  },
+  "tests": {
+    "source_revision": "141e4bb84165147b6983410ab170c002dc92536c",
+    "rust": {
+      "targets": 25,
+      "passed": 1547,
+      "ignored": 58,
+      "failed": 0
+    },
+    "focused_library": 34,
+    "existing_plus_copy_chain_dataflow": 16,
+    "smt": {
+      "model": "pure-u64-v1",
+      "actual_inferred_cap_obligations_unsat": 80,
+      "too_narrow_controls_sat_and_source_ir_replayed": 76
+    },
+    "clippy_all_targets": "passed",
+    "rustfmt": "passed"
+  },
+  "audit": {
+    "snapshot_controls": "Compared lhs/RHS/flag overwrites, retained copies, block boundaries, entry/backedges, low32 versus full64, same-target occurrences, unguarded predecessors and strict cap0",
+    "copy_chain": "Independent review identified quadratic backward resolution. A1001-register copy chain actually failed with Invalid successor entry bound; lazy immutable-writer memoization passes it while keeping old/new snapshots distinct and within1m work.",
+    "review_scope": "Read-only semantic audit found no too-small accepted cap; this is a review result rather than a proof of the implementation."
+  },
+  "value_model": {
+    "model": "nirvana-state4-values-v8",
+    "profile": "Same saved development GCC source/generated AST, fixed3sec solver per query, valid state-only return and32-byte state",
+    "before": {
+      "query_bytes": 193270,
+      "graph_nodes": 3080
+    },
+    "after": {
+      "query_bytes": 183188,
+      "graph_nodes": 2930
+    },
+    "status_before": "unknown",
+    "status_after": "unknown",
+    "reason_before": "solver_timeout",
+    "reason_after": "solver_timeout"
+  },
+  "limits": [
+    "The original source counter is uint64_t. The8-bit result is a safe storage value bound, not recovered source type identity.",
+    "This width certificate does not prove signed C representations, C promotions, arbitrary-PC reentry, all-register snapshots or the complete binary-to-C pipeline.",
+    "Concrete native/C/prefix comparisons cover fixed vectors and budgets. The GCC whole state-value query remains unknown/timeout, not all-input equivalence.",
+    "Clang inner-loop unrolling still gives source topology distance30; source-local guard refinement changes no CFG topology.",
+    "Finite bit-cube rows discard precise non-power-of-two interval bounds; cross-block relational predicates remain a separate analysis question."
+  ],
+  "artifacts": {
+    "guard-nested-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-nested-comparison.json",
+      "sha256": "974ffffbb50975bacbd57a36c782dc528908a4a423a0dcc43c4d5343c729db11"
+    },
+    "guard-core-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-core-comparison.json",
+      "sha256": "985fa8ec305a14ab7a037d05c3583f048479b2722c17729287f2f1f3d914a165"
+    },
+    "guard-full-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-full-comparison.json",
+      "sha256": "60ae00148c65ce2ee8b9903e49baa5964b2b97d98a8959af27ec85a70f628d93"
+    },
+    "guard-full-before/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-full-before/report.json",
+      "sha256": "c299f9afc946078af007dbfb2b2b1e1aa467fc3ce0c0d6a453a668239aabe00b"
+    },
+    "guard-full-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-full-after/report.json",
+      "sha256": "e3d6bc56aaa4df5084b3428c042e95a509b2289ac17060243522523746a6f6b8"
+    },
+    "guard-nested-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-nested-after/report.json",
+      "sha256": "9ff0a9ce1f567d1e28e32a93a230811cb53081b24b9c9eae30629d7824c12a2b"
+    },
+    "guard-core-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-core-after/report.json",
+      "sha256": "c995affd69bc14c54dda27cb8caa2af8f0f436e3bb5d6881606bbdc440237d75"
+    },
+    "guard-reference-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-reference-tools.json",
+      "sha256": "ca9b7019f8e3ffaf3b84e0ed4ec11e07d7939aff4617a5596a89b1b4b8569030"
+    },
+    "guard-nested-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-nested-tools.json",
+      "sha256": "e62fb8a0e788dcca0a31f65fe055b7507b4aa8c6f134d40bdfa6dac112be2733"
+    },
+    "guard-core-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-core-tools.json",
+      "sha256": "72f031c93ba540967e73197390f792c41c4fbe525fd5e2eda00e13876a20a980"
+    },
+    "guard-full-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-full-tools.json",
+      "sha256": "ace2a60787c2ab034b8c3b5a26057bdbe52546c647212b44f63933671522f537"
+    },
+    "guard-values-direct/manifest.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-values-direct/manifest.json",
+      "sha256": "be3789b3411de9c737d91655005aadc285f08a15e8c3d4960464b3926e9fcf46"
+    },
+    "guard-values-direct/before.graph.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-values-direct/before.graph.json",
+      "sha256": "26a4a74b142a1348c24025e50a066d68e1319280be9a78335dac6da077e14590"
+    },
+    "guard-values-direct/after.graph.json": {
+      "file": "target/runs/run-a37yw4tm/out/guard-values-direct/after.graph.json",
+      "sha256": "2bc153b7203cfae2c695bb1c7ca11c8350c6f71b39acf853364922f183cc9222"
+    },
+    "guard-values-direct/before.smt2": {
+      "file": "target/runs/run-a37yw4tm/out/guard-values-direct/before.smt2",
+      "sha256": "f160aef453d24d4af75122223e8472f029988f132afa5b3c43c1e2579442bd26"
+    },
+    "guard-values-direct/after.smt2": {
+      "file": "target/runs/run-a37yw4tm/out/guard-values-direct/after.smt2",
+      "sha256": "7ba9bbc4b9bba0320cd9a1312f05f3937412120c93a514f04aa5ecf33fa9de6f"
+    },
+    "toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/toolchain.json",
+      "sha256": "d8771035ad1a17e0417d63b2ad04ae13cd6a11771866170be79e0b3e88733551"
+    },
+    "z3-toolchain-verification.json": {
+      "file": "target/runs/run-a37yw4tm/out/z3-toolchain-verification.json",
+      "sha256": "26f4972bd6ea162f3c9396779ab65d12f96694218e009baeb5ccc24fbbcf6188"
+    },
+    "guard-checks/rust-guard-bounds-dataflow.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/rust-guard-bounds-dataflow.log",
+      "sha256": "4775f3dee95e650951892a78604d86ce0679af6e64b87de45fa5862138e94185"
+    },
+    "guard-checks/rust-guard-bounds-memo-smt.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/rust-guard-bounds-memo-smt.log",
+      "sha256": "93e05b5ffdbfeb9333b199b48564fef6444a916042102047c66523b6778e781b"
+    },
+    "guard-checks/rust-guard-bounds-memo-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/rust-guard-bounds-memo-full.log",
+      "sha256": "53fd07681679fe57a10772bbcba0e893a2e57fafad5bacfe045a6c31e3dc1ebd"
+    },
+    "guard-checks/rust-guard-bounds-memo-lib.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/rust-guard-bounds-memo-lib.log",
+      "sha256": "8f98aeb6055d2a1edc437f3fe8ddd9556c89a63e3d8c3e60af6dad7597b5fb78"
+    },
+    "guard-checks/build-guard-candidate.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/build-guard-candidate.log",
+      "sha256": "eb1e9adee3b07fea5f790df79b488c8a6d4be97f9ffa7d37c78a594ea7a6578b"
+    },
+    "guard-checks/clippy-guard-bounds.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/clippy-guard-bounds.log",
+      "sha256": "7e1205109c2348e4cf90e1e8020a90c96e7cfa90055dbbf9ecb0965ddc19745a"
+    },
+    "guard-checks/rust-guard-copy-chain-before.log": {
+      "file": "target/runs/run-a37yw4tm/out/guard-checks/rust-guard-copy-chain-before.log",
+      "sha256": "398a4182603ca5b2915e9f7ae09aae817b336516b5bd01be1e13a531e5c694a8"
+    }
+  },
+  "reproduction": "Build reference and candidate main/probe sequentially in the shared target, then run the same current evaluator with fixed manifests and inputs. Compare all three report pairs; rerun ignored edge_storage SMT test using pinned NIRVANA_Z3. Root reference worktree was removed after baseline.",
+  "evidence_storage": "Two managed local runs,512MiB combined; committed source/input revisions and hashes regenerate data after eviction."
+}

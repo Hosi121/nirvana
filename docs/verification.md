@@ -32,7 +32,7 @@ python3 -m unittest discover -s tools/tests
 | 選択したSemantic IR→実行IR | 実入力・計画・出力を保持した`Lowering`を再検査。入力の全レジスタ・RAM・fault・PC・traceを予算ごとに比較し、追加した捕捉レジスタだけを除く。入力・出力dumpと観測件数をM0へ記録 |
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
-| 選択したCのunsigned保存幅 | 実際の表示IRと幅証跡を保持して再検査し、局所変数の所属レジスタ・幅と生成Cのhashを対応付ける。[固定比較](../tools/corpora/ir-selected-storage-v1.m1.json)は開発用6構成を記録 |
+| 選択したCのunsigned保存幅 | 実際の表示IRと幅証跡を保持して再検査し、局所変数の所属レジスタ・幅と生成Cのhashを対応付ける。[固定比較](../tools/corpora/ir-selected-storage-v1.m1.json)は開発用6構成、[条件付き上限](../tools/corpora/ir-guarded-storage-v1.m1.json)は比較時の値・全先行辺・入口条件を記録 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |
 | MemorySSA | 世代グラフと、各Loadの先行状態・全候補byteを覆う閉じた証跡を独立に検査。部分Store・alias・φ・ループ・未知への拡大をbyte tagと配列SMTでも照合 |
 | C継続グラフ | 保存先とメモリviewの確定後、前後のASTから順序付きC断片と継続先を照合。メモリ条件の削除・アクセス幅の変更・効果の脱落や並替えを対照で拒否する。観測境界とprinterへの依存は[設計](architecture.md#c保存先確定後の継続処理)を参照 |
@@ -76,6 +76,8 @@ Cの型幅と描画は再コンパイル後の実行で確認します。
 
 [M1の部分checkpoint](../tools/corpora/closed-calls-v1.m1.json)には、同じ27関数のELFでの解析・C出力の比較、9個の閉じた要約の検査件数、改変対照と実行テスト、source版と成果物hashを記録しています。生データは容量管理付きの短期保存です。
 [アフィン式と幅のcheckpoint](../tools/corpora/ir-affine-v1.m1.json)は、このELFの解析・C出力を保ち、スタック354点の根拠を加えています。M0の同じGCC/Clang O2の4構成では、36アクセス・136アフィン等式と681個のSSA値の上限を検査し、native・生成C・IRの観測を維持しました。Cの保存幅の解析は、型制約のunsigned上限と別に扱います。
+
+[条件付きの保存幅](../src/dataflow/value_width/verify/edge_bounds.rs)は、元の逐次代入から比較時の値を後方参照し、分岐後も同じ値を持つレジスタだけへ上限を適用します。入口は任意u64、比較後の上書き・blockを越えた古い条件・未知の高32bitは区別します。[SMT検査](../tests/verification/edge_storage.rs)は実際の推論結果に対する80件の全u64問い合わせと、狭すぎる76件の反例再生を記録しています。保存幅の証跡と、生成C全体の同値性はそれぞれの境界で評価します。
 [保存値の同一性](../tests/model/middle_ir/saved.rs)は、共通の保存値fixtureを使い、コピー・部分抽出・φ・ループ・上書きとsnapshotの初期化を検査します。通常のMIRは全状態を直接比較し、保存値を展開したLow IRは追加レジスタを除いて比較します。異なるφ入力、偽のslice、古いsnapshot、根拠を欠くreadを拒否し、[同じC比較](../tests/codegen/byte_values_backend.rs)で元の出力・保存値展開・候補選択を照合します。
 [snapshot統合の対照](../src/dataflow/memory_values/roots/tests.rs)は、bit境界、循環、偽のSSA事実、入れ子の根拠、入力変更を検査します。誤ったoffsetは拒否した上で、生成された候補が異なる返り値を出す反例も実行します。
 [経路条件の対照](../src/dataflow/predicates/tests.rs)は、全流入辺の主張、異なるLoad・φ入力・再定義、booleanと一般のwordに対するXORを検査します。誤った分岐先は拒否した上で具体実行の差も確認します。元IR・変換後IR・再構築したMiddle IRの入口実行を、全レジスタ・RAM・fault・PC・予算について比較します。純粋式の値番号付けとscalar演算は検査器の共有する信頼基盤です。
