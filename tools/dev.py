@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,8 @@ MIB = 1024 ** 2
 CACHE_BYTES = 2048 * MIB
 RUN_BYTES = 512 * MIB
 RUN_COUNT = 2
+TARGET_BYTES = 4096 * MIB
+LIMIT_EXIT = 75
 RUN_SCHEMA = "nirvana-managed-run-v1"
 
 
@@ -24,6 +27,7 @@ RUN_SCHEMA = "nirvana-managed-run-v1"
 class Layout:
     root: Path
     locks: Path
+    worktrees: tuple = ()
 
     @classmethod
     def discover(cls, checkout):
@@ -33,12 +37,13 @@ class Layout:
             entries = subprocess.check_output(
                 ["git", "-C", str(checkout), "worktree", "list", "--porcelain", "-z"],
                 stderr=subprocess.DEVNULL).decode().split("\0")
-            root = Path(next(item[9:] for item in entries if item.startswith("worktree ")))
+            roots = [Path(item[9:]).resolve() for item in entries if item.startswith("worktree ")]
+            root = roots[0]
             common = subprocess.check_output(
                 ["git", "-C", str(checkout), "rev-parse", "--path-format=absolute", "--git-common-dir"],
                 text=True, stderr=subprocess.DEVNULL).strip()
-            return cls(root.resolve(), Path(common) / "nirvana-locks")
-        except (subprocess.CalledProcessError, FileNotFoundError, StopIteration):
+            return cls(root, Path(common) / "nirvana-locks", tuple(roots[1:]))
+        except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
             return cls(checkout, checkout / "target/.locks")
 
     def path(self, relative):
@@ -52,23 +57,55 @@ class Layout:
                 raise ValueError(f"storage directory is a symlink: {candidate}")
         return path
 
+    def targets(self):
+        for root in (self.root, *self.worktrees):
+            yield Layout(root, self.locks).path("")
 
-def size(path):
+
+def size(path, seen=None):
     """Count regular-file bytes once per inode, without following symlinks."""
-    seen, total = set(), 0
-    if not path.exists():
+    seen = set() if seen is None else seen
+
+    def count(item):
+        try:
+            info = item.lstat()
+        except FileNotFoundError:
+            # Cargo can remove intermediates while the monitor walks them.
+            return 0
+        key = (info.st_dev, info.st_ino)
+        if not stat.S_ISREG(info.st_mode) or key in seen:
+            return 0
+        seen.add(key)
+        return info.st_size
+
+    if path.is_symlink():
         return 0
+    if not path.is_dir():
+        return count(path)
+    total = 0
     for directory, _, files in os.walk(path, followlinks=False):
-        for name in files:
-            item = Path(directory) / name
-            if item.is_symlink():
-                continue
-            stat = item.stat()
-            key = (stat.st_dev, stat.st_ino)
-            if key not in seen:
-                seen.add(key)
-                total += stat.st_size
+        total += sum(count(Path(directory) / name) for name in files)
     return total
+
+
+def target_usage(layout):
+    seen = set()
+    return [(path, size(path, seen)) for path in layout.targets()]
+
+
+def target_limit(layout, budget):
+    usage = target_usage(layout)
+    used = sum(amount for _, amount in usage)
+    if used <= budget:
+        return None
+    entries = []
+    for root, _ in usage:
+        if root.exists():
+            entries.extend((size(path), path) for path in root.iterdir())
+    largest = ", ".join(f"{path}: {amount / MIB:.1f} MiB"
+                        for amount, path in sorted(entries, reverse=True)[:3])
+    return (f"Target storage limit exceeded: {used / MIB:.1f} / {budget / MIB:.1f} MiB. "
+            f"Largest entries: {largest}. Inspect dev.py status or use dev.py clean --runs.")
 
 
 @contextmanager
@@ -87,26 +124,51 @@ def refresh_cache(layout, budget, force=False):
         print(f"Removed Cargo intermediates: {used / MIB:.1f} MiB", file=sys.stderr)
 
 
-def child(argv, **kwargs):
+def stop(process, immediate=False):
+    try:
+        os.killpg(process.pid, signal.SIGKILL if immediate else signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
+def child(argv, guard=None, **kwargs):
     """Wait for all compiler children before deleting their output on interrupt."""
+    if guard and (reason := guard()):
+        print(reason, file=sys.stderr)
+        return LIMIT_EXIT
     with subprocess.Popen(argv, start_new_session=True, **kwargs) as process:
         try:
-            result = process.wait()
+            while True:
+                try:
+                    result = process.wait(timeout=1 if guard else None)
+                except subprocess.TimeoutExpired:
+                    result = None
+                if guard and (reason := guard()):
+                    # A writer that ignores SIGTERM must stop before cleanup.
+                    stop(process, immediate=True)
+                    print(reason, file=sys.stderr)
+                    return LIMIT_EXIT
+                if result is not None:
+                    break
         except BaseException:
+            stop(process)
+            raise
+        finally:
+            # Background writers share this job's process group. Stop them
+            # before their output is removed and its open files go uncounted.
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-            raise
     return result if result >= 0 else 128 - result
 
 
-def cargo(layout, argv, budget):
+def cargo(layout, argv, budget, target_budget=TARGET_BYTES):
     options = argv[:argv.index("--")] if "--" in argv else argv
     if not options:
         raise ValueError("cargo requires a subcommand, e.g. cargo test --locked --all-targets")
@@ -120,7 +182,7 @@ def cargo(layout, argv, budget):
                "CARGO_TARGET_DIR": str(layout.path("")),
                "CARGO_BUILD_BUILD_DIR": str(layout.path("cargo-cache"))}
         try:
-            return child(["cargo", *argv], env=env)
+            return child(["cargo", *argv], env=env, guard=lambda: target_limit(layout, target_budget))
         finally:
             refresh_cache(layout, budget)
 
@@ -154,7 +216,7 @@ def prune_runs(layout, budget, count, all_runs=False):
             used += amount
 
 
-def experiment(layout, argv, keep, budget, count):
+def experiment(layout, argv, keep, budget, count, target_budget=TARGET_BYTES):
     if not argv or not any("{out}" in arg for arg in argv):
         raise ValueError("run requires a command with an {out} output path")
     with lock(layout, "runs.lock"):
@@ -167,7 +229,7 @@ def experiment(layout, argv, keep, budget, count):
         record = {"schema": RUN_SCHEMA, "argv": command, "cwd": str(Path.cwd()), "keep": keep}
         (directory / "run.json").write_text(json.dumps(record, indent=2) + "\n")
         try:
-            result = child(command)
+            result = child(command, guard=lambda: target_limit(layout, target_budget))
             record["returncode"] = result
             (directory / "run.json").write_text(json.dumps(record, indent=2) + "\n")
         finally:
@@ -194,6 +256,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-mib", type=positive, default=CACHE_BYTES // MIB)
     parser.add_argument("--runs-mib", type=positive, default=RUN_BYTES // MIB)
+    parser.add_argument("--max-target-mib", type=positive, default=TARGET_BYTES // MIB,
+                        help="stop managed jobs exceeding total storage across registered worktrees")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("cargo", help="serialize builds and trim intermediate cache").add_argument(
         "argv", nargs=argparse.REMAINDER)
@@ -205,23 +269,27 @@ def main(argv=None):
         "--runs", action="store_true")
     args = parser.parse_args(argv)
     layout = Layout.discover(Path(__file__).resolve().parents[1])
-    budget, run_budget = args.cache_mib * MIB, args.runs_mib * MIB
+    budget, run_budget, target_budget = args.cache_mib * MIB, args.runs_mib * MIB, args.max_target_mib * MIB
     command = getattr(args, "argv", [])
     if command[:1] == ["--"]:
         command = command[1:]
     if args.action == "cargo":
-        return cargo(layout, command, budget)
+        return cargo(layout, command, budget, target_budget)
     if args.action == "run":
-        return experiment(layout, command, args.keep, run_budget, RUN_COUNT)
-    # Same lock order as a managed experiment that invokes managed Cargo.
-    with lock(layout, "runs.lock"), lock(layout, "cargo.lock"):
-        if args.action == "clean":
+        return experiment(layout, command, args.keep, run_budget, RUN_COUNT, target_budget)
+    if args.action == "clean":
+        # Same lock order as a managed experiment that invokes managed Cargo.
+        with lock(layout, "runs.lock"), lock(layout, "cargo.lock"):
             refresh_cache(layout, budget, force=True)
             prune_runs(layout, run_budget, RUN_COUNT, all_runs=args.runs)
-        print(f"Storage: {layout.root / 'target'}")
-        print(f"Cargo intermediates: {size(layout.path('cargo-cache')) / MIB:.1f} MiB / {args.cache_mib} MiB")
-        print(f"Managed runs: {size(layout.path('runs')) / MIB:.1f} MiB / {args.runs_mib} MiB; keep {RUN_COUNT}")
-        print(f"All target files: {size(layout.path('')) / MIB:.1f} MiB")
+    # Status is a live, best-effort view, so it also works during long jobs.
+    print(f"Storage: {layout.root / 'target'}")
+    print(f"Cargo intermediates: {size(layout.path('cargo-cache')) / MIB:.1f} MiB / {args.cache_mib} MiB")
+    print(f"Managed runs: {size(layout.path('runs')) / MIB:.1f} MiB / {args.runs_mib} MiB; keep {RUN_COUNT}")
+    usage = target_usage(layout)
+    print(f"All target files: {sum(amount for _, amount in usage) / MIB:.1f} MiB / {args.max_target_mib} MiB")
+    for path, amount in usage:
+        print(f"  {path}: {amount / MIB:.1f} MiB")
     return 0
 
 

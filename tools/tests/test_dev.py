@@ -1,12 +1,16 @@
 """Build storage stays disposable while source and final outputs survive."""
 import fcntl
+from contextlib import redirect_stderr
+import io
 import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -94,6 +98,102 @@ class Storage(unittest.TestCase):
             self.assertEqual(dev.experiment(self.layout, [*command, str(code)], False, 1000, 2), code)
             self.assertEqual(list(dev.runs(self.layout)), [])
 
+    def test_existing_unmanaged_output_blocks_jobs_and_survives_cleanup(self):
+        evidence = self.file("target/checkpoint/data", b"x" * 8192)
+        marker = self.root / "started"
+        command = [sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()", str(marker)]
+        result = dev.child(command, guard=lambda: dev.target_limit(self.layout, 4096))
+        self.assertEqual(result, dev.LIMIT_EXIT)
+        self.assertFalse(marker.exists())
+        self.assertEqual(evidence.read_bytes(), b"x" * 8192)
+
+    def test_live_writer_is_stopped_and_temporary_output_is_removed(self):
+        marker = self.root / "completed"
+        command = [sys.executable, "-c",
+                   "import pathlib,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                   "p=pathlib.Path(sys.argv[1]); p.mkdir(); (p/'data').write_bytes(b'x'*8192); "
+                   "time.sleep(2); pathlib.Path(sys.argv[2]).touch()", "{out}", str(marker)]
+        # Same writer completes when it is allowed enough storage.
+        self.assertEqual(dev.experiment(self.layout, command, False, 1000, 2, 100_000), 0)
+        self.assertTrue(marker.exists())
+        marker.unlink()
+        self.assertEqual(dev.experiment(self.layout, command, False, 1000, 2, 4096), dev.LIMIT_EXIT)
+        self.assertFalse(marker.exists())
+        self.assertEqual(list(dev.runs(self.layout)), [])
+
+    def test_fast_writer_is_checked_at_exit_too(self):
+        command = [sys.executable, "-c",
+                   "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.mkdir(); (p/'data').write_bytes(b'x'*8192)",
+                   "{out}"]
+        self.assertEqual(dev.experiment(self.layout, command, False, 1000, 2, 4096), dev.LIMIT_EXIT)
+        self.assertEqual(list(dev.runs(self.layout)), [])
+
+    def test_background_writer_is_stopped_before_cleanup(self):
+        pidfile = self.root / "writer.pid"
+        writer = ("import os,pathlib,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                  "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)")
+        parent = ("import pathlib,subprocess,sys,time; "
+                  "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); "
+                  "p=pathlib.Path(sys.argv[2]); "
+                  "deadline=time.monotonic()+5\n"
+                  "while not p.exists() and time.monotonic()<deadline: time.sleep(0.01)\n"
+                  "assert p.exists()")
+        pid = None
+        try:
+            self.assertEqual(dev.child([sys.executable, "-c", parent, writer, str(pidfile)]), 0)
+            pid = int(pidfile.read_text())
+            # A killed orphan may briefly remain a zombie until init reaps it.
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                try:
+                    state = Path(f"/proc/{pid}/stat").read_text().split()[2]
+                except FileNotFoundError:
+                    return
+                if state == "Z":
+                    return
+                time.sleep(0.01)
+            self.fail("background writer is still alive after the managed job returned")
+        finally:
+            if pid is not None:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_total_budget_includes_worktree_outputs_and_deduplicates_hardlinks(self):
+        linked = self.root / "linked"
+        payload = self.file("target/debug/nirvana", b"x" * 8192)
+        other = self.file("linked/target/experiment/output", b"y" * 8192)
+        layout = dev.Layout(self.root, self.layout.locks, (linked,))
+        message = dev.target_limit(layout, 10_000)
+        self.assertIn(str(other.parent), message)
+        other.unlink()
+        other.hardlink_to(payload)
+        self.assertIsNone(dev.target_limit(layout, 10_000))
+
+    def test_repeated_builds_and_kept_runs_have_bounded_storage(self):
+        compiler = self.file("bin/cargo", (
+            f"#!{sys.executable}\n"
+            "import os,pathlib\n"
+            "p=pathlib.Path(os.environ['CARGO_BUILD_BUILD_DIR'])/'debug'; p.mkdir(parents=True,exist_ok=True)\n"
+            "(p/str(len(list(p.iterdir())))).write_bytes(b'x'*2048)\n").encode())
+        compiler.chmod(0o755)
+        binary = self.file("target/debug/nirvana")
+        command = [sys.executable, "-c",
+                   "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.mkdir(); (p/'data').write_bytes(b'x'*2048)",
+                   "{out}"]
+        sizes = []
+        with patch.dict(os.environ, PATH=str(compiler.parent) + os.pathsep + os.environ['PATH']), \
+                redirect_stderr(io.StringIO()):
+            for _ in range(12):
+                self.assertEqual(dev.cargo(self.layout, ["build"], 4096, 16_384), 0)
+                self.assertEqual(dev.experiment(self.layout, command, True, 8192, 2, 16_384), 0)
+                self.assertLessEqual(dev.size(self.root / "target/cargo-cache"), 4096)
+                self.assertLessEqual(len(list(dev.runs(self.layout))), 2)
+                sizes.append(dev.size(self.root / "target"))
+        self.assertLess(max(sizes), 16_384)
+        self.assertEqual(binary.read_bytes(), b"retained")
+
     def test_kept_experiments_have_provenance_and_return_failure_if_oversize(self):
         command = [sys.executable, "-c",
                    "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.mkdir(); (p/'data').write_text('x'*100)",
@@ -108,10 +208,11 @@ class Storage(unittest.TestCase):
     def test_cargo_owns_paths_and_holds_lock_through_failed_child_cleanup(self):
         self.file("target/cargo-cache/data", b"old cache")
 
-        def build(argv, env):
+        def build(argv, env, guard):
             self.assertFalse((self.root / "target/cargo-cache").exists())
             self.assertEqual(env["CARGO_TARGET_DIR"], str(self.root / "target"))
             self.assertEqual(env["CARGO_BUILD_BUILD_DIR"], str(self.root / "target/cargo-cache"))
+            self.assertIsNone(guard())
             with (self.layout.locks / "cargo.lock").open("a") as second:
                 with self.assertRaises(BlockingIOError):
                     fcntl.flock(second, fcntl.LOCK_EX | fcntl.LOCK_NB)
