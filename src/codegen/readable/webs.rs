@@ -7,7 +7,7 @@ use crate::control_flow::structure::{StructureError, StructureStats, StructuredF
 use crate::control_flow::structure_verify::StructureEvidence;
 use crate::model::ir::Program;
 
-use super::WebRecovery;
+use super::{WebRecovery, structure_recovery};
 
 pub(super) struct SelectedWebs {
     pub program: Option<Program>,
@@ -38,7 +38,7 @@ pub(super) fn select(original: &Program) -> SelectedWebs {
             return selected;
         }
     };
-    let structure = StructuredFunction::recover(candidate.program());
+    let structure = structure_recovery::recover(candidate.program());
     if selected.structure.is_ok()
         && let Err(reason) = structure
     {
@@ -53,7 +53,7 @@ pub(super) fn select(original: &Program) -> SelectedWebs {
 }
 
 pub(super) fn keep_original(original: &Program, recovery: WebRecovery) -> SelectedWebs {
-    let source = StructuredFunction::recover(original);
+    let source = structure_recovery::recover(original);
     SelectedWebs {
         program: None,
         source_evidence: source.as_ref().ok().map(StructuredFunction::evidence),
