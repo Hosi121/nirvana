@@ -59,6 +59,51 @@ fn copy(candidate: &MemoryAddresses) -> MemoryAddresses {
         phi_values: candidate.phi_values.clone(),
     }
 }
+
+#[test]
+fn opaque_declarations_bind_unreachable_source_without_requiring_a_live_ssa_point() {
+    let source = Program::new(
+        0,
+        32,
+        vec![
+            instruction(0, vec![], Control::Jump(2)),
+            instruction(1, vec![set(0, c(0))], Control::Next),
+            instruction(2, vec![set(1, load(r(0)))], Control::Return(r(1))),
+        ],
+    )
+    .unwrap();
+    let opaque = BTreeSet::from([Site {
+        instruction: 1,
+        assignment: Some(0),
+    }]);
+    let (graph, aliases, candidate) = fixture(&source, &opaque);
+    assert!(
+        !graph
+            .blocks
+            .iter()
+            .flat_map(|block| &block.points)
+            .any(|p| opaque.contains(&p.site))
+    );
+    let proof = validate(&source, &graph, &aliases, &opaque, &candidate).unwrap();
+    assert_eq!(proof.accesses, 1);
+    for site in [
+        Site {
+            instruction: 1,
+            assignment: None,
+        },
+        Site {
+            instruction: 1,
+            assignment: Some(1),
+        },
+        Site {
+            instruction: 9,
+            assignment: Some(0),
+        },
+    ] {
+        let forged = BTreeSet::from([site]);
+        assert!(validate(&source, &graph, &aliases, &forged, &candidate).is_err());
+    }
+}
 fn rejects(
     source: &Program,
     graph: &SsaFunction,

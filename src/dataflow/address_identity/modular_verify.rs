@@ -653,9 +653,16 @@ fn check(
     }
     for site in opaque {
         budget.spend(1)?;
-        if points
-            .get(site)
-            .is_none_or(|point| point.definition.is_none())
+        // Declarations cover the original source, including unreachable
+        // instructions. Reachable SSA points alone cannot validate this set.
+        let source_index = source
+            .instructions()
+            .binary_search_by_key(&site.instruction, |instruction| instruction.address)
+            .map_err(|_| invalid("opaque source instruction"))?;
+        if !site
+            .assignment
+            .and_then(|index| source.instructions()[source_index].assignments.get(index))
+            .is_some_and(|assignment| matches!(assignment.destination, Place::Register(_)))
         {
             return Err(invalid("opaque definition"));
         }
