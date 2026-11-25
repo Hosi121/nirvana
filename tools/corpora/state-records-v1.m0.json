@@ -1,0 +1,410 @@
+{
+  "schema": "nirvana-m0-checkpoint-v1",
+  "milestone": "M0",
+  "status": "achieved-for-fixed-profiles",
+  "focus": "Lossless physical encoding of complete evaluation state records",
+  "implementation_revision": "d177a6d",
+  "reference_revision": "40555f7019cfa7c99019f6f7afa414a76598ca63",
+  "candidate_revision": "05e0e2278e0224e02ca1b2de08d03864873c9310",
+  "production_ir_and_inference": "Unchanged; encoding is scoped to the evaluation example and readers",
+  "contract": {
+    "encoding": "register-rle-u64-v1",
+    "tokens": "Each expected/actual registers field independently uses the shorter of legacy dense Debug and canonical maximal positive u64 RLE; ties retain dense",
+    "source_dimension": "Original input IR header; 238/307 semantic source registers remain distinct from 244/313 selected-C and 32 machine registers",
+    "source_register_quota": 1000000,
+    "logical_and_physical_row_bytes": 4194304,
+    "logical_and_physical_file_bytes": 134217728,
+    "producer_budget": "Count exact legacy bytes before publication; preserve acceptance, stop position and budget_exhausted classification",
+    "decoder_budget": "Validate source dimensions and BOTH register tokens total restored row/file size before expanding runs",
+    "hashes": "sha256 binds physical file; decoded_sha256 and decoded_bytes bind exact legacy JSONL bytes; only register tokens are replaced",
+    "other_observations": [
+      "input",
+      "order",
+      "RAM",
+      "status/fault",
+      "PC",
+      "trace"
+    ],
+    "legacy": "Absent encoding retains old dense-only behavior and metadata shape; unknown encoding or undeclared RLE rejected",
+    "retained": "Both digests required for encoded retained records; raw probe hash and stages.attach equality retained"
+  },
+  "inputs": {
+    "file": "tools/corpora/structure-branch-inputs-v1.txt",
+    "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+  },
+  "vectors": 17,
+  "step_limit": 4096,
+  "evaluation": [
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-signed-storage-v1.json",
+        "sha256": "9bf05b5dc8e75212fc29a6568712e42a47d5a2ec977dc0e15073cb012610adfc"
+      },
+      "requested": 4,
+      "before": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-before/report.json",
+        "sha256": "70278aacbfad896d0c6cc101e7dcce0e68d8dd02f5cfa0c5f8ea2b1c9efd0113",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-before.tar.gz",
+          "sha256": "1a58c4496cfa0a7462ce5a26801dd909ed0e82c74c6569283780a6cafa74582e"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-before.manifest.json",
+          "sha256": "edd76d877187ac005e1338d2c313f3ffa23599918ea4bb82674c0756ed79ea0f"
+        }
+      },
+      "after": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-after/report.json",
+        "sha256": "a8f44943a6a751d1107a27987287e6dfaf646a7b39ce86e6cdcb96b8ca30f5b8",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-after.tar.gz",
+          "sha256": "851f3577e17b914d20c3d82390731a27eef8ada55cba090effa52d6a61801abf"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-after.manifest.json",
+          "sha256": "052cedc28681207fc18eb9dd457ad2c0e819191b52f3db5ff32529f54f822717"
+        }
+      },
+      "comparison": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-comparison.json",
+        "sha256": "d571e24c1b0302491f4dee6749cf808e93fe8b3a9084532104b78ed491765b48"
+      },
+      "byte_comparison": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-byte-comparison.json",
+        "sha256": "e1ae4aba1f45192a47fc32f692d168d42a1ab87a390b1655be142e5b5df15fe9"
+      },
+      "unchanged_summary": {
+        "requested": 4,
+        "status": {
+          "measured": 4
+        },
+        "failures_by_stage": {},
+        "distances": {
+          "exact": 4
+        },
+        "cohorts": {
+          "development": 4
+        },
+        "architecture": {
+          "passed": 4
+        },
+        "architecture_execution": {
+          "low_middle": {
+            "passed": 4
+          },
+          "middle_predicates": {
+            "not_applied": 4
+          },
+          "middle_memory": {
+            "not_applied": 4
+          },
+          "middle_saved": {
+            "not_applied": 4
+          },
+          "selected_semantic": {
+            "passed": 4
+          }
+        },
+        "architecture_analysis": {
+          "memory_ssa_graph": {
+            "passed": 4
+          },
+          "memory_ssa_queries": {
+            "passed": 4
+          },
+          "memory_addresses": {
+            "passed": 4
+          },
+          "unsigned_bounds": {
+            "passed": 4
+          },
+          "storage_widths": {
+            "passed": 4
+          },
+          "selected_storage": {
+            "passed": 4
+          },
+          "selected_signed_storage": {
+            "passed": 4
+          }
+        },
+        "c_footprint": {
+          "measured": 4
+        },
+        "state_memory_sites": {
+          "partial": 4
+        },
+        "state_values": {
+          "equivalent_under_model": 4
+        }
+      },
+      "counts": {
+        "native": 68,
+        "generated_O0": 204,
+        "generated_O2": 204,
+        "stage_comparisons": 8160
+      },
+      "identical_generated_c": 4,
+      "identical_ir_artifacts": 20,
+      "state_records": {
+        "rows": 4080,
+        "before_record_bytes": 46259616,
+        "after_record_bytes": 21930120,
+        "record_byte_ratio": 0.47406619198914235
+      },
+      "every_decoded_sha256_matches_old_physical_sha256": true,
+      "logical_stage_metadata_identical": true
+    },
+    {
+      "corpus": {
+        "file": "tools/corpora/structure-memory-v1.json",
+        "sha256": "f789fefa795053ef9cb27fdcf1d81432782f95c054e44f80e72b58b5ab83460c"
+      },
+      "requested": 12,
+      "before": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-memory-before/report.json",
+        "sha256": "5d3b3115d8932a1fd0d8da161adf6b7a2525ab1e2656bd6a4f4685a9fb42d68d",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-memory-before.tar.gz",
+          "sha256": "c7d0e6018d777d7185ea34ca2697a44f2fd9e92671fa7a8035021a101dfb0104"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-memory-before.manifest.json",
+          "sha256": "e35a972724c37aaaa4c9cb05733bc933b2fae9031a09a01e3a0466a52ad8e4b7"
+        }
+      },
+      "after": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-memory-after/report.json",
+        "sha256": "7bcc07b3f2d9dc9d09f006e37fc439c73dfa5beb89d4832c8035810834369bb1",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-memory-after.tar.gz",
+          "sha256": "8bed6bfa01d5ce76fdc5515bb62bc6022a3a0cebcc3caab92a6afd379311e699"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-memory-after.manifest.json",
+          "sha256": "c9b4736d1c79d32cc55ef3fc52a2eeb400d6c3e68ab31687baaff66807456902"
+        }
+      },
+      "comparison": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-memory-comparison.json",
+        "sha256": "31308dc31157285483445e16ceb8ca797efe87231f8a0821491b04ae6c4ca845"
+      },
+      "byte_comparison": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-memory-byte-comparison.json",
+        "sha256": "0412c7dfeda45665e91b16e3a2423b8d49a979d4a5fe757fc1defd6053e53601"
+      },
+      "unchanged_summary": {
+        "requested": 12,
+        "status": {
+          "measured": 11,
+          "unsupported": 1
+        },
+        "failures_by_stage": {
+          "decompile": 1
+        },
+        "distances": {
+          "exact": 11
+        },
+        "cohorts": {
+          "development": 12
+        },
+        "architecture": {
+          "passed": 11,
+          "not_run": 1
+        },
+        "architecture_execution": {
+          "low_middle": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "middle_predicates": {
+            "not_applied": 11,
+            "not_run": 1
+          },
+          "middle_memory": {
+            "not_applied": 10,
+            "passed": 1,
+            "not_run": 1
+          },
+          "middle_saved": {
+            "passed": 4,
+            "not_applied": 7,
+            "not_run": 1
+          },
+          "selected_semantic": {
+            "not_applied": 11,
+            "not_run": 1
+          }
+        },
+        "architecture_analysis": {
+          "memory_ssa_graph": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "memory_ssa_queries": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "memory_addresses": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "unsigned_bounds": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "storage_widths": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "selected_storage": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "selected_signed_storage": {
+            "passed": 11,
+            "not_run": 1
+          }
+        },
+        "c_footprint": {
+          "measured": 11,
+          "incomplete": 1
+        },
+        "state_memory_sites": {
+          "partial": 11,
+          "unavailable": 1
+        },
+        "state_values": {
+          "not_run": 12
+        }
+      },
+      "counts": {
+        "native": 187,
+        "generated_O0": 561,
+        "generated_O2": 561,
+        "stage_comparisons": 18360
+      },
+      "identical_generated_c": 11,
+      "identical_ir_artifacts": 48,
+      "state_records": {
+        "rows": 7140,
+        "before_record_bytes": 38321380,
+        "after_record_bytes": 37833964,
+        "record_byte_ratio": 0.9872808338321846
+      },
+      "every_decoded_sha256_matches_old_physical_sha256": true,
+      "logical_stage_metadata_identical": true
+    }
+  ],
+  "evaluator_hashes": {
+    "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+    "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+    "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+    "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+    "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+    "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+    "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+    "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+    "analysis_check_modules": {
+      "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+      "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+      "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+    },
+    "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+    "probe_metadata": "hashed-probe-json-v1",
+    "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+    "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+    "state_values_modules": {
+      "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+      "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+      "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+      "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+      "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+      "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+      "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+      "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+      "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+      "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+    }
+  },
+  "binaries": {
+    "reference": {
+      "metadata": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-reference-tools.json",
+        "sha256": "c354690a9ae954c48fa0857da6c8905c010574cca5d15e35a45241d082c1f87c"
+      },
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=40555f7019cfa7c99019f6f7afa414a76598ca63 source_dirty=false",
+        "sha256": "641998c6214ad34419df80753c4060ea4c4c7711cf42f3023d2dc355f7584bd3"
+      },
+      "probe": {
+        "version": "nirvana 0.1.0 git=40555f7019cfa7c99019f6f7afa414a76598ca63 source_dirty=false",
+        "sha256": "34f2ca7901c5045a7b0243afe9d1f4d1c45b158c1033c2c3ef20a10595c09e88"
+      }
+    },
+    "candidate": {
+      "metadata": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-candidate-tools.json",
+        "sha256": "73f403287221592e7a15497c52fcdc87e85e41a4a792018be2bca6522ee60999"
+      },
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=05e0e2278e0224e02ca1b2de08d03864873c9310 source_dirty=false",
+        "sha256": "a63aeb5007609f73b04b2c608526439fd7f6ddd3ba9206597dccbc67927c3b30"
+      },
+      "probe": {
+        "version": "nirvana 0.1.0 git=05e0e2278e0224e02ca1b2de08d03864873c9310 source_dirty=false",
+        "sha256": "10945bfc4d5b68a2688928f8c7a488f9df090fdf4c402485380adc3c6485b2d4"
+      }
+    }
+  },
+  "validation": {
+    "rust_all_targets": {
+      "passed": 1574,
+      "ignored": 60,
+      "targets": 25,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-rle-full.log",
+        "sha256": "fc5b17d8b3939eb44fe5bf73db2a0462f4ac6b66046ecf11b10399e76940208a"
+      }
+    },
+    "python": {
+      "total": 232,
+      "passed": 229,
+      "skipped": 3,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/python-rle-full.log",
+        "sha256": "0c7ed841fe80c8685ff4fc814b3fc6a1faeaed4a0459c38be034d21e34705c6e"
+      }
+    },
+    "clippy_all_targets": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/clippy-rle.log",
+      "sha256": "f2c9f407e03e53622dfed02def09641d8eed64666067b0df60b2b6fbe4af4eb5"
+    },
+    "rustfmt_check": "passed",
+    "diff_check": "passed",
+    "independent_small_controls": 181,
+    "real_mir_oracle": {
+      "manifest": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-mir-oracle-clean/manifest.json",
+        "sha256": "9eccaf4804ac72d7511a68eca7f73652fd9809f14a2d7d76d29712caf747244b"
+      },
+      "source_revision": "05e0e2278e0224e02ca1b2de08d03864873c9310",
+      "source_dirty": false,
+      "memory_rows": 30,
+      "saved_rows": 45,
+      "oracle": "Actual Stage output vs literal legacy formatter of source RunReports; exact dense SHA and retained revalidation passed"
+    }
+  },
+  "retention": {
+    "managed_runs": "latest 2 and combined 512MiB",
+    "cold_evidence": "Within the same managed run; every member size/SHA verified before original directory removal",
+    "restore": "tar -xzf ARCHIVE -C target/runs/run-a37yw4tm/out",
+    "cargo": "Shared cache soft2GiB; all registered worktree targets watchdog4GiB"
+  },
+  "limits": [
+    "Fixed-input/prefix concrete equality; existing C value-model proofs retain their own scopes",
+    "Register RLE savings depend on register count and repeated values; dense RAM remains dominant in machine-state records",
+    "Stored reports and cold evidence use bounded short-term retention; committed inputs/hashes support reproduction"
+  ],
+  "next": "M1 separate KnownBits inference/checking numeric transfer, preserving source walk/purity and byte provenance as explicit shared trust"
+}

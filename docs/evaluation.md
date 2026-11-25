@@ -76,6 +76,7 @@ NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
 `state_pairs`は、各ケース・予算・初期値で比較した全状態をJSON Linesへ保存します。再検査器はレジスタ・全RAM・返り値/fault・PC・traceを比較し、件数・順序・幅・初期状態を確認します。nativeの入力ベクトルが全件ある場合は、初期RAMも共通の512-byte profileへ結び、`input_binding: native-vectors`と記録します。それ以外は`stage-profile`です。記録量は1行4 MiB・1構成128 MiBを上限とし、上限到達は未判定となります。以前の件数だけの報告は`metadata_only`として区別し、保存済み状態の検査が脱落した比較を回帰に含めます。これらは記録した入力・予算での具体比較です。
 
 `encoding: register-rle-u64-v1`を持つ記録は、各snapshotの`registers`をdense配列か`{"rle":[[個数,値],...]}`で保存し、短い表現を選びます。元IRのレジスタ数を使って展開前に個数と論理バイト数を検査し、上記の容量上限を物理・復元後の両方へ適用します。`sha256`は保存ファイル、`decoded_sha256`は従来のdense JSON Linesへ戻した正確なバイト列、`decoded_bytes`はその長さです。RAM・fault・PC・traceなどのバイト列はそのまま保持します。encodingの宣言がない旧記録はdense形式として再検査し、未知のencodingや宣言のないRLEを拒否します。
+[固定比較](../tools/corpora/state-records-v1.m0.json)では、Semantic IRの4,080記録が46.3→21.9 MB、MIRの7,140記録が38.3→37.8 MBとなりました。全件の復元hash・生成C・IR dump・検査結果を維持しています。レジスタ数の小さいMIRでは、RAMが記録量の多くを占めます。
 
 段階形式v4の`analysis_checks`は、元のLow IRに対するMemorySSAの世代グラフ検査と候補被覆検査を、具体入力の実行比較と別に記録します。入力IR・MemorySSAのJSON・検査器名・件数・未判定理由を保持し、`architecture_analysis`は生成できなかった行も含む全構成を集計します。保存データの再検査ではhash・形・件数とprobeの生JSONとの一致を確認し、通過した解析検査の脱落を回帰に含めます。世代・byte・SSAの意味の検査はRustの検査器が担当します。旧版v1〜v3のprobeも同じ評価器で比較できます。
 
