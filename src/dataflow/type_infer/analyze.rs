@@ -1,5 +1,5 @@
 use super::*;
-use crate::dataflow::ssa::{self, Budget, Definition, PointValues};
+use crate::dataflow::ssa::{Budget, Definition, PointValues};
 use crate::model::ir::{BinaryOp as B, Control, Expr, Place};
 use std::collections::{BTreeMap, VecDeque};
 
@@ -7,9 +7,7 @@ pub(super) fn analyze(source: &Program) -> Option<TypeAnalysis> {
     let graph = SsaFunction::build(source)?;
     let aliases = aliases(source, &graph)?;
     let bits = bounds(source, &graph)?;
-    if !validate_bounds(source, &graph, &bits) {
-        return None;
-    }
+    let bounds_evidence = super::check_bounds(source, &graph, &bits).ok()?;
     let accesses = address::collect_with_bounds(source, &graph, &aliases, &bits)?;
     let layouts = super::layout::collect(&accesses)?;
     let mut facts: Vec<_> = bits
@@ -35,6 +33,7 @@ pub(super) fn analyze(source: &Program) -> Option<TypeAnalysis> {
         facts,
         accesses,
         layouts,
+        bounds_evidence,
     })
 }
 fn points(graph: &SsaFunction) -> BTreeMap<Site, &PointValues> {
@@ -128,44 +127,6 @@ fn bounds(source: &Program, graph: &SsaFunction) -> Option<Vec<u8>> {
         }
     }
     Some(bits)
-}
-pub(super) fn validate_bounds(source: &Program, graph: &SsaFunction, bits: &[u8]) -> bool {
-    fn check(source: &Program, graph: &SsaFunction, bits: &[u8]) -> Option<()> {
-        ssa::validate(source, graph).ok()?;
-        if bits.len() != graph.values.len() || bits.iter().any(|&n| n > 64) {
-            return None;
-        }
-        let mut budget = Budget::new();
-        let points = points(graph);
-        for (i, d) in graph.values.iter().enumerate() {
-            budget.spend(1).ok()?;
-            let required = match d {
-                Definition::Initial { .. } => 64,
-                Definition::Phi { inputs, .. } => {
-                    let mut maximum = 0;
-                    for input in inputs {
-                        budget.spend(1).ok()?;
-                        maximum = maximum.max(bits[input.value.0]);
-                    }
-                    maximum
-                }
-                Definition::Assignment { site, .. } => {
-                    let point = points.get(site)?;
-                    let mut cursor = 0;
-                    let b = expr_bits(rhs(source, *site)?, point, bits, &mut cursor, &mut budget)?;
-                    if cursor != point.reads.len() {
-                        return None;
-                    }
-                    b
-                }
-            };
-            if required > bits[i] {
-                return None;
-            }
-        }
-        Some(())
-    }
-    check(source, graph, bits).is_some()
 }
 fn expr_bits(
     expr: &Expr,

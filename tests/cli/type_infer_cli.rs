@@ -26,6 +26,9 @@ import json,sys
 r=json.load(sys.stdin)
 assert r['schema']=='nirvana-type-constraints-v1'
 v={x['id']:x for x in r['values']}
+b=r['bounds_verification']
+assert b['model']=='nirvana-unsigned-bounds-v1' and b['status']=='checked'
+assert b['values']==len(v) and b['assignments']>0 and b['expressions']>0
 records=[x for x in r['layout_candidates'] if any(f['offset']==0 and f['width']==4 for f in x['fields']) and any(f['offset']==8 and f['width']==8 for f in x['fields'])]
 assert records,r
 record=records[0]

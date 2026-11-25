@@ -7,10 +7,12 @@ use crate::dataflow::address_identity as address;
 use crate::dataflow::ssa::{Site, SsaFunction, ValueId};
 use crate::model::ir::{AccessKind, Program, Width};
 mod analyze;
+mod bounds_verify;
 mod layout;
 #[cfg(test)]
 pub(crate) use layout::collect as test_layouts;
 mod report;
+pub use bounds_verify::ValidationEvidence as BoundsEvidence;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Uses {
@@ -86,6 +88,7 @@ pub struct TypeAnalysis {
     facts: Vec<ValueFacts>,
     accesses: Vec<MemoryAccess>,
     layouts: Vec<LayoutCandidate>,
+    bounds_evidence: BoundsEvidence,
 }
 impl TypeAnalysis {
     pub fn analyze(source: &Program) -> Option<Self> {
@@ -106,11 +109,24 @@ impl TypeAnalysis {
     pub fn layouts(&self) -> &[LayoutCandidate] {
         &self.layouts
     }
+    pub fn bounds_evidence(&self) -> &BoundsEvidence {
+        &self.bounds_evidence
+    }
 }
 
 /// Check unsigned bit bounds against arbitrary initial values and all SSA edges.
 pub fn validate_bounds(source: &Program, graph: &SsaFunction, bits: &[u8]) -> bool {
-    analyze::validate_bounds(source, graph, bits)
+    check_bounds(source, graph, bits).is_ok()
+}
+
+/// Independently check source-bound unsigned upper limits. The result covers
+/// integer bit patterns and SSA edges; source-language types remain candidates.
+pub fn check_bounds(
+    source: &Program,
+    graph: &SsaFunction,
+    bits: &[u8],
+) -> Result<BoundsEvidence, String> {
+    bounds_verify::validate(source, graph, bits)
 }
 
 impl TypeAnalysis {

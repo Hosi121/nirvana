@@ -86,8 +86,11 @@ fn check(out: &str) -> Option<()> {
 }
 pub(super) fn render(analysis: &TypeAnalysis) -> Option<String> {
     let mut out = String::from(
-        "{\n  \"schema\":\"nirvana-type-constraints-v1\",\n  \"identity\":\"ssa\",\n  \"access_model\":\"syntactic-possible\",\n  \"interpretations\":\"tentative\",\n  \"values\":[\n",
+        "{\n  \"schema\":\"nirvana-type-constraints-v1\",\n  \"identity\":\"ssa\",\n  \"access_model\":\"syntactic-possible\",\n  \"interpretations\":\"tentative\",\n",
     );
+    let e = analysis.bounds_evidence();
+    writeln!(out, "  \"bounds_verification\":{{\"model\":\"nirvana-unsigned-bounds-v1\",\"status\":\"checked\",\"scope\":\"u64-integer-upper-bounds\",\"values\":{},\"assignments\":{},\"phi_inputs\":{},\"expressions\":{}}},", e.values,e.assignments,e.phi_inputs,e.expressions).ok()?;
+    out.push_str("  \"values\":[\n");
     for (i, (definition, fact)) in analysis
         .graph
         .values
