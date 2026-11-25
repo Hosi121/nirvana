@@ -6,9 +6,14 @@
 //! C arithmetic; a consumer must still preserve the IR's u64 arithmetic rules.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use crate::control_flow::cfg::Target;
 use crate::model::ir::{BinaryOp, Control, Expr, Place, Program, Reg, Width};
+
+mod report;
+mod verify;
+pub use verify::{ValidationError, ValidationEvidence};
 
 const MAX_STATE_CELLS: usize = 1_000_000;
 const MAX_POINTS: usize = 100_000;
@@ -28,21 +33,97 @@ impl Budget {
 /// Widths which fit every reachable value read from or written to a register.
 /// Unused registers, invalid queries, and bounded-analysis failure return U64.
 /// Initial values count only if read before being overwritten on some path.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ValueWidths {
     widths: Vec<Width>,
+    incoming: Option<Arc<Incoming>>,
+    entry_block: Option<usize>,
+    block_starts: Option<Arc<Vec<u64>>>,
+    verification: Result<ValidationEvidence, ValidationError>,
 }
+
+impl Default for ValueWidths {
+    fn default() -> Self {
+        Self {
+            widths: Vec::new(),
+            incoming: None,
+            entry_block: None,
+            block_starts: None,
+            verification: Err(ValidationError::Unavailable("not analyzed")),
+        }
+    }
+}
+
+type Incoming = Vec<Option<Vec<u8>>>;
+type Proposal = (Vec<Width>, Incoming);
 
 impl ValueWidths {
     pub fn analyze(program: &Program) -> Self {
-        Self::analyze_bounded(program).unwrap_or_default()
+        match Self::analyze_bounded(program) {
+            Some((widths, incoming)) => Self::checked(program, widths, incoming),
+            None => Self {
+                widths: Vec::new(),
+                incoming: None,
+                entry_block: None,
+                block_starts: None,
+                verification: Err(ValidationError::Unavailable(
+                    "inference resource/control limit",
+                )),
+            },
+        }
     }
 
     pub fn width(&self, reg: Reg) -> Width {
         self.widths.get(reg.0).copied().unwrap_or(Width::U64)
     }
 
-    fn analyze_bounded(program: &Program) -> Option<Self> {
+    /// Evidence covers the particular program passed to analyze, before any
+    /// width-dependent presentation. An error always accompanies all-U64
+    /// fallback storage; failed candidates never escape through width().
+    pub fn verification(&self) -> Result<&ValidationEvidence, &ValidationError> {
+        self.verification.as_ref()
+    }
+
+    /// The complete register storage proposal, available only after checking.
+    pub fn widths(&self) -> Option<&[Width]> {
+        self.verification.is_ok().then_some(self.widths.as_slice())
+    }
+
+    /// Dense source-CFG entry rows; None marks an unreachable block. Successful
+    /// clones share the retained certificate without copying its state cells.
+    pub fn incoming(&self) -> Option<&[Option<Vec<u8>>]> {
+        self.verification.as_ref().ok()?;
+        self.incoming.as_deref().map(Vec::as_slice)
+    }
+
+    /// Retain the source-entry storage certificate, not source-language types
+    /// or a proof of the entire emitted C. Failures expose no partial facts.
+    pub fn to_json(&self) -> Result<String, String> {
+        report::render(self)
+    }
+
+    fn checked(program: &Program, widths: Vec<Width>, incoming: Incoming) -> Self {
+        match validate(program, &widths, &incoming) {
+            Ok(evidence) => Self {
+                widths,
+                incoming: Some(Arc::new(incoming)),
+                entry_block: Some(program.cfg().entry().index()),
+                block_starts: Some(Arc::new(
+                    program.cfg().blocks().iter().map(|b| b.start).collect(),
+                )),
+                verification: Ok(evidence),
+            },
+            Err(error) => Self {
+                widths: Vec::new(),
+                incoming: None,
+                entry_block: None,
+                block_starts: None,
+                verification: Err(error),
+            },
+        }
+    }
+
+    fn analyze_bounded(program: &Program) -> Option<Proposal> {
         let cfg = program.cfg();
         let count = program.register_count();
         let points = program.instructions().iter().try_fold(0usize, |n, i| {
@@ -139,8 +220,8 @@ impl ValueWidths {
                 }
             }
         }
-        Some(Self {
-            widths: observed
+        Some((
+            observed
                 .into_iter()
                 .map(|value| match value {
                     Some(0..=8) => Width::U8,
@@ -149,8 +230,19 @@ impl ValueWidths {
                     _ => Width::U64,
                 })
                 .collect(),
-        })
+            incoming,
+        ))
     }
+}
+
+/// Check a retained storage proposal and its complete source-CFG entry rows.
+/// This is independent of inference; no partial evidence is returned on error.
+pub fn validate(
+    source: &Program,
+    widths: &[Width],
+    incoming: &[Option<Vec<u8>>],
+) -> Result<ValidationEvidence, ValidationError> {
+    verify::validate(source, widths, incoming)
 }
 
 fn observe(observed: &mut [Option<u8>], register: usize, value: u8) {

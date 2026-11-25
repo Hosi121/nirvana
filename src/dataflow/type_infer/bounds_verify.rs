@@ -6,10 +6,12 @@
 //! Candidate bounds may be conservative; no fixed-point reconstruction is used.
 
 use crate::dataflow::ssa::{self, Definition, PointValues, SsaFunction};
-use crate::model::ir::{BinaryOp, Control, Expr, Place, Program, UnaryOp, Width};
-
-const WORD_MAX: u128 = (1u128 << 64) - 1;
-const SIGN_BIT: u128 = 1u128 << 63;
+use crate::dataflow::unsigned_caps::{self, WORD_MAX};
+#[cfg(test)]
+use crate::dataflow::unsigned_caps::{hull, width};
+#[cfg(test)]
+use crate::model::ir::{BinaryOp, UnaryOp, Width};
+use crate::model::ir::{Control, Expr, Place, Program};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValidationEvidence {
@@ -74,7 +76,10 @@ fn validate_bounded(
         expressions: 0,
     };
     work.take(bits.len())?;
-    let caps: Vec<_> = bits.iter().map(|&n| (1u128 << n) - 1).collect();
+    let caps: Vec<_> = bits
+        .iter()
+        .map(|&n| unsigned_caps::from_bits(n).unwrap())
+        .collect();
     let mut evidence = ValidationEvidence {
         values: graph.values.len(),
         assignments: 0,
@@ -164,25 +169,6 @@ fn validate_bounded(
     Ok(evidence)
 }
 
-fn width(width: Width) -> u32 {
-    match width {
-        Width::U8 => 8,
-        Width::U16 => 16,
-        Width::U32 => 32,
-        Width::U64 => 64,
-    }
-}
-
-fn mask(width: Width) -> u128 {
-    (1u128 << self::width(width)) - 1
-}
-
-/// Every bit that can occur in an interval [0, upper], independent of its
-/// numeric maximum. For example, [0, 2] can contain either low bit.
-fn hull(upper: u128) -> u128 {
-    (upper + 1).next_power_of_two() - 1
-}
-
 fn upper(
     expression: &Expr,
     point: &PointValues,
@@ -212,7 +198,7 @@ fn upper(
         }
         Expr::Load { address, width } => {
             upper(address, point, caps, cursor, work, depth + 1)?;
-            mask(*width)
+            unsigned_caps::load(*width)
         }
         Expr::Select {
             condition,
@@ -226,22 +212,7 @@ fn upper(
         }
         Expr::Unary(operation, value) => {
             let value = upper(value, point, caps, cursor, work, depth + 1)?;
-            match *operation {
-                UnaryOp::SignExtend(w) => {
-                    if value < (1u128 << (width(w) - 1)) {
-                        value
-                    } else {
-                        WORD_MAX
-                    }
-                }
-                UnaryOp::Extract { start, width } => {
-                    if start >= 64 {
-                        0
-                    } else {
-                        (value >> start).min(mask(width))
-                    }
-                }
-            }
+            unsigned_caps::unary(*operation, value)
         }
         Expr::Binary(operation, left, right) => {
             let a = upper(left, point, caps, cursor, work, depth + 1)?;
@@ -250,52 +221,7 @@ fn upper(
                 Expr::Const(value) => Some(*value),
                 _ => None,
             };
-            match *operation {
-                BinaryOp::Add => (a + b).min(WORD_MAX),
-                BinaryOp::Sub => {
-                    if b == 0 {
-                        a
-                    } else {
-                        WORD_MAX
-                    }
-                }
-                BinaryOp::Mul => (a * b).min(WORD_MAX),
-                BinaryOp::And => a.min(b),
-                BinaryOp::Or | BinaryOp::Xor => hull(a) | hull(b),
-                BinaryOp::Shl => match literal {
-                    Some(count) => (a << (count & 63)).min(WORD_MAX),
-                    None if a == 0 => 0,
-                    None => WORD_MAX,
-                },
-                BinaryOp::AShr if a >= SIGN_BIT => WORD_MAX,
-                BinaryOp::Shr | BinaryOp::AShr => match literal {
-                    Some(count) => a >> (count & 63),
-                    None => a,
-                },
-                BinaryOp::UMulHigh => (a * b) >> 64,
-                BinaryOp::SMulHigh => WORD_MAX,
-                BinaryOp::UDiv => match literal {
-                    Some(divisor) if divisor != 0 => a / u128::from(divisor),
-                    // Total IR division includes zero even for a zero dividend.
-                    _ => WORD_MAX,
-                },
-                BinaryOp::URem => a,
-                BinaryOp::SRem => {
-                    // A negative remainder can be closer to zero and therefore
-                    // have a larger unsigned pattern than its dividend.
-                    if a < SIGN_BIT { a } else { WORD_MAX }
-                }
-                BinaryOp::SDiv => WORD_MAX,
-                BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Ult | BinaryOp::Ule => 1,
-                BinaryOp::Insert { start, width } => {
-                    if start >= 64 {
-                        a
-                    } else {
-                        let field = (mask(width) << start) & WORD_MAX;
-                        (hull(a) & (WORD_MAX ^ field)) | ((hull(b) << start) & field)
-                    }
-                }
-            }
+            unsigned_caps::binary(*operation, a, b, literal)
         }
     })
 }

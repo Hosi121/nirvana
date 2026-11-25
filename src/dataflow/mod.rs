@@ -27,6 +27,7 @@ pub mod stack_cells;
 pub mod stack_role;
 pub mod stack_values;
 pub mod type_infer;
+mod unsigned_caps;
 pub mod value_graph;
 pub mod value_liveness;
 pub mod value_role;
