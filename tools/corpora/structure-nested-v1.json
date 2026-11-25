@@ -1,0 +1,22 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-nested-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "clang18-O2"
+  ],
+  "cohort_policy": "Development-only bounded nested-transfer study; existing sealed holdout remains separate",
+  "cases": [
+    {
+      "id": "nested-transfers",
+      "family": "m2-control-scout-nested-transfers",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/nested-transfers.c",
+      "source_sha256": "451792242f13e02117787ad1b924ee151fe77453f1e9cadd1dc6c17459b91f05",
+      "function": "fixture",
+      "shape": "bounded nested loops with shared outer-continue and cleanup tails",
+      "origin": "repository-authored, selected from the recorded four-family development discovery"
+    }
+  ]
+}

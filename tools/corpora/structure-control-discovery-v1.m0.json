@@ -1,0 +1,221 @@
+{
+  "schema": "nirvana-m0-discovery-checkpoint-v1",
+  "decision": "discovery only; freeze selected development source and run full M0 before implementation",
+  "binary": {
+    "path": "/home/hosi/nirvana/target/debug/nirvana",
+    "sha256": "e54eb367e80b4ed7f2958ba391550ed1b94ede2ca3b09bfe5b4b2ebedc06a795",
+    "version": "nirvana 0.1.0 git=49dc685e552c11b5553ae392040acd7c066b3318 source_dirty=true",
+    "returncode": 0,
+    "stderr": "",
+    "build": {
+      "model": "nirvana-rust-target-build-v1",
+      "package_version": "0.1.0",
+      "source_revision": "49dc685e552c11b5553ae392040acd7c066b3318",
+      "source_dirty": true
+    }
+  },
+  "binary_unchanged_during_scout": true,
+  "requested_profiles": 8,
+  "measured_profiles": 7,
+  "input_compile_failures": 1,
+  "all_measured_distances_exact": true,
+  "semantics": "not_run on all 8 profiles; no equivalence or M0 completion claim",
+  "rows": [
+    {
+      "id": "nested-transfers-gcc-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 15,
+      "upper_bound": 15,
+      "distance_reason": "search_complete",
+      "search_states": 188,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 7,
+        "edges": 10,
+        "gotos": 2
+      },
+      "generated_cfg": {
+        "nodes": 10,
+        "edges": 16,
+        "gotos": 9
+      },
+      "readable_goto_tokens": 9,
+      "function_bytes": 2207
+    },
+    {
+      "id": "nested-transfers-clang18-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 30,
+      "upper_bound": 30,
+      "distance_reason": "search_complete",
+      "search_states": 577,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 7,
+        "edges": 10,
+        "gotos": 2
+      },
+      "generated_cfg": {
+        "nodes": 15,
+        "edges": 26,
+        "gotos": 16
+      },
+      "readable_goto_tokens": 16,
+      "function_bytes": 3206
+    },
+    {
+      "id": "switch-fallthrough-gcc-O2",
+      "status": "tool_error",
+      "distance_status": null,
+      "lower_bound": null,
+      "upper_bound": null,
+      "distance_reason": null,
+      "search_states": null,
+      "failure_stage": "input_compile",
+      "error": "/home/hosi/nirvana/target/runs/run-1grwd7mj/out/evaluation/switch-fallthrough-gcc-O2/source.i: In function 'fixture':\n/home/hosi/nirvana/target/runs/run-1grwd7mj/out/evaluation/switch-fallthrough-gcc-O2/source.i:99:19: error: this statement may fall through [-Werror=implicit-fallthrough=]\n   99 |             total += s[3];\n      |             ~~~~~~^~~~~~~\n/home/hosi/nirvana/target/runs/run-1grwd7mj/out/evaluation/switch-fallthrough-gcc-O2/source.i:100:9: note: here\n  100 |         case 1:\n      |         ^~~~\ncc1: all warnings being treated as errors\n"
+    },
+    {
+      "id": "switch-fallthrough-clang18-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 15,
+      "upper_bound": 15,
+      "distance_reason": "search_complete",
+      "search_states": 329,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 7,
+        "edges": 12,
+        "gotos": 1
+      },
+      "generated_cfg": {
+        "nodes": 10,
+        "edges": 16,
+        "gotos": 0
+      },
+      "readable_goto_tokens": 0,
+      "function_bytes": 2149
+    },
+    {
+      "id": "guarded-effects-gcc-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 5,
+      "upper_bound": 5,
+      "distance_reason": "search_complete",
+      "search_states": 37,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 9,
+        "edges": 13,
+        "gotos": 0
+      },
+      "generated_cfg": {
+        "nodes": 8,
+        "edges": 11,
+        "gotos": 0
+      },
+      "readable_goto_tokens": 0,
+      "function_bytes": 1330
+    },
+    {
+      "id": "guarded-effects-clang18-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 5,
+      "upper_bound": 5,
+      "distance_reason": "search_complete",
+      "search_states": 37,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 9,
+        "edges": 13,
+        "gotos": 0
+      },
+      "generated_cfg": {
+        "nodes": 8,
+        "edges": 11,
+        "gotos": 0
+      },
+      "readable_goto_tokens": 0,
+      "function_bytes": 1698
+    },
+    {
+      "id": "early-shared-tail-gcc-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 5,
+      "upper_bound": 5,
+      "distance_reason": "search_complete",
+      "search_states": 60,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 7,
+        "edges": 10,
+        "gotos": 2
+      },
+      "generated_cfg": {
+        "nodes": 8,
+        "edges": 12,
+        "gotos": 0
+      },
+      "readable_goto_tokens": 0,
+      "function_bytes": 2193
+    },
+    {
+      "id": "early-shared-tail-clang18-O2",
+      "status": "measured",
+      "distance_status": "exact",
+      "lower_bound": 7,
+      "upper_bound": 7,
+      "distance_reason": "search_complete",
+      "search_states": 31,
+      "failure_stage": null,
+      "error": null,
+      "source_cfg": {
+        "nodes": 7,
+        "edges": 10,
+        "gotos": 2
+      },
+      "generated_cfg": {
+        "nodes": 8,
+        "edges": 12,
+        "gotos": 0
+      },
+      "readable_goto_tokens": 0,
+      "function_bytes": 2004
+    }
+  ],
+  "selected_family": "nested-transfers",
+  "selected_source_sha256": "451792242f13e02117787ad1b924ee151fe77453f1e9cadd1dc6c17459b91f05",
+  "cause": {
+    "actual_outer_loop_retained": "Clang assembly conditional transfer 0xd7 -> 0x20",
+    "compiler_expansion": "Clang expands the bounded inner loop to up to four bodies; no assertion that this expansion can or should be undone",
+    "structuring_failure": "Clang bb21 and GCC bb9 exceed static per-block copy limit 2, producing whole-function goto fallback",
+    "clang_shared_exit_tail": "0x166 moves r10 to r11, then goes to common cleanup at 0x177; reached by three early inner-exit tests",
+    "after_storage": "In generated C bb21 contains only goto bb23: the register copy is absent after storage resolution",
+    "candidate_hypothesis": "A bounded source-checked treatment of short shared loop-exit tails or region-local fallback may preserve outer structure; benefit must be measured",
+    "not_claimed": "Distance30 is not all attributed to structurer failure; no promised distance reduction, no copy-limit change or production transform tested"
+  },
+  "gcc_switch_failure": "The -E -P preprocessing removes fallthrough comment; -Werror then rejects the unannotated fallthrough. Retained as one requested failure; no source retry.",
+  "retention": "Sources, replay manifest, reports, generated C and text/JSON diagnostics only; no object/native/binary products retained",
+  "sealed_holdout": "not inspected",
+  "milestone": "M0",
+  "status": "development-discovery",
+  "selected_manifest": "tools/corpora/structure-nested-v1.json",
+  "source_contents": {
+    "early-shared-tail.c": "#include <stdint.h>\n\nuint64_t fixture(uint64_t s[4]) {\n    uint64_t count = (s[0] & UINT64_C(7)) + UINT64_C(1);\n    uint64_t total = s[1];\n    uint64_t key = s[2];\n    for (uint64_t i = 0; i < count; ++i) {\n        uint64_t value = s[(i + key) & UINT64_C(3)];\n        if ((value & UINT64_C(15)) == 0) {\n            total ^= i;\n            goto cleanup;\n        }\n        if ((value & UINT64_C(3)) == UINT64_C(1)) {\n            s[3] += value;\n            if ((s[3] & UINT64_C(7)) == 0)\n                goto cleanup;\n            continue;\n        }\n        total += value ^ (i + UINT64_C(1));\n        s[1] = total;\n    }\ncleanup:\n    s[1] = total;\n    s[2] = key + (s[3] & UINT64_C(31));\n    s[3] ^= total;\n    return s[1] + s[2] + s[3];\n}\n",
+    "guarded-effects.c": "#include <stdint.h>\n\nuint64_t fixture(uint64_t s[4]) {\n    uint64_t gate = s[0] & UINT64_C(3);\n    if (gate == 0)\n        s[2] += s[1];\n    else\n        s[2] ^= s[3];\n    uint64_t value = s[2];\n    if (gate == 0) {\n        if ((value & UINT64_C(1)) != 0)\n            s[3] += value;\n        else\n            s[3] ^= value;\n    } else {\n        if ((value & UINT64_C(1)) != 0)\n            s[3] ^= value;\n        else\n            s[3] += value;\n    }\n    if ((s[3] & UINT64_C(7)) == UINT64_C(3))\n        return s[3] + value;\n    s[1] = gate + value;\n    return s[1] ^ s[3];\n}\n",
+    "nested-transfers.c": "#include <stdint.h>\n\nuint64_t fixture(uint64_t s[4]) {\n    uint64_t outer = (s[0] & UINT64_C(3)) + UINT64_C(1);\n    uint64_t inner = (s[1] & UINT64_C(3)) + UINT64_C(1);\n    uint64_t total = s[2];\n    uint64_t mark = s[3];\n    for (uint64_t i = 0; i < outer; ++i) {\n        for (uint64_t j = 0; j < inner; ++j) {\n            total += s[(i + j) & UINT64_C(3)] ^ (i + UINT64_C(1));\n            s[2] = total;\n            if (((total ^ mark) & UINT64_C(7)) == 0)\n                goto cleanup;\n            if ((total & UINT64_C(3)) == UINT64_C(1)) {\n                mark ^= i + j;\n                goto next_outer;\n            }\n            mark += total & UINT64_C(15);\n        }\nnext_outer:\n        mark += i + UINT64_C(1);\n        s[3] = mark;\n    }\ncleanup:\n    s[2] = total;\n    s[3] = mark;\n    return total ^ mark;\n}\n",
+    "switch-fallthrough.c": "#include <stdint.h>\n\nuint64_t fixture(uint64_t s[4]) {\n    uint64_t count = (s[0] & UINT64_C(7)) + UINT64_C(1);\n    uint64_t tag = s[1];\n    uint64_t total = s[2];\n    for (uint64_t i = 0; i < count; ++i) {\n        switch ((tag + i) & UINT64_C(3)) {\n        case 0:\n            total += s[3];\n            /* fall through */\n        case 1:\n            tag ^= total + UINT64_C(1);\n            break;\n        case 2:\n            total ^= s[(i + UINT64_C(1)) & UINT64_C(3)];\n            if ((total & UINT64_C(7)) == 0)\n                goto cleanup;\n            break;\n        default:\n            tag += UINT64_C(3);\n            continue;\n        }\n        s[2] = total;\n        if ((tag & UINT64_C(15)) == UINT64_C(5))\n            break;\n    }\ncleanup:\n    s[1] = tag;\n    s[2] = total;\n    return tag + total;\n}\n"
+  },
+  "evidence_storage": "Local bounded managed run. The authored source inputs are retained here; selected source receives a separate fixed full-semantic baseline before implementation."
+}
