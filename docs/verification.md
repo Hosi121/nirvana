@@ -209,10 +209,14 @@ python3 tools/measure_source_recovery.py --help
 | MemorySSAの候補被覆 | 具体実行の各byteのwriterが、検査を通した候補集合に含まれるか。初期writer・部分Store・φ・opaque・戻り辺を含む |
 | 反例の利用 | raw IRとraw ASTを別々に解釈し、得たtraceを実際のRust検査器・実行器で再現して回帰対照へ保存する |
 
-最初のcontrolモデルは、約6 PC・2段のloop・2レジスタ・2-byte RAM・小さい値域・命令予算0〜6を対象にする。AST内部のroutingをstutteringへ写し、guest Stepはtraceと予算を進める。routingだけのcycleは受理規則で拒否し、guestの無限loopは有限予算で停止状態へ対応付ける。Storeはアドレス評価、書込み範囲検査、右辺評価、commitの順序を保つ。
+最初のcontrolモデルは、約6 PC・2段のloop・2レジスタ・2-byte RAM・小さい値域・命令予算0〜6を対象にし、AST総node数・コピー数・代入数・式深さにも上限を置く。最初はConst/Register/LoadU8/SelectとStoreU8に絞り、具体的なu64意味論で扱える部分集合を使う。Loop/Break/Continueのroutingをstutteringへ写し、guest Stepはtraceと予算を進める。Evaluate・条件・Return式はfaultを観測する。検査開始点から到達するroutingだけのcycleは受理規則で拒否し、guestの無限loopは有限予算で停止状態へ対応付ける。Storeはアドレス評価、書込み範囲検査、右辺評価、commitの順序を保つ。
 
 正常なtail配置・外側continueを正対照にし、Step欠落、枝の交換、transfer深さの誤り、fault順序の交換、先行Storeの喪失を負対照にする。受理規則そのものを調べるため、既存のAST lowering結果をモデルの両側へ流す方式から独立させる。exporter・状態射影・値やアドレスの抽象化は、実装との対応を確認する境界として残す。
 
 Quintは[ランダム探索・有界検査・帰納不変条件](https://quint.sh/docs/checking-properties)を使い分けられ、[TLC backend](https://quint.sh/docs/model-checkers)も選べる。TLCの完走は指定した有限モデルの到達状態を覆い、任意サイズのCFGや全u64の保証には追加の抽象化根拠・帰納証明が必要になる。演算の全域検査には既存SMTを使い、構造品質はM0の同条件比較へ結ぶ。
 
 Rustへのtrace再生には[Quint Connect](https://github.com/quint-co/quint-connect)が候補になる。モデルに模した別実装との一致に加え、Nirvana本体のAPIで受理結果と状態を照合する。初回の採用条件は、正対照の成立、負対照の検出、実Rustでの反例再現、固定した探索予算内での完走とする。モデル検査の成功と、trace集合でのRust適合検査は別の結果として報告する。
+
+入口からの受理には[`structure_verify::validate`](../src/control_flow/structure_verify.rs)を使い、全Stepコピー・途中再開の対応は`validate_reentries`を別に検査する。元IRは[`Program::run_with_memory`](../src/model/ir.rs)、ASTは[`execute_nodes`](../src/control_flow/structure.rs)という別の制御実行器を持つ。任意のraw ASTの実行には、今後同モジュール内へテスト用adapterを置く必要がある。再生では`RunReport`のstatus・全register・RAM/base/layout・trace・instructionを直接比較する。[`Contract::compare`](../src/model/observe.rs)は途中停止を未判定にする最終状態向けの契約なので、prefixの照合には直接比較を使う。
+
+Rustの両実行器が共有する`Machine`と式評価も、信頼境界に含める。Storeの右辺先行評価やfault時の先行書込み消失をモデルへ故意に入れ、独立した観測が差を検出する負対照を用意する。[既存の構造改変対照](../tests/control_flow/structure_verification.rs)と[全状態のprefix比較](../tests/control_flow/structure_splitting.rs)を再生の出発点にする。
