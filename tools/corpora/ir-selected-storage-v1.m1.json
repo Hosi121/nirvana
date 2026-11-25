@@ -1,0 +1,716 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Bind the selected C local storage widths to the exact analyzed presentation source and emitted C",
+  "reference_probe_revision": "6db452dee0a0ca90d91b346d646f471e1958bc78",
+  "candidate_revision": "605eab99b3894e917da641c2796b926d730f08ca",
+  "implementation_revisions": {
+    "readable_provenance": "45f5bdf",
+    "evaluation_v7": "605eab9"
+  },
+  "contract": {
+    "model": "nirvana-selected-storage-v1",
+    "scope": "selected-c-unsigned-width-observations",
+    "checker": "value_width::validate+selected_storage::validate_locals",
+    "selection": "Capture the same source/checked width pair used by the selected readable candidate. BeforePresentation and DisplayAfterDce are explicit phases.",
+    "source_binding": "Retained immutable Program and ValueWidths are rechecked together; selected-readable.c must equal CLI readable.c byte for byte.",
+    "local_binding": "Every unsigned storage local covers its unique in-range source member widths; signed representations and address roles are metadata with separate contracts.",
+    "capture_limits": {
+      "points": 100000,
+      "expressions": 100000,
+      "depth": 128,
+      "retained_bytes": 16777216,
+      "artifact_bytes": 16777216
+    },
+    "failure": "Record unavailable/rejected reasons with no partial source/certificate/local facts; known rejection survives optional capture limits.",
+    "default_api": "ReadableOptions unchanged; existing emitters keep capture disabled, opt-in wrappers return shared immutable provenance."
+  },
+  "evaluation": {
+    "same_main_comparison": {
+      "profiles": 4,
+      "source": "tools/corpora/structure-analysis-v1.json",
+      "vectors": 8,
+      "reference_stage": "v6",
+      "candidate_stage": "v7",
+      "same_decompiler": true,
+      "same_evaluator": true,
+      "identical_c": 4,
+      "analysis": {
+        "memory_ssa_graph": {
+          "passed": 4
+        },
+        "memory_ssa_queries": {
+          "passed": 4
+        },
+        "memory_addresses": {
+          "passed": 4
+        },
+        "unsigned_bounds": {
+          "passed": 4
+        },
+        "storage_widths": {
+          "passed": 4
+        },
+        "selected_storage": {
+          "passed": 4
+        }
+      },
+      "structure": {
+        "equal": 4
+      },
+      "regressions": {
+        "structure_regressions": 0,
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "semantic_regressions": 0
+      }
+    },
+    "nested_development": {
+      "profiles": 2,
+      "source": "tools/corpora/structure-nested-v1.json",
+      "input_file": "tools/corpora/structure-nested-v1.inputs.txt",
+      "input_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+      "vectors": 65,
+      "checks": {
+        "memory_ssa_graph": {
+          "passed": 2
+        },
+        "memory_ssa_queries": {
+          "passed": 2
+        },
+        "memory_addresses": {
+          "passed": 2
+        },
+        "unsigned_bounds": {
+          "passed": 2
+        },
+        "storage_widths": {
+          "passed": 2
+        },
+        "selected_storage": {
+          "passed": 2
+        }
+      },
+      "same_generated_c_as_nested_follow_checkpoint": true
+    },
+    "observations": {
+      "native": 162,
+      "generated_O0": 486,
+      "generated_O2": 486,
+      "stage_comparisons": 10200
+    },
+    "profiles": [
+      {
+        "id": "shared-cleanup-gcc-O2",
+        "object_sha256": "a789198829fe0f3d4ec423f64c5d030410d16433655db06bfab4197ad514f9eb",
+        "generated_c_sha256": "998f11396b08163103166142aca9ebfaa3efa8396a17ebeb258f38bd3692235e",
+        "distance": 0,
+        "source_phase": "before-presentation",
+        "registers": 172,
+        "evidence": {
+          "registers": 172,
+          "narrow_registers": 0,
+          "blocks": 5,
+          "edges": 4,
+          "assignments": 17,
+          "reads": 47,
+          "expressions": 91
+        },
+        "locals": [
+          {
+            "name": "value0",
+            "registers": [
+              0,
+              34,
+              64,
+              79,
+              109,
+              123,
+              154,
+              168
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value1",
+            "registers": [
+              1,
+              36
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value2",
+            "registers": [
+              2,
+              32,
+              50,
+              66,
+              96,
+              127,
+              141
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          }
+        ],
+        "artifacts": {
+          "selected-storage-input.ir.txt": "b067210c3cdcba8ffe9c11ee6a2546a6e02a341af887da4d2e11fec0ed3eee13",
+          "selected-storage.json": "3b9663bfbd6a7b88d13cfdfbb43daeb82418bf3d561fc96689daa151b73e092b",
+          "selected-readable.c": "998f11396b08163103166142aca9ebfaa3efa8396a17ebeb258f38bd3692235e"
+        }
+      },
+      {
+        "id": "shared-cleanup-clang18-O2",
+        "object_sha256": "61b3bc14c08f6cafa1e36c20a78b086f80641cc2ade4a062fd48989875a16b97",
+        "generated_c_sha256": "0dfb944722a622d3bba6584a465936447a1bdcdb6c9c7c7f909790933de31e97",
+        "distance": 0,
+        "source_phase": "before-presentation",
+        "registers": 152,
+        "evidence": {
+          "registers": 152,
+          "narrow_registers": 0,
+          "blocks": 6,
+          "edges": 7,
+          "assignments": 17,
+          "reads": 31,
+          "expressions": 75
+        },
+        "locals": [
+          {
+            "name": "value0",
+            "registers": [
+              0,
+              32,
+              76,
+              90,
+              122,
+              147,
+              151
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value1",
+            "registers": [
+              1,
+              58,
+              88,
+              118
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value2",
+            "registers": [
+              60,
+              106
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          }
+        ],
+        "artifacts": {
+          "selected-storage-input.ir.txt": "489ded3ae940d00a3749cf374e50acf43f52822abe6d91c8708bd52d534d5cec",
+          "selected-storage.json": "fdd88b6455052edd16083346a253185e373ec6e822b7f312c1ddd0827eb5c5bb",
+          "selected-readable.c": "0dfb944722a622d3bba6584a465936447a1bdcdb6c9c7c7f909790933de31e97"
+        }
+      },
+      {
+        "id": "loop-shared-exit-gcc-O2",
+        "object_sha256": "1cff8565c83f8a192108b6ad1b8d51b9b9c85dcc5dc74365f5a3df9a2cb00439",
+        "generated_c_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+        "distance": 6,
+        "source_phase": "before-presentation",
+        "registers": 121,
+        "evidence": {
+          "registers": 121,
+          "narrow_registers": 1,
+          "blocks": 6,
+          "edges": 6,
+          "assignments": 4,
+          "reads": 14,
+          "expressions": 42
+        },
+        "locals": [
+          {
+            "name": "counter",
+            "registers": [
+              0,
+              32
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value1",
+            "registers": [
+              48
+            ],
+            "unsigned_bits": 8,
+            "signed_bits": null,
+            "address_bits": null
+          }
+        ],
+        "artifacts": {
+          "selected-storage-input.ir.txt": "0b209f8711fa9d883b51fdf142dd7b1414afd480a96681df229cdca8fc55bc55",
+          "selected-storage.json": "e50426f4b8e0019f8d9dfc8df8cb93c10ac43825373b0cb2e9e5b417e0b3fb46",
+          "selected-readable.c": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4"
+        }
+      },
+      {
+        "id": "loop-shared-exit-clang18-O2",
+        "object_sha256": "ee9e696f98a0c5198a6d18cda528f1604c1af476b6c82e57a21e2e399eb6cf98",
+        "generated_c_sha256": "70eb2a75a6c78d964eafb8d4c380899025577ed8c029209ab2a49f21e88a2a0f",
+        "distance": 4,
+        "source_phase": "before-presentation",
+        "registers": 185,
+        "evidence": {
+          "registers": 185,
+          "narrow_registers": 1,
+          "blocks": 8,
+          "edges": 11,
+          "assignments": 12,
+          "reads": 20,
+          "expressions": 48
+        },
+        "locals": [
+          {
+            "name": "value0",
+            "registers": [
+              32
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value1",
+            "registers": [
+              1,
+              34
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value2",
+            "registers": [
+              2,
+              36,
+              184
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value3",
+            "registers": [
+              6
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value4",
+            "registers": [
+              0
+            ],
+            "unsigned_bits": 8,
+            "signed_bits": null,
+            "address_bits": null
+          }
+        ],
+        "artifacts": {
+          "selected-storage-input.ir.txt": "efe48ff5759a0042daf8f068944e0423fa91be4b0c2c67b31fb1a42e2030d96c",
+          "selected-storage.json": "d3e208819c5c2079c21f472c7af445a82c0e8e2455b14770c69306ffdf9a7e88",
+          "selected-readable.c": "70eb2a75a6c78d964eafb8d4c380899025577ed8c029209ab2a49f21e88a2a0f"
+        }
+      },
+      {
+        "id": "nested-transfers-gcc-O2",
+        "object_sha256": "ad2bff275509b14d2cce1fa82bf7fd1e4d7371da96ba438f039fed4269ed2baa",
+        "generated_c_sha256": "69c0277dbee7a82d293f9e12ca22800433ac4be46eb5d1a929988773ff532c14",
+        "distance": 15,
+        "source_phase": "before-presentation",
+        "registers": 460,
+        "evidence": {
+          "registers": 460,
+          "narrow_registers": 1,
+          "blocks": 13,
+          "edges": 19,
+          "assignments": 34,
+          "reads": 69,
+          "expressions": 150
+        },
+        "locals": [
+          {
+            "name": "counter",
+            "registers": [
+              8
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "accumulator0",
+            "registers": [
+              0,
+              51,
+              149,
+              249
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "accumulator1",
+            "registers": [
+              10,
+              34
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "accumulator2",
+            "registers": [
+              1,
+              53,
+              360,
+              445
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value4",
+            "registers": [
+              2,
+              32,
+              107
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value5",
+            "registers": [
+              9,
+              123,
+              222,
+              265
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value6",
+            "registers": [
+              165,
+              459
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "limit",
+            "registers": [
+              11
+            ],
+            "unsigned_bits": 8,
+            "signed_bits": null,
+            "address_bits": null
+          }
+        ],
+        "artifacts": {
+          "selected-storage-input.ir.txt": "147d00333157f34d909c48666cf10ff8bcf5ec8c498f4a1ab3e04728f5b9aa2f",
+          "selected-storage.json": "be9da54f2cc1c526e1dc3ca6fd837ad60c4d48ddb4d969bd5409b7863dc5b74b",
+          "selected-readable.c": "69c0277dbee7a82d293f9e12ca22800433ac4be46eb5d1a929988773ff532c14"
+        }
+      },
+      {
+        "id": "nested-transfers-clang18-O2",
+        "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+        "generated_c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a",
+        "distance": 30,
+        "source_phase": "before-presentation",
+        "registers": 740,
+        "evidence": {
+          "registers": 740,
+          "narrow_registers": 3,
+          "blocks": 24,
+          "edges": 35,
+          "assignments": 56,
+          "reads": 111,
+          "expressions": 266
+        },
+        "locals": [
+          {
+            "name": "value0",
+            "registers": [
+              1,
+              66,
+              401,
+              712
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value1",
+            "registers": [
+              8,
+              34
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value2",
+            "registers": [
+              9,
+              93
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value3",
+            "registers": [
+              0,
+              94,
+              137,
+              247,
+              290,
+              433,
+              476,
+              572,
+              615,
+              739
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value4",
+            "registers": [
+              10,
+              11,
+              64,
+              121,
+              274,
+              386,
+              460,
+              599
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value5",
+            "registers": [
+              417,
+              556,
+              736,
+              737
+            ],
+            "unsigned_bits": 64,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value6",
+            "registers": [
+              2
+            ],
+            "unsigned_bits": 8,
+            "signed_bits": null,
+            "address_bits": null
+          },
+          {
+            "name": "value7",
+            "registers": [
+              6,
+              36
+            ],
+            "unsigned_bits": 8,
+            "signed_bits": null,
+            "address_bits": null
+          }
+        ],
+        "artifacts": {
+          "selected-storage-input.ir.txt": "56565e4b3a462187b954ae1190b368066df4d3d475c1dc960653e400a2f24742",
+          "selected-storage.json": "d65542d25760d3ea672773515711bb59be4c7e24befa31ae94a58d96cecb5bfb",
+          "selected-readable.c": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a"
+        }
+      }
+    ]
+  },
+  "tests": {
+    "source_revision": "605eab99b3894e917da641c2796b926d730f08ca",
+    "rust": {
+      "targets": 25,
+      "passed": 1524,
+      "ignored": 57,
+      "failed": 0
+    },
+    "python": {
+      "total": 218,
+      "passed": 215,
+      "skipped": 3
+    },
+    "clippy_all_targets": "passed",
+    "rustfmt": "passed",
+    "targeted_readable_unit": 34,
+    "targeted_provenance_integration": 1,
+    "targeted_producer": 2
+  },
+  "diagnosis": {
+    "profile": "nested-transfers-gcc-O2",
+    "source_registers": 460,
+    "source_phase": "before-presentation",
+    "counter_members": [
+      8
+    ],
+    "counter_unsigned_bits": 64,
+    "counter_signed": false,
+    "counter_address": false,
+    "observation": "Counter is independently initialized to0 at PC37; both backedges compare r8<r11, whose observed bound is3bits. Current unconditional edge propagation retains64-bit incoming counter caps. This identifies guard precision rather than pooled members as the next question.",
+    "interpretation": "This concerns storage value bounds; original source uses uint64_t and source-type identity is a separate question."
+  },
+  "controls": [
+    "Opt-in/off C bytes and locals match for four families including DCE and fallback",
+    "Wrong source certificate, missing capture, duplicate/out-of-range members, too-small local width and changed C hash rejected",
+    "Known rejected capture remains rejected when optional artifact/capture budget is exceeded",
+    "Legacy stages v4-v6 keep their checks; v7 adds selected_storage and report comparison tracks lost or added checks"
+  ],
+  "limits": [
+    "Source-entry read/write storage observations exclude unused arbitrary initial snapshots and arbitrary-PC reentry.",
+    "This certificate checks unsigned width compatibility, not signed C semantics, arithmetic promotions, helper behavior or full native-to-C equivalence.",
+    "Concrete native/C/IR comparisons use fixed inputs and budgets; no all-input pipeline proof is claimed.",
+    "Raw source register counts differ from the actual selected presentation source; widths must be interpreted with the captured source."
+  ],
+  "artifacts": {
+    "selected-storage-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/selected-storage-comparison.json",
+      "sha256": "1660da8846f37b3163045d9cb088e8838da89c75c86a0cf052ee20a81f7a004e"
+    },
+    "selected-v7-core/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/selected-v7-core/report.json",
+      "sha256": "6573d074a69a99204c07a49441bafef068ea2b15fe54bef401bba0aca61993d3"
+    },
+    "selected-v7-nested/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/selected-v7-nested/report.json",
+      "sha256": "5113f28d44637801e33fc82c22aa3834a318b499e4016fbe140401a344cddce7"
+    },
+    "selected-v6-core/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/selected-v6-core/report.json",
+      "sha256": "a09d8d9965e0156d016417e00649ef63101ff3a4bb0a8f3a8ed6f674ce003867"
+    },
+    "selected-v7-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/selected-v7-tools.json",
+      "sha256": "8c0e4a6997a8abc3804dc92f3f589b523d532ca0efbf924d57a3d52584528e3e"
+    },
+    "selected-v6-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/selected-v6-tools.json",
+      "sha256": "f4d21c20f6595a2596e3f45c9cc4ee1de4d75375775d759e322da30f12a442c8"
+    },
+    "toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/toolchain.json",
+      "sha256": "d8771035ad1a17e0417d63b2ad04ae13cd6a11771866170be79e0b3e88733551"
+    },
+    "selected-checks/rust-storage-provenance-lib.log": {
+      "file": "target/runs/run-a37yw4tm/out/selected-checks/rust-storage-provenance-lib.log",
+      "sha256": "380b8e700dd995b0c105bb45ad2e524662c42c52f0a467b5e1effb6adf6bedab"
+    },
+    "selected-checks/rust-selected-storage-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/selected-checks/rust-selected-storage-full.log",
+      "sha256": "eae8ec35902aa369f4f4fac31e3bc295afb03a0621e839b04dcf5586be240c71"
+    },
+    "selected-checks/clippy-selected-storage.log": {
+      "file": "target/runs/run-a37yw4tm/out/selected-checks/clippy-selected-storage.log",
+      "sha256": "3fff564f952f5e244b34a4eff1ed7367f4b45adb01940194405f63f75d3c40fe"
+    },
+    "selected-checks/rust-storage-provenance-codegen.log": {
+      "file": "target/runs/run-a37yw4tm/out/selected-checks/rust-storage-provenance-codegen.log",
+      "sha256": "5a79f4d045c40284ec9b49cee98634b7e4204a77242d77d2f3ea7a91372c766e"
+    },
+    "selected-checks/rust-selected-storage-stage.log": {
+      "file": "target/runs/run-a37yw4tm/out/selected-checks/rust-selected-storage-stage.log",
+      "sha256": "cbbe29e29b70e4217c77822235a4e05d69d5ef7955f8a62671f438a8845fe08f"
+    },
+    "selected-checks/python-selected-storage-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/selected-checks/python-selected-storage-full.log",
+      "sha256": "61181d3a5cd1bdb9e32f3791a3fd7737cf2c3b5812a57220ce34b2cbe956da86"
+    }
+  },
+  "binaries": {
+    "candidate": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=605eab99b3894e917da641c2796b926d730f08ca source_dirty=false",
+        "sha256": "93c5b9dcbd347018638328616acc5f3521555e6fa534a7004f0331125f12595b"
+      },
+      "candidate_probe": {
+        "version": "nirvana 0.1.0 git=605eab99b3894e917da641c2796b926d730f08ca source_dirty=false",
+        "sha256": "1bef02432635b752b0370d2478e5f6504ed4c635b50237664e9e979da04c08f2"
+      },
+      "candidate_revision": "605eab99b3894e917da641c2796b926d730f08ca",
+      "selected_nested": {
+        "version": "nirvana 0.1.0 git=605eab99b3894e917da641c2796b926d730f08ca source_dirty=false",
+        "sha256": "1bef02432635b752b0370d2478e5f6504ed4c635b50237664e9e979da04c08f2"
+      },
+      "selected_core": {
+        "version": "nirvana 0.1.0 git=605eab99b3894e917da641c2796b926d730f08ca source_dirty=false",
+        "sha256": "1bef02432635b752b0370d2478e5f6504ed4c635b50237664e9e979da04c08f2"
+      }
+    },
+    "legacy_probe": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=605eab99b3894e917da641c2796b926d730f08ca source_dirty=false",
+        "sha256": "93c5b9dcbd347018638328616acc5f3521555e6fa534a7004f0331125f12595b"
+      },
+      "candidate_revision": "605eab99b3894e917da641c2796b926d730f08ca",
+      "reference_probe": {
+        "version": "nirvana 0.1.0 git=6db452dee0a0ca90d91b346d646f471e1958bc78 source_dirty=false",
+        "sha256": "2e6aff669725bd72d388e17786b204e3ccc066633d36e6cebe2557556f5895f6"
+      },
+      "selected_legacy": {
+        "version": "nirvana 0.1.0 git=6db452dee0a0ca90d91b346d646f471e1958bc78 source_dirty=false",
+        "sha256": "2e6aff669725bd72d388e17786b204e3ccc066633d36e6cebe2557556f5895f6"
+      }
+    }
+  },
+  "reproduction": "Build candidate main once, evaluate v6 reference probe and v7 candidate probe sequentially in the shared target with the same current evaluator/core manifest/8 vectors. Run nested fixed65 separately. Compare core reports and selected provenance artifacts; no reference worktree remains.",
+  "evidence_storage": "Only two managed local runs,512MiB combined; revisions, inputs and hashes remain after raw evidence eviction."
+}

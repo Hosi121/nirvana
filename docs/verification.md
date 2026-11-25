@@ -32,6 +32,7 @@ python3 -m unittest discover -s tools/tests
 | 選択したSemantic IR→実行IR | 実入力・計画・出力を保持した`Lowering`を再検査。入力の全レジスタ・RAM・fault・PC・traceを予算ごとに比較し、追加した捕捉レジスタだけを除く。入力・出力dumpと観測件数をM0へ記録 |
 | IR→構造AST | 元IRとASTを個別にグラフ化し、命令・逐次代入・条件・移転先を照合 |
 | SSA・保存先・φコピー | readごとの値対応、全先行辺、生存範囲と干渉、記号による並列代入の照合 |
+| 選択したCのunsigned保存幅 | 実際の表示IRと幅証跡を保持して再検査し、局所変数の所属レジスタ・幅と生成Cのhashを対応付ける。[固定比較](../tools/corpora/ir-selected-storage-v1.m1.json)は開発用6構成を記録 |
 | 算術・表示IR | 定義位置・値ID・算術の十分条件、削除候補の死活性、Load/Storeの位置と順序 |
 | MemorySSA | 世代グラフと、各Loadの先行状態・全候補byteを覆う閉じた証跡を独立に検査。部分Store・alias・φ・ループ・未知への拡大をbyte tagと配列SMTでも照合 |
 | C継続グラフ | 保存先とメモリviewの確定後、前後のASTから順序付きC断片と継続先を照合。メモリ条件の削除・アクセス幅の変更・効果の脱落や並替えを対照で拒否する。観測境界とprinterへの依存は[設計](architecture.md#c保存先確定後の継続処理)を参照 |
