@@ -4,8 +4,10 @@ use crate::dataflow::ssa::{Site, SsaFunction, ValueId};
 use crate::model::ir::{AccessKind, Program, Width};
 mod aliases;
 mod collect;
+mod modular_verify;
 mod verify;
 pub(crate) use collect::collect_with_bounds;
+pub use modular_verify::ValidationEvidence as ModularEvidence;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operand {
     Destination,
@@ -71,14 +73,40 @@ pub(crate) fn ordered_memory_addresses(
     graph: &SsaFunction,
     opaque: &std::collections::BTreeSet<Site>,
 ) -> Option<MemoryAddresses> {
+    checked_memory_addresses(source, graph, opaque).map(|(facts, _)| facts)
+}
+
+/// Publish modular facts only after source-bound independent checking. Access
+/// evidence survives an unavailable phi check; queries then remain unavailable.
+pub(crate) fn checked_memory_addresses(
+    source: &Program,
+    graph: &SsaFunction,
+    opaque: &std::collections::BTreeSet<Site>,
+) -> Option<(MemoryAddresses, ModularEvidence)> {
     let aliases = aliases(source, graph, opaque)?;
-    collect::collect_memory(
+    let mut candidate = collect::collect_memory(
         source,
         graph,
         &aliases,
         &vec![64; graph.values.len()],
         opaque,
-    )
+    )?;
+    let evidence = if candidate.phi_values.is_ok() {
+        match modular_verify::validate(source, graph, &aliases, opaque, &candidate) {
+            Ok(evidence) => evidence,
+            Err(reason) if reason.starts_with("unavailable:") => {
+                let evidence =
+                    modular_verify::validate_accesses(source, graph, &aliases, opaque, &candidate)
+                        .ok()?;
+                candidate.phi_values = Err(reason);
+                evidence
+            }
+            Err(_) => return None,
+        }
+    } else {
+        modular_verify::validate_accesses(source, graph, &aliases, opaque, &candidate).ok()?
+    };
+    Some((candidate, evidence))
 }
 
 pub(crate) fn aliases(

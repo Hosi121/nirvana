@@ -168,6 +168,10 @@ fn reports_retain_checked_query_coverage_and_their_closed_state_certificates() {
             r#"
 import json,sys
 r=json.load(sys.stdin)
+a=r['address_verification']
+assert a['model']=='nirvana-modular-address-v1' and a['status']=='checked'
+assert a['accesses']==len(r['accesses']) and a['phi_checked'] is True
+assert a['modular_forms']==len(r['accesses'])+a['phi_inputs'] and a['basis_evaluations']>0
 v=r['verification']
 assert v['model']=='nirvana-memory-ssa-graph-v1'
 c=v['query_coverage']

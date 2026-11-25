@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::control_flow::cfg::Target;
 use crate::dataflow::address_identity::MemoryAccess;
+pub use crate::dataflow::address_identity::ModularEvidence;
 use crate::dataflow::ssa::{Site, SsaFunction};
 use crate::model::ir::{AccessKind, Program};
 
@@ -150,6 +151,7 @@ pub struct Analysis {
     query_certificates: Vec<QueryCertificate>,
     graph_evidence: Option<GraphEvidence>,
     query_evidence: Option<QueryEvidence>,
+    address_evidence: ModularEvidence,
 }
 
 impl Analysis {
@@ -173,6 +175,9 @@ impl Analysis {
     }
     pub fn query_evidence(&self) -> Option<&QueryEvidence> {
         self.query_evidence.as_ref()
+    }
+    pub fn address_evidence(&self) -> &ModularEvidence {
+        &self.address_evidence
     }
     pub fn to_json(&self) -> Result<String, String> {
         report::render(self)
@@ -258,8 +263,8 @@ pub(crate) fn analyze_with_effects(
             return Err("memory SSA opaque definition mismatch".into());
         }
     }
-    let addresses =
-        crate::dataflow::address_identity::ordered_memory_addresses(source, graph, opaque)
+    let (addresses, address_evidence) =
+        crate::dataflow::address_identity::checked_memory_addresses(source, graph, opaque)
             .ok_or("memory SSA address/control resource limit")?;
     let accesses = addresses.accesses;
     let mut by_instruction: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
@@ -279,6 +284,7 @@ pub(crate) fn analyze_with_effects(
         query_certificates: Vec::new(),
         graph_evidence: None,
         query_evidence: None,
+        address_evidence,
     };
     let mut entries = BTreeMap::new();
     for id in &reachable {

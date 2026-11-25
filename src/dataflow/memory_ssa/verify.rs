@@ -29,6 +29,7 @@ pub struct Evidence {
     pub graph: GraphEvidence,
     /// None preserves an unavailable query analysis, without a partial set.
     pub queries: Option<QueryEvidence>,
+    pub addresses: ModularEvidence,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,7 +81,7 @@ impl Budget {
 }
 
 /// Validate generation/event/CFG correspondence for a closed single function.
-/// Modular address identities are supplied by the shared address analysis.
+/// Modular identities are independently checked against source SSA accesses.
 /// This first layer does not certify the reaching-writer query results.
 pub fn validate_graph(
     source: &Program,
@@ -101,7 +102,7 @@ pub fn validate_graph(
 }
 
 /// Check the graph and each supplied backwards coverage invariant. Symbolic
-/// address identities are shared; traversal, edge substitution, interval/byte
+/// address identities are source-checked; traversal, edge substitution, interval/byte
 /// checks and closure are independent of the query producer.
 pub fn validate(
     source: &Program,
@@ -109,8 +110,9 @@ pub fn validate(
     candidate: &Analysis,
 ) -> Result<Evidence, ValidationError> {
     check_registers(source, registers)?;
-    let facts = address_identity::ordered_memory_addresses(source, registers, &BTreeSet::new())
-        .ok_or(Unavailable("address identities"))?;
+    let (facts, addresses) =
+        address_identity::checked_memory_addresses(source, registers, &BTreeSet::new())
+            .ok_or(Unavailable("address identities"))?;
     let graph = graph_with_facts(
         source,
         registers,
@@ -120,7 +122,11 @@ pub fn validate(
         &facts.forms,
     )?;
     let queries = query_coverage(candidate, registers, &facts.phi_values)?;
-    Ok(Evidence { graph, queries })
+    Ok(Evidence {
+        graph,
+        queries,
+        addresses,
+    })
 }
 
 pub(super) fn query_coverage(

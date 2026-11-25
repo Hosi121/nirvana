@@ -8,6 +8,9 @@ pub(super) fn render(analysis: &Analysis) -> Result<String, String> {
     let mut out = String::from(
         "{\"schema\":\"nirvana-memory-ssa-v1\",\"status\":\"analyzed\",\"scope\":\"function-entry-normal-continuations\",\"reads\":\"syntactic-possible\"",
     );
+    let a = analysis.address_evidence();
+    write!(out, ",\"address_verification\":{{\"model\":\"nirvana-modular-address-v1\",\"status\":\"checked\",\"scope\":\"u64-affine-equalities\",\"accesses\":{},\"modular_forms\":{},\"phi_checked\":{},\"phi_inputs\":{},\"source_atoms\":{},\"basis_evaluations\":{}}}",
+        a.accesses,a.modular_forms,a.phi_checked,a.phi_inputs,a.source_atoms,a.basis_evaluations).unwrap();
     if let Some(e) = analysis.graph_evidence() {
         write!(out, ",\"verification\":{{\"model\":\"nirvana-memory-ssa-graph-v1\",\"scope\":\"source-bound-generations\",\"blocks\":{},\"definitions\":{},\"accesses\":{},\"phi_inputs\":{},\"opaque_effects\":{},\"query_coverage\":",
             e.blocks,e.definitions,e.accesses,e.phi_inputs,e.opaque_effects).unwrap();
