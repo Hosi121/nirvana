@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import dev
+import process_job
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -130,18 +131,19 @@ class Storage(unittest.TestCase):
 
     def test_background_writer_is_stopped_before_cleanup(self):
         pidfile = self.root / "writer.pid"
-        writer = ("import os,pathlib,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
-                  "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)")
+        writer = ("import json,os,pathlib,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                  "s=pathlib.Path('/proc/self/stat').read_text().rsplit(')',1)[1].split(); "
+                  "pathlib.Path(sys.argv[1]).write_text(json.dumps([os.getpid(),int(s[19])])); time.sleep(30)")
         parent = ("import pathlib,subprocess,sys,time; "
                   "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); "
                   "p=pathlib.Path(sys.argv[2]); "
                   "deadline=time.monotonic()+5\n"
                   "while not p.exists() and time.monotonic()<deadline: time.sleep(0.01)\n"
                   "assert p.exists()")
-        pid = None
+        pid = start = None
         try:
             self.assertEqual(dev.child([sys.executable, "-c", parent, writer, str(pidfile)]), 0)
-            pid = int(pidfile.read_text())
+            pid, start = json.loads(pidfile.read_text())
             # A killed orphan may briefly remain a zombie until init reaps it.
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
@@ -154,11 +156,61 @@ class Storage(unittest.TestCase):
                 time.sleep(0.01)
             self.fail("background writer is still alive after the managed job returned")
         finally:
-            if pid is not None:
+            current = process_job.identity(pid) if pid is not None else None
+            if current is not None and current[1] == start:
+                descriptor = None
                 try:
-                    os.kill(pid, signal.SIGKILL)
+                    descriptor = os.pidfd_open(pid, 0)
+                    if process_job.identity(pid) == current:
+                        signal.pidfd_send_signal(descriptor, signal.SIGKILL, None, 0)
                 except ProcessLookupError:
                     pass
+                finally:
+                    if descriptor is not None:
+                        os.close(descriptor)
+
+    def test_nested_capture_writer_is_drained_on_limit_and_interrupt(self):
+        writer = ("import json,os,pathlib,time,sys; "
+                  "s=pathlib.Path('/proc/self/stat').read_text().rsplit(')',1)[1].split(); "
+                  "pathlib.Path(sys.argv[1]).write_text(json.dumps([os.getpid(),int(s[19])])); time.sleep(10)")
+        parent = ("import sys; sys.path.insert(0,sys.argv[1]); import evaluate_structure; "
+                  "evaluate_structure.capture([sys.executable,'-c',sys.argv[2],sys.argv[3]],20)")
+        for mode in ['limit', 'interrupt']:
+            marker = self.root / mode
+            pinned = []
+            def guard():
+                if marker.exists() and not pinned:
+                    pid, start = json.loads(marker.read_text())
+                    descriptor = os.pidfd_open(pid, 0)
+                    self.assertEqual(process_job.identity(pid)[1], start)
+                    pinned.append((pid, start, descriptor))
+                    if mode == 'interrupt':
+                        raise KeyboardInterrupt
+                    return 'test-owned nested writer limit'
+                return None
+            try:
+                command = [sys.executable, '-c', parent, str(ROOT/'tools'), writer, str(marker)]
+                if mode == 'interrupt':
+                    with self.assertRaises(KeyboardInterrupt):
+                        dev.child(command, guard=guard)
+                else:
+                    self.assertEqual(dev.child(command, guard=guard), dev.LIMIT_EXIT)
+                self.assertEqual(len(pinned), 1)
+                pid, start, _ = pinned[0]
+                current = process_job.identity(pid)
+                self.assertTrue(current is None or current[1] != start)
+            finally:
+                for _, _, descriptor in pinned:
+                    try:
+                        signal.pidfd_send_signal(descriptor, signal.SIGKILL, None, 0)
+                    except ProcessLookupError:
+                        pass
+                    finally:
+                        os.close(descriptor)
+
+    def test_job_signal_returncode_keeps_shell_style_dev_result(self):
+        command = [sys.executable, '-c', 'import os,signal; os.kill(os.getpid(),signal.SIGTERM)']
+        self.assertEqual(dev.child(command), 128 + signal.SIGTERM)
 
     def test_total_budget_includes_worktree_outputs_and_deduplicates_hardlinks(self):
         linked = self.root / "linked"

@@ -13,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from process_job import Job
 
 MIB = 1024 ** 2
 CACHE_BYTES = 2048 * MIB
@@ -125,15 +126,10 @@ def refresh_cache(layout, budget, force=False):
 
 
 def stop(process, immediate=False):
-    try:
-        os.killpg(process.pid, signal.SIGKILL if immediate else signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
+    # A job-owned guardian stops/reaps every descendant, across nested sessions.
+    # Never SIGKILL that guardian to bypass an unconfirmed descendant drain.
+    process.cancel()
+    process.wait()
 
 
 def child(argv, guard=None, **kwargs):
@@ -141,7 +137,7 @@ def child(argv, guard=None, **kwargs):
     if guard and (reason := guard()):
         print(reason, file=sys.stderr)
         return LIMIT_EXIT
-    with subprocess.Popen(argv, start_new_session=True, **kwargs) as process:
+    with Job(argv, **kwargs) as process:
         try:
             while True:
                 try:
@@ -159,12 +155,9 @@ def child(argv, guard=None, **kwargs):
             stop(process)
             raise
         finally:
-            # Background writers share this job's process group. Stop them
-            # before their output is removed and its open files go uncounted.
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            # Normal completion also drains detached/background writers before
+            # deleting output could leave their open files uncounted.
+            process.close()
     return result if result >= 0 else 128 - result
 
 
