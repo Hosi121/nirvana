@@ -38,7 +38,8 @@ fn store_obligations_use_the_value_at_the_ordered_assignment() {
         let mut work = Work::default();
         preflight(&source, module_ir::REGISTER_COUNT, &mut work).unwrap();
         let projected = stack_program(&source, 1, &mut work).unwrap();
-        let stack = StackAnalysis::try_analyze(&projected, RSP).unwrap();
+        let proposed = StackAnalysis::try_analyze(&projected, RSP).unwrap();
+        let stack = stack::validate(&projected, RSP, &proposed).unwrap();
         assert_eq!(
             check_store(&stack, 1, store, &Expr::Register(Reg(0)), 8, &mut work).is_ok(),
             !overwrite

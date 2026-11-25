@@ -31,6 +31,42 @@ const MAX_STACK_OFFSET: i64 = 1_048_576;
 const RSP: Reg = Reg(crate::binary::x86::RSP);
 type Registers = u128;
 
+trait StackOffsets {
+    fn offset_before(
+        &self,
+        instruction: u64,
+        assignment: usize,
+        value: &Expr,
+    ) -> Result<Option<i64>, String>;
+}
+
+impl StackOffsets for StackAnalysis {
+    fn offset_before(
+        &self,
+        instruction: u64,
+        assignment: usize,
+        value: &Expr,
+    ) -> Result<Option<i64>, String> {
+        Ok(StackAnalysis::offset_before(
+            self,
+            instruction,
+            assignment,
+            value,
+        ))
+    }
+}
+
+impl StackOffsets for crate::dataflow::stack::CheckedStack<'_> {
+    fn offset_before(
+        &self,
+        instruction: u64,
+        assignment: usize,
+        value: &Expr,
+    ) -> Result<Option<i64>, String> {
+        Self::offset_before(self, instruction, assignment, value)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSummary {
     pub address: u64,
@@ -104,7 +140,7 @@ impl Work {
 
     fn offset(
         &mut self,
-        stack: &StackAnalysis,
+        stack: &impl StackOffsets,
         address: u64,
         assignment: usize,
         expression: &Expr,
@@ -115,7 +151,7 @@ impl Work {
             self.charge(1, "query nodes")?;
             children(e, depth, &mut pending);
         }
-        Ok(stack.offset_before(address, assignment, expression))
+        stack.offset_before(address, assignment, expression)
     }
 }
 

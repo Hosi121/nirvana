@@ -1,5 +1,6 @@
 use nirvana::ir::{
-    AccessKind, Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, Width,
+    AccessKind, Assignment, BinaryOp, Control, Expr, IrInstruction, Place, Program, Reg, UnaryOp,
+    Width,
 };
 use nirvana::reduce::reduce;
 use nirvana::stack::{StackAccess, StackAnalysis};
@@ -261,6 +262,119 @@ fn offsets_wrap_as_u64_and_other_arithmetic_is_not_guessed() {
     }
     assert_eq!(a.offset_before(0, 0, &add(r(0), r(0))), None);
     assert_eq!(a.offset_before(0, 0, &sub(c(0), r(0))), None);
+}
+
+#[test]
+fn unary_widths_preserve_only_full_word_stack_identities() {
+    for op in [
+        UnaryOp::SignExtend(Width::U8),
+        UnaryOp::SignExtend(Width::U16),
+        UnaryOp::SignExtend(Width::U32),
+        UnaryOp::Extract {
+            start: 0,
+            width: Width::U8,
+        },
+        UnaryOp::Extract {
+            start: 0,
+            width: Width::U16,
+        },
+        UnaryOp::Extract {
+            start: 0,
+            width: Width::U32,
+        },
+        UnaryOp::Extract {
+            start: 1,
+            width: Width::U64,
+        },
+        UnaryOp::Extract {
+            start: 64,
+            width: Width::U64,
+        },
+        UnaryOp::Extract {
+            start: 255,
+            width: Width::U8,
+        },
+    ] {
+        let expression = Expr::Unary(op, Box::new(r(0)));
+        let p = program(
+            2,
+            vec![instruction(
+                0,
+                vec![set(1, expression.clone())],
+                Control::Return(r(1)),
+            )],
+        );
+        let a = StackAnalysis::try_analyze(&p, Reg(0)).unwrap();
+        assert_eq!(a.offset_before(0, 0, &expression), None, "{op:?}");
+        assert_eq!(a.offset_before(0, 1, &r(1)), None, "{op:?}");
+    }
+    for op in [
+        UnaryOp::SignExtend(Width::U64),
+        UnaryOp::Extract {
+            start: 0,
+            width: Width::U64,
+        },
+    ] {
+        let p = program(
+            2,
+            vec![instruction(
+                0,
+                vec![set(1, Expr::Unary(op, Box::new(sub(r(0), c(8)))))],
+                Control::Return(r(1)),
+            )],
+        );
+        let a = StackAnalysis::try_analyze(&p, Reg(0)).unwrap();
+        assert_eq!(a.offset_before(0, 1, &r(1)), Some(-8));
+    }
+}
+
+#[test]
+fn constant_unary_boundaries_retain_wrapped_offsets() {
+    for (op, value, offset) in [
+        (UnaryOp::SignExtend(Width::U8), 0x80, -128),
+        (UnaryOp::SignExtend(Width::U16), 0x8000, -32768),
+        (UnaryOp::SignExtend(Width::U32), 0x8000_0000, -2147483648),
+        (
+            UnaryOp::Extract {
+                start: 63,
+                width: Width::U8,
+            },
+            u64::MAX,
+            1,
+        ),
+        (
+            UnaryOp::Extract {
+                start: 64,
+                width: Width::U64,
+            },
+            u64::MAX,
+            0,
+        ),
+        (
+            UnaryOp::Extract {
+                start: 255,
+                width: Width::U8,
+            },
+            u64::MAX,
+            0,
+        ),
+    ] {
+        let p = program(
+            2,
+            vec![instruction(
+                0,
+                vec![
+                    set(1, Expr::Unary(op, Box::new(c(value)))),
+                    set(1, add(r(0), r(1))),
+                ],
+                Control::Return(r(1)),
+            )],
+        );
+        let a = StackAnalysis::try_analyze(&p, Reg(0)).unwrap();
+        assert_eq!(a.offset_before(0, 2, &r(1)), Some(offset), "{op:?}");
+        let checked = nirvana::stack::validate(&p, Reg(0), &a).unwrap();
+        assert_eq!(checked.offset_before(0, 2, &r(1)).unwrap(), Some(offset));
+    }
 }
 
 #[test]

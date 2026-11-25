@@ -154,7 +154,9 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 
 [module_values](../src/dataflow/module_values.rs)はCALL・DIV・STOS・MOVSを順序付きイベントに写します。
 [call_footprint](../src/dataflow/call_footprint.rs)の閉じた正常復帰要約を使える場合は保存レジスタの値IDを継続し、未知の結果には新しいIDを付けます。
-要約は[独立検査器](../src/dataflow/call_footprint/verify.rs)が元の命令からたどり、読取り・書換え・直接calleeの集合、通常callの復帰先、末尾callとRETのRSP、戻り先RAMを守るStoreを照合します。再帰は有限回で正常復帰した実行についてcallee間の集合方程式を検査します。`module_values::Analysis::call_summaries()`は検査済み要約を共有参照で返し、`call_verification()`とJSONの`call_verification`は検査対象の件数を示します。スタックのアフィン関係は、元命令から別に作る保守的な投影と既存の`StackAnalysis`を使います。
+要約は[独立検査器](../src/dataflow/call_footprint/verify.rs)が元の命令からたどり、読取り・書換え・直接calleeの集合、通常callの復帰先、末尾callとRETのRSP、戻り先RAMを守るStoreを照合します。再帰は有限回で正常復帰した実行についてcallee間の集合方程式を検査します。`module_values::Analysis::call_summaries()`は検査済み要約を共有参照で返し、`call_verification()`とJSONの`call_verification`は検査対象の件数を示します。
+
+スタックの関係は、元命令から作る保守的な投影に対して`StackAnalysis`が候補を求めます。[スタック検査器](../src/dataflow/stack/verify.rs)は元IRの入口・全後続辺・代入順と照合し、入口RSPに対する係数とoffsetを別の制限付きアフィン計算で検査します。未知へ弱めた不変条件も受理し、戻り辺とアクセスの幅・重複を保持します。`CheckedStack`は検査したsourceと候補を借用し、呼出し検査器の問い合わせとJSONの`stack_verification`をこの検査へ結びます。
 レジスタの保存とRAMの保存は個別に判断します。CALLと未知のメモリ効果はMemorySSAの境界になります。
 DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認してレジスタ要約を作ります。商・剰余の結果は未知とし、書き換えられないレジスタの値IDを継続します。
 

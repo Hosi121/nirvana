@@ -358,6 +358,10 @@ assert proof['functions']==len(r['functions'])
 assert proof['closed_functions']==sum(s['closed'] for s in summaries.values())
 assert proof['call_edges']==sum(len(s['callees']) for s in summaries.values() if s['closed'])
 assert proof['reachable_instructions']>=proof['closed_functions']
+stack=proof['stack_verification']
+assert stack['model']=='nirvana-entry-stack-facts-v1' and stack['status']=='checked'
+assert stack['instructions']==proof['reachable_instructions']
+assert stack['points']>=stack['instructions'] and stack['known_values']>=proof['closed_functions']
 for f in r['functions']:
     if f['status']!='analyzed': continue
     v=f['values']; assert [x['id'] for x in v]==list(range(len(v)))

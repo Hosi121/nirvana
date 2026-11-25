@@ -481,6 +481,17 @@ pub(super) fn render(analysis: &Analysis) -> Option<String> {
     out.number(evidence.reachable_instructions)?;
     out.raw(",\"call_edges\":")?;
     out.number(evidence.call_edges)?;
+    out.raw(",\"stack_verification\":{\"model\":\"nirvana-entry-stack-facts-v1\",\"status\":\"checked\",\"instructions\":")?;
+    out.number(evidence.stack.instructions)?;
+    out.raw(",\"points\":")?;
+    out.number(evidence.stack.points)?;
+    out.raw(",\"known_values\":")?;
+    out.number(evidence.stack.known_values)?;
+    out.raw(",\"accesses\":")?;
+    out.number(evidence.stack.accesses)?;
+    out.raw(",\"edges\":")?;
+    out.number(evidence.stack.edges)?;
+    out.raw("}")?;
     out.raw("},\"functions\":[")?;
     for (i, function) in analysis.functions.iter().enumerate() {
         if i > 0 {

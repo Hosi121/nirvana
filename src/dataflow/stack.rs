@@ -10,6 +10,9 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::control_flow::cfg::Target;
 use crate::model::ir::{AccessKind, BinaryOp, Control, Expr, Place, Program, Reg, Width};
 
+mod verify;
+pub use verify::{CheckedStack, ValidationEvidence, validate};
+
 // Dense point states make ordered assignments explicit. Limit both retained
 // state and total work; an exhausted analysis discards all accumulated facts.
 const MAX_STATE_CELLS: usize = 1_000_000;
@@ -89,7 +92,9 @@ impl StackAnalysis {
     /// Like `analyze`, but distinguish an unavailable bounded analysis from a
     /// successful analysis with no known accesses. No partial facts are exposed.
     pub fn try_analyze(program: &Program, stack_register: Reg) -> Option<Self> {
-        Self::analyze_bounded(program, stack_register)
+        let candidate = Self::analyze_bounded(program, stack_register)?;
+        verify::validate(program, stack_register, &candidate).ok()?;
+        Some(candidate)
     }
 
     /// Query registers immediately before one ordered assignment, or before
@@ -102,12 +107,7 @@ impl StackAnalysis {
         assignment: usize,
         address: &Expr,
     ) -> Option<i64> {
-        let state = self.points.get(&instruction)?.get(assignment)?;
-        let value = evaluate(address, state, &mut Budget(MAX_EXPRESSION_WORK), 0)?.value;
-        match value {
-            Value::Stack(offset) => Some(offset as i64),
-            _ => None,
-        }
+        verify::offset_before(self, instruction, assignment, address)
     }
 
     pub fn accesses(&self) -> &[StackAccess] {

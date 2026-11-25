@@ -1,10 +1,11 @@
 //! Source-bound checking of closed register contracts, independent of `Local`.
 //!
-//! The trusted stack boundary is StackAnalysis on the conservative projection
-//! built here: ordered original assignments, unknown divide/call outputs, and
+//! StackAnalysis proposes facts on a conservative projection built here:
+//! ordered original assignments, unknown divide/call outputs, and
 //! normal-call RSP restoration. Each assumed restoration is justified by the
 //! closed-callee equations and original return/store checks below. Recursive
 //! contracts use induction on finite successful calls, not termination claims.
+//! Stack point facts and queries are checked by the independent stack checker.
 //! IR layout validation and resource/syntax guards are shared infrastructure.
 //! Neither the producer's CFG walk, local rejection flags nor propagation is
 //! consulted. Source successors include both branch arms and the entry itself,
@@ -16,7 +17,7 @@ use super::{
     Analysis, MAX_FUNCTION_INSTRUCTIONS, MAX_FUNCTIONS, MAX_INSTRUCTIONS, MAX_STACK_OFFSET, RSP,
     Registers, Work, preflight,
 };
-use crate::dataflow::stack::StackAnalysis;
+use crate::dataflow::stack::{self, CheckedStack, StackAnalysis};
 use crate::model::ir::{
     AccessKind, Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width,
 };
@@ -28,6 +29,7 @@ pub struct ValidationEvidence {
     pub closed_functions: usize,
     pub reachable_instructions: usize,
     pub call_edges: usize,
+    pub stack: stack::ValidationEvidence,
 }
 
 /// Check claimed closed summaries against original reachable instructions.
@@ -64,6 +66,7 @@ pub fn validate(
         closed_functions: 0,
         reachable_instructions: 0,
         call_edges: 0,
+        stack: stack::ValidationEvidence::default(),
     };
     let all = (1 << module_ir::REGISTER_COUNT) - 1;
     for summary in &candidate.functions {
@@ -104,8 +107,9 @@ pub fn validate(
         }
         preflight(source, module_ir::REGISTER_COUNT, &mut work)?;
         let projected = stack_program(source, function.address, &mut work)?;
-        let stack = StackAnalysis::try_analyze(&projected, RSP)
+        let stack_candidate = StackAnalysis::try_analyze(&projected, RSP)
             .ok_or("call footprint validation stack unavailable")?;
+        let stack = stack::validate(&projected, RSP, &stack_candidate)?;
         let sites: BTreeMap<_, _> = source.iter().map(|i| (i.address(), i)).collect();
         let mut visited = BTreeSet::new();
         let mut pending = vec![function.address];
@@ -236,6 +240,12 @@ pub fn validate(
         evidence.closed_functions += 1;
         evidence.reachable_instructions += visited.len();
         evidence.call_edges += callees.len();
+        let checked = stack.evidence();
+        evidence.stack.instructions += checked.instructions;
+        evidence.stack.points += checked.points;
+        evidence.stack.known_values += checked.known_values;
+        evidence.stack.accesses += checked.accesses;
+        evidence.stack.edges += checked.edges;
     }
     Ok(evidence)
 }
@@ -270,7 +280,7 @@ fn expression_reads(expression: &Expr) -> Registers {
 }
 
 fn check_store(
-    stack: &StackAnalysis,
+    stack: &CheckedStack<'_>,
     instruction: u64,
     assignment: usize,
     address: &Expr,
