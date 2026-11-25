@@ -201,22 +201,24 @@ python3 tools/measure_source_recovery.py --help
 
 ## Quint・TLA+の導入候補
 
-2026-11-26の調査では、M2の構造検査器を小さい状態遷移モデルで監査する案を選んだ。正本は[実行契約](equivalence.md)と[層間契約](architecture.md)。モデル・検証器の実行は今後の検証段階で行う。
+2026-11-26の調査では、M2の受理済み候補をQuintの独立モデルで監査する案を選んだ。正本は[実行契約](equivalence.md)と[層間契約](architecture.md)。初回成果物は有限のraw IR/AST集合とRust再生用adapterとし、モデル・検証器の実行は次の検証段階で行う。
 
-| 対象 | 問いと実装への接続 |
+| 対象 | 最初に確かめること |
 | --- | --- |
-| CFG → Structured AST | `structure_verify`が受理した木は、元Stepの順序・回数、外側transfer、最初のfault、予算までの全状態を保つか |
-| MemorySSAの候補被覆 | 具体実行の各byteのwriterが、検査を通した候補集合に含まれるか。初期writer・部分Store・φ・opaque・戻り辺を含む |
-| 反例の利用 | raw IRとraw ASTを別々に解釈し、得たtraceを実際のRust検査器・実行器で再現して回帰対照へ保存する |
+| CFG → Structured AST | 実Rustが受理した組のStep・評価・Return・外側transfer・予算境界が、独立した実行で対応するか |
+| MemorySSAの候補被覆 | 成功したLoadの各byteについて、最後にcommitしたwriterとStore内のbyte位置が受理済み候補に含まれるか |
+| 反例の再生 | 抽象traceを具体化し、実Rustの受理結果と完全なRunReportを別々に照合できるか |
 
-最初のcontrolモデルは、約6 PC・2段のloop・2レジスタ・2-byte RAM・小さい値域・命令予算0〜6を対象にし、AST総node数・コピー数・代入数・式深さにも上限を置く。最初はConst/Register/LoadU8/SelectとStoreU8に絞り、具体的なu64意味論で扱える部分集合を使う。Loop/Break/Continueのroutingをstutteringへ写し、guest Stepはtraceと予算を進める。Evaluate・条件・Return式はfaultを観測する。検査開始点から到達するroutingだけのcycleは受理規則で拒否し、guestの無限loopは有限予算で停止状態へ対応付ける。Storeはアドレス評価、書込み範囲検査、右辺評価、commitの順序を保つ。
+最初は実Rustの[`structure_verify::validate`](../src/control_flow/structure_verify.rs)を完走させ、候補ごとの受理・通常拒否・資源上限・export対象外を保存する。検査器はStepのPC・逐次代入列・条件・Return式を構文で比較し、分岐の両腕を調べる。この性質に合わせ、sourceをPC、ASTをraw構文cursorとlexical stackで実行するeventモデルから始める。`Step(pc, ordered_body)`・`Eval(condition)`・`Return(expression)`のtokenを先に照合し、対応したイベントへ共通の非決定的な成功・枝・faultを与える。不一致は明示的なエラーへ進める。tokenの忠実性と共通の決定的な命令意味論を前提に、有限の制御構造を値域によらず監査する設計である。
 
-正常なtail配置・外側continueを正対照にし、Step欠落、枝の交換、transfer深さの誤り、fault順序の交換、先行Storeの喪失を負対照にする。受理規則そのものを調べるため、既存のAST lowering結果をモデルの両側へ流す方式から独立させる。exporter・状態射影・値やアドレスの抽象化は、実装との対応を確認する境界として残す。
+sourceには`Ready → ControlPending → Ready`の位相を置く。残り予算が0でも、最後のStepの代入・条件・Returnは完了し、次Stepの試行時にSuspendedとなる。その試行PCは`instruction`へ入り、traceへの追加は止まる。モデルは約6 PC・2段loop・命令予算0〜6から始め、node数・コピー数・stackにも上限を置く。guest Step間のEvaluate/Ifも含む全遷移を進捗検査へ数え、有限configurationの再訪を調べる。任意の小さいwatchdog到達は未判定、stack等のoverflowはエラーとする。探索上限とguest予算を別に記録する。
 
-Quintは[ランダム探索・有界検査・帰納不変条件](https://quint.sh/docs/checking-properties)を使い分けられ、[TLC backend](https://quint.sh/docs/model-checkers)も選べる。TLCの完走は指定した有限モデルの到達状態を覆い、任意サイズのCFGや全u64の保証には追加の抽象化根拠・帰納証明が必要になる。演算の全域検査には既存SMTを使い、構造品質はM0の同条件比較へ結ぶ。
+Quintの[言語仕様](https://quint.sh/docs/language-basics)に合わせ、構文は有限ID表と明示的なstackへ写す。eventモデルは式の意味を共通の前提に置く。後続の2reg・2-byte RAMの具体モデルでは、Storeの宛先評価→全幅検査→右辺評価→commit、先行Storeの保持、Selectの選択枝だけの評価も独立に検査する。
 
-Rustへのtrace再生には[Quint Connect](https://github.com/quint-co/quint-connect)が候補になる。モデルに模した別実装との一致に加え、Nirvana本体のAPIで受理結果と状態を照合する。初回の採用条件は、正対照の成立、負対照の検出、実Rustでの反例再現、固定した探索予算内での完走とする。モデル検査の成功と、trace集合でのRust適合検査は別の結果として報告する。
+非空の正対照には共有tail・外側continue・同一後続へのfault可能な条件を使う。独立実行器へStep欠落・枝交換・transfer深さ変更・Eval削除・control前の予算停止を入れ、負対照の検出も確認する。[既存の構造改変対照](../tests/control_flow/structure_verification.rs)と[prefix比較](../tests/control_flow/structure_splitting.rs)を出発点にする。モデル側のIR/AST実行は、検査対象のFlowGraph loweringから独立させる。
 
-入口からの受理には[`structure_verify::validate`](../src/control_flow/structure_verify.rs)を使い、全Stepコピー・途中再開の対応は`validate_reentries`を別に検査する。元IRは[`Program::run_with_memory`](../src/model/ir.rs)、ASTは[`execute_nodes`](../src/control_flow/structure.rs)という別の制御実行器を持つ。任意のraw ASTの実行には、今後同モジュール内へテスト用adapterを置く必要がある。再生では`RunReport`のstatus・全register・RAM/base/layout・trace・instructionを直接比較する。[`Contract::compare`](../src/model/observe.rs)は途中停止を未判定にする最終状態向けの契約なので、prefixの照合には直接比較を使う。
+任意のraw ASTを実行するには、[`execute_nodes`](../src/control_flow/structure.rs)のモジュール内にテスト用adapterが必要である。具体的な観測cutでは、元IRの[`run_with_memory`](../src/model/ir.rs)とstatus・全register・RAM/base/layout・trace・instructionを直接比較する。[`Contract::compare`](../src/model/observe.rs)は途中停止を未判定とする最終状態向けの契約である。全Stepコピー・途中再開の検査は`validate_reentries`を別のゲートにする。抽象的な枝列には実入力で再現できないものも含まれるため、実行意味の反例として報告する範囲は具体的なRunReportで再生できたものに限る。
 
-Rustの両実行器が共有する`Machine`と式評価も、信頼境界に含める。Storeの右辺先行評価やfault時の先行書込み消失をモデルへ故意に入れ、独立した観測が差を検出する負対照を用意する。[既存の構造改変対照](../tests/control_flow/structure_verification.rs)と[全状態のprefix比較](../tests/control_flow/structure_splitting.rs)を再生の出発点にする。
+MemorySSAでは、Initial・Storeの静的位置とsource byte・Opaqueを具体writerとし、φは先行辺を選ぶ操作として扱う。opaqueのMay writeが何も書かない場合や部分書込みでも、[現在の検査器](../src/dataflow/memory_ssa/verify/queries.rs)は以前のwriterを覆う義務を保持する。`unknown_bytes`もこの被覆を保つ。初回は1 PCに1アクセス・root Load・一意なbyte tagへ絞り、元IRのprefix実行で前向きのwriterと比較する。raw証跡の注入にはprivateなAnalysis用adapterが必要で、query生成器による補修を介さず検査する。実CALL/REPのopaqueとの対応は、効果付きの内部検査と[`module_values::memory_verify`](../src/dataflow/module_values/memory_verify.rs)を別に照合する。照会の未取得・予算到達は未判定として残す。
+
+Quintは[ランダム探索・有界検査・帰納不変条件](https://quint.sh/docs/checking-properties)と[TLC backend](https://quint.sh/docs/model-checkers)を使い分けられる。TLCの完走は指定した有限モデルの到達状態を覆う。演算の全域検査には既存SMTを使い、構造品質はM0の同条件比較へ結ぶ。[Quint Connect](https://github.com/quint-co/quint-connect)もtrace再生の候補である。モデル検査、Rustの受理結果との適合、具体実行の再生を分けて報告し、exporter・adapter・式やメモリの意味論・有限集合の範囲を信頼境界へ残す。
