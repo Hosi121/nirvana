@@ -9,6 +9,8 @@ use crate::dataflow::unsigned_caps;
 use crate::model::ir::{Control, Expr, Place, Program, Width};
 use std::fmt;
 
+mod edge_bounds;
+
 // One preflight and one interpretation visit each reachable expression node
 // (at most the producer's 10m observation budget). Row checks, working states,
 // and <=2 successor comparisons per block add <=4m state cells. Source point,
@@ -169,11 +171,20 @@ fn validate_bounded(
     let storage: Vec<_> = widths.iter().map(|&w| unsigned_caps::load(w)).collect();
     work.evidence.registers = registers;
     work.evidence.narrow_registers = widths.iter().filter(|&&w| w != Width::U64).count();
+    let mut guard_budget = edge_bounds::Budget::new(registers);
     for block in cfg.blocks() {
         if !reachable[block.id.index()] {
             continue;
         }
         work.take(registers + 1)?;
+        // Optional guards are reconstructed only after all reachable source
+        // syntax was checked. Unsupported grammar or structural budget limits
+        // preserve unconditional bounds; they cannot hide invalid source.
+        let guard = edge_bounds::derive(
+            &source.instructions()[block.instructions.clone()],
+            registers,
+            &mut guard_budget,
+        );
         let mut state: Vec<_> = incoming[block.id.index()]
             .as_ref()
             .unwrap()
@@ -211,11 +222,7 @@ fn validate_bounded(
             let next = incoming[target.index()]
                 .as_ref()
                 .ok_or(Invalid("missing successor row"))?;
-            if state
-                .iter()
-                .zip(next)
-                .any(|(&value, &n)| value > unsigned_caps::from_bits(n).unwrap())
-            {
+            if !edge_bounds::covers(guard.as_ref(), edge.kind, &state, next, &mut work)? {
                 return Err(Invalid("successor entry bound"));
             }
             work.evidence.edges += 1;

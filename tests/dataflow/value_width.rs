@@ -4,6 +4,40 @@ use nirvana::value_width::ValueWidths;
 
 use crate::support::ir::c;
 use crate::support::ir::r;
+
+#[test]
+fn copied_guard_operands_keep_checked_facts_within_the_source_budget() {
+    let registers = 1001;
+    let p = program(
+        registers,
+        vec![
+            i(
+                0,
+                (1..registers).map(|reg| set(reg, r(reg - 1))).collect(),
+                Control::Branch {
+                    condition: binary(BinaryOp::Ult, r(registers - 1), c(256)),
+                    target: 2,
+                },
+            ),
+            i(1, vec![], Control::Return(c(0))),
+            i(2, vec![], Control::Return(c(1))),
+        ],
+    );
+    let widths = ValueWidths::analyze(&p);
+    assert!(widths.verification().is_ok(), "{:?}", widths.verification());
+    let target = p.cfg().block_at(2).unwrap().index();
+    assert_eq!(widths.incoming().unwrap()[target], Some(vec![8; registers]));
+    // These values were read before the guard. The edge condition cannot
+    // retroactively narrow their source-entry storage observations.
+    assert!(
+        widths
+            .widths()
+            .unwrap()
+            .iter()
+            .all(|&width| width == Width::U64)
+    );
+}
+
 fn binary(op: BinaryOp, left: Expr, right: Expr) -> Expr {
     Expr::binary(op, left, right)
 }

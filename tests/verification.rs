@@ -20,6 +20,8 @@ mod block_verification;
 mod byte_memory;
 #[path = "verification/division_ops.rs"]
 mod division_ops;
+#[path = "verification/edge_storage.rs"]
+mod edge_storage;
 #[path = "verification/exhaustive.rs"]
 mod exhaustive;
 #[path = "verification/integer_ops.rs"]

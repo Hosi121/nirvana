@@ -11,6 +11,7 @@ use std::sync::Arc;
 use crate::control_flow::cfg::Target;
 use crate::model::ir::{BinaryOp, Control, Expr, Place, Program, Reg, Width};
 
+mod edge_bounds;
 mod report;
 mod verify;
 pub use verify::{ValidationError, ValidationEvidence};
@@ -134,6 +135,9 @@ impl ValueWidths {
         {
             return None;
         }
+        // Guard planning is optional. Unsupported shapes and its separate
+        // structural limit preserve the unconditional transfer below.
+        let guards = edge_bounds::Plans::build(program, points);
 
         let mut incoming: Vec<Option<Vec<u8>>> = vec![None; cfg.blocks().len()];
         // Keep the original boundary as an incoming path to entry backedges.
@@ -159,15 +163,20 @@ impl ValueWidths {
                 let Target::Block(target) = edge.target else {
                     return None;
                 };
+                let refined = match &guards {
+                    Some(guards) => guards.refine(id.index(), edge.kind, &state, &mut budget)?,
+                    None => None,
+                };
+                let outgoing = refined.as_deref().unwrap_or(&state);
                 budget.spend(count)?;
                 let changed = match &mut incoming[target.index()] {
                     None => {
-                        incoming[target.index()] = Some(state.clone());
+                        incoming[target.index()] = Some(outgoing.to_vec());
                         true
                     }
                     Some(previous) => {
                         let mut changed = false;
-                        for (old, &new) in previous.iter_mut().zip(&state) {
+                        for (old, &new) in previous.iter_mut().zip(outgoing) {
                             if new > *old {
                                 *old = new;
                                 changed = true;
