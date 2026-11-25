@@ -4,6 +4,7 @@
 use crate::dataflow::ssa::{self, SsaError, SsaEvidence, SsaFunction};
 use crate::dataflow::ssa_facts::{self, Domain, LoadInputs};
 use crate::model::ir::{BinaryOp as B, Program, UnaryOp, Width};
+mod check;
 mod transfer;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -189,6 +190,9 @@ impl BitPlan {
             .collect::<Vec<_>>();
         let loads = LoadInputs::analyze(source, &self.graph);
         let (candidate, e) = ssa_facts::propose_with_loads(source, &self.graph, &states, &loads)?;
+        // Keep the producer's exact candidate and ranking behavior. A separate
+        // numeric domain must also accept the actual changed inline fragments.
+        check::validate(source, &self.graph, &self.values, &loads, &candidate).ok()?;
         Some((candidate, convert(e, &self.values, &loads)))
     }
 }
@@ -208,22 +212,17 @@ pub fn analyze_values(source: &Program, graph: &SsaFunction) -> Result<Vec<Known
             State::Bottom => KnownBits::UNKNOWN,
         })
         .collect::<Vec<_>>();
+    check::validate_facts(source, graph, &values, &loads)?;
     Ok(values)
-}
-fn states(graph: &SsaFunction, values: &[KnownBits]) -> Result<Vec<State>, SsaError> {
-    if values.len() != graph.values.len() || values.len() > ssa::MAX_VALUES {
-        return Err(SsaError::Malformed("bit fact vector"));
-    }
-    Ok(values.iter().copied().map(State::Facts).collect())
 }
 pub fn validate_facts(
     source: &Program,
     graph: &SsaFunction,
     values: &[KnownBits],
 ) -> Result<SsaEvidence, SsaError> {
-    let states = states(graph, values)?;
+    check::dimensions(graph, values)?;
     let loads = LoadInputs::analyze(source, graph);
-    ssa_facts::validate_facts_with_loads(source, graph, &states, &loads)
+    check::validate_facts(source, graph, values, &loads)
 }
 pub fn validate(
     source: &Program,
@@ -231,10 +230,9 @@ pub fn validate(
     values: &[KnownBits],
     candidate: &Program,
 ) -> Result<BitEvidence, SsaError> {
-    let states = states(graph, values)?;
+    check::dimensions(graph, values)?;
     let loads = LoadInputs::analyze(source, graph);
-    ssa_facts::validate_with_loads(source, graph, &states, &loads, candidate)
-        .map(|e| convert(e, values, &loads))
+    check::validate(source, graph, values, &loads, candidate).map(|e| convert(e, values, &loads))
 }
 fn convert(e: ssa_facts::FactEvidence, values: &[KnownBits], loads: &LoadInputs) -> BitEvidence {
     BitEvidence {
