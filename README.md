@@ -6,11 +6,11 @@ x86-64の機械語からCを生成するデコンパイラです。命令デコ�
 
 ## 使い方
 
-Linux x86-64、Rust stable、C11コンパイラ（`cc`）を使います。
+Linux x86-64、Rust stable、C11コンパイラ（`cc`）を使います。ビルド管理コマンドにはPython 3を使います。
 
 ```sh
 cc -O2 -c tests/fixtures/cases/diamond.c -o /tmp/nirvana-diamond.o
-cargo run --release -- /tmp/nirvana-diamond.o --emit readable-c
+python3 tools/dev.py cargo run --release -- /tmp/nirvana-diamond.o --emit readable-c
 ```
 
 既定では`fixture`関数を読みます。別の関数は`--symbol NAME`で指定します。
@@ -29,7 +29,7 @@ return value;
 リンク済みELFでは、入口から複数関数を読み込めます。
 
 ```sh
-cargo run --release -- ./program --symbol main --emit module-readable-c
+python3 tools/dev.py cargo run --release -- ./program --symbol main --emit module-readable-c
 ```
 
 | 出力 | 用途 |
@@ -45,10 +45,22 @@ cargo run --release -- ./program --symbol main --emit module-readable-c
 ## 開発
 
 ```sh
-cargo test --locked --all-targets
-cargo clippy --locked --all-targets -- -D warnings
+python3 tools/dev.py cargo test --locked --all-targets
+python3 tools/dev.py cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --all -- --check
 python3 -m unittest discover -s tools/tests
 ```
+
+開発用ビルドはデバッグ情報とincremental cacheを省きます。`dev.py cargo`はworktree間でビルド領域を共有し、Cargo中間ファイルが2GiBを超えると実行前後に整理します。実行ファイルは通常の`target/debug/`・`target/release/`に残ります。
+
+実験の出力には`{out}`を渡すと、終了時に一時ファイルを片付けます。
+
+```sh
+python3 tools/dev.py run -- python3 tools/build_fixtures.py --out '{out}'
+python3 tools/dev.py status
+python3 tools/dev.py clean --runs
+```
+
+`run --keep`は最新2件・合計512MiBの範囲で出力とコマンドを保持します。上限は`--cache-mib`・`--runs-mib`をサブコマンドの前に指定できます。保存予算を超えたrunは削除して失敗を返します。長期保存する比較証跡は、必要な入力・ログ・hashをcheckpointとして別途管理します。実行中の一時的な使用量はコマンドに依存します。通常の`cargo`と任意の`--out`を使う実行は、手動で保存期間を管理します。
 
 [ドキュメント](docs/README.md)に設計・実行モデル・検証方法を、[テストガイド](tests/README.md)にsuite構成とケースの追加方法をまとめています。

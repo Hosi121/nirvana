@@ -6,3 +6,9 @@ description = "A decompiler built from scratch, starting with control-flow recov
 publish = false
 
 [dependencies]
+
+# Keep routine builds and the many test executables small. Opt in to symbols
+# for a debugging session with CARGO_PROFILE_DEV_DEBUG=2.
+[profile.dev]
+debug = 0
+incremental = false

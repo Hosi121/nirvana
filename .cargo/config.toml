@@ -1,0 +1,3 @@
+[build]
+# Final executables keep their usual target/debug and target/release paths.
+build-dir = "target/cargo-cache"
