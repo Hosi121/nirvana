@@ -1,0 +1,370 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Independent entry-stack invariants, full-word modular address equalities and SSA unsigned upper bounds",
+  "reference_revision": "5f672344a1167fcb6b62e40c5f861876105a03e1",
+  "candidate_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+  "replayer_revision": "32d1db79b7884fb7b2fa305867cbb401e6517e9a",
+  "implementation_revisions": {
+    "stack": "d417ff0",
+    "unsigned_bounds": "22ad8c3",
+    "modular_addresses": "7434413",
+    "unreachable_opaque_compatibility": "a087774",
+    "evaluation_v5": "a04fb22",
+    "relocated_report_replay": "32d1db7"
+  },
+  "module_profile": {
+    "reference_checkpoint": "tools/corpora/closed-calls-v1.m1.json",
+    "input_sha256": "96c9bbc3105497d18611a9433b716f5fc6a462cb5c7298b9ab517cf2d5a4c914",
+    "source_sha256": "60a2eeebc6e17cfc76ea90e5333015d159b771fb7e1c8620eb3017201d6caf42",
+    "functions": 27,
+    "closed_summaries": 9,
+    "unchanged_function_analyses": 27,
+    "unchanged_c_emissions": [
+      "module-readable-c",
+      "module-locals-c"
+    ],
+    "stack_check": {
+      "model": "nirvana-entry-stack-facts-v1",
+      "status": "checked",
+      "instructions": 25,
+      "points": 354,
+      "known_values": 771,
+      "accesses": 4,
+      "edges": 17
+    }
+  },
+  "evaluation_profile": {
+    "corpus": "tools/corpora/structure-analysis-v1.json",
+    "corpus_sha256": "67a3a4f36054f435d893cde80359d071c4c59e67532bda5c4c029c35e388e75d",
+    "cohort": "development",
+    "requested_profiles": 4,
+    "compilers": [
+      "gcc-O2",
+      "clang18-O2"
+    ],
+    "seed": 7956016069493023024,
+    "input_vectors": 8,
+    "checked_memory_scenarios_per_profile": 24,
+    "step_limit": 4096,
+    "prefix_budgets": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      4096
+    ],
+    "memory_bytes": 512,
+    "observations": {
+      "native": 32,
+      "generated_O0": 96,
+      "generated_O2": 96,
+      "stage_comparisons": 2400
+    },
+    "analysis_checks": {
+      "memory_ssa_graph": {
+        "before": {
+          "passed": 4
+        },
+        "after": {
+          "passed": 4
+        }
+      },
+      "memory_ssa_queries": {
+        "before": {
+          "passed": 4
+        },
+        "after": {
+          "passed": 4
+        }
+      },
+      "memory_addresses": {
+        "before": {
+          "not_run": 4
+        },
+        "after": {
+          "passed": 4
+        }
+      },
+      "unsigned_bounds": {
+        "before": {
+          "not_run": 4
+        },
+        "after": {
+          "passed": 4
+        }
+      }
+    },
+    "identical_generated_c": 4,
+    "structure": {
+      "equal": 4
+    },
+    "regressions": {
+      "structure_regressions": 0,
+      "architecture_regressions": 0,
+      "analysis_regressions": 0,
+      "c_footprint_regressions": 0,
+      "state_memory_regressions": 0,
+      "state_value_regressions": 0,
+      "semantic_regressions": 0
+    },
+    "rows": [
+      {
+        "id": "shared-cleanup-gcc-O2",
+        "object_sha256": "a789198829fe0f3d4ec423f64c5d030410d16433655db06bfab4197ad514f9eb",
+        "generated_c_sha256": "998f11396b08163103166142aca9ebfaa3efa8396a17ebeb258f38bd3692235e",
+        "structure_distance": 0,
+        "checks": {
+          "memory_ssa_graph": {
+            "blocks": 5,
+            "definitions": 15,
+            "accesses": 14,
+            "phi_inputs": 5,
+            "opaque_effects": 0
+          },
+          "memory_ssa_queries": {
+            "queries": 5,
+            "states": 13,
+            "links": 13,
+            "candidate_bytes": 40
+          },
+          "memory_addresses": {
+            "accesses": 14,
+            "modular_forms": 25,
+            "phi_inputs": 11,
+            "phi_checked": true,
+            "source_atoms": 5,
+            "basis_evaluations": 50
+          },
+          "unsigned_bounds": {
+            "values": 175,
+            "assignments": 140,
+            "phi_inputs": 19,
+            "expressions": 515
+          }
+        }
+      },
+      {
+        "id": "shared-cleanup-clang18-O2",
+        "object_sha256": "61b3bc14c08f6cafa1e36c20a78b086f80641cc2ade4a062fd48989875a16b97",
+        "generated_c_sha256": "0dfb944722a622d3bba6584a465936447a1bdcdb6c9c7c7f909790933de31e97",
+        "structure_distance": 0,
+        "checks": {
+          "memory_ssa_graph": {
+            "blocks": 6,
+            "definitions": 10,
+            "accesses": 12,
+            "phi_inputs": 8,
+            "opaque_effects": 0
+          },
+          "memory_ssa_queries": {
+            "queries": 9,
+            "states": 31,
+            "links": 31,
+            "candidate_bytes": 72
+          },
+          "memory_addresses": {
+            "accesses": 12,
+            "modular_forms": 31,
+            "phi_inputs": 19,
+            "phi_checked": true,
+            "source_atoms": 9,
+            "basis_evaluations": 63
+          },
+          "unsigned_bounds": {
+            "values": 148,
+            "assignments": 119,
+            "phi_inputs": 23,
+            "expressions": 431
+          }
+        }
+      },
+      {
+        "id": "loop-shared-exit-gcc-O2",
+        "object_sha256": "1cff8565c83f8a192108b6ad1b8d51b9b9c85dcc5dc74365f5a3df9a2cb00439",
+        "generated_c_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+        "structure_distance": 6,
+        "checks": {
+          "memory_ssa_graph": {
+            "blocks": 6,
+            "definitions": 11,
+            "accesses": 6,
+            "phi_inputs": 7,
+            "opaque_effects": 0
+          },
+          "memory_ssa_queries": {
+            "queries": 2,
+            "states": 4,
+            "links": 4,
+            "candidate_bytes": 9
+          },
+          "memory_addresses": {
+            "accesses": 6,
+            "modular_forms": 20,
+            "phi_inputs": 14,
+            "phi_checked": true,
+            "source_atoms": 4,
+            "basis_evaluations": 40
+          },
+          "unsigned_bounds": {
+            "values": 121,
+            "assignments": 89,
+            "phi_inputs": 20,
+            "expressions": 376
+          }
+        }
+      },
+      {
+        "id": "loop-shared-exit-clang18-O2",
+        "object_sha256": "ee9e696f98a0c5198a6d18cda528f1604c1af476b6c82e57a21e2e399eb6cf98",
+        "generated_c_sha256": "70eb2a75a6c78d964eafb8d4c380899025577ed8c029209ab2a49f21e88a2a0f",
+        "structure_distance": 4,
+        "checks": {
+          "memory_ssa_graph": {
+            "blocks": 11,
+            "definitions": 14,
+            "accesses": 4,
+            "phi_inputs": 17,
+            "opaque_effects": 0
+          },
+          "memory_ssa_queries": {
+            "queries": 2,
+            "states": 4,
+            "links": 4,
+            "candidate_bytes": 16
+          },
+          "memory_addresses": {
+            "accesses": 4,
+            "modular_forms": 60,
+            "phi_inputs": 56,
+            "phi_checked": true,
+            "source_atoms": 9,
+            "basis_evaluations": 114
+          },
+          "unsigned_bounds": {
+            "values": 237,
+            "assignments": 165,
+            "phi_inputs": 77,
+            "expressions": 637
+          }
+        }
+      }
+    ]
+  },
+  "tests": {
+    "rust_targets": 25,
+    "rust_passed": 1498,
+    "rust_ignored": 57,
+    "python_tests": 163,
+    "python_passed": 154,
+    "python_skipped": 9,
+    "stack_checker_tests": 20,
+    "modular_checker_tests": 10,
+    "unsigned_bound_checker_tests": 11,
+    "public_stack_boundary_tests_added": 2,
+    "clippy": "passed",
+    "rustfmt": "passed"
+  },
+  "controls": [
+    "Stack virtual entry, both branch arms, backedges, ordered overwrites, offset/width/access multiplicity and safe unknown weakening",
+    "Modular source access ordering, coefficient/sign/shift/offset changes, fresh effect/load atoms and cancelled source atoms",
+    "Two thousand cancelled atoms exhaust only phi basis checking; checked accesses and MemorySSA graph remain available",
+    "Unreachable opaque declarations bind original source without requiring reachable SSA definitions",
+    "Numeric cap witnesses cover total divide-by-zero, negative remainders, bit hulls, signed extensions and static slices",
+    "v5 proof/count/bool/hash/schema loss is rejected; relocated artifact paths replay while compiler flag/source path changes are rejected"
+  ],
+  "binaries": {
+    "decompiler": {
+      "version": "nirvana 0.1.0 git=a04fb22122a7880e27718dd7b61257957e903d6b source_dirty=false",
+      "sha256": "f7f75ca3265a2f364c17f18a9f8d303c162f4fdc79dadf559f3220c1291f350a"
+    },
+    "reference_revision": "5f672344a1167fcb6b62e40c5f861876105a03e1",
+    "candidate_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+    "corpus_sha256": "67a3a4f36054f435d893cde80359d071c4c59e67532bda5c4c029c35e388e75d",
+    "reference_probe": {
+      "version": "nirvana 0.1.0 git=5f672344a1167fcb6b62e40c5f861876105a03e1 source_dirty=false",
+      "sha256": "718ea3fc88c37794eabe385a86c3c63ec47c1bf48855d57137465771265c888b"
+    },
+    "candidate_probe": {
+      "version": "nirvana 0.1.0 git=a04fb22122a7880e27718dd7b61257957e903d6b source_dirty=false",
+      "sha256": "f7f49f1e61523a04a35c3812f1a3263ae663a8b0879cb32f7f7d20e9715720b4"
+    }
+  },
+  "artifacts": {
+    "v4/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/v4/report.json",
+      "sha256": "b8564505b140fd1f4fec0d212d7e6dd9b927258f7dd93e81d9245fa7a1b6b43f"
+    },
+    "v5/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/v5/report.json",
+      "sha256": "598ee1084ce3e8e8f53c5a30cc252a04ca3432a7020819bb0c9c8cba82b183c9"
+    },
+    "comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/comparison.json",
+      "sha256": "8f67f48083293fd048b055d43ba3344a0a263764802a47d516107ab32cf55ca3"
+    },
+    "m0-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/m0-tools.json",
+      "sha256": "26a6308ec5e3845753a4c9228c1b93900522f2f87673ac5ee750caef0b2ab996"
+    },
+    "toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/toolchain.json",
+      "sha256": "d8771035ad1a17e0417d63b2ad04ae13cd6a11771866170be79e0b3e88733551"
+    },
+    "closed-calls/comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/closed-calls/comparison.json",
+      "sha256": "8329d66b4dd649168528f6dafd7b41cc2ffdd7e4607404d34874ae9b5286cf89"
+    },
+    "closed-calls/after.json": {
+      "file": "target/runs/run-a37yw4tm/out/closed-calls/after.json",
+      "sha256": "00e82ef5aaaa9b60d44ad12b792bfdf715abdf22395de2717f741c2fe1b84de6"
+    },
+    "checks/rust-affine-width.log": {
+      "file": "target/runs/run-a37yw4tm/out/checks/rust-affine-width.log",
+      "sha256": "557a298a49bf6b5049a15a4dc24b59d940898bffd9ce416809b88cac90d0a20a"
+    },
+    "checks/python-affine-width-clang.log": {
+      "file": "target/runs/run-a37yw4tm/out/checks/python-affine-width-clang.log",
+      "sha256": "29269cb0dad9be5b4c4994383164e97160d0d7a3dfd5c518b7f31d0190bbd1dd"
+    },
+    "checks/clippy-affine-width.log": {
+      "file": "target/runs/run-a37yw4tm/out/checks/clippy-affine-width.log",
+      "sha256": "b8f66eb0ee5ee3dfcc251ec47d8c30dcab1a72db1c35395afa35e9b809fc9243"
+    }
+  },
+  "generation_provenance": {
+    "evaluation_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+    "evaluation_dirty": true,
+    "uncommitted_paths_at_generation": [
+      "docs/architecture.md",
+      "docs/verification.md"
+    ],
+    "note": "Runner/protocol sources matched candidate_revision; executable and probe identities both report source_dirty=false. The replayer revision additionally normalizes original output paths after artifact relocation."
+  },
+  "trusted_components": [
+    "Validated executable IR layout and u64 operation semantics",
+    "Independent source-bound SSA and alias-class validators",
+    "The stack checker uses the IR unary evaluator for constant operands; affine state transfer and access reconstruction are separate",
+    "Rust compiler/runtime and the independent checker implementations"
+  ],
+  "limits": [
+    "Static invariants apply to the declared u64 entry/normal-continuation model; concrete C/native comparisons cover recorded inputs and budgets.",
+    "Full-word modular identities establish equality; object separation, source pointer roles and narrow-mask layout inference remain separate claims.",
+    "TypeAnalysis bounds are independently checked; the distinct ValueWidths path used by C storage/presentation is the next M1 boundary.",
+    "Memory/saved/selected-semantic transformations were not applied in these four profiles; their existing tests and checkpoints are separate evidence.",
+    "M2 loop distances remain GCC6/Clang4. Clang has eliminated the source cycle; reconstructing the original loop is ambiguous, and no optimal recovery lower bound is claimed."
+  ],
+  "reproduction": {
+    "module": "Build candidate_revision and the recorded reference; regenerate the linked SOURCE fixture from tests/dataflow/call_footprint.rs. Compare complete module-values after removing only added verification metadata, and compare both module C outputs byte-for-byte.",
+    "evaluation": "Build the candidate nirvana once. Build the reference and candidate evaluation_probe sequentially in the shared target; run tools/evaluate_structure.py for each on the recorded development manifest, both compilers at O2, 8 vectors, 4096 steps, --c-footprint --state-memory-sites --measure-rss. Keep the same nirvana binary and evaluator for both.",
+    "replay": "python3 tools/compare_structure_reports.py BEFORE/report.json AFTER/report.json",
+    "toolchain": "toolchain.json records the same five pinned Ubuntu Clang18 packages as structure-analysis-v1.m0.json."
+  },
+  "evidence_storage": "Managed local runs retain at most two runs and 512 MiB total; source revisions, inputs and hashes regenerate evicted raw artifacts. The temporary reference worktree was removed; shared Cargo intermediates remain bounded."
+}

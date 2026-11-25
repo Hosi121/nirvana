@@ -66,12 +66,15 @@ Cの型幅と描画は再コンパイル後の実行で確認します。
 
 [Middle IRの比較](../tests/model/middle_ir.rs)は、Store先の先行検査、選ばれた枝の読込み、部分的な書込み、φとループを含みます。検査器にはLoadの脱落・複製・並べ替え、scope外の値、誤ったSSA版を渡します。直接MIR実行器とLow IR実行器は、scalar演算とchecked memoryの基本処理を共有し、式と制御の評価を別々に実装しています。
 [アドレスclassの対照](../src/dataflow/address_identity/verify/tests.rs)は、異なる初期値・Load・opaque出力の結合、欠けたφ入力、循環した根拠、利用前の代表値、反復で変わる値を拒否します。省略した同一性と恒等写像を許し、SSAの番号を変えても利用可能な代表値を受理することを確認します。
-[メモリ値の回復](../tests/model/middle_ir/memory.rs)は部分Store・may-alias・照会上限を含み、偽の既知値と循環した根拠を拒否します。回復前後のMIRと戻し変換の全状態を照合し、[生成C](../tests/model/middle_ir/memory_c.rs)はO0/O2・UBSanでRAMと最初のfaultを比較します。byteの一致判定はMemorySSAの書込み候補を前提とし、その候補解析は閉じた被覆証跡と独立実行比較で検査します。アドレス恒等式は既存の解析を共有します。byteの区間判定と列挙した等式の対応は、任意の64-bit offsetを持つモデルでSMT照合し、境界とsource位置を誤るモデルをSATと実行で確認します。
+[メモリ値の回復](../tests/model/middle_ir/memory.rs)は部分Store・may-alias・照会上限を含み、偽の既知値と循環した根拠を拒否します。回復前後のMIRと戻し変換の全状態を照合し、[生成C](../tests/model/middle_ir/memory_c.rs)はO0/O2・UBSanでRAMと最初のfaultを比較します。byteの一致判定はMemorySSAの書込み候補を前提とし、その候補解析は閉じた被覆証跡と独立実行比較で検査します。アドレス恒等式は[sourceの係数とアクセス位置の検査](../src/dataflow/address_identity/modular_verify.rs)を通します。[改変対照](../src/dataflow/address_identity/modular_verify/tests.rs)は欠けた項・offset・符号・shift・φ入力と、相殺したsource atomを含みます。byteの区間判定と列挙した等式の対応は、任意の64-bit offsetを持つモデルでSMT照合し、境界とsource位置を誤るモデルをSATと実行で確認します。
+
+[unsigned幅の検査](../src/dataflow/type_infer/bounds_verify.rs)は、型解析の幅計算を共有せず、元の式を数値上限で照合します。[対照](../src/dataflow/type_infer/bounds_verify/tests.rs)では除数ゼロ・最小負数・signed剰余・bit hullと静的な抽出位置を実際のIR実行で確認し、入口・φ・逐次readの改変を拒否します。検査済みの性質はu64整数の上限で、元Cの宣言型との対応は型回復の評価で扱います。
 [moduleの投影検査](../src/dataflow/module_values/memory_verify.rs)は、元命令・解析イベント・opaque効果・出力レジスタの対応を検査します。対照ではCALL/REPの効果の削除・位相の変更・誤った読取り・閉じた呼出しの出力差を拒否します。DIVの未知出力を定数placeholderとして使う候補も拒否し、MemorySSAの記号アドレスへ数値の事実が混入する経路を検査します。
 
 [閉じた呼出しの検査](../src/dataflow/call_footprint/verify.rs)は、要約を使う前に元moduleの正常継続経路と照合します。[改変対照](../tests/dataflow/call_footprint.rs)ではread・clobber・calleeの欠落、戻り先を壊すStore、RSPを変える入口backedge、DIV/call後の古いアドレス、再帰calleeの効果の脱落を拒否します。書込みの検査は同一命令内の代入順とvectorの全幅を保ちます。正常復帰後の保存値と未読レジスタの非干渉は、[実際のmodule実行](../tests/model/call_preservation.rs)でも比較します。スタック候補は[独立した入口・辺・アクセスの検査](../src/dataflow/stack/verify.rs)を通し、要約は有限の正常復帰を適用条件とします。[スタックの改変対照](../src/dataflow/stack/verify/tests.rs)は入口backedge、両分岐、代入順、offset、アクセスの幅・重複を壊した候補と、安全に未知へ弱めた候補を含みます。
 
 [M1の部分checkpoint](../tools/corpora/closed-calls-v1.m1.json)には、同じ27関数のELFでの解析・C出力の比較、9個の閉じた要約の検査件数、改変対照と実行テスト、source版と成果物hashを記録しています。生データは容量管理付きの短期保存です。
+[アフィン式と幅のcheckpoint](../tools/corpora/ir-affine-v1.m1.json)は、このELFの解析・C出力を保ち、スタック354点の根拠を加えています。M0の同じGCC/Clang O2の4構成では、36アクセス・136アフィン等式と681個のSSA値の上限を検査し、native・生成C・IRの観測を維持しました。Cの保存幅の解析は、型制約のunsigned上限と別に扱います。
 [保存値の同一性](../tests/model/middle_ir/saved.rs)は、共通の保存値fixtureを使い、コピー・部分抽出・φ・ループ・上書きとsnapshotの初期化を検査します。通常のMIRは全状態を直接比較し、保存値を展開したLow IRは追加レジスタを除いて比較します。異なるφ入力、偽のslice、古いsnapshot、根拠を欠くreadを拒否し、[同じC比較](../tests/codegen/byte_values_backend.rs)で元の出力・保存値展開・候補選択を照合します。
 [snapshot統合の対照](../src/dataflow/memory_values/roots/tests.rs)は、bit境界、循環、偽のSSA事実、入れ子の根拠、入力変更を検査します。誤ったoffsetは拒否した上で、生成された候補が異なる返り値を出す反例も実行します。
 [経路条件の対照](../src/dataflow/predicates/tests.rs)は、全流入辺の主張、異なるLoad・φ入力・再定義、booleanと一般のwordに対するXORを検査します。誤った分岐先は拒否した上で具体実行の差も確認します。元IR・変換後IR・再構築したMiddle IRの入口実行を、全レジスタ・RAM・fault・PC・予算について比較します。純粋式の値番号付けとscalar演算は検査器の共有する信頼基盤です。

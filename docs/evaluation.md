@@ -76,6 +76,7 @@ NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
 段階形式v4の`analysis_checks`は、元のLow IRに対するMemorySSAの世代グラフ検査と候補被覆検査を、具体入力の実行比較と別に記録します。入力IR・MemorySSAのJSON・検査器名・件数・未判定理由を保持し、`architecture_analysis`は生成できなかった行も含む全構成を集計します。保存データの再検査ではhash・形・件数とprobeの生JSONとの一致を確認し、通過した解析検査の脱落を回帰に含めます。世代・byte・SSAの意味の検査はRustの検査器が担当します。旧版v1〜v3のprobeも同じ評価器で比較できます。
 
 v5は`memory_addresses`と`unsigned_bounds`を加え、元Low IR・MemorySSA・型制約の報告をhashで結びます。前者は64-bitアフィン等式と全アクセス位置、後者はunsigned整数の上限と全SSA入力を検査します。`phi_checked`はアドレスのφ入力まで検査できたかを表し、その範囲の縮退も回帰へ含めます。型制約のレイアウトと元C型は引き続き候補として扱います。評価器は旧版の分母を保持し、v4/v5を同じ入力で比較できます。
+[v5の固定比較](../tools/corpora/ir-affine-v1.m1.json)では、同じ開発用4構成のC本文と構造・実行結果を保ち、追加した2検査が各4件の通過となりました。保存先を移動した報告も、元の出力パスを正規化して比較でき、compiler flagと入力パスの変更は引き続き検出します。
 
 [v4統合のcheckpoint](../tools/corpora/structure-analysis-v1.m0.json)は、[開発用2ソース](../tools/corpora/structure-analysis-v1.json)のGCC/Clang O2、計4構成を固定しています。同じobject・デコンパイラ・8入力・4096-step上限でv3/v4を比較し、2種類の解析検査が各4件の未記録から通過へ進みました。生成Cと正規化グラフは同じで、native 32件・O0/O2生成C 192件・IRの全状態比較2,400件を維持しています。保存した実データへの5種類の欠落・改変も拒否しました。checkpointには版・hash・再現条件を残し、生データは[容量管理](../README.md#開発)付きの短期保存へ置きます。
 

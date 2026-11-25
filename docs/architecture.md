@@ -142,7 +142,9 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 
 アドレスの正確な恒等関係は[address_identity](../src/dataflow/address_identity.rs)が担当します。
 `offset + Σ(coefficient × SSA値) mod 2^64`を、型やオブジェクト形状の仮説から独立して扱います。
+[modular_verify](../src/dataflow/address_identity/modular_verify.rs)は元SSAから記号式を作り、ゼロと各source atomの単位入力で係数・offsetを照合します。相殺したatom、Loadとopaque出力、アクセス位置・幅・順序も検査対象です。MemorySSAの全64-bitアフィン等式をこの検査へ通し、`address_verification`へ件数を残します。φ入力の検査だけが予算に達した場合は、アクセスと世代グラフの証跡を保持して問い合わせを未判定にします。
 [type_infer](../src/dataflow/type_infer.rs)はこの参照情報と値の幅・使用制約からフィールドや配列の候補を組み、[record_shapes](../src/dataflow/record_shapes.rs)が構造体候補をまとめます。
+[bounds_verify](../src/dataflow/type_infer/bounds_verify.rs)は元の式をu128の数値上限で評価し、任意の初期値・全φ入力・逐次代入に対するunsigned幅の不変条件を検査します。OR・XOR・Insertには可能bitのhullを使い、型報告の`bounds_verification`へ根拠の件数を残します。フィールド配置の候補と、狭い値域を使うアドレス整理は、それぞれ追加の解釈を含みます。
 構造体の互換性は、copy・φ・stackに加え、MemorySSAで全8 byteの書込み元を確認できたStore→Loadにも伝播します。辺上のアドレス変換を使い、初期メモリ・部分上書き・may-aliasを含むLoadは元の候補を保ちます。
 追加解析の上限では、追加した辺とnull候補を破棄して従来の候補を構成し、理由をレポートへ残します。
 
