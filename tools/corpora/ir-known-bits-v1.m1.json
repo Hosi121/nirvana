@@ -101,6 +101,88 @@
       "remainder_congruence": 9216,
       "masked_shift_pairs": 39366,
       "scope": "Read-only source review and finite Python math, separate from Rust/SMT checks"
+    },
+    "universal_rule_equations": {
+      "scope": "Formula-level claims quantify over all valid masks and concrete u64 members. Finite non-vacuity/actual-kernel bridges connect formulas to implementation; Rust translation, enumeration loop, Mul/Div/Rem remain outside this universal proof. Runtime producer and checker unchanged.",
+      "audits": [
+        {
+          "rules": "prefix",
+          "integrated_revision": "d2746f6a4d805d753922ce5a5b640fe805cf9626",
+          "manifest": {
+            "file": "target/runs/run-a37yw4tm/out/known-bits-prefix-smt/manifest.json",
+            "sha256": "2372ed7cd23c56cd6c2eae5afab49ce5d9aed69b5e45ccb19fb3781b52c34770"
+          },
+          "summary": {
+            "scope": "all-mask prefix equations; not a verified Rust translation",
+            "positive_queries": 128,
+            "all_mask_unsat": 128,
+            "positive_sat": 0,
+            "unknown": 0,
+            "ir_replayed_sat": 2,
+            "finite_bridge_bit_comparisons": 73728,
+            "per_solver_timeout_ms": 2000,
+            "audit_budget_seconds": 295,
+            "elapsed_ms": 3358,
+            "failures": 0
+          },
+          "logs": [
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/prefix-lemma-focused.log",
+              "sha256": "b13fe0ad6db6068fa58906d4bc350e99fc81a4e4a149486a4c8856f1871f4fd2"
+            },
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/prefix-lemma-smt.log",
+              "sha256": "2372ed7cd23c56cd6c2eae5afab49ce5d9aed69b5e45ccb19fb3781b52c34770"
+            },
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/clippy-prefix-lemma.log",
+              "sha256": "5a5cd3b59061eed8413b873fada8fa0d03b87ffdaf3a4ad5d8956065e6f3eee5"
+            },
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/fmt-prefix-lemma.log",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "rules": "cube",
+          "integrated_revision": "e35fe82d1653f55782ff8396eb53986437ce0021",
+          "manifest": {
+            "file": "target/runs/run-a37yw4tm/out/known-bits-cube-smt/manifest.json",
+            "sha256": "d2f09ef8c5f361660eb2ff9c620e39b6f6f3ce7b27549c663bc2327c04b00082"
+          },
+          "summary": {
+            "scope": "universal bit-cube equations; not a verified Rust translation; no Mul/Div/Rem universal claim",
+            "positive_queries": 101,
+            "all_mask_unsat": 101,
+            "positive_sat": 0,
+            "unknown": 0,
+            "ir_replayed_sat": 3,
+            "per_solver_timeout_ms": 2000,
+            "audit_budget_seconds": 245,
+            "elapsed_ms": 2199,
+            "failures": 0
+          },
+          "logs": [
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/cube-lemma-focused.log",
+              "sha256": "28cb6b1b1af45f03221981f63bb0d3e9391482bcdf25f0c1ef0c56609d2a72b0"
+            },
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/cube-lemma-smt.log",
+              "sha256": "d2f09ef8c5f361660eb2ff9c620e39b6f6f3ce7b27549c663bc2327c04b00082"
+            },
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/clippy-cube-lemma.log",
+              "sha256": "03473a63ee5d1481589563a8c926b685b38ca2b2dbe6b953ae8fe24b07729dd2"
+            },
+            {
+              "file": "target/runs/run-a37yw4tm/out/signed-checks/fmt-cube-lemma.log",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        }
+      ]
     }
   },
   "inputs": {
@@ -497,5 +579,5 @@
     "Fixed native/C/prefix comparisons and C value-model proofs keep their stated scopes",
     "Original variable/type recovery and C structure quality remain unchanged in this gate"
   ],
-  "next": "Audit prefix equations for all valid masks, and use the event-controller research plan for a future finite raw IR/AST validation gate"
+  "next": "Use the event-controller research plan for a future finite raw IR/AST validation gate; extend independent numeric proofs according to remaining runtime rules."
 }

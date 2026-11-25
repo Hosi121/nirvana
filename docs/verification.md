@@ -157,6 +157,7 @@ C値モデルの除算抽象化は、[SMT-LIBのsigned演算の定義](https://s
 [全域商・剰余の検査](../tests/verification/division_ops.rs)は、符号の4通りを合わせて64-bit全入力の定義を照合し、除数ゼロ・±1と誤った変換の反例も検査します。8-bitの復元kernelは実際のIR演算との等式として照合します。
 [word値グラフの検査](../tests/model/semantic_ir/word.rs)は、上位bitを失った分子、レジスタの上書き、符号境界を跨ぐループについて、元レジスタ・RAM・履歴・fault・予算を比較します。[GCC入力](../tests/fixtures/recovery/word-signed-memory.c)もnative・IR・生成Cで比較します。
 [既知bitの検査](../tests/verification/known_bits.rs)は転送規則をSMTで、[dataflow検査](../tests/dataflow/known_bits.rs)は小領域の全列挙・64-bit境界・φとループの不変条件で確認します。設計の参考は[LLVM KnownBits](https://llvm.org/doxygen/structllvm_1_1KnownBits.html)で、Nirvanaの規則は全域の64-bit演算とmaskしたシフト数に対して検査します。
+[数値検査のcheckpoint](../tools/corpora/ir-known-bits-v1.m1.json)には、加減算prefixの128式とbit演算・射影・合流などの101式を、全maskと64-bit値に対してSMTで確認した結果も保存します。式と実Rust演算核の対応は有限のbridgeテストで確認し、数式の保証と実装の検証範囲を分けて記録します。
 
 | bit・保存値の検査 | 対象と照合方法 |
 | --- | --- |
