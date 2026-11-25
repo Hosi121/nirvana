@@ -62,7 +62,7 @@ def index(report):
     for row in rows:
         architecture_shape(row.get('stage_checks', {'status': 'not_run'}))
     memory_stages = any(row.get('stage_checks', {}).get('schema') in
-                        ['nirvana-evaluation-stages-v3', 'nirvana-evaluation-stages-v4']
+                        ['nirvana-evaluation-stages-v3', 'nirvana-evaluation-stages-v4', 'nirvana-evaluation-stages-v5']
                         for row in rows)
     require(not memory_stages or 'architecture_execution' in report['summary'],
             'missing architecture execution denominator')
@@ -75,12 +75,13 @@ def index(report):
                 and all(type(n) is int for counts in observed.values() for n in counts.values()),
                 'architecture execution denominator')
     analysis_stages = [row for row in rows
-                       if row.get('stage_checks', {}).get('schema') == 'nirvana-evaluation-stages-v4']
+                       if row.get('stage_checks', {}).get('schema') in
+                       ['nirvana-evaluation-stages-v4', 'nirvana-evaluation-stages-v5']]
     require(not analysis_stages or 'architecture_analysis' in report['summary'],
             'missing architecture analysis denominator')
     if 'architecture_analysis' in report['summary']:
         observed = report['summary']['architecture_analysis']
-        require(isinstance(observed, dict) and set(observed) == set(analysis_checks.NAMES)
+        require(isinstance(observed, dict) and set(observed) == set(analysis_checks.names_for_rows(rows))
                 and observed == analysis_checks.summary(rows)
                 and all(type(n) is int for counts in observed.values() for n in counts.values()),
                 'architecture analysis denominator')
@@ -160,13 +161,14 @@ def replay(root, row):
     result['c_footprint'] = footprint['status']
     architecture = architecture_shape(row.get('stage_checks', {'status': 'not_run'}))
     if 'schema' in architecture:
-        require(architecture['schema'] != 'nirvana-evaluation-stages-v4'
+        require(architecture['schema'] not in ['nirvana-evaluation-stages-v4', 'nirvana-evaluation-stages-v5']
                 or 'prepare_stdout_sha256' in semantic, 'analysis checks require retained probe metadata')
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
                         semantic['profile']['requested_cases'], semantic['profile'].get('register_count'), retained=True)
     result['architecture'] = architecture['status']
     result['architecture_analysis'] = {name: next((e['status'] for e in architecture.get('analysis_checks', [])
-                                                  if e['name'] == name), 'not_run') for name in analysis_checks.NAMES}
+                                                  if e['name'] == name), 'not_run')
+                                       for name in analysis_checks.names_for_schema(architecture.get('schema'))}
     selected = next((e for e in architecture.get('execution', []) if e['name'] == 'selected_semantic'), {})
     state_pairs = (selected.get('semantic') or {}).get('state_pairs')
     if state_pairs:
@@ -360,6 +362,19 @@ def compare(before_path, after_path):
         lost_analysis = sorted(name for name, entry in old_analysis.items()
                                if name not in new_analysis or entry['status'] == 'passed'
                                and new_analysis[name]['status'] != 'passed')
+        added_analysis = sorted(name for name, entry in new_analysis.items()
+                                if entry['status'] == 'passed'
+                                and (name not in old_analysis or old_analysis[name]['status'] != 'passed'))
+        old_address, new_address = (entries.get('memory_addresses', {})
+                                    for entries in [old_analysis, new_analysis])
+        if old_address.get('status') == new_address.get('status') == 'passed':
+            old_phi, new_phi = (entry['evidence']['phi_checked'] for entry in [old_address, new_address])
+            if old_phi and not new_phi:
+                lost_analysis.append('memory_addresses.phi_inputs')
+            elif new_phi and not old_phi:
+                added_analysis.append('memory_addresses.phi_inputs')
+        lost_analysis.sort()
+        added_analysis.sort()
         lost_checks.extend(lost_analysis)
         if ar['semantic_state_pairs'] == 'replayed' and br['semantic_state_pairs'] != 'replayed':
             lost_checks.append('selected_semantic.state_pairs')
@@ -379,6 +394,7 @@ def compare(before_path, after_path):
                      'structure_regression': a['structure_status'] == 'measured' and b['structure_status'] != 'measured',
                      'architecture_checks_lost': lost_checks,
                      'analysis_checks_lost': lost_analysis,
+                     'analysis_checks_added': added_analysis,
                      'analysis_regression': bool(lost_analysis),
                      'architecture_regression': bool(lost_checks) or ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
@@ -405,7 +421,8 @@ def compare(before_path, after_path):
             'candidate_state_values': dict(Counter(row['after_replay']['state_values'] for row in rows)),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'candidate_execution': stages.execution_summary(after['rows']),
-            'candidate_analysis': analysis_checks.summary(after['rows']),
+            'candidate_analysis': analysis_checks.summary(after['rows'],
+                names=analysis_checks.names_for_rows(before['rows'] + after['rows'])),
             'candidate_semantic_state_pairs': dict(Counter(row['after_replay']['semantic_state_pairs'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',

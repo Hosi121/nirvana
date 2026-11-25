@@ -23,13 +23,14 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
     versions = [('nirvana-evaluation-stages-v1', 'nirvana-entry-full-state-v1'),
                 ('nirvana-evaluation-stages-v2', 'nirvana-stage-input-state-v2'),
                 ('nirvana-evaluation-stages-v3', 'nirvana-stage-input-state-v3'),
-                ('nirvana-evaluation-stages-v4', 'nirvana-stage-input-state-v4')]
+                ('nirvana-evaluation-stages-v4', 'nirvana-stage-input-state-v4'),
+                ('nirvana-evaluation-stages-v5', 'nirvana-stage-input-state-v5')]
     require(isinstance(value, dict)
             and (value.get('schema'), value.get('contract')) in versions, 'stage check schema or contract')
     extended = value['schema'] != versions[0][0]
     memory_stages = value['schema'] in [v[0] for v in versions[2:]]
-    analysis = value['schema'] == versions[3][0]
-    require(analysis or 'analysis_checks' not in value, 'analysis checks require stage v4')
+    analysis = value['schema'] in [v[0] for v in versions[3:]]
+    require(analysis or 'analysis_checks' not in value, 'analysis checks require stage v4 or v5')
     if extended:
         require(type(original_registers) is int and 0 <= original_registers <= 4096
                 and type(value['original_registers']) is int
@@ -129,7 +130,8 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
         require(status != 'counterexample' or witness is not None, 'missing stage counterexample')
         statuses.append(status)
     if analysis:
-        analysis_checks.validate(value['analysis_checks'], directory, original_registers, retained=retained)
+        analysis_checks.validate(value['analysis_checks'], directory, original_registers, retained=retained,
+                                 version=5 if value['schema'] == versions[4][0] else 4)
         statuses.extend(e['status'] for e in value['analysis_checks'])
     expected = ('counterexample' if 'counterexample' in statuses else 'rejected' if 'rejected' in statuses
                 else 'inconclusive' if any(s in statuses for s in ['unavailable', 'budget_exhausted']) else 'passed')

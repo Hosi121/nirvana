@@ -7,10 +7,15 @@ from .semantics import ProtocolError, sha
 from .semantic_pairs import unique_object
 
 NAMES = ('memory_ssa_graph', 'memory_ssa_queries')
-MODELS = ('nirvana-memory-ssa-graph-v1', 'nirvana-memory-ssa-coverage-v1')
-CHECKERS = ('memory_ssa::validate_graph', 'memory_ssa::validate')
+V5_NAMES = NAMES + ('memory_addresses', 'unsigned_bounds')
+MODELS = ('nirvana-memory-ssa-graph-v1', 'nirvana-memory-ssa-coverage-v1',
+          'nirvana-modular-address-v1', 'nirvana-unsigned-bounds-v1')
+CHECKERS = ('memory_ssa::validate_graph', 'memory_ssa::validate',
+            'memory_ssa::validate', 'type_infer::check_bounds')
 GRAPH_FIELDS = {'blocks', 'definitions', 'accesses', 'phi_inputs', 'opaque_effects'}
 QUERY_FIELDS = {'queries', 'states', 'links', 'candidate_bytes'}
+ADDRESS_FIELDS = {'accesses', 'modular_forms', 'phi_inputs', 'source_atoms', 'basis_evaluations'}
+BOUND_FIELDS = {'values', 'assignments', 'phi_inputs', 'expressions'}
 MAX_BYTES = 16 * 1024 * 1024
 
 
@@ -27,6 +32,15 @@ def counts(value, fields):
 def members(value):
     require(isinstance(value, list) and len(value) <= 1_000_000, 'artifact member bound')
     return value
+
+
+def names_for_schema(schema):
+    return V5_NAMES if schema == 'nirvana-evaluation-stages-v5' else NAMES
+
+
+def names_for_rows(rows):
+    return (V5_NAMES if any(row.get('stage_checks', {}).get('schema') == 'nirvana-evaluation-stages-v5'
+                           for row in rows) else NAMES)
 
 
 def report_counts(report):
@@ -91,19 +105,107 @@ def report_counts(report):
     return graph, coverage
 
 
-def validate(entries, directory, original_registers, *, retained=False):
-    require(isinstance(entries, list) and len(entries) == 2
-            and [e['name'] for e in entries] == list(NAMES), 'check names')
+def modular_counts(report):
+    verification = report.get('address_verification')
+    require(isinstance(verification, dict)
+            and set(verification) == ADDRESS_FIELDS | {'model', 'status', 'scope', 'phi_checked'}
+            and verification['model'] == MODELS[2] and verification['status'] == 'checked'
+            and verification['scope'] == 'u64-affine-equalities'
+            and type(verification['phi_checked']) is bool, 'modular verification record')
+    evidence = {k: verification[k] for k in ADDRESS_FIELDS}
+    counts(evidence, ADDRESS_FIELDS)
+    forms = 0
+    for access in members(report['accesses']):
+        require('identity' in access, 'missing modular identity')
+        identity = access['identity']
+        if identity is None:
+            continue
+        require(isinstance(identity, dict) and set(identity) == {'offset', 'terms'}
+                and type(identity['offset']) is int and 0 <= identity['offset'] < 2**64,
+                'modular identity shape')
+        terms = members(identity['terms'])
+        require(len(terms) <= 16 and all(isinstance(t, dict) and set(t) == {'value', 'coefficient'}
+                and type(t['value']) is int and 0 <= t['value'] < 65536
+                and type(t['coefficient']) is int and 0 < t['coefficient'] < 2**64 for t in terms)
+                and [t['value'] for t in terms] == sorted(set(t['value'] for t in terms)),
+                'canonical modular terms')
+        forms += 1
+    require(evidence['accesses'] == len(report['accesses'])
+            and evidence['modular_forms'] == forms + evidence['phi_inputs']
+            and evidence['basis_evaluations'] >= evidence['modular_forms'], 'modular count correspondence')
+    if not verification['phi_checked']:
+        require(evidence['phi_inputs'] == 0 and report['queries']['status'] == 'unavailable',
+                'unchecked phi identities require unavailable queries')
+    return {**evidence, 'phi_checked': verification['phi_checked']}
+
+
+def bounds_counts(report, original_registers):
+    require(isinstance(report, dict) and report.get('schema') == 'nirvana-type-constraints-v1'
+            and report.get('identity') == 'ssa' and report.get('access_model') == 'syntactic-possible'
+            and report.get('interpretations') == 'tentative', 'unsigned bound artifact schema')
+    verification = report.get('bounds_verification')
+    require(isinstance(verification, dict)
+            and set(verification) == BOUND_FIELDS | {'model', 'status', 'scope'}
+            and verification['model'] == MODELS[3] and verification['status'] == 'checked'
+            and verification['scope'] == 'u64-integer-upper-bounds', 'unsigned bound verification record')
+    evidence = {k: verification[k] for k in BOUND_FIELDS}
+    counts(evidence, BOUND_FIELDS)
+    values = members(report['values'])
+    require(len(values) <= 65536, 'unsigned value bound')
+    assignments = phi_inputs = 0
+    for index, value in enumerate(values):
+        require(isinstance(value, dict) and type(value.get('id')) is int and value['id'] == index
+                and type(value.get('maximum_bits')) is int and 0 <= value['maximum_bits'] <= 64,
+                'unsigned value records')
+        origin = value['origin']
+        require(isinstance(origin, dict) and origin.get('kind') in ['initial', 'assignment', 'phi']
+                and type(origin.get('register')) is int and 0 <= origin['register'] < original_registers,
+                'unsigned value origin')
+        if origin['kind'] == 'initial':
+            require(set(origin) == {'kind', 'register'} and value['maximum_bits'] == 64,
+                    'unsigned initial boundary')
+        elif origin['kind'] == 'assignment':
+            site = origin.get('site')
+            require(set(origin) == {'kind', 'register', 'site'} and isinstance(site, dict)
+                    and set(site) == {'instruction', 'assignment'}
+                    and type(site['instruction']) is int and 0 <= site['instruction'] < 2**64
+                    and type(site['assignment']) is int and 0 <= site['assignment'] < 16384,
+                    'unsigned assignment source site')
+            assignments += 1
+        else:
+            require(set(origin) == {'kind', 'register', 'block', 'inputs'}
+                    and type(origin['block']) is int and 0 <= origin['block'] < 2**64,
+                    'unsigned phi source block')
+            inputs = members(origin['inputs'])
+            require(bool(inputs) and all(isinstance(edge, dict) and set(edge) == {'predecessor', 'value'}
+                    and (edge['predecessor'] is None or type(edge['predecessor']) is int
+                         and 0 <= edge['predecessor'] < 2**64)
+                    and type(edge['value']) is int and 0 <= edge['value'] < len(values)
+                    for edge in inputs), 'unsigned phi inputs')
+            phi_inputs += len(inputs)
+    require(evidence['values'] == len(values) and evidence['assignments'] == assignments
+            and evidence['phi_inputs'] == phi_inputs and assignments <= 16384 and phi_inputs <= 262144
+            and assignments <= evidence['expressions'] <= 65536, 'unsigned count correspondence')
+    return evidence
+
+
+def validate(entries, directory, original_registers, *, retained=False, version=4):
+    names = V5_NAMES if version == 5 else NAMES
+    require(version in [4, 5] and isinstance(entries, list) and len(entries) == len(names)
+            and all(isinstance(e, dict) for e in entries)
+            and [e['name'] for e in entries] == list(names), 'check names')
     reports = {}
     for i, entry in enumerate(entries):
-        fields = {'name', 'model', 'checker', 'status', 'input_ir', 'memory_ssa', 'evidence', 'reason'}
+        report_field = 'type_constraints' if i == 3 else 'memory_ssa'
+        report_name = 'type-constraints.json' if i == 3 else 'memory-ssa.json'
+        fields = {'name', 'model', 'checker', 'status', 'input_ir', report_field, 'evidence', 'reason'}
         require(isinstance(entry, dict)
-                and set(entry) - {'input_ir_sha256', 'memory_ssa_sha256'} == fields
+                and set(entry) - {'input_ir_sha256', report_field + '_sha256'} == fields
                 and entry['model'] == MODELS[i] and entry['checker'] == CHECKERS[i], 'check contract')
         require(entry['status'] in ['passed', 'unavailable', 'rejected'], 'check status')
         require(entry['input_ir'] == 'analysis-input.ir.txt'
-                and entry['memory_ssa'] in [None, 'memory-ssa.json'], 'artifact names')
-        for field in ['input_ir', 'memory_ssa']:
+                and entry[report_field] in [None, report_name], 'artifact names')
+        for field in ['input_ir', report_field]:
             name = entry[field]
             if name is None:
                 require(field + '_sha256' not in entry, 'unexpected artifact hash')
@@ -119,21 +221,39 @@ def validate(entries, directory, original_registers, *, retained=False):
                 require(re.fullmatch(r'entry=[0-9]+ registers=' + str(original_registers), header) is not None,
                         'original Low IR register binding')
             elif name not in reports:
-                reports[name] = report_counts(json.loads(path.read_text(), object_pairs_hook=unique_object))
+                raw = json.loads(path.read_text(), object_pairs_hook=unique_object)
+                if field == 'memory_ssa':
+                    graph, coverage = report_counts(raw)
+                    reports[name] = [graph, {k: v for k, v in (coverage or {}).items() if k != 'model'}]
+                    if version == 5:
+                        reports[name].append(modular_counts(raw))
+                else:
+                    reports[name] = bounds_counts(raw, original_registers)
         if entry['status'] == 'passed':
-            require(entry['reason'] is None and entry['memory_ssa'] is not None, 'passed evidence artifacts')
-            counts(entry['evidence'], GRAPH_FIELDS if i == 0 else QUERY_FIELDS)
-            graph, coverage = reports[entry['memory_ssa']]
-            require(entry['evidence'] == (graph if i == 0 else
-                    {k: v for k, v in (coverage or {}).items() if k != 'model'}), 'checker evidence correspondence')
-            require(i != 1 or entries[0]['status'] == 'passed', 'query check graph prerequisite')
+            require(entry['reason'] is None and entry[report_field] is not None, 'passed evidence artifacts')
+            evidence = entry['evidence']
+            count_fields = [GRAPH_FIELDS, QUERY_FIELDS, ADDRESS_FIELDS, BOUND_FIELDS][i]
+            if i == 2:
+                require(isinstance(evidence, dict) and type(evidence.get('phi_checked')) is bool,
+                        'modular phi check boolean')
+                counts({k: v for k, v in evidence.items() if k != 'phi_checked'}, count_fields)
+            else:
+                counts(evidence, count_fields)
+            expected = reports[entry[report_field]] if i == 3 else reports[entry[report_field]][i]
+            require(evidence == expected, 'checker evidence correspondence')
+            require(i not in [1, 2] or entries[0]['status'] == 'passed', 'query/address graph prerequisite')
         else:
             require(entry['evidence'] is None and isinstance(entry['reason'], str)
                     and 0 < len(entry['reason']) <= 4096, 'unavailable or rejected reason')
-    require(entries[0]['memory_ssa'] == entries[1]['memory_ssa'], 'shared analysis artifact')
+    require(all(entry['memory_ssa'] == entries[0]['memory_ssa'] for entry in entries[:3 if version == 5 else 2]),
+            'shared analysis artifact')
+    if version == 5 and entries[1]['status'] == 'passed':
+        require(entries[2]['status'] == 'passed' and entries[2]['evidence']['phi_checked'],
+                'query check modular phi prerequisite')
     return entries
 
 
-def summary(rows):
+def summary(rows, names=None):
+    names = names_for_rows(rows) if names is None else names
     return {name: dict(Counter(next((e['status'] for e in row.get('stage_checks', {}).get('analysis_checks', [])
-                                     if e['name'] == name), 'not_run') for row in rows)) for name in NAMES}
+                                     if e['name'] == name), 'not_run') for row in rows)) for name in names}
