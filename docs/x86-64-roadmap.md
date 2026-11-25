@@ -113,7 +113,7 @@ M0の段階形式v4は、この世代グラフと候補被覆の検査を各行�
 
 [v4統合の開発用checkpoint](../tools/corpora/structure-analysis-v1.m0.json)では、GCC/Clang O2の4構成で世代グラフ・候補被覆の両検査を記録し、v3と同じ生成C・構造・具体実行の結果を保ちました。moduleの閉じた呼出しは別profileで観測し、アドレス式の根拠も対応する入力と契約を固定して追加します。
 
-M2の次の比較は、[入れ子ループの固定baseline](../tools/corpora/structure-nested-v1.m2-baseline.json)を使う。GCC/Clang O2の構造距離は15/30で、短い共有出口の複製上限から関数全体がgoto形式へ落ちている。65入力のnative・IR・O0/O2生成C比較を固定した。[局所複製上限の再配分](../tools/corpora/shared-tail-budget-v1.m2.json)ではgotoが減った一方、距離が18/33、静的writeが各1箇所増えたため見送った。次は入れ子ループの出口配置を制限付きで比較する。Clangの未観測2遷移は未知として保持する。
+M2の次の比較は、[入れ子ループの固定baseline](../tools/corpora/structure-nested-v1.m2-baseline.json)を使う。GCC/Clang O2の構造距離は15/30で、短い共有出口の複製上限から関数全体がgoto形式へ落ちている。65入力のnative・IR・O0/O2生成C比較を固定した。[局所複製上限の再配分](../tools/corpora/shared-tail-budget-v1.m2.json)ではgotoが減った一方、距離が18/33、静的writeが各1箇所増えたため見送った。[出口配置の比較](../tools/corpora/nested-follow-v1.m2.json)では、GCCの構造距離15とwrite数を保ち、goto 9→3・式node 279→272となった。元IR/ASTの対応検査も通る。初回24構成のC本文は同じで、元ソースへの構造距離は引き続き15/30として扱う。Clangの未観測2遷移は未知として保持する。
 
 ## M2で早期に扱う制御フロー変換
 

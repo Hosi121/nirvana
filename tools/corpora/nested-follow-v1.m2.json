@@ -1,0 +1,327 @@
+{
+  "schema": "nirvana-m2-checkpoint-v1",
+  "milestone": "M2",
+  "status": "partial",
+  "decision": "Adopt bounded nested-follow placement as checked-structure/size improvement. Exact source topology distance remains15/30; no claim of improved source distance.",
+  "reference_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+  "candidate_revision": "6db452dee0a0ca90d91b346d646f471e1958bc78",
+  "implementation_revisions": {
+    "follow_candidates": "29e853d",
+    "typed_C_v8": "6db452d"
+  },
+  "policy": {
+    "public_recovery": "unchanged",
+    "scope": "private readable path",
+    "candidate_limit": 8,
+    "search": "one nested natural-loop follow override at a time; actual active parent body; exclude ancestor header/follow",
+    "copy_limit": 2,
+    "step_limit": "2*reachable original instructions",
+    "source_items": 65536,
+    "expression_depth": 128,
+    "acceptance": "independent source/AST validation and Pareto strict decrease of Step/block-copy counts if baseline succeeds"
+  },
+  "development": {
+    "corpus": "tools/corpora/structure-nested-v1.json",
+    "input_file": "tools/corpora/structure-nested-v1.inputs.txt",
+    "input_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+    "vectors": 65,
+    "step_limit": 4096,
+    "observations": {
+      "native": 130,
+      "generated_O0": 390,
+      "generated_O2": 390,
+      "stage_comparisons": 7800
+    },
+    "rows": [
+      {
+        "id": "nested-transfers-gcc-O2",
+        "object_sha256": "ad2bff275509b14d2cce1fa82bf7fd1e4d7371da96ba438f039fed4269ed2baa",
+        "before": {
+          "distance": 15,
+          "gotos": 9,
+          "expressions": 279,
+          "condition_expressions": 29,
+          "writes": 6,
+          "c_sha256": "2f3bb122adb9d1ba31118dcd8b430639466361867ca39d9717a584ed00a4d3d8",
+          "fallback": true,
+          "source_structure_checked": false,
+          "display_structure_checked": false
+        },
+        "after": {
+          "distance": 15,
+          "gotos": 3,
+          "expressions": 272,
+          "condition_expressions": 29,
+          "writes": 6,
+          "c_sha256": "69c0277dbee7a82d293f9e12ca22800433ac4be46eb5d1a929988773ff532c14",
+          "fallback": false,
+          "source_structure_checked": true,
+          "display_structure_checked": true
+        },
+        "typed_c_values": {
+          "model": "nirvana-state4-values-v8",
+          "status": "unknown",
+          "reason": "solver_timeout"
+        }
+      },
+      {
+        "id": "nested-transfers-clang18-O2",
+        "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+        "before": {
+          "distance": 30,
+          "gotos": 16,
+          "expressions": 443,
+          "condition_expressions": 79,
+          "writes": 8,
+          "c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a",
+          "fallback": true,
+          "source_structure_checked": false,
+          "display_structure_checked": false
+        },
+        "after": {
+          "distance": 30,
+          "gotos": 16,
+          "expressions": 443,
+          "condition_expressions": 79,
+          "writes": 8,
+          "c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a",
+          "fallback": true,
+          "source_structure_checked": false,
+          "display_structure_checked": false
+        },
+        "typed_c_values": {
+          "model": "nirvana-state4-values-v8",
+          "status": "unsupported",
+          "reason": "goto outside forward enclosing-sequence control"
+        }
+      }
+    ],
+    "regressions": {
+      "structure_regressions": 0,
+      "architecture_regressions": 0,
+      "analysis_regressions": 0,
+      "c_footprint_regressions": 0,
+      "state_memory_regressions": 0,
+      "state_value_regressions": 0,
+      "semantic_regressions": 0
+    },
+    "unobserved_transfers": {
+      "gcc": [],
+      "clang": [
+        [
+          330,
+          332
+        ],
+        [
+          338,
+          192
+        ]
+      ]
+    }
+  },
+  "fixed_initial24": {
+    "corpus": "tools/corpora/structure-initial-v1.json",
+    "inputs": "tools/corpora/structure-branch-inputs-v1.txt",
+    "input_sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94",
+    "vectors": 17,
+    "cohorts": {
+      "development": 16,
+      "holdout": 8
+    },
+    "compilers": [
+      "gcc-O2",
+      "gcc-O3",
+      "clang18-O2",
+      "clang18-O3"
+    ],
+    "identical_generated_c": 24,
+    "structure": {
+      "equal": 24
+    },
+    "observations": {
+      "native": 408,
+      "generated_O0": 1224,
+      "generated_O2": 1224,
+      "stage_comparisons": 25500
+    },
+    "analysis_checks": {
+      "memory_ssa_graph": {
+        "passed": 24
+      },
+      "memory_ssa_queries": {
+        "passed": 24
+      },
+      "memory_addresses": {
+        "passed": 24
+      },
+      "unsigned_bounds": {
+        "passed": 24
+      },
+      "storage_widths": {
+        "passed": 24
+      }
+    },
+    "regressions": {
+      "structure_regressions": 0,
+      "architecture_regressions": 0,
+      "analysis_regressions": 0,
+      "c_footprint_regressions": 0,
+      "state_memory_regressions": 0,
+      "state_value_regressions": 0,
+      "semantic_regressions": 0
+    },
+    "holdout_policy": "Only aggregate fixed comparison inspected; no sealed source/output used for tuning."
+  },
+  "typed_C_v8": {
+    "model": "nirvana-state4-values-v8",
+    "budget": {
+      "value_nodes": 4096,
+      "work": 10000,
+      "paths": 64,
+      "loop_iterations": 16,
+      "solver_seconds": 3
+    },
+    "gcc": {
+      "before": "unsupported",
+      "after": "unknown",
+      "reason": "solver_timeout",
+      "combined_value_nodes": 3080,
+      "query_bytes": 193282
+    },
+    "clang": {
+      "after": "unsupported",
+      "reason": "goto outside forward enclosing-sequence control"
+    },
+    "scope": "Scoped forward labels, exact guarded snapshot joins, automatic-object lifetime, path-local contexts and lazy byte slices; one represented outer-header loop transfer. No all-input equivalence proof attained."
+  },
+  "tests": {
+    "rust_targets": 25,
+    "rust_passed": 1514,
+    "rust_ignored": 57,
+    "follow_unit": 4,
+    "full_state_prefix_pairs": 9216,
+    "python_total": 211,
+    "python_passed": 208,
+    "python_skipped": 3,
+    "native_C_model_controls": 400,
+    "clippy": "passed",
+    "rustfmt": "passed"
+  },
+  "binaries": {
+    "reference": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+        "sha256": "a3f7b43e96a68ea5aa30f4134610eb94463aec8bf06d948ba4f4201d5038d7ec"
+      },
+      "reference_probe": {
+        "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+        "sha256": "ebc813c2bfcd7029623bc9b81ff1d3d6946fd2ca2087cd61d901a3d49a134ea6"
+      },
+      "source_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+      "full_before": {
+        "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+        "sha256": "ebc813c2bfcd7029623bc9b81ff1d3d6946fd2ca2087cd61d901a3d49a134ea6"
+      }
+    },
+    "candidate": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=6db452dee0a0ca90d91b346d646f471e1958bc78 source_dirty=false",
+        "sha256": "164b8212b6271f3b0900969a13f08d15a2181c98089af5822c6d37bd9a862aaf"
+      },
+      "candidate_probe": {
+        "version": "nirvana 0.1.0 git=6db452dee0a0ca90d91b346d646f471e1958bc78 source_dirty=false",
+        "sha256": "2e6aff669725bd72d388e17786b204e3ccc066633d36e6cebe2557556f5895f6"
+      },
+      "source_revision": "6db452dee0a0ca90d91b346d646f471e1958bc78",
+      "full_after": {
+        "version": "nirvana 0.1.0 git=6db452dee0a0ca90d91b346d646f471e1958bc78 source_dirty=false",
+        "sha256": "2e6aff669725bd72d388e17786b204e3ccc066633d36e6cebe2557556f5895f6"
+      }
+    }
+  },
+  "artifacts": {
+    "follow-full-before/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-full-before/report.json",
+      "sha256": "d6ef85c8d153107d7c1dc66f2b23652c030c4135f65babadf4bbd3b0f46905c8"
+    },
+    "follow-full-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-full-after/report.json",
+      "sha256": "77bf4e21a8ad553f0e3cbc3d6ee6d361019defde88b3fc4f2ef2c56cd150635f"
+    },
+    "follow-full-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-full-comparison.json",
+      "sha256": "6847497661ce4b578cc094c9cded0e290e24e6a609f6c3c549f48cfa06c2a03d"
+    },
+    "follow-v8-before/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-before/report.json",
+      "sha256": "0c0e05db474630a980fcc42fb42e817ca6b4e90632bd61720933fed153273c3b"
+    },
+    "follow-v8-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-after/report.json",
+      "sha256": "9212d553252c5cc18d8a10a35f0df5cc4ce89eaadb42b3acdd75ef80ff97d001"
+    },
+    "follow-v8-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-comparison.json",
+      "sha256": "e62d54103dafde708bd213abc845d33f5cb2cb88454fa91e4178203d1f83890f"
+    },
+    "follow-core4-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-core4-comparison.json",
+      "sha256": "82b42cb56b0842b6be7358a1394fa09b4d80c115dd51e17535576fddb3ea37fb"
+    },
+    "follow-full-before-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-full-before-tools.json",
+      "sha256": "389514e2d4960db6017629962dc028c1d4830300fdbafd1102102f05ba1ae80f"
+    },
+    "follow-full-after-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-full-after-tools.json",
+      "sha256": "7997b9218a92ce0dbb49d14b321c30a8077cc8e3e14b817d04b984b390acc95c"
+    },
+    "follow-v8-before-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-before-tools.json",
+      "sha256": "b94b9372da392aceeabeba5e9145d590a8b65fdae5259f7c13bcbc9407088e95"
+    },
+    "follow-v8-after-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-after-tools.json",
+      "sha256": "0117ffdc98049e8abcaa0788d8a9cd63e1876e31f998ff82cfcb2fa575f1a106"
+    },
+    "toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/toolchain.json",
+      "sha256": "d8771035ad1a17e0417d63b2ad04ae13cd6a11771866170be79e0b3e88733551"
+    },
+    "z3-toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/z3-toolchain.json",
+      "sha256": "3a5bc50e7eda9b0f54265edfaa5823b7f040c027d3a7cb862a39908eec244203"
+    },
+    "z3-toolchain-verification.json": {
+      "file": "target/runs/run-a37yw4tm/out/z3-toolchain-verification.json",
+      "sha256": "26f4972bd6ea162f3c9396779ab65d12f96694218e009baeb5ccc24fbbcf6188"
+    },
+    "follow-checks/rust-follow-final-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/follow-checks/rust-follow-final-full.log",
+      "sha256": "df3f299a9e41f4554d75c490340099822ec04768cf08a74c884c7055572c98b4"
+    },
+    "follow-checks/python-scoped-labels-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/follow-checks/python-scoped-labels-full.log",
+      "sha256": "fc9dba106f3007bc757368efe14be068bd4a6168b0fb3455158545ae11097b1e"
+    },
+    "follow-checks/clippy-follow-candidates.log": {
+      "file": "target/runs/run-a37yw4tm/out/follow-checks/clippy-follow-candidates.log",
+      "sha256": "65472bae5b2985d2419925c72556dc14ca670f04c61179015dc0153e29f92e69"
+    },
+    "follow-v8-after/nested-transfers-gcc-O2/state-values.smt2": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-after/nested-transfers-gcc-O2/state-values.smt2",
+      "sha256": "f160aef453d24d4af75122223e8472f029988f132afa5b3c43c1e2579442bd26"
+    },
+    "follow-v8-after/nested-transfers-gcc-O2/state-values.graph.json": {
+      "file": "target/runs/run-a37yw4tm/out/follow-v8-after/nested-transfers-gcc-O2/state-values.graph.json",
+      "sha256": "4c9f4091f2bafada9b944083b0a37ca1d2c492ccb80c10d6881005eb393a7880"
+    }
+  },
+  "limits": [
+    "C structure correspondence and raw executable analyses have separate input boundaries. The selected C storage analysis source is the next M0 binding to retain.",
+    "M2 source distances are unchanged; lower goto/expression counts are secondary quality observations.",
+    "The represented GCC value comparison reached SMT but timed out. Clang fallback control remains outside this C model.",
+    "Concrete RAM/fault/prefix comparisons cover the fixed inputs/budgets; optional static checks have their stated source-entry scope."
+  ],
+  "reproduction": "Build reference/candidate main and evaluation_probe sequentially in shared target. Use same current evaluator for each pair, fixed17-row initial24 profiles atO2/O3 and fixed65-row nested2 atO2. Compare reports; additionally run typed values for nested profile withsame3-secondsolver. Full Rust source/candidate6db; Python hasClang18andbundledZ3. Reference worktree removed."
+}
