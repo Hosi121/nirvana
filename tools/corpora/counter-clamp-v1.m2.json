@@ -1,0 +1,141 @@
+{
+  "schema": "nirvana-m2-checkpoint-v1",
+  "milestone": "M2",
+  "status": "experiment-declined",
+  "hypothesis": "Replace a pure local increment-to-threshold loop with a guarded constant or unsigned max to improve recovered C structure.",
+  "baseline_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+  "decompiler": {
+    "path": "/home/hosi/nirvana/target/debug/nirvana",
+    "sha256": "f7f75ca3265a2f364c17f18a9f8d303c162f4fdc79dadf559f3220c1291f350a",
+    "version": "nirvana 0.1.0 git=a04fb22122a7880e27718dd7b61257957e903d6b source_dirty=false",
+    "returncode": 0,
+    "stderr": "",
+    "build": {
+      "model": "nirvana-rust-target-build-v1",
+      "package_version": "0.1.0",
+      "source_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+      "source_dirty": false
+    }
+  },
+  "profile": {
+    "corpus": "tools/corpora/structure-analysis-v1.json",
+    "case": "loop-shared-exit-gcc-O2",
+    "cohort": "development",
+    "source_sha256": "454f18a22c3a77b1d126c50a0190047e50d5e2aa79c38113e475ddaad30c43c5",
+    "object_sha256": "1cff8565c83f8a192108b6ad1b8d51b9b9c85dcc5dc74365f5a3df9a2cb00439",
+    "original_readable_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+    "source_graph_sha256": "0eda46bcbe8722f18fc4c20d7cb7e5dc7186b36a9140a3bf2d33c4c4032c13fe",
+    "observer_inputs_sha256": "59ba87ed487efd512ca8413bb6f0cb94a6ad88921dcb23c31f47b4be9d2db695",
+    "observer_expected_sha256": "0bbada2ac432ee8a81c4c77e0a7855d5ece3044bdc0cac878f32c2eb57848394",
+    "vectors": 8,
+    "memory_scenarios": 24,
+    "memory_bytes": 512,
+    "optimizations": [
+      "O0",
+      "O2"
+    ],
+    "ubsan": true,
+    "metric": "nirvana-control-topology-v1"
+  },
+  "manual_rewrites": {
+    "original": "for (; counter <= 2; ++counter) {}",
+    "guarded_constant": "if (counter <= 2) { counter = 3; }",
+    "conditional_max": "counter = counter <= 2 ? 3 : counter;"
+  },
+  "observations": {
+    "original": 48,
+    "candidates": 96,
+    "contract": "return, all 512 RAM bytes, exact first fault address/access/width; 69-word rows",
+    "rows": [
+      {
+        "form": "original",
+        "readable_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+        "source_distance": 6,
+        "distance_status": "exact",
+        "ast_nodes": 247,
+        "expression_nodes": 92,
+        "condition_kinds": {
+          "ForStmt": 1,
+          "IfStmt": 1
+        },
+        "condition_expression_nodes": 9,
+        "checked_read_helper_sites": 2,
+        "checked_write_helper_sites": 4,
+        "function_bytes": 827,
+        "readable_bytes": 3976
+      },
+      {
+        "form": "guarded_constant",
+        "readable_sha256": "d390946ada75bd125ed857f7c43c3ce92059763adffd7aa68e9f88251a8c1ae2",
+        "source_distance": 6,
+        "distance_status": "exact",
+        "ast_nodes": 247,
+        "expression_nodes": 93,
+        "condition_kinds": {
+          "IfStmt": 2
+        },
+        "condition_expression_nodes": 9,
+        "checked_read_helper_sites": 2,
+        "checked_write_helper_sites": 4,
+        "function_bytes": 834,
+        "readable_bytes": 3983
+      },
+      {
+        "form": "conditional_max",
+        "readable_sha256": "b183a863c555494efaa1910b4eb4bdf8cc6611a6c5b66fb0c8a83038bb922965",
+        "source_distance": 6,
+        "distance_status": "exact",
+        "ast_nodes": 248,
+        "expression_nodes": 95,
+        "condition_kinds": {
+          "ConditionalOperator": 1,
+          "IfStmt": 1
+        },
+        "condition_expression_nodes": 9,
+        "checked_read_helper_sites": 2,
+        "checked_write_helper_sites": 4,
+        "function_bytes": 825,
+        "readable_bytes": 3974
+      }
+    ]
+  },
+  "decision": "Retain the existing production loop; neither candidate improves source distance and both increase expression nodes.",
+  "interpretation": "Clang18 already removes the cycle from the corresponding optimized input. The recorded source distance4 is an ambiguous recovery case, rather than a proven optimum.",
+  "limits": [
+    "These are manual C-only hypotheses, not implemented decompiler transforms.",
+    "Concrete comparisons cover the recorded cases; candidate C PCs, traces and intermediate instruction budgets have separate contracts.",
+    "The unsigned counter rule requires a threshold below the maximum storage value to guarantee termination; no general rule verifier was implemented."
+  ],
+  "artifacts": {
+    "metadata.json": {
+      "file": "target/runs/run-a37yw4tm/out/m2-counter-hypothesis/metadata.json",
+      "sha256": "12df5b2f123fae68e4dee9b812fbe5d85ef6a263b9c1701e40679d546f2e0acf"
+    },
+    "conclusion.json": {
+      "file": "target/runs/run-a37yw4tm/out/m2-counter-hypothesis/conclusion.json",
+      "sha256": "5dbde9f915d5189621426896e5fc725b86974bc6568a3924207a1bc0cfaf5190"
+    },
+    "results.json": {
+      "file": "target/runs/run-a37yw4tm/out/m2-counter-hypothesis/results.json",
+      "sha256": "c47744de5cfe66a98d9777a04c0f78a5d83bdb41bfc25ddb923407d4429a33da"
+    },
+    "experiment.py": {
+      "file": "target/runs/run-a37yw4tm/out/m2-counter-hypothesis/experiment.py",
+      "sha256": "5c588f82180eba5ddd1a34d5ae67f6ccd72b1d9bdbd2acd033c1777a2cc50def"
+    },
+    "guarded_constant.c": {
+      "file": "target/runs/run-a37yw4tm/out/m2-counter-hypothesis/guarded_constant.c",
+      "sha256": "d390946ada75bd125ed857f7c43c3ce92059763adffd7aa68e9f88251a8c1ae2"
+    },
+    "conditional_max.c": {
+      "file": "target/runs/run-a37yw4tm/out/m2-counter-hypothesis/conditional_max.c",
+      "sha256": "b183a863c555494efaa1910b4eb4bdf8cc6611a6c5b66fb0c8a83038bb922965"
+    }
+  },
+  "reproduction": "Generate readable C and observer inputs at baseline_revision with the fixed M0 profile. Replace exactly the recorded one loop in C and its observer; preserve all other bytes. Measure with the unchanged control_graph/c_footprint tools and compare O0/O2 UBSan outputs to the retained original IR rows.",
+  "cleanup": {
+    "temporary_binary_count": 6,
+    "all_binaries_and_parent_run_removed": true
+  },
+  "evidence_storage": "Managed local run; at most two retained runs and512MiB. Regenerate evicted evidence from recorded revision/input/rewrite."
+}
