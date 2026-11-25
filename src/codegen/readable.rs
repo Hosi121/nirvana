@@ -32,6 +32,7 @@ mod loops;
 mod pipeline;
 mod prepare;
 mod printer;
+mod provenance;
 mod signed_locals;
 mod structure_recovery;
 mod syntax;
@@ -40,11 +41,16 @@ mod webs;
 use declarations::DeclarationPlan;
 use locals::LocalPlan;
 pub use pipeline::{
-    emit_middle_c_with_options, emit_readable_c, emit_readable_c_with_checked_reduction,
-    emit_readable_c_with_checked_reduction_and_options, emit_readable_c_with_options,
+    emit_middle_c_with_options, emit_middle_c_with_storage_provenance, emit_readable_c,
+    emit_readable_c_with_checked_reduction, emit_readable_c_with_checked_reduction_and_options,
+    emit_readable_c_with_options, emit_readable_c_with_storage_provenance,
 };
 use prepare::{PreparedFunction, is_break, is_continue};
 use printer::Printer;
+pub use provenance::{
+    STORAGE_CAPTURE_LIMITS, StorageCaptureLimits, StorageProvenance, StorageSnapshot,
+    StorageSourcePhase,
+};
 use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -82,6 +88,10 @@ pub use views::{IndexedView, ObjectField, ObjectView, StackView};
 #[derive(Clone, Debug)]
 pub struct ReadableC {
     pub code: String,
+    /// Optional evaluation record for the exact unsigned storage analysis used
+    /// by the selected render. Its register IDs match `locals`, not necessarily
+    /// the original machine register file. Ordinary emission does not retain it.
+    pub storage_provenance: StorageProvenance,
     /// C-scope sharing after names and memory views are fixed. This observes
     /// return/RAM/first faults; original machine-step evidence stays separate.
     pub continuations: Option<ContinuationEvidence>,

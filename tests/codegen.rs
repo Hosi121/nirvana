@@ -69,6 +69,8 @@ mod source_alias_compare;
 mod ssa_backend;
 #[path = "codegen/stack_views.rs"]
 mod stack_views;
+#[path = "codegen/storage_provenance.rs"]
+mod storage_provenance;
 #[path = "codegen/typed_address_backend.rs"]
 mod typed_address_backend;
 #[path = "codegen/typed_locals.rs"]

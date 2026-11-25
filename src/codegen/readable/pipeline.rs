@@ -1,5 +1,30 @@
 //! Preparation, evidence and render assembly for readable C.
+use super::provenance::CapturePolicy;
 use super::*;
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone, Copy)]
+struct EmissionContext {
+    options: ReadableOptions,
+    capture: CapturePolicy,
+}
+impl EmissionContext {
+    fn ordinary(options: ReadableOptions) -> Self {
+        Self {
+            options,
+            capture: CapturePolicy::Off,
+        }
+    }
+
+    fn with_storage_provenance(options: ReadableOptions) -> Self {
+        Self {
+            options,
+            capture: CapturePolicy::On(STORAGE_CAPTURE_LIMITS),
+        }
+    }
+}
 
 /// Compare the existing render with checked MIR memory-result refinements.
 /// Preserve the input ABI and choose fewer locals, then shorter function text.
@@ -7,9 +32,25 @@ pub fn emit_middle_c_with_options(
     function: &crate::model::middle_ir::Function,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
+    emit_middle(function, EmissionContext::ordinary(options))
+}
+
+/// Use the ordinary candidate-selection path, retaining only the selected
+/// render's bounded storage-analysis input for evaluation.
+pub fn emit_middle_c_with_storage_provenance(
+    function: &crate::model::middle_ir::Function,
+    options: ReadableOptions,
+) -> Result<ReadableC, ReadableError> {
+    emit_middle(function, EmissionContext::with_storage_provenance(options))
+}
+
+fn emit_middle(
+    function: &crate::model::middle_ir::Function,
+    context: EmissionContext,
+) -> Result<ReadableC, ReadableError> {
     use crate::model::middle_ir::Error;
     let source = function.lower().map_err(ReadableError::Middle)?;
-    let mut best = emit_readable_c_with_options(&source, options)?;
+    let mut best = emit_readable(&source, context)?;
     let constants = match function.recover_memory_constants() {
         Ok(result) => Some(result),
         Err(
@@ -23,7 +64,7 @@ pub fn emit_middle_c_with_options(
         && evidence.refined_loads > 0
     {
         let source = refined.lower().map_err(ReadableError::Middle)?;
-        if let Ok(mut candidate) = emit_readable_c_with_options(&source, options)
+        if let Ok(mut candidate) = emit_readable(&source, context)
             && candidate.parameters == best.parameters
             && render_cost(&candidate) < render_cost(&best)
         {
@@ -47,7 +88,7 @@ pub fn emit_middle_c_with_options(
             .ok_or(ReadableError::Middle(Error::Invalid(
                 "missing saved lowering",
             )))?;
-        if let Ok(mut candidate) = emit_readable_c_with_options(lowered.program(), options)
+        if let Ok(mut candidate) = emit_readable(lowered.program(), context)
             && candidate.parameters == best.parameters
             && render_cost(&candidate) < render_cost(&best)
         {
@@ -66,10 +107,23 @@ pub fn emit_readable_c_with_options(
     program: &Program,
     options: ReadableOptions,
 ) -> Result<ReadableC, ReadableError> {
-    let mut best = emit_readable_base(program, options)?;
+    emit_readable(program, EmissionContext::ordinary(options))
+}
+
+/// Retain storage provenance without changing normal rendering or ranking.
+/// Source retention is bounded and may report an omission reason.
+pub fn emit_readable_c_with_storage_provenance(
+    program: &Program,
+    options: ReadableOptions,
+) -> Result<ReadableC, ReadableError> {
+    emit_readable(program, EmissionContext::with_storage_provenance(options))
+}
+
+fn emit_readable(program: &Program, context: EmissionContext) -> Result<ReadableC, ReadableError> {
+    let mut best = emit_readable_base(program, context)?;
     if let Some(plan) = crate::dataflow::predicates::PredicatePlan::analyze(program)
         && let Some((lowered, evidence)) = plan.lower(program)
-        && let Ok(mut candidate) = emit_readable_base(&lowered, options)
+        && let Ok(mut candidate) = emit_readable_base(&lowered, context)
         && candidate.parameters == best.parameters
         && render_cost(&candidate) < render_cost(&best)
     {
@@ -81,11 +135,11 @@ pub fn emit_readable_c_with_options(
 
 fn emit_readable_base(
     program: &Program,
-    options: ReadableOptions,
+    context: EmissionContext,
 ) -> Result<ReadableC, ReadableError> {
     let reduced = reduce(program)?;
     let parameters = reduced.parameters().to_vec();
-    let mut best = emit_reduced_c(reduced, options);
+    let mut best = emit_reduced_c(reduced, context);
     if !program.uses_memory() {
         return best;
     }
@@ -95,7 +149,7 @@ fn emit_readable_base(
         && let Some(lowered) = plan.lower(program)
         && let Ok(reduced) = reduce(&lowered)
         && reduced.parameters() == parameters
-        && let Ok(mut candidate) = emit_reduced_c(reduced, options)
+        && let Ok(mut candidate) = emit_reduced_c(reduced, context)
     {
         candidate.memory_value_rounds.insert(0, plan.evidence());
         candidate.memory_values = candidate.memory_value_rounds.first().copied();
@@ -126,17 +180,17 @@ pub fn emit_readable_c_with_checked_reduction_and_options(
 ) -> Result<(ReadableC, Validation), ReadableError> {
     let checked = reduce_checked(program, solver)?;
     Ok((
-        emit_reduced_c(checked.function, options)?,
+        emit_reduced_c(checked.function, EmissionContext::ordinary(options))?,
         checked.validation,
     ))
 }
 
 fn emit_reduced_c(
     reduced: ReducedFunction,
-    options: ReadableOptions,
+    context: EmissionContext,
 ) -> Result<ReadableC, ReadableError> {
     use prepare::MemoryRecovery;
-    let mut best = emit_reduced_choice(&reduced, options, MemoryRecovery::Disabled);
+    let mut best = emit_reduced_choice(&reduced, context, MemoryRecovery::Disabled);
     // Stored-value recovery requires checked memory expressions.
     if !reduced.program().uses_memory() {
         return best;
@@ -150,7 +204,7 @@ fn emit_reduced_c(
         MemoryRecovery::InvariantExpressions(2),
         MemoryRecovery::InvariantExpressions(3),
     ] {
-        if let Ok(candidate) = emit_reduced_choice(&reduced, options, recovery) {
+        if let Ok(candidate) = emit_reduced_choice(&reduced, context, recovery) {
             let exhausted = matches!(recovery, MemoryRecovery::InvariantExpressions(_))
                 && candidate.memory_value_rounds.len() < recovery.rounds()
                 && !matches!(candidate.web_recovery, WebRecovery::RenderingFallback(_));
@@ -180,10 +234,16 @@ fn render_cost(output: &ReadableC) -> (usize, usize, usize) {
 
 fn emit_reduced_choice(
     reduced: &ReducedFunction,
-    options: ReadableOptions,
+    context: EmissionContext,
     memory_recovery: prepare::MemoryRecovery,
 ) -> Result<ReadableC, ReadableError> {
-    let prepared = prepare::prepare(reduced.program(), reduced.parameters(), memory_recovery)?;
+    let options = context.options;
+    let prepared = prepare::prepare(
+        reduced.program(),
+        reduced.parameters(),
+        memory_recovery,
+        context.capture,
+    )?;
     let renamed = matches!(prepared.web_recovery, WebRecovery::Applied { .. });
     match emit_prepared_c(reduced, options, prepared) {
         Ok(output) => Ok(output),
@@ -193,6 +253,7 @@ fn emit_reduced_choice(
                 reduced.parameters(),
                 WebRecovery::RenderingFallback(error),
                 memory_recovery,
+                context.capture,
             )?;
             emit_prepared_c(reduced, options, fallback)
         }
@@ -249,6 +310,7 @@ fn emit_prepared_layout(
     let PreparedFunction {
         program: presented,
         widths: value_widths,
+        storage_provenance,
         structure: structured,
         nodes,
         shared_nodes,
@@ -650,6 +712,7 @@ fn emit_prepared_layout(
         code.insert_str(start, &bit_helpers);
     }
     Ok(ReadableC {
+        storage_provenance,
         continuations: continuation_evidence,
         predicates: None,
         code,

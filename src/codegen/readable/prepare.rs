@@ -6,8 +6,13 @@ use crate::control_flow::structure_verify::StructureEvidence;
 use crate::dataflow::value_width::ValueWidths;
 use crate::model::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
 use crate::transform::reduce::ReductionError;
+use std::sync::Arc;
 
-use super::{WebRecovery, webs};
+use super::provenance::{CapturePolicy, WidthAnalysis};
+use super::{StorageProvenance, WebRecovery, webs};
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Copy)]
 pub(super) enum MemoryRecovery {
@@ -28,8 +33,9 @@ impl MemoryRecovery {
 
 #[derive(Clone)]
 pub(super) struct PreparedFunction {
-    pub program: Program,
+    pub program: Arc<Program>,
     pub widths: ValueWidths,
+    pub storage_provenance: StorageProvenance,
     pub structure: Result<StructuredFunction, StructureError>,
     pub nodes: Option<Vec<Node>>,
     pub shared_nodes: Option<Vec<Node>>,
@@ -48,7 +54,7 @@ pub(super) struct PreparedFunction {
 
 type CheckedDisplay<E> = (
     Program,
-    ValueWidths,
+    WidthAnalysis,
     Result<StructuredFunction, StructureError>,
     E,
 );
@@ -65,7 +71,7 @@ fn checked_display<E>(
     if structured_before && structure.is_err() {
         return None;
     }
-    let widths = ValueWidths::analyze(&candidate);
+    let widths = WidthAnalysis::after_dce(&candidate);
     Some((candidate, widths, structure, evidence))
 }
 
@@ -73,15 +79,17 @@ pub(super) fn prepare(
     original: &Program,
     parameters: &[Reg],
     memory_recovery: MemoryRecovery,
+    capture: CapturePolicy,
 ) -> Result<PreparedFunction, ReductionError> {
     let selected = webs::select(original);
     let renamed = matches!(selected.recovery, WebRecovery::Applied { .. });
-    match prepare_selected(original, parameters, selected, memory_recovery) {
+    match prepare_selected(original, parameters, selected, memory_recovery, capture) {
         Err(error) if renamed => prepare_original(
             original,
             parameters,
             WebRecovery::RenderingFallback(super::ReadableError::Reduction(error)),
             memory_recovery,
+            capture,
         ),
         result => result,
     }
@@ -92,12 +100,14 @@ pub(super) fn prepare_original(
     parameters: &[Reg],
     recovery: WebRecovery,
     memory_recovery: MemoryRecovery,
+    capture: CapturePolicy,
 ) -> Result<PreparedFunction, ReductionError> {
     prepare_selected(
         original,
         parameters,
         webs::keep_original(original, recovery),
         memory_recovery,
+        capture,
     )
 }
 
@@ -106,6 +116,7 @@ fn prepare_selected(
     parameters: &[Reg],
     selected: webs::SelectedWebs,
     memory_recovery: MemoryRecovery,
+    capture: CapturePolicy,
 ) -> Result<PreparedFunction, ReductionError> {
     let input = selected.program.as_ref().unwrap_or(original);
     let masked = crate::transform::load_mask::propose(input, parameters).and_then(|candidate| {
@@ -114,7 +125,7 @@ fn prepare_selected(
             .map(|evidence| (candidate, evidence))
     });
     let input = masked.as_ref().map_or(input, |(program, _)| program);
-    let widths = ValueWidths::analyze(input);
+    let widths = WidthAnalysis::before_presentation(input);
     let width = |reg| {
         if parameters.contains(&reg) {
             Width::U64
@@ -247,9 +258,12 @@ fn prepare_selected(
         Some((nodes, shared_nodes)) => (Some(nodes), shared_nodes),
         None => (None, None),
     };
+    let program = Arc::new(program);
+    let (widths, storage_provenance) = widths.finish(capture, input, &program);
     Ok(PreparedFunction {
         program,
         widths,
+        storage_provenance,
         structure,
         nodes,
         shared_nodes,
