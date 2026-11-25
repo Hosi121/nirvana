@@ -107,3 +107,80 @@ fn signed_storage_transfer_bounds_have_universal_checks_and_unsigned_counterexam
     )
     .unwrap();
 }
+
+#[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn signed_division_storage_bounds_cover_full_inputs_and_replay_bad_signed_claims() {
+    let solver = Solver::new(std::env::var_os("NIRVANA_Z3").expect("set NIRVANA_Z3"))
+        .with_timeout(std::time::Duration::from_secs(3));
+    let mut proved = 0;
+    let mut broken = 0;
+    for width in [Width::U8, Width::U16, Width::U32] {
+        let signed = Expr::unary(U::SignExtend(width), r(0));
+        let infer = |expr: &Expr| {
+            let source = Program::new(
+                0,
+                2,
+                vec![IrInstruction {
+                    address: 0,
+                    size: 1,
+                    assignments: vec![Assignment {
+                        destination: Reg(1).into(),
+                        value: expr.clone(),
+                    }],
+                    control: Control::Return(r(1)),
+                }],
+            )
+            .unwrap();
+            let facts = SignedWidths::analyze(&source);
+            assert!(facts.verification().is_ok(), "{:?}", facts.verification());
+            assert!(nirvana::dataflow::signed_width::validate(&source, &facts).is_ok());
+            facts.width(Reg(1))
+        };
+        for operation in [B::SDiv, B::SRem] {
+            for divisor in [-31i64, -2, 2, 31] {
+                let expression =
+                    Expr::binary(operation, signed.clone(), Expr::Const(divisor as u64));
+                let actual = infer(&expression);
+                assert_eq!(actual, width);
+                assert_eq!(
+                    solver.check(
+                        &expression,
+                        &Expr::unary(U::SignExtend(actual), expression.clone())
+                    ),
+                    Verdict::EquivalentUnderModel,
+                    "{width:?}/{operation:?}/{divisor}"
+                );
+                proved += 1;
+            }
+            // Preserve the existing producer's conservative scope while
+            // checking its signed-word precondition independently.
+            for divisor in [-1i64, 0, 1, i64::MIN] {
+                assert_eq!(
+                    infer(&Expr::binary(
+                        operation,
+                        signed.clone(),
+                        Expr::Const(divisor as u64)
+                    )),
+                    Width::U64
+                );
+            }
+        }
+        for (operation, divisor) in [(B::SDiv, u64::MAX), (B::UDiv, 2)] {
+            let expression = Expr::binary(operation, signed.clone(), Expr::Const(divisor));
+            assert_eq!(infer(&expression), Width::U64);
+            let Verdict::Counterexample(witness) = solver.check(
+                &expression,
+                &Expr::unary(U::SignExtend(width), expression.clone()),
+            ) else {
+                panic!("missing signed-width counterexample: {width:?}/{operation:?}");
+            };
+            assert_ne!(witness.before, witness.after);
+            broken += 1;
+        }
+    }
+    assert_eq!((proved, broken), (24, 6));
+    println!(
+        "{proved} independently checked signed division/remainder bounds; {broken} too-narrow SAT controls replayed through IR"
+    );
+}
