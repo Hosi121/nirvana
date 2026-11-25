@@ -159,7 +159,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 .filter(|f| f.result.is_ok())
                 .count();
             let closed = analysis
-                .call_summaries
+                .call_summaries()
                 .functions
                 .iter()
                 .filter(|f| f.closed)

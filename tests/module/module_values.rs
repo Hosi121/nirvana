@@ -166,7 +166,7 @@ indirect:
     let Some(CallContract::Closed { callee }) = call.call_contract else {
         panic!()
     };
-    let contract = analysis.call_summaries.at(callee).unwrap();
+    let contract = analysis.call_summaries().at(callee).unwrap();
     assert_eq!(contract.clobbers.len() + contract.preserved.len(), 80);
     assert!(call.preserved.iter().any(|v| v.register == Reg(4)));
     assert!(call.preserved.iter().any(|v| v.register == Reg(7)));
@@ -351,6 +351,13 @@ r=json.load(sys.stdin)
 assert r['schema']=='nirvana-module-values-v3'
 assert r['scope']=='function-entry-and-normal-effect-continuations'
 summaries={f['address']:f['call_summary'] for f in r['functions']}
+proof=r['call_verification']
+assert proof['model']=='nirvana-closed-call-contract-v1' and proof['status']=='checked'
+assert proof['scope']=='finite-successful-calls'
+assert proof['functions']==len(r['functions'])
+assert proof['closed_functions']==sum(s['closed'] for s in summaries.values())
+assert proof['call_edges']==sum(len(s['callees']) for s in summaries.values() if s['closed'])
+assert proof['reachable_instructions']>=proof['closed_functions']
 for f in r['functions']:
     if f['status']!='analyzed': continue
     v=f['values']; assert [x['id'] for x in v]==list(range(len(v)))

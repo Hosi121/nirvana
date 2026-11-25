@@ -15,6 +15,9 @@ use crate::model::ir::{
 };
 use crate::model::module_ir::{self, Instruction, Target};
 
+mod verify;
+pub use verify::{ValidationEvidence, validate};
+
 const MAX_FUNCTIONS: usize = 512;
 const MAX_INSTRUCTIONS: usize = 65_536;
 const MAX_FUNCTION_INSTRUCTIONS: usize = 16_384;
@@ -169,6 +172,12 @@ impl Local {
 /// Whole-module resource exhaustion discards every partial summary atomically;
 /// local proof failures remain explicit opaque summaries with their reason.
 pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
+    analyze_with_evidence(program).map(|(analysis, _)| analysis)
+}
+
+pub(crate) fn analyze_with_evidence(
+    program: &module_ir::Program,
+) -> Result<(Analysis, ValidationEvidence), String> {
     let registers = program.register_count();
     if program.functions().len() > MAX_FUNCTIONS
         || program.instructions().len() > MAX_INSTRUCTIONS
@@ -248,7 +257,7 @@ pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
         }
     }
     let all = (1 << registers) - 1;
-    Ok(Analysis {
+    let analysis = Analysis {
         functions: functions
             .into_iter()
             .zip(locals)
@@ -266,7 +275,10 @@ pub fn analyze(program: &module_ir::Program) -> Result<Analysis, String> {
                 }
             })
             .collect(),
-    })
+    };
+    // A failed or unavailable source check exposes no partial closed contracts.
+    let evidence = validate(program, &analysis)?;
+    Ok((analysis, evidence))
 }
 
 fn register_set(bits: Registers, count: usize) -> Vec<Reg> {

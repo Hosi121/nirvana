@@ -1,6 +1,6 @@
 //! Check the module adapter's declarations against original instructions.
 //!
-//! Closed footprints are contracts supplied by call_footprint; unknown calls
+//! Closed footprints are checked separately by call_footprint::validate; unknown calls
 //! clobber every guest register. The core MemorySSA checker checks graph/query
 //! evidence. Checked module execution owns faults and partial REP progress.
 

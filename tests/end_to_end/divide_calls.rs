@@ -62,7 +62,7 @@ fn divide_calls_retain_preserved_values_and_full_c_state_on_success_fault_and_de
             .iter()
             .find(|f| f.name == "divide_pair")
             .unwrap();
-        let summary = analysis.call_summaries.at(helper.address).unwrap();
+        let summary = analysis.call_summaries().at(helper.address).unwrap();
         assert!(summary.closed, "{:?}", summary.reason);
         for register in [x86::RDI, x86::RSI, 8, x86::RSP] {
             assert!(summary.preserved.contains(&Reg(register)));

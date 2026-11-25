@@ -472,7 +472,16 @@ pub(super) fn render(analysis: &Analysis) -> Option<String> {
         return None;
     }
     let mut out = Json(String::new());
-    out.raw("{\"schema\":\"nirvana-module-values-v3\",\"identity\":\"per-function-ssa\",\"scope\":\"function-entry-and-normal-effect-continuations\",\"liveness\":\"syntactic-possible-uses\",\"calls\":\"closed-internal-footprints-with-opaque-fallback\",\"memory\":\"ordered-accesses-and-opaque-call-effects\",\"sites\":\"analysis-event-indices\",\"functions\":[")?;
+    out.raw("{\"schema\":\"nirvana-module-values-v3\",\"identity\":\"per-function-ssa\",\"scope\":\"function-entry-and-normal-effect-continuations\",\"liveness\":\"syntactic-possible-uses\",\"calls\":\"closed-internal-footprints-with-opaque-fallback\",\"memory\":\"ordered-accesses-and-opaque-call-effects\",\"sites\":\"analysis-event-indices\",\"call_verification\":{\"model\":\"nirvana-closed-call-contract-v1\",\"scope\":\"finite-successful-calls\",\"status\":\"checked\",\"functions\":")?;
+    let evidence = analysis.call_verification();
+    out.number(evidence.functions)?;
+    out.raw(",\"closed_functions\":")?;
+    out.number(evidence.closed_functions)?;
+    out.raw(",\"reachable_instructions\":")?;
+    out.number(evidence.reachable_instructions)?;
+    out.raw(",\"call_edges\":")?;
+    out.number(evidence.call_edges)?;
+    out.raw("},\"functions\":[")?;
     for (i, function) in analysis.functions.iter().enumerate() {
         if i > 0 {
             out.raw(",")?;

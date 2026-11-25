@@ -133,10 +133,20 @@ pub struct FunctionAnalysis {
 #[derive(Clone, Debug)]
 pub struct Analysis {
     pub functions: Vec<FunctionAnalysis>,
-    pub call_summaries: call_footprint::Analysis,
+    call_summaries: call_footprint::Analysis,
+    call_verification: call_footprint::ValidationEvidence,
 }
 
 impl Analysis {
+    /// Closed footprints checked against this module's original instructions.
+    pub fn call_summaries(&self) -> &call_footprint::Analysis {
+        &self.call_summaries
+    }
+
+    pub fn call_verification(&self) -> call_footprint::ValidationEvidence {
+        self.call_verification
+    }
+
     pub fn to_json(&self) -> Result<String, String> {
         report::render(self).ok_or_else(|| "module value report exceeds bounds".into())
     }
@@ -162,7 +172,7 @@ fn analyze_mode(program: &module_ir::Program, memory: bool) -> Result<Analysis, 
     let mut total_values = 0usize;
     let mut total_members = 0usize;
     let mut memory_members = 0usize;
-    let call_summaries = call_footprint::analyze(program)?;
+    let (call_summaries, call_verification) = call_footprint::analyze_with_evidence(program)?;
     for function in program.functions() {
         let mut result = analyze_function(program, function, &call_summaries, memory);
         if let Ok(values) = &mut result
@@ -194,6 +204,7 @@ fn analyze_mode(program: &module_ir::Program, memory: bool) -> Result<Analysis, 
     Ok(Analysis {
         functions,
         call_summaries,
+        call_verification,
     })
 }
 
