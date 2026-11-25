@@ -194,3 +194,21 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 cargo build --example inspect_stack_frame --example measure_variables
 python3 tools/measure_source_recovery.py --help
 ```
+
+## Quint・TLA+の導入候補
+
+2026-11-26の調査では、M2の構造検査器を小さい状態遷移モデルで監査する案を選んだ。正本は[実行契約](equivalence.md)と[層間契約](architecture.md)。モデル・検証器の実行は今後の検証段階で行う。
+
+| 対象 | 問いと実装への接続 |
+| --- | --- |
+| CFG → Structured AST | `structure_verify`が受理した木は、元Stepの順序・回数、外側transfer、最初のfault、予算までの全状態を保つか |
+| MemorySSAの候補被覆 | 具体実行の各byteのwriterが、検査を通した候補集合に含まれるか。初期writer・部分Store・φ・opaque・戻り辺を含む |
+| 反例の利用 | raw IRとraw ASTを別々に解釈し、得たtraceを実際のRust検査器・実行器で再現して回帰対照へ保存する |
+
+最初のcontrolモデルは、約6 PC・2段のloop・2レジスタ・2-byte RAM・小さい値域・命令予算0〜6を対象にする。AST内部のroutingをstutteringへ写し、guest Stepはtraceと予算を進める。routingだけのcycleは受理規則で拒否し、guestの無限loopは有限予算で停止状態へ対応付ける。Storeはアドレス評価、書込み範囲検査、右辺評価、commitの順序を保つ。
+
+正常なtail配置・外側continueを正対照にし、Step欠落、枝の交換、transfer深さの誤り、fault順序の交換、先行Storeの喪失を負対照にする。受理規則そのものを調べるため、既存のAST lowering結果をモデルの両側へ流す方式から独立させる。exporter・状態射影・値やアドレスの抽象化は、実装との対応を確認する境界として残す。
+
+Quintは[ランダム探索・有界検査・帰納不変条件](https://quint.sh/docs/checking-properties)を使い分けられ、[TLC backend](https://quint.sh/docs/model-checkers)も選べる。TLCの完走は指定した有限モデルの到達状態を覆い、任意サイズのCFGや全u64の保証には追加の抽象化根拠・帰納証明が必要になる。演算の全域検査には既存SMTを使い、構造品質はM0の同条件比較へ結ぶ。
+
+Rustへのtrace再生には[Quint Connect](https://github.com/quint-co/quint-connect)が候補になる。モデルに模した別実装との一致に加え、Nirvana本体のAPIで受理結果と状態を照合する。初回の採用条件は、正対照の成立、負対照の検出、実Rustでの反例再現、固定した探索予算内での完走とする。モデル検査の成功と、trace集合でのRust適合検査は別の結果として報告する。
