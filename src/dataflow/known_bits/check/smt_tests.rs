@@ -201,3 +201,7 @@ fn actual_checking_masks_have_full_word_proofs_and_replayed_mutants() {
         "{proved} checking-kernel full-u64 UNSAT; {unknown_masks} unknown masks; {replayed} IR-replayed SAT controls"
     );
 }
+
+#[cfg(test)]
+#[path = "smt_prefix.rs"]
+mod prefix;
