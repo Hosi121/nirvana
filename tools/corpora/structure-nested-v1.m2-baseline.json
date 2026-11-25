@@ -1,0 +1,162 @@
+{
+  "schema": "nirvana-m2-baseline-v1",
+  "milestone": "M2",
+  "status": "frozen_before_implementation",
+  "focus": "Bounded readable structuring of short shared loop exits",
+  "revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+  "cohort": "development",
+  "corpus": "tools/corpora/structure-nested-v1.json",
+  "corpus_sha256": "1850be124214464ca917a570e42baa951be27cc87062ca27b01b78a894787dc7",
+  "inputs": "tools/corpora/structure-nested-v1.inputs.txt",
+  "inputs_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+  "input_vectors": 65,
+  "contract": "nirvana-fixture-state4-checked-v1",
+  "step_limit": 4096,
+  "seed": 7956016069493023024,
+  "observations": {
+    "native": 130,
+    "generated_O0": 390,
+    "generated_O2": 390,
+    "low_middle": 7800
+  },
+  "witness_search": {
+    "generator": "fixture-state4-seeds-v1",
+    "seed": 7956016069493023024,
+    "original_rows": 64,
+    "extra_rows_tested": 192,
+    "limits": {
+      "extra_rows": 192,
+      "invocations": 40,
+      "wall_seconds": 120,
+      "query_limit": 1,
+      "timeout_ms": 1,
+      "step_limit": 4096
+    },
+    "invocations": 14,
+    "selected_zero_based_case_indices": [
+      104
+    ],
+    "selected_words": [
+      [
+        14171638548046204273,
+        13962979612705057443,
+        9731584594961920210,
+        16713393466763315726
+      ]
+    ],
+    "missing_before": [
+      [
+        319,
+        375
+      ],
+      [
+        330,
+        332
+      ],
+      [
+        338,
+        192
+      ]
+    ],
+    "remaining_after_selected": [
+      [
+        330,
+        332
+      ],
+      [
+        338,
+        192
+      ]
+    ],
+    "solver": "unavailable; all attempted queries retained as Unknown; no infeasibility claim"
+  },
+  "rows": [
+    {
+      "id": "nested-transfers-gcc-O2",
+      "object_sha256": "ad2bff275509b14d2cce1fa82bf7fd1e4d7371da96ba438f039fed4269ed2baa",
+      "generated_c_sha256": "2f3bb122adb9d1ba31118dcd8b430639466361867ca39d9717a584ed00a4d3d8",
+      "structure_distance": 15,
+      "semantics": "passed",
+      "analysis": {
+        "memory_ssa_graph": "passed",
+        "memory_ssa_queries": "passed",
+        "memory_addresses": "passed",
+        "unsigned_bounds": "passed",
+        "storage_widths": "passed"
+      },
+      "low_coverage": {
+        "steps_started": 66,
+        "syntactic_steps": 66,
+        "transfers_observed": 19,
+        "syntactic_transfers": 19,
+        "unobserved_transfers": []
+      }
+    },
+    {
+      "id": "nested-transfers-clang18-O2",
+      "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+      "generated_c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a",
+      "structure_distance": 30,
+      "semantics": "passed",
+      "analysis": {
+        "memory_ssa_graph": "passed",
+        "memory_ssa_queries": "passed",
+        "memory_addresses": "passed",
+        "unsigned_bounds": "passed",
+        "storage_widths": "passed"
+      },
+      "low_coverage": {
+        "steps_started": 112,
+        "syntactic_steps": 115,
+        "transfers_observed": 33,
+        "syntactic_transfers": 35,
+        "unobserved_transfers": [
+          [
+            330,
+            332
+          ],
+          [
+            338,
+            192
+          ]
+        ]
+      }
+    }
+  ],
+  "binaries": {
+    "decompiler": {
+      "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+      "sha256": "a3f7b43e96a68ea5aa30f4134610eb94463aec8bf06d948ba4f4201d5038d7ec"
+    },
+    "reference_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+    "candidate_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+    "corpus_sha256": "1850be124214464ca917a570e42baa951be27cc87062ca27b01b78a894787dc7",
+    "baseline_probe": {
+      "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+      "sha256": "ebc813c2bfcd7029623bc9b81ff1d3d6946fd2ca2087cd61d901a3d49a134ea6"
+    },
+    "augmented_before": {
+      "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+      "sha256": "ebc813c2bfcd7029623bc9b81ff1d3d6946fd2ca2087cd61d901a3d49a134ea6"
+    }
+  },
+  "artifacts": {
+    "nested-augmented-baseline/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-augmented-baseline/report.json",
+      "sha256": "13e45114c23204cfee3ac861e38d43f6a7a76dcd553b46540117867e85428a0a"
+    },
+    "nested-baseline/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-baseline/report.json",
+      "sha256": "649905d043d743a313f5bd1234dbd09b7264da82fbc210e81f4431220c8084cb"
+    },
+    "nested-witness-search/search.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-witness-search/search.json",
+      "sha256": "9c53e96a3a6094e18b2be4f094b7f62dc43cc1537ca097fae2163fea0dc328b2"
+    }
+  },
+  "limits": [
+    "Concrete inputs cover 19/19 GCC transfers and 33/35 Clang transfers; the remaining two transfers retain unknown feasibility.",
+    "The source still has bounded nested loops; Clang unrolls the inner loop four times and retains the outer cycle.",
+    "The proposed retry is private to readable C; source recovery, dynamic effect counts and cost must be compared after implementation."
+  ]
+}
