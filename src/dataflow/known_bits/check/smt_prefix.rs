@@ -12,7 +12,7 @@ fn conjunction(conditions: impl IntoIterator<Item = Expr>) -> Expr {
         .fold(c(1), |old, next| b(B::And, old, next))
 }
 
-fn membership() -> Expr {
+pub(super) fn membership() -> Expr {
     // ZA, OA, ZB, OB, a, b are independent full-width symbolic registers.
     conjunction([
         b(B::Eq, b(B::And, r(0), r(1)), c(0)),

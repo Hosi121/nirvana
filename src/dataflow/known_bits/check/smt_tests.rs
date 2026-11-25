@@ -205,3 +205,7 @@ fn actual_checking_masks_have_full_word_proofs_and_replayed_mutants() {
 #[cfg(test)]
 #[path = "smt_prefix.rs"]
 mod prefix;
+
+#[cfg(test)]
+#[path = "smt_cubes.rs"]
+mod cubes;
