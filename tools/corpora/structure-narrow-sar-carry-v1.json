@@ -1,0 +1,24 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-narrow-sar-carry-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "gcc-O3",
+    "clang18-O2",
+    "clang18-O3"
+  ],
+  "cohort_policy": "Development-only x86 narrow SAR CF availability gate. Native/C/prefix observations are primary; inline assembly is opaque to source C value and footprint models.",
+  "cases": [
+    {
+      "id": "narrow-sar-carry",
+      "family": "x86-narrow-sar-carry",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/narrow-sar-carry.c",
+      "source_sha256": "25365994bfd27980b7243dd7e9788221beff4911d0b5f80ae5b86da2ccdb8fff",
+      "function": "fixture",
+      "shape": "Variable SAR8/16 and fixed nonzero counts at or above operand width preserve defined carry",
+      "origin": "repository-authored ISA-specific C fixture"
+    }
+  ]
+}
