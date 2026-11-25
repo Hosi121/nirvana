@@ -1,0 +1,231 @@
+{
+  "schema": "nirvana-m0-checkpoint-v1",
+  "milestone": "M0",
+  "status": "validated-for-development-profile",
+  "focus": "Retained MemorySSA source-bound checker evidence and v3/v4 probe compatibility",
+  "reference_probe_revision": "3c07bedc8cb8104234bb5bf3d33455ee29c7ea89",
+  "candidate_revision": "a8edbd4bc9b8d870433213e4fe86dc0f7ad79159",
+  "evaluator_revision": "a8edbd4bc9b8d870433213e4fe86dc0f7ad79159",
+  "scope": "Two development source families, GCC/Clang O2; fixed state[4] ABI and 512-byte RAM",
+  "corpus": {
+    "file": "tools/corpora/structure-analysis-v1.json",
+    "sha256": "67a3a4f36054f435d893cde80359d071c4c59e67532bda5c4c029c35e388e75d"
+  },
+  "requested_profiles": 4,
+  "cohorts": {
+    "development": 4
+  },
+  "input_vectors_per_profile": 8,
+  "seed": 7956016069493023024,
+  "step_limit": 4096,
+  "prefix_budgets": [
+    0,
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128,
+    4096
+  ],
+  "observations": {
+    "native": 32,
+    "generated_O0": 96,
+    "generated_O2": 96,
+    "stage_comparisons": 2400
+  },
+  "analysis_checks": {
+    "before": {
+      "memory_ssa_graph": {
+        "not_run": 4
+      },
+      "memory_ssa_queries": {
+        "not_run": 4
+      }
+    },
+    "after": {
+      "memory_ssa_graph": {
+        "passed": 4
+      },
+      "memory_ssa_queries": {
+        "passed": 4
+      }
+    }
+  },
+  "structure": {
+    "equal": 4
+  },
+  "identical_generated_c": 4,
+  "regressions": {
+    "structure_regressions": 0,
+    "architecture_regressions": 0,
+    "analysis_regressions": 0,
+    "c_footprint_regressions": 0,
+    "state_memory_regressions": 0,
+    "state_value_regressions": 0,
+    "semantic_regressions": 0
+  },
+  "execution": {
+    "low_middle": {
+      "passed": 4
+    },
+    "middle_predicates": {
+      "not_applied": 3,
+      "passed": 1
+    },
+    "middle_memory": {
+      "not_applied": 4
+    },
+    "middle_saved": {
+      "not_applied": 4
+    },
+    "selected_semantic": {
+      "not_applied": 4
+    }
+  },
+  "negative_controls": [
+    {
+      "id": "missing-query-check",
+      "expected": "rejected",
+      "observed": "rejected",
+      "reason": "analysis check names"
+    },
+    {
+      "id": "missing-ir-hash",
+      "expected": "rejected",
+      "observed": "rejected",
+      "reason": "analysis artifact hash"
+    },
+    {
+      "id": "wrong-state-count",
+      "expected": "rejected",
+      "observed": "rejected",
+      "reason": "analysis checker evidence correspondence"
+    },
+    {
+      "id": "profile-deletion",
+      "expected": "rejected",
+      "observed": "rejected",
+      "reason": "retained probe metadata requires a semantic profile"
+    },
+    {
+      "id": "schema-deletion",
+      "expected": "rejected",
+      "observed": "rejected",
+      "reason": "unversioned architecture record cannot claim checked evidence"
+    }
+  ],
+  "reports": {
+    "before": {
+      "file": "target/runs/run-x0flcwfs/out/v3/report.json",
+      "sha256": "98048fe7a20096ec210e5f9b3e6a5219c45e0530b2424a5f33f95141dbdffa0e"
+    },
+    "after": {
+      "file": "target/runs/run-x0flcwfs/out/v4/report.json",
+      "sha256": "cf0665f1b0d330521347942e0e24d43f75e4f4e7d55c7113c2396e6887fc535f"
+    },
+    "comparison": {
+      "file": "target/runs/run-x0flcwfs/out/comparison.log",
+      "sha256": "61eead943bcc586681bce59ec652dcfe3c21dccf93cb99da53521daa52f6dd56"
+    },
+    "negative_controls": {
+      "file": "target/runs/run-x0flcwfs/out/negative-controls.json",
+      "sha256": "b348e7d3484167d4eca3c7b497e145042e9a103dc7209f443c28a7ae2af1228f"
+    },
+    "tools": {
+      "file": "target/runs/run-x0flcwfs/out/tools.json",
+      "sha256": "d9b366ad8e36dd36b42a84ea6f4eaef304338d95aaecf0f968f4f87291e999e0"
+    }
+  },
+  "binaries": {
+    "reference_probe": {
+      "sha256": "9b0c196f30cd00529c8972243af0759561e82ca73aaac00ee7c62dba34b600c3",
+      "version": "nirvana 0.1.0 git=3c07bedc8cb8104234bb5bf3d33455ee29c7ea89 source_dirty=false"
+    },
+    "candidate_probe": {
+      "sha256": "d836d438d3aeec82eb35f1f9ca7a926be2bca0db6af118da9082458839f4aacb",
+      "version": "nirvana 0.1.0 git=a8edbd4bc9b8d870433213e4fe86dc0f7ad79159 source_dirty=false"
+    },
+    "decompiler": {
+      "sha256": "9cd4c0c799be685018a597eeff724cb9f5b227aaff4f150c350dbf8959e3d70a",
+      "version": "nirvana 0.1.0 git=a8edbd4bc9b8d870433213e4fe86dc0f7ad79159 source_dirty=false"
+    }
+  },
+  "toolchain": {
+    "gcc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "clang18": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "clang_debian_packages": [
+      {
+        "package": "clang-18_1%3a18.1.3-1ubuntu1_amd64.deb",
+        "sha256": "628b16701014ef7ad648380b20ea74b90dd543857f933b3e34d2fc042783de25"
+      },
+      {
+        "package": "libclang-common-18-dev_1%3a18.1.3-1ubuntu1_amd64.deb",
+        "sha256": "d41631bb752815a8196261d1030c096591c59678c8adfbf2e6a740a691b49e80"
+      },
+      {
+        "package": "libclang-cpp18_1%3a18.1.3-1ubuntu1_amd64.deb",
+        "sha256": "e91eda104813ee0468d145d010a4a4e142401f3f17f9a65596c66d416298d018"
+      },
+      {
+        "package": "libclang1-18_1%3a18.1.3-1ubuntu1_amd64.deb",
+        "sha256": "1ed67106d743ab4f12db2726c5fc11c436c5e1fba613e9f1006bf3fa05cc69bd"
+      },
+      {
+        "package": "libllvm18_1%3a18.1.3-1ubuntu1_amd64.deb",
+        "sha256": "af6197096ce3b89aab86de59f01c1b5feb008b2ae1514a03906c0664edb8b0b1"
+      }
+    ]
+  },
+  "checks": {
+    "rust_probe_tests": 8,
+    "python_tests": 156,
+    "python_skipped": 9,
+    "clippy": "passed",
+    "rustfmt": "passed"
+  },
+  "evidence_storage": "Local managed run; at most 2 retained runs and 512 MiB total. Replay uses retained text/JSON; rebuild the recorded source revisions to regenerate evicted artifacts.",
+  "reproduction": {
+    "reference_probe": "Build examples/evaluation_probe at reference_probe_revision and preserve that executable until comparison completes.",
+    "candidate": "Build nirvana and examples/evaluation_probe at candidate_revision. Use this same nirvana executable for both reports.",
+    "evaluate": [
+      "python3",
+      "tools/evaluate_structure.py",
+      "--cases",
+      "tools/corpora/structure-analysis-v1.json",
+      "--clang",
+      "clang-18",
+      "--compiler",
+      "gcc=cc",
+      "--compiler",
+      "clang18=clang-18",
+      "--optimization",
+      "O2",
+      "--semantic-cases",
+      "8",
+      "--semantic-steps",
+      "4096",
+      "--c-footprint",
+      "--state-memory-sites",
+      "--measure-rss",
+      "--semantic-probe",
+      "PROBE",
+      "--out",
+      "EMPTY_OUTPUT"
+    ],
+    "compare": [
+      "python3",
+      "tools/compare_structure_reports.py",
+      "BEFORE/report.json",
+      "AFTER/report.json"
+    ]
+  },
+  "limits": [
+    "Concrete execution checks cover the recorded inputs and prefix budgets.",
+    "Python replay checks retained shapes, counts and hashes; source-bound SSA validation is performed by the Rust probe.",
+    "memory/saved/semantic stages were not applied in this four-profile corpus; their existing unit tests and historical checkpoints are separate evidence.",
+    "Source variable/type recovery and the full corpus are outside this checkpoint."
+  ]
+}
