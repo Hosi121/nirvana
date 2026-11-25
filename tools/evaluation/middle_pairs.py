@@ -1,20 +1,19 @@
 """Replay MIR memory/saved-value transitions at the original machine state."""
-import hashlib
 import itertools
-import json
 import re
 
 from . import semantic_pairs as pairs
 from .semantics import ProtocolError
+from .state_record_codec import Decoder, EXTRA_FIELDS
 
 MODEL = 'middle-state-pairs-v1'
 
 
-def validate(metadata, entry, evidence, budgets, requested, directory, registers):
+def validate(metadata, entry, evidence, budgets, requested, directory, registers, *, retained=False):
     require = pairs.require
     filename = entry['name'] + '.states.jsonl'
     require(isinstance(metadata, dict) and set(metadata) <= {
-                'model', 'file', 'sha256', 'rows', 'mismatches', 'input_binding'}
+                'model', 'file', 'sha256', 'rows', 'mismatches', 'input_binding'} | EXTRA_FIELDS
             and metadata.get('model') == MODEL and metadata.get('file') == filename,
             'MIR state-pair metadata')
     require(registers == 32 and type(requested) is int and 0 < requested <= 768 and requested % 3 == 0,
@@ -25,6 +24,8 @@ def validate(metadata, entry, evidence, budgets, requested, directory, registers
         header = re.fullmatch(r'entry=(\d+) registers=(\d+)\n', stream.readline(1024))
     require(header is not None and pairs.u64(int(header[1])) and int(header[2]) == registers,
             'MIR input IR header')
+    codec = Decoder(metadata, int(header[2]), retained=retained, max_bytes=pairs.MAX_BYTES,
+                    max_line_bytes=pairs.MAX_LINE_BYTES, object_pairs_hook=pairs.unique_object)
     native = directory / 'native-inputs.txt'
     require(native.stat().st_size <= 32768, 'MIR native input budget')
     try:
@@ -34,16 +35,11 @@ def validate(metadata, entry, evidence, budgets, requested, directory, registers
     require(all(len(words) == 4 and all(map(pairs.u64, words)) for words in vectors), 'MIR native input shape')
     bound = len(vectors) * 3 == requested
     order = iter(itertools.product(range(requested), budgets, entry['comparisons']))
-    digest = hashlib.sha256()
     rows = mismatches = 0
     with path.open('rb') as stream:
         while raw := stream.readline(pairs.MAX_LINE_BYTES + 1):
             require(len(raw) <= pairs.MAX_LINE_BYTES and raw.endswith(b'\n'), 'MIR state-pair row budget')
-            digest.update(raw)
-            try:
-                row = json.loads(raw, object_pairs_hook=pairs.unique_object)
-            except (ValueError, RecursionError) as error:
-                raise ProtocolError('MIR state-pair JSON') from error
+            row = codec.decode(raw)
             require(isinstance(row, dict) and set(row) == {'case', 'budget', 'variant', 'input', 'expected', 'actual'},
                     'MIR state-pair fields')
             key = tuple(row[k] for k in ['case', 'budget', 'variant'])
@@ -72,7 +68,7 @@ def validate(metadata, entry, evidence, budgets, requested, directory, registers
     require(rows == entry['observations']
             and (entry['status'] != 'passed' or rows == requested * len(budgets) * len(entry['comparisons']))
             and (entry['status'] != 'counterexample' or mismatches == 1), 'MIR state-pair count or status')
-    observed = {'model': MODEL, 'file': filename, 'sha256': digest.hexdigest(), 'rows': rows,
+    observed = {'model': MODEL, 'file': filename, **codec.summary(), 'rows': rows,
                 'mismatches': mismatches, 'input_binding': 'native-vectors' if bound else 'stage-profile'}
     require(all(metadata[k] == v and type(metadata[k]) is type(v)
                 for k, v in observed.items() if k in metadata), 'MIR retained state-pair summary')

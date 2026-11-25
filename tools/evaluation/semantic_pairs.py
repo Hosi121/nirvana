@@ -1,10 +1,9 @@
 """Replay concrete selected-Semantic-IR state pairs, with explicit input scope."""
-import hashlib
 import itertools
-import json
 import re
 
 from .semantics import ProtocolError
+from .state_record_codec import Decoder, EXTRA_FIELDS
 
 MODEL = 'selected-semantic-state-pairs-v1'
 FILENAME = 'selected-semantic-states.jsonl'
@@ -57,9 +56,9 @@ def unique_object(pairs):
     return result
 
 
-def validate(metadata, entry, evidence, budgets, requested, directory, machine_registers):
+def validate(metadata, entry, evidence, budgets, requested, directory, machine_registers, *, retained=False):
     require(isinstance(metadata, dict) and set(metadata) <= {
-                'model', 'file', 'sha256', 'rows', 'mismatches', 'input_binding'}
+                'model', 'file', 'sha256', 'rows', 'mismatches', 'input_binding'} | EXTRA_FIELDS
             and metadata.get('model') == MODEL and metadata.get('file') == FILENAME,
             'semantic state-pair model or filename')
     require(machine_registers == 32 and type(requested) is int and 0 < requested <= 768
@@ -70,6 +69,8 @@ def validate(metadata, entry, evidence, budgets, requested, directory, machine_r
         header = re.fullmatch(r'entry=(\d+) registers=(\d+)\n', stream.readline(1024))
     require(header is not None and u64(int(header[1]))
             and int(header[2]) == evidence['source_registers'], 'semantic input IR header')
+    codec = Decoder(metadata, int(header[2]), retained=retained, max_bytes=MAX_BYTES,
+                    max_line_bytes=MAX_LINE_BYTES, object_pairs_hook=unique_object)
     native = directory / 'native-inputs.txt'
     require(native.stat().st_size <= 32768, 'semantic native input budget')
     try:
@@ -80,18 +81,13 @@ def validate(metadata, entry, evidence, budgets, requested, directory, machine_r
     bound = len(vectors) * 3 == requested
     order = iter(itertools.product(range(requested), budgets, [0, MAX_U64]))
     rows = mismatches = 0
-    digest = hashlib.sha256()
     with path.open('rb') as stream:
         while True:
             raw = stream.readline(MAX_LINE_BYTES + 1)
             if not raw:
                 break
             require(len(raw) <= MAX_LINE_BYTES and raw.endswith(b'\n'), 'semantic state-pair row budget')
-            digest.update(raw)
-            try:
-                row = json.loads(raw, object_pairs_hook=unique_object)
-            except (ValueError, RecursionError) as error:
-                raise ProtocolError('semantic state-pair JSON') from error
+            row = codec.decode(raw)
             require(isinstance(row, dict) and set(row) == {'case', 'budget', 'fresh', 'input', 'expected', 'actual'},
                     'semantic state-pair fields')
             key = tuple(row[k] for k in ['case', 'budget', 'fresh'])
@@ -120,7 +116,7 @@ def validate(metadata, entry, evidence, budgets, requested, directory, machine_r
     require(rows == entry['observations']
             and (entry['status'] != 'passed' or rows == requested * len(budgets) * 2)
             and (entry['status'] != 'counterexample' or mismatches == 1), 'semantic state-pair count or status')
-    observed = {'model': MODEL, 'file': FILENAME, 'sha256': digest.hexdigest(), 'rows': rows,
+    observed = {'model': MODEL, 'file': FILENAME, **codec.summary(), 'rows': rows,
                 'mismatches': mismatches, 'input_binding': 'native-vectors' if bound else 'stage-profile'}
     require(all(metadata[k] == v and type(metadata[k]) is type(v)
                 for k, v in observed.items() if k in metadata), 'semantic state-pair retained summary')

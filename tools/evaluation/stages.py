@@ -94,7 +94,7 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
                     require(evidence.get(field + '_sha256', digest) == digest, 'MIR transition artifact hash')
                     evidence[field + '_sha256'] = digest
                 evidence['state_pairs'] = middle_pairs.validate(evidence['state_pairs'], entry, evidence,
-                    budgets, requested_cases, directory, original_registers)
+                    budgets, requested_cases, directory, original_registers, retained=retained)
         if entry['name'] == 'selected_semantic':
             evidence = entry['semantic']
             require((status not in ['passed', 'counterexample'] or evidence is not None)
@@ -125,7 +125,7 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
                     evidence[field + '_sha256'] = digest
                 if 'state_pairs' in evidence:
                     evidence['state_pairs'] = semantic_pairs.validate(evidence['state_pairs'], entry, evidence,
-                        budgets, requested_cases, directory, original_registers)
+                        budgets, requested_cases, directory, original_registers, retained=retained)
         witness = entry['witness']
         if witness is not None:
             require(isinstance(witness, str) and witness == entry['name'] + '.witness.txt', 'stage witness name')

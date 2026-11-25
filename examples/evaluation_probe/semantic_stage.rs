@@ -13,7 +13,7 @@ pub(super) struct Stage {
     lowering: Option<Arc<Lowering>>,
     observations: usize,
     failure: Option<String>,
-    records: String,
+    records: records::Buffer,
 }
 impl Stage {
     pub fn new(machine: &Program, lowering: Option<Arc<Lowering>>) -> Self {
@@ -22,7 +22,7 @@ impl Stage {
             lowering,
             observations: 0,
             failure: None,
-            records: String::new(),
+            records: records::Buffer::default(),
         };
         if let Some(lowering) = &stage.lowering {
             if lowering.source().register_count() >= machine.register_count() && lowering.validate()
@@ -56,16 +56,13 @@ impl Stage {
             self.failure = Some("Semantic observer requires flat guest memory\n".into());
             return;
         };
-        if record.len() > records::MAX_LINE_BYTES
-            || self.records.len().saturating_add(record.len()) > records::MAX_BYTES
-        {
+        if !self.records.push(record) {
             self.status = "budget_exhausted";
             self.failure = Some(
                 "Semantic state-pair record budget exceeded (4 MiB/row, 128 MiB/file)\n".into(),
             );
             return;
         }
-        self.records.push_str(&record);
         self.observations += 1;
         if actual != expected {
             self.status = "counterexample";
@@ -115,7 +112,7 @@ impl Stage {
             "null"
         };
         let semantic = if let Some(lowering) = &self.lowering {
-            std::fs::write(out.join(records::FILE), &self.records)?;
+            std::fs::write(out.join(records::FILE), self.records.as_str())?;
             for (name, program) in [
                 ("selected-semantic-input.ir.txt", lowering.source()),
                 ("selected-semantic-lowered.ir.txt", lowering.program()),
@@ -132,14 +129,16 @@ impl Stage {
             }
             let e = lowering.evidence();
             format!(
-                "{{\"model\":\"selected-semantic-input-state-v1\",\"source_registers\":{},\"lowered_registers\":{},\"fresh_initializers\":[0,{}],\"inputs\":{},\"divisions\":{},\"remainders\":{},\"replaced_subtrees\":{},\"input_ir\":\"selected-semantic-input.ir.txt\",\"lowered_ir\":\"selected-semantic-lowered.ir.txt\",\"state_pairs\":{{\"model\":\"selected-semantic-state-pairs-v1\",\"file\":\"selected-semantic-states.jsonl\"}}}}",
+                "{{\"model\":\"selected-semantic-input-state-v1\",\"source_registers\":{},\"lowered_registers\":{},\"fresh_initializers\":[0,{}],\"inputs\":{},\"divisions\":{},\"remainders\":{},\"replaced_subtrees\":{},\"input_ir\":\"selected-semantic-input.ir.txt\",\"lowered_ir\":\"selected-semantic-lowered.ir.txt\",\"state_pairs\":{{\"model\":\"selected-semantic-state-pairs-v1\",\"file\":\"selected-semantic-states.jsonl\",\"encoding\":\"{}\",\"decoded_bytes\":{}}}}}",
                 lowering.source().register_count(),
                 lowering.program().register_count(),
                 u64::MAX,
                 e.inputs,
                 e.divisions,
                 e.remainders,
-                e.replaced_subtrees
+                e.replaced_subtrees,
+                records::ENCODING,
+                self.records.decoded_bytes()
             )
         } else {
             "null".into()
@@ -288,5 +287,22 @@ mod tests {
                 .unwrap()
                 .contains(&format!("fresh_initial={}", u64::MAX))
         );
+    }
+
+    #[test]
+    fn compressible_oversize_registers_keep_budget_status_and_no_observation() {
+        let source = source();
+        let mut stage = Stage::new(&source, Some(lowering(&source)));
+        let input = [0, super::super::super::BASE];
+        let mut expected = source
+            .run_with_memory(&input, super::super::super::BASE, &[0; 8], 2)
+            .unwrap();
+        expected.state.registers = vec![u64::MAX; records::MAX_LINE_BYTES / 40];
+        stage.record(&Ok(expected.clone()), &Ok(expected), &input, 0, 2, 0);
+        assert_eq!(stage.status, "budget_exhausted");
+        assert_eq!(stage.observations, 0);
+        assert!(stage.records.as_str().is_empty());
+        assert_eq!(stage.records.decoded_bytes(), 0);
+        assert!(stage.failure.unwrap().contains("record budget exceeded"));
     }
 }

@@ -25,7 +25,7 @@ pub(super) struct Stage {
     transition: Option<Transition>,
     observations: usize,
     failure: Option<String>,
-    records: String,
+    records: records::Buffer,
     middle_text: Option<String>,
 }
 impl Stage {
@@ -117,7 +117,7 @@ impl Stage {
             transition,
             failure,
             observations: 0,
-            records: String::new(),
+            records: records::Buffer::default(),
             middle_text,
         }
     }
@@ -164,14 +164,11 @@ impl Stage {
                 self.failure = Some("MIR observer requires flat memory".into());
                 return;
             };
-            if record.len() > records::MAX_LINE_BYTES
-                || self.records.len().saturating_add(record.len()) > records::MAX_BYTES
-            {
+            if !self.records.push(record) {
                 self.status = "budget_exhausted";
                 self.failure = Some("MIR state-pair record budget exceeded".into());
                 return;
             }
-            self.records.push_str(&record);
         }
         self.observations += 1;
         if actual != *expected {
@@ -263,7 +260,7 @@ impl Stage {
                 )?;
                 std::fs::write(
                     out.join(format!("{}.states.jsonl", self.name)),
-                    &self.records,
+                    self.records.as_str(),
                 )?;
                 let facts = match evidence {
                     Evidence::Memory(e) => format!(
@@ -284,13 +281,15 @@ impl Stage {
                     ),
                 };
                 format!(
-                    "{{\"model\":\"middle-memory-transition-v1\",\"source_registers\":{},\"lowered_registers\":{},\"input_ir\":\"{}.input.ir.txt\",\"lowered_ir\":\"{}.lowered.ir.txt\",\"middle_ir\":\"{}.mir.txt\",\"facts\":{facts},\"state_pairs\":{{\"model\":\"middle-state-pairs-v1\",\"file\":\"{}.states.jsonl\"}}}}",
+                    "{{\"model\":\"middle-memory-transition-v1\",\"source_registers\":{},\"lowered_registers\":{},\"input_ir\":\"{}.input.ir.txt\",\"lowered_ir\":\"{}.lowered.ir.txt\",\"middle_ir\":\"{}.mir.txt\",\"facts\":{facts},\"state_pairs\":{{\"model\":\"middle-state-pairs-v1\",\"file\":\"{}.states.jsonl\",\"encoding\":\"{}\",\"decoded_bytes\":{}}}}}",
                     t.input.register_count(),
                     low.register_count(),
                     self.name,
                     self.name,
                     self.name,
-                    self.name
+                    self.name,
+                    records::ENCODING,
+                    self.records.decoded_bytes()
                 )
             }
             None => "null".into(),
@@ -422,6 +421,107 @@ mod tests {
         actual.state.registers[0] ^= 1;
         stage.record("lowered", Ok(actual), &expected, &input, 4, 0);
         assert_eq!(stage.status, "counterexample");
+        assert!(stage.records.as_str().contains("{\"rle\":["));
         assert!(stage.failure.unwrap().contains("lowered"));
+    }
+
+    #[test]
+    #[ignore = "requires an empty NIRVANA_STATE_CODEC_ORACLE_OUT directory"]
+    fn export_middle_state_codec_oracle() {
+        use nirvana::ir::{AccessKind, RunStatus};
+
+        // Deliberately keep the original dense formatter in this test. The
+        // oracle must not use either the new writer or the Python decoder.
+        fn dense_snapshot(report: &RunReport) -> String {
+            assert!(report.state.memory_layout.is_none());
+            let status = match report.status {
+                RunStatus::Returned(value) => [0, value, 0, 0],
+                RunStatus::Suspended => [2, 0, 0, 0],
+                RunStatus::Fault(ref fault) => [
+                    1,
+                    fault.address,
+                    if fault.access == AccessKind::Read {
+                        1
+                    } else {
+                        2
+                    },
+                    fault.width.bytes() as u64,
+                ],
+            };
+            let pc = report
+                .state
+                .instruction
+                .map_or("null".into(), |pc| pc.to_string());
+            format!(
+                "{{\"status\":{status:?},\"registers\":{:?},\"memory_base\":{},\"memory\":{:?},\"instruction\":{pc},\"trace\":{:?}}}",
+                report.state.registers,
+                report.state.memory_base,
+                report.state.memory,
+                report.state.trace
+            )
+        }
+
+        let directory = std::path::PathBuf::from(
+            std::env::var_os("NIRVANA_STATE_CODEC_ORACLE_OUT")
+                .expect("set NIRVANA_STATE_CODEC_ORACLE_OUT to an empty directory"),
+        );
+        std::fs::create_dir_all(&directory).unwrap();
+        assert!(
+            std::fs::read_dir(&directory).unwrap().next().is_none(),
+            "oracle output directory must be empty"
+        );
+        let base = super::super::super::BASE;
+        assert_eq!(base, 4096);
+        let mut output_bytes = 0;
+        for saved in [false, true] {
+            let source = fixture(saved);
+            let middle = Function::from_low(&source).unwrap();
+            let mut stage = if saved {
+                Stage::saved(&middle)
+            } else {
+                Stage::memory(&middle)
+            };
+            assert_eq!(stage.status, "passed", "{:?}", stage.failure);
+            let out = directory.join(stage.name);
+            std::fs::create_dir(&out).unwrap();
+            std::fs::write(out.join("native-inputs.txt"), "1 2 3 4\n").unwrap();
+            let mut dense = String::new();
+            for (case, pointer) in [4224, 4592, u64::MAX].into_iter().enumerate() {
+                let mut input = vec![0; 32];
+                input[4] = 4600;
+                input[7] = pointer;
+                let mut ram: Vec<u8> = (0..512)
+                    .map(|index| ((index * 29 + 7) & 255) as u8)
+                    .collect();
+                for (index, word) in [1u64, 2, 3, 4].into_iter().enumerate() {
+                    if let Some(address) = pointer.checked_add(index as u64 * 8)
+                        && (base..=base + 512 - 8).contains(&address)
+                    {
+                        let offset = (address - base) as usize;
+                        ram[offset..offset + 8].copy_from_slice(&word.to_le_bytes());
+                    }
+                }
+                for budget in 0..=4 {
+                    let expected = source.run_with_memory(&input, base, &ram, budget).unwrap();
+                    stage.check(&input, &ram, budget, case, &expected);
+                    assert_eq!(stage.status, "passed", "{:?}", stage.failure);
+                    let snapshot = dense_snapshot(&expected);
+                    for variant in stage.comparisons() {
+                        dense.push_str(&format!(
+                            "{{\"case\":{case},\"budget\":{budget},\"variant\":\"{variant}\",\"input\":{input:?},\"expected\":{snapshot},\"actual\":{snapshot}}}\n"
+                        ));
+                    }
+                }
+            }
+            assert_eq!(stage.observations, if saved { 45 } else { 30 });
+            assert_eq!(stage.records.decoded_bytes(), dense.len());
+            assert!(stage.records.as_str().len() < dense.len());
+            std::fs::write(out.join("dense-oracle.jsonl"), dense).unwrap();
+            std::fs::write(out.join("stage.json"), stage.json(&out).unwrap()).unwrap();
+            for entry in std::fs::read_dir(&out).unwrap() {
+                output_bytes += entry.unwrap().metadata().unwrap().len();
+            }
+        }
+        assert!(output_bytes < 1024 * 1024);
     }
 }
