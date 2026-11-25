@@ -44,6 +44,8 @@ mod x86_movs;
 mod x86_mul;
 #[path = "binary/x86_rotate.rs"]
 mod x86_rotate;
+#[path = "binary/x86_shift_cf.rs"]
+mod x86_shift_cf;
 #[path = "binary/x86_strings.rs"]
 mod x86_strings;
 #[path = "binary/x86_tls.rs"]

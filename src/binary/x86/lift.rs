@@ -223,6 +223,10 @@ fn flag_effect(operation: Operation) -> (u8, u8, u8) {
                         )
                     }
                 }
+                // Masked 32/64-bit counts stay below the operand width: a
+                // nonzero count defines CF, while zero preserves its input.
+                // Keep incoming availability, including an unavailable input.
+                _ if matches!(width, Width::U32 | Width::U64) => (0, 0, F_OF),
                 _ => (0, 0, F_CF | F_OF),
             }
         }
