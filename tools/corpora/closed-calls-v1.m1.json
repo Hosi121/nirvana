@@ -1,0 +1,154 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Independent source checks for closed-call register footprints and protected return slots",
+  "reference_revision": "a8edbd4bc9b8d870433213e4fe86dc0f7ad79159",
+  "candidate_revision": "12478b86e3d6190c3aaab7e723b77bbab658acfa",
+  "profile": {
+    "input": {
+      "file": "target/runs/run-ejukteea/out/contracts.elf",
+      "sha256": "96c9bbc3105497d18611a9433b716f5fc6a462cb5c7298b9ab517cf2d5a4c914"
+    },
+    "source": {
+      "file": "target/runs/run-ejukteea/out/contracts.S",
+      "sha256": "60a2eeebc6e17cfc76ea90e5333015d159b771fb7e1c8620eb3017201d6caf42"
+    },
+    "source_definition": {
+      "file": "tests/dataflow/call_footprint.rs",
+      "constant": "SOURCE"
+    },
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "compiler_flags": [
+      "-no-pie",
+      "-fno-pie"
+    ],
+    "imports": "opaque fallback",
+    "instruction_set": "x86-64",
+    "compiler_sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+    "linker": "GNU ld (GNU Binutils for Ubuntu) 2.42"
+  },
+  "observations": {
+    "functions_analyzed": 27,
+    "closed_summaries": 9,
+    "source_check": {
+      "model": "nirvana-closed-call-contract-v1",
+      "scope": "finite-successful-calls",
+      "status": "checked",
+      "functions": 27,
+      "closed_functions": 9,
+      "reachable_instructions": 25,
+      "call_edges": 4
+    },
+    "unchanged_function_analyses": 27,
+    "unchanged_c_emissions": [
+      "module-readable-c",
+      "module-locals-c"
+    ],
+    "source_checker_rejected_candidates": {
+      "summary_members": 12,
+      "return_slot_and_call_obligations": 15,
+      "entry_and_unknown_results": 3,
+      "recursive_tail_effects": 2
+    }
+  },
+  "execution_checks": {
+    "source": "tests/model/call_preservation.rs",
+    "completed_calls": 576,
+    "unread_register_perturbations": ">200",
+    "scope": "Separate linked assembly fixture: preserved registers, return slot, full RAM and other-register noninterference"
+  },
+  "tests": {
+    "rust_targets": 25,
+    "rust_passed": 1455,
+    "rust_ignored": 57,
+    "python_passed": 118,
+    "python_skipped": 14,
+    "contract_unit_and_integration_tests": 12,
+    "clippy": "passed",
+    "rustfmt": "passed",
+    "python_tests": 132
+  },
+  "artifacts": {
+    "before-tools.json": {
+      "file": "target/runs/run-ejukteea/out/before-tools.json",
+      "sha256": "b004c25a73a9e1bec83a896d5c27daf55ec1533ebb2e762dee7f2ed3b5fb304b"
+    },
+    "before.json": {
+      "file": "target/runs/run-ejukteea/out/before.json",
+      "sha256": "114a074f32d0d16e5ed4b1b7d51b07f00c340547e1ab9b0b6bdc7dfaa2e6e3d1"
+    },
+    "after.json": {
+      "file": "target/runs/run-ejukteea/out/after.json",
+      "sha256": "8ab14cdcc58c8a69916327e8cd82e69e628d386fbd00d22861d8fbef90cc7bff"
+    },
+    "comparison.json": {
+      "file": "target/runs/run-ejukteea/out/comparison.json",
+      "sha256": "4d10007c4aa94ff3bee2be1e1454ffea741d793acd223d2dcb4d2a43ec2dbb64"
+    },
+    "before-module-readable-c.c": {
+      "file": "target/runs/run-ejukteea/out/before-module-readable-c.c",
+      "sha256": "d819c874f9d7365746bfe6dc3074ca395bc4a90a7cb4000132f6d1ec66cf567f"
+    },
+    "after-module-readable-c.c": {
+      "file": "target/runs/run-ejukteea/out/after-module-readable-c.c",
+      "sha256": "d819c874f9d7365746bfe6dc3074ca395bc4a90a7cb4000132f6d1ec66cf567f"
+    },
+    "before-module-locals-c.c": {
+      "file": "target/runs/run-ejukteea/out/before-module-locals-c.c",
+      "sha256": "067e41602d69a13fa9c56c76c681bf72ab7ddeadc406103901f340efade06206"
+    },
+    "after-module-locals-c.c": {
+      "file": "target/runs/run-ejukteea/out/after-module-locals-c.c",
+      "sha256": "067e41602d69a13fa9c56c76c681bf72ab7ddeadc406103901f340efade06206"
+    },
+    "rust-tests.log": {
+      "file": "target/runs/run-ejukteea/out/rust-tests.log",
+      "sha256": "3b16a93b81e9194d6ff928a6ec752f81fb924515b83e67e5e5ea7b1a185f4794"
+    },
+    "contract-tests.log": {
+      "file": "target/runs/run-ejukteea/out/contract-tests.log",
+      "sha256": "d79ffd4758a2997bda6ef33920a4c2b4133e086cb171b419969ea89c1bc7ddcc"
+    },
+    "python-tests.log": {
+      "file": "target/runs/run-ejukteea/out/python-tests.log",
+      "sha256": "3276a3e64bfc27b5de547b8e09bf8cf4bfbc27d6ea213cfc88816a5fe954e097"
+    },
+    "clippy.log": {
+      "file": "target/runs/run-ejukteea/out/clippy.log",
+      "sha256": "d5bf19e854fd86d72880a92be091e5a21115f8d7fc57fecfc1c4d8bd5b1758b1"
+    }
+  },
+  "binaries": {
+    "before": {
+      "version": "nirvana 0.1.0 git=a8edbd4bc9b8d870433213e4fe86dc0f7ad79159 source_dirty=false",
+      "decompiler_sha256": "9cd4c0c799be685018a597eeff724cb9f5b227aaff4f150c350dbf8959e3d70a",
+      "input_sha256": "96c9bbc3105497d18611a9433b716f5fc6a462cb5c7298b9ab517cf2d5a4c914",
+      "source_sha256": "60a2eeebc6e17cfc76ea90e5333015d159b771fb7e1c8620eb3017201d6caf42"
+    },
+    "after": {
+      "version": "nirvana 0.1.0 git=12478b86e3d6190c3aaab7e723b77bbab658acfa source_dirty=false",
+      "sha256": "c9237c9ef12eea99acf79260e4ee084a768f3641ab36fd9fb0c14908ebc5a247"
+    }
+  },
+  "trusted_components": [
+    "Validated module IR layout",
+    "StackAnalysis affine transfer and merge over independently projected source instructions"
+  ],
+  "reproduction": {
+    "source": "Extract the SOURCE raw string from tests/dataflow/call_footprint.rs and compile with the recorded compiler flags.",
+    "compare": "Run both recorded Nirvana revisions on that same ELF with --emit module-values, module-readable-c and module-locals-c. Remove the candidate call_verification field before comparing the complete JSON payloads.",
+    "checks": [
+      "python3 tools/dev.py cargo test --locked --all-targets",
+      "python3 tools/dev.py cargo clippy --locked --all-targets -- -D warnings",
+      "python3 -m unittest discover -s tools/tests"
+    ]
+  },
+  "evidence_storage": "Local managed run; at most 2 retained runs and 512 MiB total. Rebuild recorded source revisions to regenerate evicted artifacts.",
+  "limits": [
+    "Contracts cover finite successful calls and entry-reachable normal continuations.",
+    "General call memory effects remain opaque; the protected RAM fact is the entry return slot.",
+    "Recursive register equations may certify a sound solution above the least fixed point.",
+    "The source checker shares StackAnalysis, syntax guards and IR layout validation with other analyses."
+  ]
+}

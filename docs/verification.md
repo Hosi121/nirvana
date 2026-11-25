@@ -70,6 +70,8 @@ Cの型幅と描画は再コンパイル後の実行で確認します。
 [moduleの投影検査](../src/dataflow/module_values/memory_verify.rs)は、元命令・解析イベント・opaque効果・出力レジスタの対応を検査します。対照ではCALL/REPの効果の削除・位相の変更・誤った読取り・閉じた呼出しの出力差を拒否します。DIVの未知出力を定数placeholderとして使う候補も拒否し、MemorySSAの記号アドレスへ数値の事実が混入する経路を検査します。
 
 [閉じた呼出しの検査](../src/dataflow/call_footprint/verify.rs)は、要約を使う前に元moduleの正常継続経路と照合します。[改変対照](../tests/dataflow/call_footprint.rs)ではread・clobber・calleeの欠落、戻り先を壊すStore、RSPを変える入口backedge、DIV/call後の古いアドレス、再帰calleeの効果の脱落を拒否します。書込みの検査は同一命令内の代入順とvectorの全幅を保ちます。正常復帰後の保存値と未読レジスタの非干渉は、[実際のmodule実行](../tests/model/call_preservation.rs)でも比較します。検査器はスタック関係を`StackAnalysis`に依存し、有限の正常復帰を適用条件とします。
+
+[M1の部分checkpoint](../tools/corpora/closed-calls-v1.m1.json)には、同じ27関数のELFでの解析・C出力の比較、9個の閉じた要約の検査件数、改変対照と実行テスト、source版と成果物hashを記録しています。生データは容量管理付きの短期保存です。
 [保存値の同一性](../tests/model/middle_ir/saved.rs)は、共通の保存値fixtureを使い、コピー・部分抽出・φ・ループ・上書きとsnapshotの初期化を検査します。通常のMIRは全状態を直接比較し、保存値を展開したLow IRは追加レジスタを除いて比較します。異なるφ入力、偽のslice、古いsnapshot、根拠を欠くreadを拒否し、[同じC比較](../tests/codegen/byte_values_backend.rs)で元の出力・保存値展開・候補選択を照合します。
 [snapshot統合の対照](../src/dataflow/memory_values/roots/tests.rs)は、bit境界、循環、偽のSSA事実、入れ子の根拠、入力変更を検査します。誤ったoffsetは拒否した上で、生成された候補が異なる返り値を出す反例も実行します。
 [経路条件の対照](../src/dataflow/predicates/tests.rs)は、全流入辺の主張、異なるLoad・φ入力・再定義、booleanと一般のwordに対するXORを検査します。誤った分岐先は拒否した上で具体実行の差も確認します。元IR・変換後IR・再構築したMiddle IRの入口実行を、全レジスタ・RAM・fault・PC・予算について比較します。純粋式の値番号付けとscalar演算は検査器の共有する信頼基盤です。
