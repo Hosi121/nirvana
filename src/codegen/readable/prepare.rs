@@ -7,7 +7,7 @@ use crate::dataflow::value_width::ValueWidths;
 use crate::model::ir::{Assignment, BinaryOp, Control, Expr, Place, Program, Reg, Width};
 use crate::transform::reduce::ReductionError;
 
-use super::{WebRecovery, structure_recovery, webs};
+use super::{WebRecovery, webs};
 
 #[derive(Clone, Copy)]
 pub(super) enum MemoryRecovery {
@@ -61,7 +61,7 @@ fn checked_display<E>(
     if !crate::transform::display_dce::validate(&expanded, &candidate) {
         return None;
     }
-    let structure = structure_recovery::recover(&candidate);
+    let structure = StructuredFunction::recover(&candidate);
     if structured_before && structure.is_err() {
         return None;
     }
@@ -129,7 +129,7 @@ fn prepare_selected(
     // Each paired rewrite has its own correspondence evidence. Recover a
     // fresh tree from that same program, while retaining the source certificate.
     let structure = if masked.is_some() {
-        structure_recovery::recover(input)
+        StructuredFunction::recover(input)
     } else {
         selected.structure
     };

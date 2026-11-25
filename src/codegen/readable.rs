@@ -33,7 +33,6 @@ mod pipeline;
 mod prepare;
 mod printer;
 mod signed_locals;
-mod structure_recovery;
 mod syntax;
 mod views;
 mod webs;
