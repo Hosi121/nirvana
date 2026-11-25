@@ -11,7 +11,8 @@ from pathlib import Path
 from . import control_graph as cg, semantics, stages, c_footprint as cf
 from . import state_memory as sm
 from .state_values import protocol as sv
-from . import build_identity
+from . import build_identity, analysis_checks
+from .semantic_pairs import unique_object
 
 
 class Incompatible(ValueError):
@@ -35,6 +36,15 @@ def hashed(path, expected):
     return path
 
 
+def architecture_shape(value):
+    require(isinstance(value, dict), 'architecture record shape')
+    if 'schema' not in value:
+        require(set(value) <= {'status', 'reason'}
+                and value.get('status') in ['not_run', 'evaluator_error'],
+                'unversioned architecture record cannot claim checked evidence')
+    return value
+
+
 def index(report):
     require(report['schema'] == 'nirvana-structure-report-v1', 'report schema')
     require(report['metric'] == cg.METRIC, 'metric version')
@@ -49,7 +59,10 @@ def index(report):
     require(bool(rows), 'empty report')
     require(dict(Counter(row['cohort'] for row in rows)) == report['summary']['cohorts'],
             'cohort denominator')
-    memory_stages = any(row.get('stage_checks', {}).get('schema') == 'nirvana-evaluation-stages-v3'
+    for row in rows:
+        architecture_shape(row.get('stage_checks', {'status': 'not_run'}))
+    memory_stages = any(row.get('stage_checks', {}).get('schema') in
+                        ['nirvana-evaluation-stages-v3', 'nirvana-evaluation-stages-v4']
                         for row in rows)
     require(not memory_stages or 'architecture_execution' in report['summary'],
             'missing architecture execution denominator')
@@ -61,6 +74,18 @@ def index(report):
                 and observed == stages.execution_summary(rows, names=observed)
                 and all(type(n) is int for counts in observed.values() for n in counts.values()),
                 'architecture execution denominator')
+    analysis_stages = [row for row in rows
+                       if row.get('stage_checks', {}).get('schema') == 'nirvana-evaluation-stages-v4']
+    require(not analysis_stages or 'architecture_analysis' in report['summary'],
+            'missing architecture analysis denominator')
+    if 'architecture_analysis' in report['summary']:
+        observed = report['summary']['architecture_analysis']
+        require(isinstance(observed, dict) and set(observed) == set(analysis_checks.NAMES)
+                and observed == analysis_checks.summary(rows)
+                and all(type(n) is int for counts in observed.values() for n in counts.values()),
+                'architecture analysis denominator')
+    require(all('prepare_stdout_sha256' in row['semantics'] for row in analysis_stages),
+            'analysis checks require retained probe metadata')
     binding = report['evaluation'].get('probe_metadata')
     require(binding in [None, 'hashed-probe-json-v1'], 'probe metadata profile')
     if binding is not None:
@@ -120,6 +145,8 @@ def replay(root, row):
         require(cg.mapping_cost(*graphs, dict(pairs)) == hi, 'mapping witness cost')
         result['mapping_cost'] = hi
     semantic = row['semantics']
+    require('prepare_stdout_sha256' not in semantic or isinstance(semantic.get('profile'), dict),
+            'retained probe metadata requires a semantic profile')
     footprint = row.get('c_footprint', {'status': 'not_run'})
     for side, function in [('source', row['function']), ('generated', 'nirvana_readable')]:
         observed = footprint.get(side, {})
@@ -131,11 +158,15 @@ def replay(root, row):
         require(footprint['source']['status'] == footprint['generated']['status'] == 'measured', 'C footprint coverage')
         require(cf.delta(footprint['source'], footprint['generated']) == footprint['source_generated_delta'], 'C footprint delta')
     result['c_footprint'] = footprint['status']
-    architecture = row.get('stage_checks', {'status': 'not_run'})
+    architecture = architecture_shape(row.get('stage_checks', {'status': 'not_run'}))
     if 'schema' in architecture:
+        require(architecture['schema'] != 'nirvana-evaluation-stages-v4'
+                or 'prepare_stdout_sha256' in semantic, 'analysis checks require retained probe metadata')
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
-                        semantic['profile']['requested_cases'], semantic['profile'].get('register_count'))
+                        semantic['profile']['requested_cases'], semantic['profile'].get('register_count'), retained=True)
     result['architecture'] = architecture['status']
+    result['architecture_analysis'] = {name: next((e['status'] for e in architecture.get('analysis_checks', [])
+                                                  if e['name'] == name), 'not_run') for name in analysis_checks.NAMES}
     selected = next((e for e in architecture.get('execution', []) if e['name'] == 'selected_semantic'), {})
     state_pairs = (selected.get('semantic') or {}).get('state_pairs')
     if state_pairs:
@@ -169,7 +200,7 @@ def replay(root, row):
         result['probe_metadata'] = 'legacy_unbound'
         if 'prepare_stdout_sha256' in semantic:
             raw = hashed(directory / 'semantic_prepare.stdout.txt', semantic['prepare_stdout_sha256'])
-            prepared = json.loads(raw.read_text())
+            prepared = json.loads(raw.read_text(), object_pairs_hook=unique_object)
             require(isinstance(prepared, dict), 'semantic prepare JSON shape')
             recorded_stages = prepared.pop('stage_checks', None)
             require(prepared == profile, 'semantic profile differs from retained probe JSON')
@@ -324,6 +355,12 @@ def compare(before_path, after_path):
             require(old_stages['prefix_budgets'] == new_stages['prefix_budgets'],
                     f'{key}: changed architecture prefix budgets')
         lost_checks = sorted(old_checked - new_checked)
+        old_analysis = {e['name']: e for e in old_stages.get('analysis_checks', [])}
+        new_analysis = {e['name']: e for e in new_stages.get('analysis_checks', [])}
+        lost_analysis = sorted(name for name, entry in old_analysis.items()
+                               if name not in new_analysis or entry['status'] == 'passed'
+                               and new_analysis[name]['status'] != 'passed')
+        lost_checks.extend(lost_analysis)
         if ar['semantic_state_pairs'] == 'replayed' and br['semantic_state_pairs'] != 'replayed':
             lost_checks.append('selected_semantic.state_pairs')
         rows.append({'id': key, 'cohort': a['cohort'],
@@ -341,6 +378,8 @@ def compare(before_path, after_path):
                      'before_semantics': sa['status'], 'after_semantics': sb['status'],
                      'structure_regression': a['structure_status'] == 'measured' and b['structure_status'] != 'measured',
                      'architecture_checks_lost': lost_checks,
+                     'analysis_checks_lost': lost_analysis,
+                     'analysis_regression': bool(lost_analysis),
                      'architecture_regression': bool(lost_checks) or ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
                      'before_replay': ar, 'after_replay': br})
@@ -358,6 +397,7 @@ def compare(before_path, after_path):
             'structure_regressions': sum(row['structure_regression'] for row in rows),
             'candidate_semantics': dict(Counter(row['after_semantics'] for row in rows)),
             'architecture_regressions': sum(row['architecture_regression'] for row in rows),
+            'analysis_regressions': sum(row['analysis_regression'] for row in rows),
             'c_footprint_regressions': sum(row['c_footprint_regression'] for row in rows),
             'state_memory_regressions': sum(row['state_memory_regression'] for row in rows),
             'state_value_regressions': sum(row['state_value_regression'] for row in rows),
@@ -365,6 +405,7 @@ def compare(before_path, after_path):
             'candidate_state_values': dict(Counter(row['after_replay']['state_values'] for row in rows)),
             'candidate_architecture': dict(Counter(row['after_replay']['architecture'] for row in rows)),
             'candidate_execution': stages.execution_summary(after['rows']),
+            'candidate_analysis': analysis_checks.summary(after['rows']),
             'candidate_semantic_state_pairs': dict(Counter(row['after_replay']['semantic_state_pairs'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',

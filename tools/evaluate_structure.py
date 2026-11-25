@@ -25,6 +25,7 @@ import traceback
 from evaluation import control_graph as cg
 from evaluation import semantics
 from evaluation import stages
+from evaluation import analysis_checks
 from evaluation import c_footprint as cf
 from evaluation import state_memory as sm
 from evaluation.state_values import protocol as sv
@@ -347,6 +348,7 @@ def run(args):
               'budgets': {'command_seconds': args.timeout, 'search_seconds': args.search_seconds, 'search_states': args.max_states},
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
     report['decompiler']['build'] = build_identity.parse(report['decompiler'])
+    report['evaluation']['analysis_checks_sha256'] = digest(analysis_checks.__file__)
     report['evaluation']['build_identity_sha256'] = digest(build_identity.__file__)
     report['emission'] = args.emit
     if args.semantic_probe:
@@ -408,6 +410,7 @@ def run(args):
                            'counts': dict(Counter(r['semantics']['status'] for r in report['rows']))}
     report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
     report['summary']['architecture_execution'] = stages.execution_summary(report['rows'])
+    report['summary']['architecture_analysis'] = analysis_checks.summary(report['rows'])
     report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
     report['summary']['state_memory_sites'] = dict(Counter(r['state_memory_sites']['status'] for r in report['rows']))
     report['summary']['state_values'] = dict(Counter(r['state_values']['status'] for r in report['rows']))

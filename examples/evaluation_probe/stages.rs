@@ -10,6 +10,8 @@ use std::collections::BTreeSet;
 #[path = "semantic_stage.rs"]
 mod semantic;
 
+#[path = "analysis_stage.rs"]
+mod analysis;
 #[path = "middle_stage.rs"]
 mod middle;
 #[path = "semantic_records.rs"]
@@ -19,6 +21,7 @@ use middle::Stage;
 pub(super) struct Stages {
     stages: Vec<Stage>,
     semantic: semantic::Stage,
+    analysis: analysis::Stage,
     original_registers: usize,
     budgets: Vec<usize>,
     transfers: BTreeSet<(u64, u64)>,
@@ -92,6 +95,7 @@ impl Stages {
         Self {
             stages,
             semantic: semantic::Stage::new(source, output.semantic_lowering.clone()),
+            analysis: analysis::Stage::new(source),
             original_registers: source.register_count(),
             budgets,
             transfers,
@@ -150,6 +154,7 @@ impl Stages {
             stages.push(stage.json(out)?);
         }
         stages.push(self.semantic.json(out)?);
+        let analysis_checks = self.analysis.json(out)?;
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
         let continuations = output.continuations.map_or("null".into(), |e| {
             let order = e.store_order.map_or(String::new(), |o| format!(
@@ -173,6 +178,7 @@ impl Stages {
             .iter()
             .map(|s| s.status)
             .chain(std::iter::once(self.semantic.status))
+            .chain(self.analysis.statuses())
             .collect();
         let status = if statuses.contains(&"counterexample") {
             "counterexample"
@@ -194,7 +200,7 @@ impl Stages {
             .join(",");
         let parameter_registers: Vec<_> = output.parameters.iter().map(|reg| reg.0).collect();
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v3\",\"contract\":\"nirvana-stage-input-state-v3\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v4\",\"contract\":\"nirvana-stage-input-state-v4\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
             self.original_registers,
             self.budgets,
             stages.join(","),

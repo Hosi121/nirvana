@@ -73,6 +73,8 @@ NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
 
 `state_pairs`は、各ケース・予算・初期値で比較した全状態をJSON Linesへ保存します。再検査器はレジスタ・全RAM・返り値/fault・PC・traceを比較し、件数・順序・幅・初期状態を確認します。nativeの入力ベクトルが全件ある場合は、初期RAMも共通の512-byte profileへ結び、`input_binding: native-vectors`と記録します。それ以外は`stage-profile`です。記録量は1行4 MiB・1構成128 MiBを上限とし、上限到達は未判定となります。以前の件数だけの報告は`metadata_only`として区別し、保存済み状態の検査が脱落した比較を回帰に含めます。これらは記録した入力・予算での具体比較です。
 
+段階形式v4の`analysis_checks`は、元のLow IRに対するMemorySSAの世代グラフ検査と候補被覆検査を、具体入力の実行比較と別に記録します。入力IR・MemorySSAのJSON・検査器名・件数・未判定理由を保持し、`architecture_analysis`は生成できなかった行も含む全構成を集計します。保存データの再検査ではhash・形・件数とprobeの生JSONとの一致を確認し、通過した解析検査の脱落を回帰に含めます。世代・byte・SSAの意味の検査はRustの検査器が担当します。旧版v1〜v3のprobeも同じ評価器で比較できます。
+
 `low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。
 
 `continuations`はC保存先の確定後に検査した終了処理の共有を、モデルID・条件nodeの減少数・照合グラフ規模で示します。v2の`shared_fragments`は、非空のStep/Evaluate/Return断片の減少数です。条件の複製を一箇所へまとめる場合も、各経路での評価を保持します。v3は`store_order`に保持するprefix node数・成功読込みの範囲数・Store交換数を加えます。これらは静的な変換根拠で、C文数や動的な実行回数と分けて扱います。v4の`effect_order`はStore同士と独立な局所更新との交換数を分けます。比較器はv1〜v4を読み、[設計](architecture.md#c保存先確定後の継続処理)に記したCの観測境界とMIRの全状態検査を別々に集計します。対応検査と具体入力での一致は、それぞれの対象範囲を持つ検証結果です。

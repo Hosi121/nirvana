@@ -1,0 +1,32 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-analysis-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "clang18-O2"
+  ],
+  "cohort_policy": "Two existing development families for retained analysis-check protocol compatibility; holdout excluded",
+  "cases": [
+    {
+      "id": "shared-cleanup",
+      "family": "evaluation-shared-cleanup",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/shared-cleanup.c",
+      "source_sha256": "e07a34379ffa6f866ca0c1443b86c6ee49c9d0b38532ecc067aa29c34993ec70",
+      "function": "fixture",
+      "shape": "common cleanup after conditional effects",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "loop-shared-exit",
+      "family": "fixture-multi-exit-prefix",
+      "cohort": "development",
+      "source": "tests/fixtures/cases/multi-exit-prefix.c",
+      "source_sha256": "454f18a22c3a77b1d126c50a0190047e50d5e2aa79c38113e475ddaad30c43c5",
+      "function": "fixture",
+      "shape": "shared loop exit",
+      "origin": "repository-authored fixture"
+    }
+  ]
+}
