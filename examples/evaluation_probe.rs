@@ -98,8 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compact_memory: true,
     };
     let output = match mode.as_str() {
-        "readable-c" => readable::emit_readable_c_with_options(&source, options)?,
-        "middle-c" => readable::emit_middle_c_with_options(
+        "readable-c" => readable::emit_readable_c_with_storage_provenance(&source, options)?,
+        "middle-c" => readable::emit_middle_c_with_storage_provenance(
             &nirvana::middle_ir::Function::from_low(&source)?,
             options,
         )?,

@@ -16,12 +16,15 @@ mod analysis;
 mod middle;
 #[path = "semantic_records.rs"]
 mod records;
+#[path = "selected_storage_stage.rs"]
+mod selected_storage;
 use middle::Stage;
 
 pub(super) struct Stages {
     stages: Vec<Stage>,
     semantic: semantic::Stage,
     analysis: analysis::Stage,
+    selected_storage: selected_storage::Stage,
     original_registers: usize,
     budgets: Vec<usize>,
     transfers: BTreeSet<(u64, u64)>,
@@ -96,6 +99,7 @@ impl Stages {
             stages,
             semantic: semantic::Stage::new(source, output.semantic_lowering.clone()),
             analysis: analysis::Stage::new(source),
+            selected_storage: selected_storage::Stage::new(output),
             original_registers: source.register_count(),
             budgets,
             transfers,
@@ -154,7 +158,13 @@ impl Stages {
             stages.push(stage.json(out)?);
         }
         stages.push(self.semantic.json(out)?);
-        let analysis_checks = self.analysis.json(out)?;
+        let base_checks = self.analysis.json(out)?;
+        let selected_check = self.selected_storage.json(out)?;
+        let analysis_checks = format!(
+            "{},{}]",
+            base_checks.strip_suffix(']').expect("analysis JSON array"),
+            selected_check
+        );
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
         let continuations = output.continuations.map_or("null".into(), |e| {
             let order = e.store_order.map_or(String::new(), |o| format!(
@@ -179,6 +189,7 @@ impl Stages {
             .map(|s| s.status)
             .chain(std::iter::once(self.semantic.status))
             .chain(self.analysis.statuses())
+            .chain(std::iter::once(self.selected_storage.status))
             .collect();
         let status = if statuses.contains(&"counterexample") {
             "counterexample"
@@ -200,7 +211,7 @@ impl Stages {
             .join(",");
         let parameter_registers: Vec<_> = output.parameters.iter().map(|reg| reg.0).collect();
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v6\",\"contract\":\"nirvana-stage-input-state-v6\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v7\",\"contract\":\"nirvana-stage-input-state-v7\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
             self.original_registers,
             self.budgets,
             stages.join(","),
