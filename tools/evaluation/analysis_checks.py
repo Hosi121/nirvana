@@ -2,6 +2,7 @@
 from collections import Counter
 import json
 import re
+from pathlib import Path
 
 from .semantics import ProtocolError, sha
 from .semantic_pairs import unique_object
@@ -10,7 +11,8 @@ NAMES = ('memory_ssa_graph', 'memory_ssa_queries')
 V5_NAMES = NAMES + ('memory_addresses', 'unsigned_bounds')
 V6_NAMES = V5_NAMES + ('storage_widths',)
 V7_NAMES = V6_NAMES + ('selected_storage',)
-VERSION_NAMES = {4: NAMES, 5: V5_NAMES, 6: V6_NAMES, 7: V7_NAMES}
+V8_NAMES = V7_NAMES + ('selected_signed_storage',)
+VERSION_NAMES = {4: NAMES, 5: V5_NAMES, 6: V6_NAMES, 7: V7_NAMES, 8: V8_NAMES}
 SCHEMA_NAMES = {f'nirvana-evaluation-stages-v{version}': names for version, names in VERSION_NAMES.items()}
 MODELS = ('nirvana-memory-ssa-graph-v1', 'nirvana-memory-ssa-coverage-v1',
           'nirvana-modular-address-v1', 'nirvana-unsigned-bounds-v1', 'nirvana-storage-widths-v1')
@@ -25,6 +27,12 @@ REPORT_FIELDS = ('memory_ssa', 'memory_ssa', 'memory_ssa', 'type_constraints', '
 REPORT_NAMES = ('memory-ssa.json', 'memory-ssa.json', 'memory-ssa.json',
                 'type-constraints.json', 'storage-widths.json')
 MAX_BYTES = 16 * 1024 * 1024
+
+
+def implementation():
+    """Pin the replay helpers as well as the stage dispatcher."""
+    return {name: sha(Path(__file__).with_name(name)) for name in
+            ['analysis_checks.py', 'selected_storage.py', 'selected_signed_storage.py']}
 
 
 def require(condition, message):
@@ -242,10 +250,13 @@ def validate(entries, directory, original_registers, *, retained=False, version=
     require(version in VERSION_NAMES and isinstance(entries, list) and len(entries) == len(names)
             and all(isinstance(e, dict) for e in entries)
             and [e['name'] for e in entries] == list(names), 'check names')
-    if version == 7:
+    if version >= 7:
         from . import selected_storage
         validate(entries[:5], directory, original_registers, retained=retained, version=6)
         selected_storage.validate(entries[5], directory, retained=retained)
+        if version == 8:
+            from . import selected_signed_storage
+            selected_signed_storage.validate(entries[6], directory, retained=retained)
         return entries
     reports = {}
     for i, entry in enumerate(entries):

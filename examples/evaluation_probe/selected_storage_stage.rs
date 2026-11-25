@@ -1,56 +1,14 @@
 //! Bind the selected render's consumed unsigned facts to their actual source.
+use super::storage_artifacts::{Failure, MAX_BYTES, Text, quote};
 use nirvana::{
     dataflow::value_width::{self, ValidationError},
     readable::{ReadableC, StorageProvenance, StorageSnapshot, StorageSourcePhase},
 };
 use std::collections::BTreeSet;
-use std::fmt::{self, Write};
+use std::fmt::Write;
 
-const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MODEL: &str = "nirvana-selected-storage-v1";
 
-struct Text(String);
-impl Write for Text {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        if self
-            .0
-            .len()
-            .checked_add(text.len())
-            .is_none_or(|n| n > MAX_BYTES)
-        {
-            return Err(fmt::Error);
-        }
-        self.0.push_str(text);
-        Ok(())
-    }
-}
-
-fn quote(text: &str) -> String {
-    let mut result = String::from("\"");
-    for character in text.chars() {
-        match character {
-            '"' => result.push_str("\\\""),
-            '\\' => result.push_str("\\\\"),
-            '\n' => result.push_str("\\n"),
-            '\r' => result.push_str("\\r"),
-            '\t' => result.push_str("\\t"),
-            c if c < ' ' => write!(result, "\\u{:04x}", c as u32).unwrap(),
-            c => result.push(c),
-        }
-    }
-    result.push('"');
-    result
-}
-
-struct Failure(&'static str, String);
-impl Failure {
-    fn unavailable(reason: impl Into<String>) -> Self {
-        Self("unavailable", reason.into())
-    }
-    fn invalid(reason: &str) -> Self {
-        Self("rejected", reason.into())
-    }
-}
 impl From<ValidationError> for Failure {
     fn from(error: ValidationError) -> Self {
         Self(

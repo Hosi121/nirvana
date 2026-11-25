@@ -16,8 +16,12 @@ mod analysis;
 mod middle;
 #[path = "semantic_records.rs"]
 mod records;
+#[path = "selected_signed_storage_stage.rs"]
+mod selected_signed_storage;
 #[path = "selected_storage_stage.rs"]
 mod selected_storage;
+#[path = "storage_artifacts.rs"]
+mod storage_artifacts;
 use middle::Stage;
 
 pub(super) struct Stages {
@@ -25,6 +29,7 @@ pub(super) struct Stages {
     semantic: semantic::Stage,
     analysis: analysis::Stage,
     selected_storage: selected_storage::Stage,
+    selected_signed_storage: selected_signed_storage::Stage,
     original_registers: usize,
     budgets: Vec<usize>,
     transfers: BTreeSet<(u64, u64)>,
@@ -100,6 +105,7 @@ impl Stages {
             semantic: semantic::Stage::new(source, output.semantic_lowering.clone()),
             analysis: analysis::Stage::new(source),
             selected_storage: selected_storage::Stage::new(output),
+            selected_signed_storage: selected_signed_storage::Stage::new(output),
             original_registers: source.register_count(),
             budgets,
             transfers,
@@ -161,9 +167,10 @@ impl Stages {
         let base_checks = self.analysis.json(out)?;
         let selected_check = self.selected_storage.json(out)?;
         let analysis_checks = format!(
-            "{},{}]",
+            "{},{},{}]",
             base_checks.strip_suffix(']').expect("analysis JSON array"),
-            selected_check
+            selected_check,
+            self.selected_signed_storage.json(out)?
         );
         let predicates = output.predicates.map_or("null".into(), |e| format!("{{\"pruned_branches\":{},\"constant_assignments\":{},\"blocks_before\":{},\"blocks_after\":{}}}", e.pruned_branches,e.constant_assignments,e.blocks_before,e.blocks_after));
         let continuations = output.continuations.map_or("null".into(), |e| {
@@ -190,6 +197,7 @@ impl Stages {
             .chain(std::iter::once(self.semantic.status))
             .chain(self.analysis.statuses())
             .chain(std::iter::once(self.selected_storage.status))
+            .chain(std::iter::once(self.selected_signed_storage.status))
             .collect();
         let status = if statuses.contains(&"counterexample") {
             "counterexample"
@@ -211,7 +219,7 @@ impl Stages {
             .join(",");
         let parameter_registers: Vec<_> = output.parameters.iter().map(|reg| reg.0).collect();
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v7\",\"contract\":\"nirvana-stage-input-state-v7\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v8\",\"contract\":\"nirvana-stage-input-state-v8\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
             self.original_registers,
             self.budgets,
             stages.join(","),

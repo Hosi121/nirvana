@@ -1,0 +1,24 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-signed-storage-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "gcc-O3",
+    "clang18-O2",
+    "clang18-O3"
+  ],
+  "cohort_policy": "Development-only source-entry sign-extension certificate gate, using the existing narrow-signed family and fixed compiler profiles.",
+  "cases": [
+    {
+      "id": "narrow-signed",
+      "family": "integer-narrow-signed",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/narrow-signed.c",
+      "source_sha256": "265bb24d86a2c56b9b6d87a97db6bbace90bfe2610d125ea4bd1e6a34f1c2a83",
+      "function": "fixture",
+      "shape": "bounded signed arithmetic",
+      "origin": "repository-authored fixture"
+    }
+  ]
+}

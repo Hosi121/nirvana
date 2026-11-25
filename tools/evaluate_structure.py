@@ -349,6 +349,7 @@ def run(args):
               'semantics': {'status': 'not_run'}, 'max_rss': None, 'rows': []}
     report['decompiler']['build'] = build_identity.parse(report['decompiler'])
     report['evaluation']['analysis_checks_sha256'] = digest(analysis_checks.__file__)
+    report['evaluation']['analysis_check_modules'] = analysis_checks.implementation()
     report['evaluation']['build_identity_sha256'] = digest(build_identity.__file__)
     report['emission'] = args.emit
     if args.semantic_probe:
