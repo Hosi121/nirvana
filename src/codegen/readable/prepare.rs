@@ -61,7 +61,7 @@ fn checked_display<E>(
     if !crate::transform::display_dce::validate(&expanded, &candidate) {
         return None;
     }
-    let structure = StructuredFunction::recover(&candidate);
+    let structure = super::structure_recovery::recover(&candidate);
     if structured_before && structure.is_err() {
         return None;
     }
@@ -129,7 +129,7 @@ fn prepare_selected(
     // Each paired rewrite has its own correspondence evidence. Recover a
     // fresh tree from that same program, while retaining the source certificate.
     let structure = if masked.is_some() {
-        StructuredFunction::recover(input)
+        super::structure_recovery::recover(input)
     } else {
         selected.structure
     };

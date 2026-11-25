@@ -14,6 +14,7 @@ use crate::model::ir::{
     Assignment, Control, Execution, ExecutionError, Expr, Machine, Program, RunReport, Stop,
 };
 
+mod follow_candidates;
 mod split;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,7 +116,7 @@ struct LoopContext {
     follow: Option<BlockId>,
 }
 
-struct Builder<'a> {
+struct Builder<'a, 'b> {
     program: &'a Program,
     analysis: &'a ControlFlowAnalysis,
     postdom: Option<&'a PostDominators>,
@@ -125,6 +126,7 @@ struct Builder<'a> {
     step_limit: usize,
     remaining_steps: usize,
     forward_dag: Option<ForwardDag>,
+    follow_plan: Option<&'b mut follow_candidates::FollowPlan>,
 }
 
 impl StructuredFunction {
@@ -200,6 +202,26 @@ impl StructuredFunction {
         postdom: Option<&PostDominators>,
         forward_joins: bool,
     ) -> Result<Self, StructureError> {
+        Self::recover_using_follow(
+            program,
+            copy_limit,
+            step_limit,
+            analysis,
+            postdom,
+            forward_joins,
+            None,
+        )
+    }
+
+    fn recover_using_follow(
+        program: &Program,
+        copy_limit: usize,
+        step_limit: usize,
+        analysis: &ControlFlowAnalysis,
+        postdom: Option<&PostDominators>,
+        forward_joins: bool,
+        follow_plan: Option<&mut follow_candidates::FollowPlan>,
+    ) -> Result<Self, StructureError> {
         let mut builder = Builder {
             program,
             analysis,
@@ -212,6 +234,7 @@ impl StructuredFunction {
             step_limit,
             remaining_steps: step_limit,
             forward_dag: forward_joins.then(|| ForwardDag::new(program.cfg(), analysis)),
+            follow_plan,
         };
         let body = builder.region(program.cfg().entry(), None, &[], None)?;
         if &builder.visited != builder.analysis.reachable() {
@@ -285,7 +308,7 @@ impl StructuredFunction {
     }
 }
 
-impl Builder<'_> {
+impl Builder<'_, '_> {
     fn block_at(&self, address: Address) -> BlockId {
         self.program
             .cfg()
@@ -375,9 +398,9 @@ impl Builder<'_> {
                         }
                     }
                 }
-                let follow = match exits.len() {
-                    0 => None,
-                    1 => exits.first().copied(),
+                let normal_follow = match exits.len() {
+                    0 => Ok(None),
+                    1 => Ok(exits.first().copied()),
                     _ => {
                         let destinations: Vec<_> = exits.iter().copied().collect();
                         match self.postdom.as_ref().and_then(|postdom| {
@@ -386,12 +409,17 @@ impl Builder<'_> {
                             Some(PostDomNode::Block(follow))
                                 if !natural_loop.body.contains(&follow) =>
                             {
-                                Some(follow)
+                                Ok(Some(follow))
                             }
-                            Some(PostDomNode::Exit) => None,
-                            _ => return Err(StructureError::MissingLoopFollow(current)),
+                            Some(PostDomNode::Exit) => Ok(None),
+                            _ => Err(StructureError::MissingLoopFollow(current)),
                         }
                     }
+                };
+                let follow = if let Some(plan) = &mut self.follow_plan {
+                    plan.select(current, &exits, contexts, normal_follow)?
+                } else {
+                    normal_follow?
                 };
                 let mut nested = contexts.to_vec();
                 nested.push(LoopContext {
