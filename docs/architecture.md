@@ -140,6 +140,8 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 [parallel_copy](../src/dataflow/parallel_copy.rs)はφの同時代入を逐次化し、記号による検査で循環と他の保存先の保持を確認します。
 [ssa_destroy](../src/dataflow/ssa_destroy.rs)が実行可能IRへの配置を、[emit/ssa](../src/codegen/emit/ssa.rs)がCの宣言と保存先名の描画を担当します。
 
+[KnownBits](../src/dataflow/known_bits.rs)は、SSA値のzero/one maskから定数部分式を回復します。[数値検査器](../src/dataflow/known_bits/check.rs)は別の演算核で事実と実際の提案を検査し、Return・分岐条件・Storeアドレス内の置換にも適用します。加減算には下位prefixの極値からcarry/borrowを求め、推論側と同じ精度・作業量の判定を保ちます。元SSAの対応、式の走査・純粋性の照合、MemorySSAからのbyte再構成は共通の信頼境界です。[固定比較](../tools/corpora/ir-known-bits-v1.m1.json)に、数値検査の範囲と生成C・IRを維持した結果を記録しています。
+
 アドレスの正確な恒等関係は[address_identity](../src/dataflow/address_identity.rs)が担当します。
 `offset + Σ(coefficient × SSA値) mod 2^64`を、型やオブジェクト形状の仮説から独立して扱います。
 [modular_verify](../src/dataflow/address_identity/modular_verify.rs)は元SSAから記号式を作り、ゼロと各source atomの単位入力で係数・offsetを照合します。相殺したatom、Loadとopaque出力、アクセス位置・幅・順序も検査対象です。MemorySSAの全64-bitアフィン等式をこの検査へ通し、`address_verification`へ件数を残します。φ入力の検査だけが予算に達した場合は、アクセスと世代グラフの証跡を保持して問い合わせを未判定にします。

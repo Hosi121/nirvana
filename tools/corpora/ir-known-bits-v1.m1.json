@@ -1,0 +1,501 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Independent numeric acceptance of known-bit SSA facts and exact inline constant rewrites",
+  "reference_revision": "05e0e2278e0224e02ca1b2de08d03864873c9310",
+  "candidate_revision": "4b085e60e330ab06d129367e33333b8f3e9f110d",
+  "contract": {
+    "facts": "Disjoint zero/one masks; all initial values arbitrary, every source SSA phi alternative and successful definition checked",
+    "producer": "Original State fixed point, transfer and candidate construction unchanged",
+    "checker": "Separate CheckingDomain with own u128/i128 constants, bit projections and lower-prefix carry/borrow extrema",
+    "entry_points": [
+      "analyze_values final facts",
+      "validate_facts",
+      "validate candidate",
+      "BitPlan::propose exact producer candidate"
+    ],
+    "inline_expressions": "Return/Branch/Store-address subexpressions are checked even when every SSA leaf claim is Unknown",
+    "memory": "Existing generic LoadInputs.value executes with CheckingDomain; all Store RHS dependencies and partial unknown bytes remain",
+    "scope": "Source-entry, successful definitions and source-shaped effect-preserving rewrites",
+    "shared_trust": [
+      "Independent source SSA validation",
+      "ssa_facts bounded source traversal and read mapping",
+      "Candidate shape and purity matcher",
+      "MemorySSA and LoadInputs byte provenance/reconstruction"
+    ],
+    "work_per_pass": 8000000,
+    "ssa_values": 65536,
+    "precision_and_cost": "Checker keeps producer mask precision, including upper-only product/division bounds; no proposal is built using the checking domain",
+    "failure": "Existing Malformed/Unavailable errors; decline the transform without publishing partially checked facts"
+  },
+  "unchanged_source_sha256": {
+    "src/dataflow/known_bits/transfer.rs": "fc6d954e37f1746ef0cc18217aa9f848ae864af705ecad4bb7921aaaa8afcb98",
+    "src/dataflow/ssa_facts.rs": "7f9220ae48385ba2a7b31c6d5c69280e59618a570f05c1a2b55c17fb74e295e3",
+    "src/dataflow/ssa_facts/memory.rs": "f21ccf382b0c8617f066bd463d6a964d73674aac5b998b2dbec6a273023c9bd4"
+  },
+  "validation": {
+    "new_lib": {
+      "passed": 11,
+      "ignored": 1,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/known-bits-lib-final.log",
+        "sha256": "2237b238a18aef1920265ca611e85db01c27c6ba7b22e46840708a4579b2bff0"
+      }
+    },
+    "existing_dataflow": {
+      "passed": 387,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/known-bits-dataflow.log",
+        "sha256": "87a5b8ddc10b055c20b26b4ca5fc5e2cf3a58207a9d65e1e747bab047efa8440"
+      }
+    },
+    "generated_c": {
+      "passed": 1,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/known-bits-codegen.log",
+        "sha256": "3d454f085f8854160f64959c16e0e4deb1b34f738c456c9ac8c2119db1a9b46d"
+      }
+    },
+    "rust_all_targets": {
+      "passed": 1585,
+      "ignored": 61,
+      "targets": 25,
+      "source_revision": "4b085e60e330ab06d129367e33333b8f3e9f110d",
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/rust-known-bits-full.log",
+        "sha256": "1e7182bb354e20792bcfb881e5139f196e5102fe07da24700b1adb0ed6c38edc"
+      }
+    },
+    "python": {
+      "total": 232,
+      "passed": 229,
+      "skipped": 3,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/python-known-bits-full.log",
+        "sha256": "bdbd2dadf5aeef58b070e69cae11ed6d57053957923b52220446f50cbc303a2f"
+      }
+    },
+    "clippy_all_targets": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/clippy-known-bits.log",
+      "sha256": "965495ee10898628ee1118dca2e19fcaefeefa16ab2138c58155bcdfa1018c06"
+    },
+    "fmt": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/fmt-known-bits.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "actual_numeric_kernel_smt": {
+      "full_u64_unsat": 457,
+      "unknown_masks": 29,
+      "ir_replayed_sat": 8,
+      "failures": 0,
+      "manifest": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-smt-clean/manifest.json",
+        "sha256": "e7da61df7e4d9119d9e7eb5530c242dc10fea4066b4532c207e85d0af3e642d2"
+      },
+      "scope": "Each fixed-mask claim covers all u64 values in that cube; unknown_masks are skipped abstract facts, not solver timeouts"
+    },
+    "mutated_producer_control": "A test-only false XOR domain accepts wrong inline Return/Branch/Store addresses with honest Unknown SSA leaves; real numeric checking rejects and IR execution distinguishes each",
+    "independent_finite_audit": {
+      "carry_borrow_pairs": 39366,
+      "remainder_congruence": 9216,
+      "masked_shift_pairs": 39366,
+      "scope": "Read-only source review and finite Python math, separate from Rust/SMT checks"
+    }
+  },
+  "inputs": {
+    "file": "tools/corpora/structure-branch-inputs-v1.txt",
+    "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+  },
+  "vectors": 17,
+  "step_limit": 4096,
+  "evaluation": [
+    {
+      "set": "initial",
+      "corpus": {
+        "path": "/home/hosi/nirvana/tools/corpora/structure-initial-v1.json",
+        "sha256": "6b5ece7ac0c9b15fe8081f519cff0c1d7ee48475a6f894d5775ba9de28df8184"
+      },
+      "before": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-initial-before/report.json",
+        "sha256": "60acd124250febb72ebbab099d1c4e279985247c219eea8c7d4ece4c866d72bd",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/known-bits-initial-before.tar.gz",
+          "sha256": "a353acdecb79bc7653b35bdeb38847adc2c1389358d49e1b49625c7759c7a50b"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/known-bits-initial-before.manifest.json",
+          "sha256": "4bcd256e931c36f2ee33e42d5a2e782beac1839432441852639843cd9cd542ec"
+        }
+      },
+      "after": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-initial-after/report.json",
+        "sha256": "f283f44f985aa28a509a4f452a5c984b91f2c26cd4d98f6a2008d6ae69bb8b9e",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/known-bits-initial-after.tar.gz",
+          "sha256": "92b46d6bd3908d4075362cb8261691a40f076b800a27187af2ca302e44fa7328"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/known-bits-initial-after.manifest.json",
+          "sha256": "32b07ae45c9efcc10868044f729e51b6ceb8c3c668264f3c6c43f411c4d409e4"
+        }
+      },
+      "comparison": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-initial-comparison.json",
+        "sha256": "412588cfeacea5d4784868b50fff182684ccc59a4f4cbec9a46395371b71f46f"
+      },
+      "identity": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-initial-identity.json",
+        "sha256": "6914a707bddd49afe5750a99888be32db32cdc56141966e641ec6db0710df6c0"
+      },
+      "requested": 24,
+      "cohorts": {
+        "development": 16,
+        "holdout": 8
+      },
+      "identical_c": 24,
+      "identical_ir_artifacts": 72,
+      "identical_stage_metadata": 24,
+      "counts": {
+        "native": 408,
+        "generated_O0": 1224,
+        "generated_O2": 1224,
+        "stage_comparisons": 25500
+      },
+      "unchanged_summary": {
+        "requested": 24,
+        "status": {
+          "measured": 24
+        },
+        "failures_by_stage": {},
+        "distances": {
+          "exact": 24
+        },
+        "cohorts": {
+          "development": 16,
+          "holdout": 8
+        },
+        "architecture": {
+          "passed": 24
+        },
+        "architecture_execution": {
+          "low_middle": {
+            "passed": 24
+          },
+          "middle_predicates": {
+            "not_applied": 23,
+            "passed": 1
+          },
+          "middle_memory": {
+            "not_applied": 24
+          },
+          "middle_saved": {
+            "not_applied": 24
+          },
+          "selected_semantic": {
+            "not_applied": 24
+          }
+        },
+        "architecture_analysis": {
+          "memory_ssa_graph": {
+            "passed": 24
+          },
+          "memory_ssa_queries": {
+            "passed": 24
+          },
+          "memory_addresses": {
+            "passed": 24
+          },
+          "unsigned_bounds": {
+            "passed": 24
+          },
+          "storage_widths": {
+            "passed": 24
+          },
+          "selected_storage": {
+            "passed": 24
+          },
+          "selected_signed_storage": {
+            "passed": 24
+          }
+        },
+        "c_footprint": {
+          "measured": 24
+        },
+        "state_memory_sites": {
+          "measured": 16,
+          "partial": 8
+        },
+        "state_values": {
+          "equivalent_under_model": 17,
+          "unsupported": 7
+        }
+      }
+    },
+    {
+      "set": "signed",
+      "corpus": {
+        "path": "/home/hosi/nirvana/tools/corpora/structure-signed-storage-v1.json",
+        "sha256": "9bf05b5dc8e75212fc29a6568712e42a47d5a2ec977dc0e15073cb012610adfc"
+      },
+      "before": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-after/report.json",
+        "sha256": "a8f44943a6a751d1107a27987287e6dfaf646a7b39ce86e6cdcb96b8ca30f5b8",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-after.tar.gz",
+          "sha256": "851f3577e17b914d20c3d82390731a27eef8ada55cba090effa52d6a61801abf"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-after.manifest.json",
+          "sha256": "052cedc28681207fc18eb9dd457ad2c0e819191b52f3db5ff32529f54f822717"
+        }
+      },
+      "after": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-signed-after/report.json",
+        "sha256": "ec64d6cebc7ab9c7d8c48fd2f235836a667ce864047fe3da43aee9f11307c04f"
+      },
+      "comparison": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-signed-comparison.json",
+        "sha256": "fd12fdc495c8cbb351ec09956aa0178671044e8ea7c70abb6355ac54377874d4"
+      },
+      "identity": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-signed-identity.json",
+        "sha256": "4dfbe7d14b6ddbca154f86b6278ca1444040f329a0b6efd6e807312ffa05d533"
+      },
+      "requested": 4,
+      "cohorts": {
+        "development": 4
+      },
+      "identical_c": 4,
+      "identical_ir_artifacts": 20,
+      "identical_stage_metadata": 4,
+      "counts": {
+        "native": 68,
+        "generated_O0": 204,
+        "generated_O2": 204,
+        "stage_comparisons": 8160
+      },
+      "unchanged_summary": {
+        "requested": 4,
+        "status": {
+          "measured": 4
+        },
+        "failures_by_stage": {},
+        "distances": {
+          "exact": 4
+        },
+        "cohorts": {
+          "development": 4
+        },
+        "architecture": {
+          "passed": 4
+        },
+        "architecture_execution": {
+          "low_middle": {
+            "passed": 4
+          },
+          "middle_predicates": {
+            "not_applied": 4
+          },
+          "middle_memory": {
+            "not_applied": 4
+          },
+          "middle_saved": {
+            "not_applied": 4
+          },
+          "selected_semantic": {
+            "passed": 4
+          }
+        },
+        "architecture_analysis": {
+          "memory_ssa_graph": {
+            "passed": 4
+          },
+          "memory_ssa_queries": {
+            "passed": 4
+          },
+          "memory_addresses": {
+            "passed": 4
+          },
+          "unsigned_bounds": {
+            "passed": 4
+          },
+          "storage_widths": {
+            "passed": 4
+          },
+          "selected_storage": {
+            "passed": 4
+          },
+          "selected_signed_storage": {
+            "passed": 4
+          }
+        },
+        "c_footprint": {
+          "measured": 4
+        },
+        "state_memory_sites": {
+          "partial": 4
+        },
+        "state_values": {
+          "equivalent_under_model": 4
+        }
+      }
+    },
+    {
+      "set": "memory",
+      "corpus": {
+        "path": "/home/hosi/nirvana/tools/corpora/structure-memory-v1.json",
+        "sha256": "f789fefa795053ef9cb27fdcf1d81432782f95c054e44f80e72b58b5ab83460c"
+      },
+      "before": {
+        "file": "target/runs/run-a37yw4tm/out/state-rle-memory-after/report.json",
+        "sha256": "7bcc07b3f2d9dc9d09f006e37fc439c73dfa5beb89d4832c8035810834369bb1",
+        "cold_archive": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-memory-after.tar.gz",
+          "sha256": "8bed6bfa01d5ce76fdc5515bb62bc6022a3a0cebcc3caab92a6afd379311e699"
+        },
+        "member_manifest": {
+          "file": "target/runs/run-a37yw4tm/out/cold/state-rle-memory-after.manifest.json",
+          "sha256": "c9b4736d1c79d32cc55ef3fc52a2eeb400d6c3e68ab31687baaff66807456902"
+        }
+      },
+      "after": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-memory-after/report.json",
+        "sha256": "cc48d44211efd07d0a928a6c9fff37c7d05d7c9bf0fd196e0b0c266cd07e7a8f"
+      },
+      "comparison": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-memory-comparison.json",
+        "sha256": "afa7b57910cd81fbe8c13bff73653aed6d67dac65c2564d1f9ae537cba7faca3"
+      },
+      "identity": {
+        "file": "target/runs/run-a37yw4tm/out/known-bits-memory-identity.json",
+        "sha256": "63dd4b7b49953ec2da774cf2690234c70ba30d6efddc9a101ef73952e5989f1d"
+      },
+      "requested": 12,
+      "cohorts": {
+        "development": 12
+      },
+      "identical_c": 11,
+      "identical_ir_artifacts": 48,
+      "identical_stage_metadata": 11,
+      "counts": {
+        "native": 187,
+        "generated_O0": 561,
+        "generated_O2": 561,
+        "stage_comparisons": 18360
+      },
+      "unchanged_summary": {
+        "requested": 12,
+        "status": {
+          "measured": 11,
+          "unsupported": 1
+        },
+        "failures_by_stage": {
+          "decompile": 1
+        },
+        "distances": {
+          "exact": 11
+        },
+        "cohorts": {
+          "development": 12
+        },
+        "architecture": {
+          "passed": 11,
+          "not_run": 1
+        },
+        "architecture_execution": {
+          "low_middle": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "middle_predicates": {
+            "not_applied": 11,
+            "not_run": 1
+          },
+          "middle_memory": {
+            "not_applied": 10,
+            "passed": 1,
+            "not_run": 1
+          },
+          "middle_saved": {
+            "passed": 4,
+            "not_applied": 7,
+            "not_run": 1
+          },
+          "selected_semantic": {
+            "not_applied": 11,
+            "not_run": 1
+          }
+        },
+        "architecture_analysis": {
+          "memory_ssa_graph": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "memory_ssa_queries": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "memory_addresses": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "unsigned_bounds": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "storage_widths": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "selected_storage": {
+            "passed": 11,
+            "not_run": 1
+          },
+          "selected_signed_storage": {
+            "passed": 11,
+            "not_run": 1
+          }
+        },
+        "c_footprint": {
+          "measured": 11,
+          "incomplete": 1
+        },
+        "state_memory_sites": {
+          "partial": 11,
+          "unavailable": 1
+        },
+        "state_values": {
+          "not_run": 12
+        }
+      }
+    }
+  ],
+  "totals": {
+    "requested": 40,
+    "identical_c": 39,
+    "identical_ir_artifacts": 140,
+    "identical_stage_metadata": 39,
+    "native": 663,
+    "generated_O0": 1989,
+    "generated_O2": 1989,
+    "stage_comparisons": 52020
+  },
+  "binary_metadata": {
+    "reference": {
+      "file": "target/runs/run-a37yw4tm/out/known-bits-initial-reference-tools.json",
+      "sha256": "30863a59d688d64265c45fad5ceb12db9b57551577d26789e864323b48497e33"
+    },
+    "candidate": {
+      "file": "target/runs/run-a37yw4tm/out/known-bits-initial-candidate-tools.json",
+      "sha256": "74096d976d7fb3a1dd3e60b4e52393c8d2cb6a24fbac232ca5022a5d867ebcdb"
+    }
+  },
+  "retention": "All data stays in the existing managed run; cold backups verify every member SHA before removal and restore. Temporary worker worktree removed after byte-identical six-file integration.",
+  "limits": [
+    "Numeric independence retains shared structural and byte-provenance machinery",
+    "Fixed native/C/prefix comparisons and C value-model proofs keep their stated scopes",
+    "Original variable/type recovery and C structure quality remain unchanged in this gate"
+  ],
+  "next": "Audit prefix equations for all valid masks, and use the event-controller research plan for a future finite raw IR/AST validation gate"
+}
