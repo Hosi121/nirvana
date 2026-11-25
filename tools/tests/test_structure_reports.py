@@ -189,6 +189,29 @@ class ReportTests(unittest.TestCase):
                 with self.subTest(variant=variant), self.assertRaises(ValueError):
                     self.compare(a, b, before, after)
 
+    def test_moved_artifacts_keep_original_command_paths_and_detect_real_flag_or_input_drift(self):
+        for change in ['intact', 'optimization', 'input', 'prefix-boundary', 'embedded-flag']:
+            with tempfile.TemporaryDirectory() as directory, self.subTest(change=change):
+                a, b = Path(directory) / 'retained-a', Path(directory) / 'retained-b'
+                before, after = fixture(a), fixture(b)
+                for report, origin in [(before, '/removed/run-a'), (after, '/removed/run-b')]:
+                    row = report['rows'][0]
+                    prefix = origin + '/' + row['artifacts']
+                    row['commands'] = [dict(stage='input_compile', argv=[
+                        'cc', '-O2', '-c', prefix + '/source.i', '-o', prefix + '/input.o'])]
+                argv = after['rows'][0]['commands'][0]['argv']
+                if change == 'optimization': argv[1] = '-O3'
+                elif change == 'input': argv[3] = '/different/source.i'
+                elif change == 'prefix-boundary': argv[3] = argv[3].replace('/run-b/', '/run-b-extra/')
+                elif change == 'embedded-flag':
+                    before['rows'][0]['commands'][0]['argv'].append('-fdebug-prefix-map=/removed/run-a=.')
+                    argv.append('-fdebug-prefix-map=/removed/run-b=.')
+                if change == 'intact':
+                    self.assertEqual(self.compare(a, b, before, after)['structure'], {'equal': 1})
+                else:
+                    with self.assertRaisesRegex(ValueError, 'changed input_compile flags'):
+                        self.compare(a, b, before, after)
+
     def test_mappings_hashes_and_raw_dump_correspondence_are_replayed(self):
         for variant in ['mapping', 'hash', 'dump', 'escape']:
             with tempfile.TemporaryDirectory() as directory:

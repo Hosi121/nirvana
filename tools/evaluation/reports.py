@@ -265,6 +265,26 @@ def tool_identity(value):
 
 def commands(row, root):
     """Compare compiler flags while allowing output-directory relocation."""
+    origins = {str(root.resolve())}
+    outputs = {'preprocess': 'source.i', 'input_compile': 'input.o', 'recompile': 'readable.o'}
+    for command in row['commands']:
+        name = outputs.get(command['stage'])
+        if name is None:
+            continue
+        argv = command['argv']
+        suffix = '/' + str(Path(row['artifacts']) / name)
+        for index, arg in enumerate(argv[:-1]):
+            output = str(argv[index + 1])
+            if arg == '-o' and Path(output).is_absolute() and output.endswith(suffix):
+                origins.add(output[:-len(suffix)])
+
+    def operand(arg):
+        arg = str(arg)
+        for origin in sorted(origins, key=len, reverse=True):
+            if arg.startswith(origin + '/'):
+                return '$ARTIFACTS' + arg[len(origin):]
+        return arg
+
     result = {}
     for command in row['commands']:
         stage = command['stage']
@@ -272,8 +292,7 @@ def commands(row, root):
                          'native_compile', 'generated_O0_compile', 'generated_O2_compile']:
             continue
         require(stage not in result, 'duplicate command stage')
-        result[stage] = ['$TOOL', *[str(arg).replace(str(root.resolve()), '$ARTIFACTS')
-                                  for arg in command['argv'][1:]]]
+        result[stage] = ['$TOOL', *map(operand, command['argv'][1:])]
     return result
 
 
