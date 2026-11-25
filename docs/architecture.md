@@ -110,6 +110,7 @@ strip入力の数値入口は、[eh_frame](../src/binary/eh_frame.rs)のFDE範�
 符号拡張は`UnaryOp::SignExtend(Width)`で入力幅を保持します。SSA・値グラフ・メモリの参照位置もこの単項演算を通じて追跡し、Cへはunsignedだけで計算するhelperとして下ろします。
 `UnaryOp::Extract { start, width }`はbitの抽出位置と幅を保持します。AL・AX・EAXと上位8-bitレジスタの読み取り、演算結果の切詰めに使い、幅推論・既知bit解析・SMT・C出力で同じゼロ拡張の意味を追います。抽出・mask・符号拡張を合成する局所還元は、operandを一度評価する順序とfaultを保ちます。除算・剰余・rotateの認識器も幅付き抽出を扱います。Load幅・定数mask・既存の射影から結果が既に範囲内と分かる場合は、その値を直接使います。
 `BinaryOp::Insert { start, width }`は左の値の指定bit範囲を右の下位bitで更新します。8/16-bitの部分レジスタ書込みに使い、上位bitの保持を演算の意味に含めます。値グラフは演算の位置・幅もキーに含め、既知bit解析と幅推論は更新部分と保持部分を追います。
+32/64bitの可変シフトは、masked countが0なら以前のCFを保ち、それ以外ではCFを定義します。リフターは入力CFの利用可能性を保持し、全countで安全に読める場合を受理します。[固定比較](../tools/corpora/x86-shift-carry-v1.m1.json)では、GCC/Clang O2/O3の追加4構成でC生成と実行比較が通り、初回24構成のC・IR・構造を維持しました。
 証明済みの商・剰余は`UDiv`・`URem`・`SDiv`・`SRem`へ下ろし、後続の幅推論と割当てでも演算の意味を保持します。これらの全域bit-vector演算は[SMT-LIBの定義](https://smt-lib.org/logics-all.shtml#QF_BV)に従い、Cではunsigned演算と明示した境界処理で実装します。
 [word_signed_division](../src/transform/word_signed_division.rs)は8/16/32-bitへの射影と符号付き積を区別し、定数除算・剰余を復元します。数値証明を64-bit版と共有し、右シフトには符号拡張と観測幅の条件を確認します。生成する結果は上位bitがゼロのwordで、後続の符号拡張も保持します。
 [jump_tables](../src/binary/jump_tables.rs)は先行CFGの経路文脈、copy、stack退避、比較とmaskから表候補を求め、追加デコードと交互に進めます。

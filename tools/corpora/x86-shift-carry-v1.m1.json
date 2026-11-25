@@ -1,0 +1,159 @@
+{
+  "schema": "nirvana-x86-shift-carry-m1-v1",
+  "milestone": "M1 execution contracts; M0 input coverage",
+  "status": "targeted native/IR/C and fixed-corpus gates passed",
+  "reference_revision": "4b085e60e330ab06d129367e33333b8f3e9f110d",
+  "candidate_revision": "010b455aa0670971358fb1fbd21ef45598dfdbcd",
+  "focus": "Preserve already-defined CF availability through variable SHL/SHR/SAR at widths32/64",
+  "rule": "Masked counts0..31/63 either preserve prior CF at zero or define CF below operand width. Availability remains the incoming fact; OF stays unavailable and no new CF fact is introduced.",
+  "source": {
+    "src/binary/x86/lift.rs": {
+      "file": "src/binary/x86/lift.rs",
+      "sha256": "147f89a92913e86d9d50f041ad4443b6350c0927be90bbaf098965916bb50430"
+    },
+    "tests/binary/x86_shift_cf.rs": {
+      "file": "tests/binary/x86_shift_cf.rs",
+      "sha256": "49aff2259022fa6a482cdac1f36953dfdc89e1739fd9ce4c6c72ee79a1e93c04"
+    },
+    "tests/fixtures/evaluation/variable-shift-carry.c": {
+      "file": "tests/fixtures/evaluation/variable-shift-carry.c",
+      "sha256": "856eb130968b238e89ba72c1641b323a2e1535ddfd4b64a874804eda826c1b1d"
+    },
+    "tools/corpora/structure-shift-carry-v1.json": {
+      "file": "tools/corpora/structure-shift-carry-v1.json",
+      "sha256": "121ddc52f44d0d1389af293d50608bfd790bf8e9079d57386a08857987b28aff"
+    }
+  },
+  "isa_reference": "https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf#page=595",
+  "validation": {
+    "focused": {
+      "passed": 3,
+      "profiles": 36,
+      "native_ir_cases": 75744,
+      "generated_c_comparisons": 302976,
+      "inputs": "All256CL values plus7highRCX patterns,6operand values; CF0/CF1/MUL seeds and SETB/ADC consumers",
+      "c_modes": [
+        "raw full-register",
+        "readable return"
+      ],
+      "c_optimization": [
+        "O0",
+        "O2"
+      ],
+      "ubsan": true,
+      "log": {
+        "file": "target/runs/run-a37yw4tm/out/signed-checks/shift-cf-focused-first.log",
+        "sha256": "25e9a7f4f9cb7f42f503929cc459cecc119c10a85e5fb5121915306d19b894a8"
+      }
+    },
+    "controls": "Unseeded CF, undefined OF, narrow logical shifts, DIV predecessor, and one unavailable CFG predecessor rejected. Definite one-bit shift after DIV accepted.",
+    "clippy_all_targets": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/clippy-shift-cf-fixed.log",
+      "sha256": "9253b14f28c29c1e29057772c7a6f763b0f1a52c3daff231a8c89e72f2fe4b2a"
+    },
+    "rustfmt": {
+      "file": "target/runs/run-a37yw4tm/out/signed-checks/fmt-shift-cf.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "raw_before_rejections": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-before/manifest.json",
+      "sha256": "1a34a8db70686b8c8921faf65ad8c2bde512ee4e123bc06fa0f4d80a8aec3d42"
+    }
+  },
+  "m0_new_input": {
+    "manifest": {
+      "file": "tools/corpora/structure-shift-carry-v1.json",
+      "sha256": "121ddc52f44d0d1389af293d50608bfd790bf8e9079d57386a08857987b28aff"
+    },
+    "profiles": 4,
+    "cohort": "development only",
+    "compilers": [
+      "gcc",
+      "clang18"
+    ],
+    "optimizations": [
+      "O2",
+      "O3"
+    ],
+    "inputs": {
+      "file": "tools/corpora/structure-branch-inputs-v1.txt",
+      "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+    },
+    "vectors": 17,
+    "steps": 4096,
+    "seed": 7956016069493023024,
+    "decompile_before": 0,
+    "decompile_after": 4,
+    "semantics_after": {
+      "passed": 4
+    },
+    "counts": {
+      "native": 68,
+      "generated_O0": 204,
+      "generated_O2": 204,
+      "stage_comparisons": 10200
+    },
+    "source_ast": {
+      "unsupported": 4,
+      "reason": "Inline GCCAsmStmt is outside the C AST footprint/value model. Aggregate row status stays unsupported; decompile/native/C and stage gates are separately passed."
+    },
+    "reports": {
+      "before": {
+        "file": "target/runs/run-a37yw4tm/out/shift-cf-m0-before/report.json",
+        "sha256": "8de370068c10ebf333c84480a7f1afe9bc2a44525df118a754267da4dfa7392d"
+      },
+      "after": {
+        "file": "target/runs/run-a37yw4tm/out/shift-cf-m0-after/report.json",
+        "sha256": "3ebee9cd7c6a69abd5bb03b57c219a12f4e9a799f6a365bc057c041e1b8983de"
+      }
+    },
+    "comparison": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-comparison.json",
+      "sha256": "faf619faca0c6c660afa1490ade0f1efc10036527786944dd56d725c929da34d"
+    }
+  },
+  "m0_existing_initial24": {
+    "identity": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-initial-identity.json",
+      "sha256": "f5e5c9e4773ca146f00fb1b2f1d8480c517cb5865fafc55aef1bf3290b8a1248"
+    },
+    "comparison": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-initial-comparison.json",
+      "sha256": "4549d439d44fa326e93b034ba1d0ab9306f3d1430dd7562b65276e02d9b9804c"
+    },
+    "identical_c": 24,
+    "identical_ir_artifacts": 72,
+    "identical_stage_metadata": 24,
+    "counts": {
+      "native": 408,
+      "generated_O0": 1224,
+      "generated_O2": 1224,
+      "stage_comparisons": 25500
+    },
+    "state_values": {
+      "equivalent_under_model": 17,
+      "unsupported": 7
+    },
+    "holdout": "Eight sealed rows observed only through aggregate/identity checks; no source inspection or tuning."
+  },
+  "binary_metadata": {
+    "reference": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-reference-tools.json",
+      "sha256": "d15c5a5fb8a9d585b25405feab886026b2f8645487c1d703d960d05ecd3cc864"
+    },
+    "candidate": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-candidate-tools.json",
+      "sha256": "b8ce8eafeee9fb2afea0ed23e450be008b398c604392fcffc244700709a2b628"
+    },
+    "initial": {
+      "file": "target/runs/run-a37yw4tm/out/shift-cf-initial-tools.json",
+      "sha256": "64b3f3a11cf0e7971b600dedad69bb834a3d708b23abc3fd6d20d3a7e8959dc5"
+    }
+  },
+  "limits": [
+    "Gate covers declared integer/flag profile and fixed native cases. Undefined native flags are excluded from golden observations.",
+    "Existing call-boundary flag policy and narrower operand availability remain separate input boundaries.",
+    "This change broadens lift/C generation; source-structure quality is outside this inline-assembly fixture gate."
+  ],
+  "next": "Audit memory-destination fault-state preservation independently; keep fixed-corpus semantics and input denominators."
+}
