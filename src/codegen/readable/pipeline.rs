@@ -237,7 +237,6 @@ fn emit_reduced_choice(
     context: EmissionContext,
     memory_recovery: prepare::MemoryRecovery,
 ) -> Result<ReadableC, ReadableError> {
-    let options = context.options;
     let prepared = prepare::prepare(
         reduced.program(),
         reduced.parameters(),
@@ -245,7 +244,7 @@ fn emit_reduced_choice(
         context.capture,
     )?;
     let renamed = matches!(prepared.web_recovery, WebRecovery::Applied { .. });
-    match emit_prepared_c(reduced, options, prepared) {
+    match emit_prepared_c(reduced, context, prepared) {
         Ok(output) => Ok(output),
         Err(error) if renamed => {
             let fallback = prepare::prepare_original(
@@ -255,7 +254,7 @@ fn emit_reduced_choice(
                 memory_recovery,
                 context.capture,
             )?;
-            emit_prepared_c(reduced, options, fallback)
+            emit_prepared_c(reduced, context, fallback)
         }
         Err(error) => Err(error),
     }
@@ -263,17 +262,18 @@ fn emit_reduced_choice(
 
 fn emit_prepared_c(
     reduced: &ReducedFunction,
-    options: ReadableOptions,
+    context: EmissionContext,
     prepared: PreparedFunction,
 ) -> Result<ReadableC, ReadableError> {
+    let options = context.options;
     let try_continuations = prepared
         .nodes
         .as_deref()
         .is_some_and(super::continuations::possible);
     if !try_continuations {
-        return emit_prepared_layout(reduced, options, prepared, None, false);
+        return emit_prepared_layout(reduced, context, prepared, None, false);
     }
-    let mut best = emit_prepared_layout(reduced, options, prepared.clone(), None, false)?;
+    let mut best = emit_prepared_layout(reduced, context, prepared.clone(), None, false)?;
     for prefer_updates in [false, true] {
         if prefer_updates && !options.coalesce_locals {
             continue;
@@ -288,7 +288,7 @@ fn emit_prepared_c(
                 continue;
             }
             if let Ok(candidate) =
-                emit_prepared_layout(reduced, options, prepared.clone(), strategy, prefer_updates)
+                emit_prepared_layout(reduced, context, prepared.clone(), strategy, prefer_updates)
                 && (strategy.is_none() || candidate.continuations.is_some())
                 && candidate.parameters == best.parameters
                 && render_cost(&candidate) < render_cost(&best)
@@ -302,11 +302,12 @@ fn emit_prepared_c(
 
 fn emit_prepared_layout(
     reduced: &ReducedFunction,
-    options: ReadableOptions,
+    context: EmissionContext,
     prepared: PreparedFunction,
     share_continuations: Option<continuations::Strategy>,
     prefer_updates: bool,
 ) -> Result<ReadableC, ReadableError> {
+    let options = context.options;
     let PreparedFunction {
         program: presented,
         widths: value_widths,
@@ -428,7 +429,10 @@ fn emit_prepared_layout(
             writeln!(code, "typedef uint64_t nirvana_u{bits}_address;").unwrap();
         }
     }
-    let signed_widths = super::signed_locals::recover(program, &mut locals, &address_uses);
+    let (signed_widths, signed_facts) =
+        super::signed_locals::recover(program, &mut locals, &address_uses);
+    let signed_storage_provenance =
+        super::provenance::capture_signed(context.capture, &presented, signed_facts);
     if options.compact_memory
         && let (Some(views), Some(roles)) = (&mut views, &stack_roles)
     {
@@ -713,6 +717,7 @@ fn emit_prepared_layout(
     }
     Ok(ReadableC {
         storage_provenance,
+        signed_storage_provenance,
         continuations: continuation_evidence,
         predicates: None,
         code,

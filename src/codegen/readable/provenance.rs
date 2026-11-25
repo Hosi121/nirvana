@@ -9,6 +9,10 @@ use crate::control_flow::cfg::{BasicBlock, BlockId, Edge, Instruction};
 use crate::dataflow::value_width::{ValidationError, ValueWidths};
 use crate::model::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg, Width};
 
+mod signed;
+pub(super) use signed::capture as capture_signed;
+pub use signed::{SignedStorageProvenance, SignedStorageSnapshot};
+
 #[cfg(test)]
 mod tests;
 
@@ -196,13 +200,28 @@ fn preflight(
     widths: &ValueWidths,
     limits: StorageCaptureLimits,
 ) -> Result<(), &'static str> {
+    let mut budget = source_budget(source, limits, size_of::<StorageSnapshot>())?;
+    if let Some(rows) = widths.incoming() {
+        budget.bytes(rows.len(), size_of::<Option<Vec<u8>>>() + size_of::<u64>())?;
+        for row in rows.iter().flatten() {
+            budget.bytes(row.len(), size_of::<u8>())?;
+        }
+    }
+    Ok(())
+}
+
+fn source_budget(
+    source: &Program,
+    limits: StorageCaptureLimits,
+    snapshot_bytes: usize,
+) -> Result<Budget, &'static str> {
     let mut budget = Budget {
         limits,
         points: 0,
         expressions: 0,
         bytes: 0,
     };
-    budget.bytes(1, size_of::<Program>() + size_of::<StorageSnapshot>() + 256)?;
+    budget.bytes(1, size_of::<Program>() + snapshot_bytes + 256)?;
     budget.points(source.instructions().len())?;
     budget.bytes(
         source.instructions().len(),
@@ -230,11 +249,5 @@ fn preflight(
             budget.expression(condition)?;
         }
     }
-    if let Some(rows) = widths.incoming() {
-        budget.bytes(rows.len(), size_of::<Option<Vec<u8>>>() + size_of::<u64>())?;
-        for row in rows.iter().flatten() {
-            budget.bytes(row.len(), size_of::<u8>())?;
-        }
-    }
-    Ok(())
+    Ok(budget)
 }

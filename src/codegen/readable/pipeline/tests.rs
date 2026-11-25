@@ -67,6 +67,10 @@ fn capture_budget_omission_preserves_normal_render_and_candidate_choice() {
         observed.storage_provenance,
         StorageProvenance::Unavailable("storage capture retained-byte limit")
     ));
+    assert!(matches!(
+        observed.signed_storage_provenance,
+        SignedStorageProvenance::Unavailable("storage capture retained-byte limit")
+    ));
 }
 
 #[test]
@@ -85,7 +89,13 @@ fn fallback_render_retains_its_actual_prepared_storage_snapshot() {
         panic!("bounded fallback must retain its own source");
     };
     let selected = Arc::clone(selected);
-    let output = emit_prepared_c(&reduced, ReadableOptions::default(), prepared).unwrap();
+    let final_display = Arc::clone(&prepared.program);
+    let output = emit_prepared_c(
+        &reduced,
+        EmissionContext::with_storage_provenance(ReadableOptions::default()),
+        prepared,
+    )
+    .unwrap();
     assert!(matches!(
         output.web_recovery,
         WebRecovery::RenderingFallback(_)
@@ -94,6 +104,11 @@ fn fallback_render_retains_its_actual_prepared_storage_snapshot() {
         panic!("selected fallback snapshot was lost");
     };
     assert!(Arc::ptr_eq(&selected, actual));
+    let SignedStorageProvenance::Captured(signed) = &output.signed_storage_provenance else {
+        panic!("selected signed fallback snapshot was lost");
+    };
+    assert!(Arc::ptr_eq(&signed.source, &final_display));
+    crate::dataflow::signed_width::validate(&signed.source, &signed.widths).unwrap();
     value_width::validate(
         &actual.source,
         actual.widths.widths().unwrap(),

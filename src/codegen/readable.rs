@@ -48,8 +48,8 @@ pub use pipeline::{
 use prepare::{PreparedFunction, is_break, is_continue};
 use printer::Printer;
 pub use provenance::{
-    STORAGE_CAPTURE_LIMITS, StorageCaptureLimits, StorageProvenance, StorageSnapshot,
-    StorageSourcePhase,
+    STORAGE_CAPTURE_LIMITS, SignedStorageProvenance, SignedStorageSnapshot, StorageCaptureLimits,
+    StorageProvenance, StorageSnapshot, StorageSourcePhase,
 };
 use views::{MemoryViews, VIEW_HELPERS, address_registers, rendered_reads};
 
@@ -92,6 +92,10 @@ pub struct ReadableC {
     /// by the selected render. Its register IDs match `locals`, not necessarily
     /// the original machine register file. Ordinary emission does not retain it.
     pub storage_provenance: StorageProvenance,
+    /// Optional signed-storage proof for the final prepared display program
+    /// actually consumed by signed local selection. This source can differ
+    /// from the unsigned analysis retained by `storage_provenance`.
+    pub signed_storage_provenance: SignedStorageProvenance,
     /// C-scope sharing after names and memory views are fixed. This observes
     /// return/RAM/first faults; original machine-step evidence stays separate.
     pub continuations: Option<ContinuationEvidence>,

@@ -63,6 +63,8 @@ mod readable;
 mod signed_division_backend;
 #[path = "codegen/signed_expr_backend.rs"]
 mod signed_expr_backend;
+#[path = "codegen/signed_storage_provenance.rs"]
+mod signed_storage_provenance;
 #[path = "codegen/source_alias_compare.rs"]
 mod source_alias_compare;
 #[path = "codegen/ssa_backend.rs"]

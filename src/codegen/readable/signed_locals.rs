@@ -6,7 +6,10 @@ pub(super) fn recover(
     program: &Program,
     locals: &mut [LocalValue],
     addresses: &BTreeSet<usize>,
-) -> BTreeMap<usize, Width> {
+) -> (
+    BTreeMap<usize, Width>,
+    crate::dataflow::signed_width::SignedWidths,
+) {
     let facts = crate::dataflow::signed_width::SignedWidths::analyze(program);
     let mut result = BTreeMap::new();
     for local in locals {
@@ -30,7 +33,7 @@ pub(super) fn recover(
             result.insert(reg.0, width);
         }
     }
-    result
+    (result, facts)
 }
 
 impl Printer<'_> {
