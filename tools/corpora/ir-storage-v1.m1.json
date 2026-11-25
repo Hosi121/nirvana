@@ -1,0 +1,257 @@
+{
+  "schema": "nirvana-m1-checkpoint-v1",
+  "milestone": "M1",
+  "status": "partial",
+  "focus": "Independent source-entry unsigned storage observations before C presentation and allocation",
+  "reference_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+  "candidate_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+  "implementation_revisions": {
+    "storage_checker": "110ac4c",
+    "evaluation_v6": "1ab8ad0"
+  },
+  "contract": {
+    "model": "nirvana-storage-widths-v1",
+    "scope": "source-entry-storage-observations",
+    "entry": "Arbitrary u64 register values, including a virtual initial edge on a loop header",
+    "condition": "Every syntactic reachable read and register write fits its claimed storage width; each source successor satisfies the proposed incoming unsigned cap",
+    "operator_kernel": "u128 interval caps independent of producer bit-width transfer/worklist/joins",
+    "failure": "Keep unavailable/rejected reason, publish only U64 fallback widths",
+    "certificate": "Private immutable retained widths/incoming/entry/block starts; public value_width::validate checks proposed facts against original Program",
+    "source_limits": {
+      "points": 100000,
+      "state_cells": 1000000,
+      "expression_depth": 256,
+      "producer_work": 10000000,
+      "checker_work": 32000000
+    }
+  },
+  "evaluation_profile": {
+    "corpus": "tools/corpora/structure-analysis-v1.json",
+    "corpus_sha256": "67a3a4f36054f435d893cde80359d071c4c59e67532bda5c4c029c35e388e75d",
+    "cohort": "development",
+    "requested_profiles": 4,
+    "seed": 7956016069493023024,
+    "input_vectors": 8,
+    "step_limit": 4096,
+    "prefix_budgets": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      4096
+    ],
+    "observations": {
+      "native": 32,
+      "generated_O0": 96,
+      "generated_O2": 96,
+      "stage_comparisons": 2400
+    },
+    "comparison_scope": "Same candidate decompiler and v6 evaluator, reference v5 probe versus candidate v6 probe; separate original-to-candidate artifact comparison confirms unchanged object images and complete C bytes",
+    "analysis_checks": {
+      "memory_ssa_graph": {
+        "passed": 4
+      },
+      "memory_ssa_queries": {
+        "passed": 4
+      },
+      "memory_addresses": {
+        "passed": 4
+      },
+      "unsigned_bounds": {
+        "passed": 4
+      },
+      "storage_widths": {
+        "passed": 4
+      }
+    },
+    "storage_widths_before": {
+      "not_run": 4
+    },
+    "storage_widths_after": {
+      "passed": 4
+    },
+    "identical_generated_c": 4,
+    "structure": {
+      "equal": 4
+    },
+    "regressions": {
+      "structure_regressions": 0,
+      "architecture_regressions": 0,
+      "analysis_regressions": 0,
+      "c_footprint_regressions": 0,
+      "state_memory_regressions": 0,
+      "state_value_regressions": 0,
+      "semantic_regressions": 0
+    },
+    "storage_totals": {
+      "registers": 128,
+      "narrow_registers": 26,
+      "blocks": 28,
+      "edges": 33,
+      "assignments": 513,
+      "reads": 776,
+      "expressions": 1959
+    },
+    "rows": [
+      {
+        "id": "shared-cleanup-gcc-O2",
+        "object_sha256": "a789198829fe0f3d4ec423f64c5d030410d16433655db06bfab4197ad514f9eb",
+        "generated_c_sha256": "998f11396b08163103166142aca9ebfaa3efa8396a17ebeb258f38bd3692235e",
+        "structure_distance": 0,
+        "storage_evidence": {
+          "registers": 32,
+          "narrow_registers": 6,
+          "blocks": 5,
+          "edges": 4,
+          "assignments": 140,
+          "reads": 210,
+          "expressions": 515
+        }
+      },
+      {
+        "id": "shared-cleanup-clang18-O2",
+        "object_sha256": "61b3bc14c08f6cafa1e36c20a78b086f80641cc2ade4a062fd48989875a16b97",
+        "generated_c_sha256": "0dfb944722a622d3bba6584a465936447a1bdcdb6c9c7c7f909790933de31e97",
+        "structure_distance": 0,
+        "storage_evidence": {
+          "registers": 32,
+          "narrow_registers": 6,
+          "blocks": 6,
+          "edges": 7,
+          "assignments": 119,
+          "reads": 163,
+          "expressions": 431
+        }
+      },
+      {
+        "id": "loop-shared-exit-gcc-O2",
+        "object_sha256": "1cff8565c83f8a192108b6ad1b8d51b9b9c85dcc5dc74365f5a3df9a2cb00439",
+        "generated_c_sha256": "52d5bea6fecb0eb4ba427dbe590a3b6ef78653b2aeb48d464802d9b9f751d9e4",
+        "structure_distance": 6,
+        "storage_evidence": {
+          "registers": 32,
+          "narrow_registers": 8,
+          "blocks": 6,
+          "edges": 6,
+          "assignments": 89,
+          "reads": 152,
+          "expressions": 376
+        }
+      },
+      {
+        "id": "loop-shared-exit-clang18-O2",
+        "object_sha256": "ee9e696f98a0c5198a6d18cda528f1604c1af476b6c82e57a21e2e399eb6cf98",
+        "generated_c_sha256": "70eb2a75a6c78d964eafb8d4c380899025577ed8c029209ab2a49f21e88a2a0f",
+        "structure_distance": 4,
+        "storage_evidence": {
+          "registers": 32,
+          "narrow_registers": 6,
+          "blocks": 11,
+          "edges": 16,
+          "assignments": 165,
+          "reads": 251,
+          "expressions": 637
+        }
+      }
+    ]
+  },
+  "binaries": {
+    "decompiler": {
+      "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+      "sha256": "a3f7b43e96a68ea5aa30f4134610eb94463aec8bf06d948ba4f4201d5038d7ec"
+    },
+    "reference_revision": "a04fb22122a7880e27718dd7b61257957e903d6b",
+    "candidate_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+    "corpus_sha256": "67a3a4f36054f435d893cde80359d071c4c59e67532bda5c4c029c35e388e75d",
+    "reference_probe": {
+      "version": "nirvana 0.1.0 git=a04fb22122a7880e27718dd7b61257957e903d6b source_dirty=false",
+      "sha256": "f7f49f1e61523a04a35c3812f1a3263ae663a8b0879cb32f7f7d20e9715720b4"
+    },
+    "candidate_probe": {
+      "version": "nirvana 0.1.0 git=1ab8ad06c66171db58bdd8747549d52a9c34a1b6 source_dirty=false",
+      "sha256": "ebc813c2bfcd7029623bc9b81ff1d3d6946fd2ca2087cd61d901a3d49a134ea6"
+    }
+  },
+  "tests": {
+    "regression_revision": "be9ed54166cee5150472b333ad84e894e424e0e2",
+    "regression_scope": "Complete suite additionally includes the subsequently declined private shared-tail retry. The storage checker/kernel/protocol match candidate_revision; the earlier full1ab run was interrupted by environment restart after1172pass/9complete targets.",
+    "rust_targets": 25,
+    "rust_passed": 1520,
+    "rust_ignored": 57,
+    "storage_checker_and_report_added": 12,
+    "existing_storage_analysis_tests": 15,
+    "existing_ssa_bound_tests": 11,
+    "python_tests": 169,
+    "python_passed": 160,
+    "python_skipped": 9,
+    "clippy": "passed",
+    "rustfmt": "passed"
+  },
+  "controls": [
+    "Arbitrary initial/backedge values; join row omission; sequential overwrite; masked loops versus unmasked growth",
+    "Read hidden under a mask, Load/Store addresses and both Select arms are checked",
+    "Dynamic zero shift preserves legitimate precision; a later full-width write forces U64",
+    "More than 4096 registers and depth256 retain producer domain; unreachable expressions stay outside observation scope",
+    "Certificate invalid/unavailable states retain reason without partial facts; evaluation checks dense rows, entry64, width cells and hashes"
+  ],
+  "trusted_components": [
+    "Validated Program CFG and u64 total operation semantics",
+    "Independent unsigned_caps, storage checker, Rust compiler/runtime",
+    "Python replay checks certificate shape/counts/hash binding; Rust checks the inductive semantics"
+  ],
+  "limits": [
+    "This certificate covers source-entry storage observations. Unused initial register contents, arbitrary-PC reentry and all-register snapshots have separate contracts.",
+    "Signed storage, C integer promotions, helper behavior and the complete native-to-C pipeline require their own checks.",
+    "The 32m checker budget preserves the producer size/depth domain; resource failure remains explicit and uses U64.",
+    "Recorded native/C/prefix comparisons are concrete evidence for the fixed inputs and budgets, not an all-input pipeline proof."
+  ],
+  "artifacts": {
+    "storage-v5/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/storage-v5/report.json",
+      "sha256": "a942b918ea49eeaed79823dcb4a0e62a90af353ef14a2fbc29a35d0bb417b9c7"
+    },
+    "storage-v6/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/storage-v6/report.json",
+      "sha256": "3832b59014cf86f4df2060a0e48ebe310014fc49cb6ac610c748da43ff6b6fb8"
+    },
+    "storage-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/storage-comparison.json",
+      "sha256": "bb1020c6f1c50bce9ddae156f61c6f9778a2443e7cf49805c572277f91fdd383"
+    },
+    "storage-production-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/storage-production-comparison.json",
+      "sha256": "a4f344f9390bd0677f5fca1677c4bbab1e284603fa636a3960d3b2ae76645ca1"
+    },
+    "storage-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/storage-tools.json",
+      "sha256": "e2b8a8ebb5a20e7af10e1ca1c520b39a73e4c741c6001639bf27c092878a7aa9"
+    },
+    "toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/toolchain.json",
+      "sha256": "d8771035ad1a17e0417d63b2ad04ae13cd6a11771866170be79e0b3e88733551"
+    },
+    "storage-checks/rust-readable-retry-full.log": {
+      "file": "target/runs/run-a37yw4tm/out/storage-checks/rust-readable-retry-full.log",
+      "sha256": "8b7a1242100094c6744dacc95d567d8a70774122631a4afb158bb391b4cb3c69"
+    },
+    "storage-checks/python-storage-width-clang.log": {
+      "file": "target/runs/run-a37yw4tm/out/storage-checks/python-storage-width-clang.log",
+      "sha256": "4a74d456110d09083dd16115b868626b35f0875c8d7f73d15d0bbd5faaf47dcd"
+    },
+    "storage-checks/clippy-storage-width.log": {
+      "file": "target/runs/run-a37yw4tm/out/storage-checks/clippy-storage-width.log",
+      "sha256": "828dd4189644badf81eb50ad52850bf57bf75eac4eeaa09c54a76edf4b3a6cbd"
+    }
+  },
+  "reproduction": {
+    "evaluation": "Build candidate main once. Sequentially build reference and candidate evaluation_probe in the shared target; evaluate both with the same v6 evaluator, structure-analysis-v1 manifest, GCC/Clang18 O2, 8 vectors, 4096 steps, c-footprint/state-memory-sites/measure-rss.",
+    "replay": "python3 tools/compare_structure_reports.py BEFORE/report.json AFTER/report.json",
+    "production_artifacts": "Compare original a04fb22 v5 report versus candidate C bytes/object hashes separately; evaluator identities differ so a full report comparison is intentionally rejected."
+  },
+  "evidence_storage": "Managed local runs keep at most two runs and 512 MiB total; committed revisions, inputs and hashes regenerate raw evidence after eviction. No reference worktree remains."
+}

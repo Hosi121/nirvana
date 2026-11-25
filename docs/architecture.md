@@ -190,6 +190,8 @@ Loadのスナップショット、保存位置、全命令の代入順も採用�
 
 [LocalPlan](../src/codegen/readable/locals.rs)は表示IRの幅・生存範囲・copy関係・値の系譜から名前と保存場所を決めます。
 
+[ValueWidths](../src/dataflow/value_width.rs)は、入口から実行されるread/writeの値がunsignedの保存幅に収まる候補を求めます。[独立した検査器](../src/dataflow/value_width/verify.rs)がu128の数値上限で逐次代入と全後続辺を照合し、入口の任意u64値・戻り辺・Select両腕・メモリアドレスも検査します。検査を通した幅だけをCの保存先と表示変換へ渡し、未判定ではU64を使います。`storage-widths.json`に幅・block入口の不変条件・検査件数を保存します。この契約は入口からの値の使用を対象とし、未使用の初期レジスタや任意PCからの再開は別の実行契約で扱います。
+
 [SignedWidths](../src/dataflow/signed_width.rs)は、全64-bit値が指定幅の符号拡張と一致するという保存範囲を、既存のSSA固定点で求めます。初期値は任意のu64とし、全phi入力・逐次代入・read/writeを検査してから公開します。unsigned幅とは別の性質です。Cの保存先は、共有する全値が範囲内に収まり、アドレス用の保存先から分離できる場合に`int8_t/16_t/32_t`を選びます。`LocalValue.signed_width`がこの表現を示し、通常のIR演算で読むたびにu64へ戻します。代入時の変換とLoadの順序も保持します。これは生成Cの保存表現の検査で、元ソースの変数型との対応はM3で評価します。
 [allocation_verify](../src/dataflow/allocation_verify.rs)は各readの値を、[DeclarationPlan](../src/codegen/readable/declarations.rs)は宣言・初期化の位置を照合します。
 [stack_values](../src/dataflow/stack_values.rs)は部分Storeとaliasを含む到達書込み、[stack_role](../src/dataflow/stack_role.rs)はspill/reloadの系譜を供給します。

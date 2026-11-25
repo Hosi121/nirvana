@@ -105,13 +105,15 @@ MemorySSAの世代グラフは、元IRを別にたどる検査器でLoad/Store�
 
 [閉じた呼出しのcheckpoint](../tools/corpora/closed-calls-v1.m1.json)では、元IRに対してread・clobber・calleeの集合とRSP・戻り先RAMの条件を検査した。固定ELFの27関数の解析と両module C出力を保ち、9個の閉じた要約・25命令・4呼出し辺の検査を報告へ加えた。要約や根拠を改変した32候補を拒否し、正常復帰後の保存値と未読レジスタの非干渉を実際のmodule実行でも確認した。
 
-[アフィン式と幅のcheckpoint](../tools/corpora/ir-affine-v1.m1.json)では、入口スタックの不変条件、MemorySSAの全64-bitアフィン等式、型解析のunsigned上限を別の計算で検査した。同じ27関数の解析とC出力を保ち、M0の開発用4構成へアドレス式と幅の検査を結んだ。生成Cと構造距離を保ち、native 32件・生成C 192件・段階間2,400件を比較した。次のM1境界は、Cの保存幅と式の表示変換が使う`ValueWidths`の検査である。M2の残るループ差は、コンパイラが閉形式へ畳んだ場合と、生成Cに反復が残る場合を分けて調査する。
+[アフィン式と幅のcheckpoint](../tools/corpora/ir-affine-v1.m1.json)では、入口スタックの不変条件、MemorySSAの全64-bitアフィン等式、型解析のunsigned上限を別の計算で検査した。同じ27関数の解析とC出力を保ち、M0の開発用4構成へアドレス式と幅の検査を結んだ。生成Cと構造距離を保ち、native 32件・生成C 192件・段階間2,400件を比較した。Cの保存幅と式の表示変換が使う`ValueWidths`も、[保存幅のcheckpoint](../tools/corpora/ir-storage-v1.m1.json)で独立検査へ結んだ。M2の残るループ差は、コンパイラが閉形式へ畳んだ場合と、生成Cに反復が残る場合を分けて調査する。
 
 [カウンタ閉形式の比較](../tools/corpora/counter-clamp-v1.m2.json)では、GCCの空の増分ループを2種類の式へ置き換えた。96件のC比較は一致したが、構造距離は6のままで式node数が増えたため、既存の出力を維持する。Clang側の距離4も記録を保ち、次の回復候補は別の制御変換から選ぶ。
 
 M0の段階形式v4は、この世代グラフと候補被覆の検査を各行へ結びます。元Low IRとMemorySSAの保存データ、検査器、根拠の件数、未判定理由を保持し、具体的な実行prefixの比較と別に集計します。旧probeでの未実行と、新probeで通過した検査の脱落も比較対象に含めます。
 
 [v4統合の開発用checkpoint](../tools/corpora/structure-analysis-v1.m0.json)では、GCC/Clang O2の4構成で世代グラフ・候補被覆の両検査を記録し、v3と同じ生成C・構造・具体実行の結果を保ちました。moduleの閉じた呼出しは別profileで観測し、アドレス式の根拠も対応する入力と契約を固定して追加します。
+
+M2の次の比較は、[入れ子ループの固定baseline](../tools/corpora/structure-nested-v1.m2-baseline.json)を使う。GCC/Clang O2の構造距離は15/30で、短い共有出口の複製上限から関数全体がgoto形式へ落ちている。65入力のnative・IR・O0/O2生成C比較を固定した。[局所複製上限の再配分](../tools/corpora/shared-tail-budget-v1.m2.json)ではgotoが減った一方、距離が18/33、静的writeが各1箇所増えたため見送った。次は入れ子ループの出口配置を制限付きで比較する。Clangの未観測2遷移は未知として保持する。
 
 ## M2で早期に扱う制御フロー変換
 

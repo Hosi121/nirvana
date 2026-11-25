@@ -78,6 +78,8 @@ NIRVANA_MODULE_PROBE="$PWD/target/debug/examples/evaluation_probe" \
 v5は`memory_addresses`と`unsigned_bounds`を加え、元Low IR・MemorySSA・型制約の報告をhashで結びます。前者は64-bitアフィン等式と全アクセス位置、後者はunsigned整数の上限と全SSA入力を検査します。`phi_checked`はアドレスのφ入力まで検査できたかを表し、その範囲の縮退も回帰へ含めます。型制約のレイアウトと元C型は引き続き候補として扱います。評価器は旧版の分母を保持し、v4/v5を同じ入力で比較できます。
 [v5の固定比較](../tools/corpora/ir-affine-v1.m1.json)では、同じ開発用4構成のC本文と構造・実行結果を保ち、追加した2検査が各4件の通過となりました。保存先を移動した報告も、元の出力パスを正規化して比較でき、compiler flagと入力パスの変更は引き続き検出します。
 
+v6は`storage_widths`を加え、Cの保存幅と表示変換が使う`ValueWidths`の検査を元Low IRへ結びます。`storage-widths.json`には到達blockの入口条件、全レジスタの保存幅、検査結果を保存し、失敗時も理由を保持します。再検査器は入口条件・到達範囲・件数と生JSONの対応を確認し、意味の帰納条件はRustの`value_width::validate`が照合します。[固定比較](../tools/corpora/ir-storage-v1.m1.json)では同じ4構成のC本文と構造を保ち、旧v5の未記録4件から通過4件となりました。
+
 [v4統合のcheckpoint](../tools/corpora/structure-analysis-v1.m0.json)は、[開発用2ソース](../tools/corpora/structure-analysis-v1.json)のGCC/Clang O2、計4構成を固定しています。同じobject・デコンパイラ・8入力・4096-step上限でv3/v4を比較し、2種類の解析検査が各4件の未記録から通過へ進みました。生成Cと正規化グラフは同じで、native 32件・O0/O2生成C 192件・IRの全状態比較2,400件を維持しています。保存した実データへの5種類の欠落・改変も拒否しました。checkpointには版・hash・再現条件を残し、生データは[容量管理](../README.md#開発)付きの短期保存へ置きます。
 
 `low_coverage`は元IRで開始した命令と観測したCFG遷移を数え、通っていない遷移のPC対も保持します。遷移の分母は構文上の`(block末尾PC, 移転先PC)`の集合で、実行可能性の証明とは分けて使います。`selected_c`には採用した経路条件の根拠と構造対応検査の有無を記録します。
