@@ -152,6 +152,15 @@ class Graph:
         if before.signed and op in ['+', '-', '*']:
             lo,hi=intervals.arithmetic(op,self.numeric_bounds(a),self.numeric_bounds(b));minimum,maximum=intervals.domain(before)
             if lo<minimum or hi>maximum: raise Unsupported('unknown signed arithmetic range')
+        if compare:
+            alo, ahi = self.numeric_bounds(a); blo, bhi = self.numeric_bounds(b)
+            proven = None
+            if op == '<': proven = True if ahi < blo else False if alo >= bhi else None
+            elif op == '<=': proven = True if ahi <= blo else False if alo > bhi else None
+            elif op == '>': proven = True if alo > bhi else False if ahi <= blo else None
+            elif op == '>=': proven = True if alo >= bhi else False if ahi < blo else None
+            elif ahi < blo or bhi < alo: proven = op == '!='
+            if proven is not None: return self.const(int(proven), typ)
         if op in ['/', '%'] and (y is None or y == 0): raise Unsupported('unknown or zero divisor')
         if (before.signed and op in ['/', '%'] and self.numeric_bounds(a)[0] == -(1 << (before.bits - 1))
                 and number(y, before) == -1):

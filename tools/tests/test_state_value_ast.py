@@ -80,8 +80,6 @@ class StateValueAST(unittest.TestCase):
         self.assertEqual(g.evaluate(model.outputs, [1, 2, 3, 4]), [3, 1, 2, 3, 4])
 
     def test_source_models_match_native_c_across_widths_paths_and_snapshots(self):
-        compiler = shutil.which('cc')
-        if not compiler: self.skipTest('requires C compiler')
         bodies = [
             'uint8_t low=(uint8_t)state[0];uint64_t old=state[1];state[2]=old+(uint64_t)low;'
             'if(low&1){state[0]^=state[2];return state[0];}state[1]+=state[3];return state[2];',
@@ -102,6 +100,11 @@ class StateValueAST(unittest.TestCase):
             'state[2]=(uint64_t)(product%-7);state[3]=(uint64_t)(low<<3);'
             'return (uint64_t)(-product)+(uint64_t)small;',
         ]
+        self.assert_native_bodies(bodies)
+
+    def assert_native_bodies(self, bodies):
+        compiler = shutil.which('cc')
+        if not compiler: self.skipTest('requires C compiler')
         rng = random.Random(17)
         vectors = [[0]*4, [2**64-1]*4, [1<<63,1,2,3], [1,2,3,4]] + [[rng.getrandbits(64) for _ in range(4)] for _ in range(16)]
         for body in bodies:
@@ -119,6 +122,99 @@ class StateValueAST(unittest.TestCase):
                     value = function(state)
                     self.assertEqual(g.evaluate(model.outputs, words), [value, *state], body)
                     self.assertEqual(g.evaluate([model.incomplete], words), [0], body)
+
+    def test_scoped_forward_labels_and_outer_loop_headers_match_native_c(self):
+        self.assert_native_bodies([
+            '{uint64_t saved=state[0];if(state[1]&1)goto local;state[0]+=7;'
+            'local:state[2]=saved;}return state[0]^state[2];',
+            'for(uint64_t i=0;i<(state[0]&1)+2;++i){for(uint64_t j=0;j<3;++j){'
+            'state[1]+=i*4+j;if(state[2]&1)goto tail;state[3]++;}'
+            'state[3]+=100;tail:state[3]+=i+1;}return state[1]^state[3];',
+            'uint64_t saved=state[1];for(uint64_t i=0;i<3;++i){for(uint64_t j=0;j<2;++j){'
+            'state[0]+=i+j;if(state[2]&1)goto cleanup;state[1]++;}state[3]++;}'
+            'cleanup:state[2]=saved;return state[0]+state[1];',
+            'for(uint64_t i=0;i<4;++i){if((state[0]>>i)&1)goto select;state[1]+=10;'
+            'select:if(i==1)continue;if(i==3)break;state[2]+=i;}return state[1]+state[2];',
+            'uint64_t i=0;do{++i;{if(state[0]&1)goto step;state[1]+=9;'
+            'step:state[2]+=i;}if(i==2)continue;state[3]+=i;}while(i<4);return state[2]+state[3];',
+            'uint64_t i=0;while(i<3){++i;if(state[0]&1)goto end;state[1]+=i;'
+            'end:if(i==2)continue;state[2]+=i;}return state[1]+state[2];',
+            'uint64_t i=0;again:;for(;i<4;){++i;for(uint64_t j=0;j<2;++j){'
+            'state[1]+=i+j;if(state[0]&1)goto again;}state[2]+=i;}return state[1]^state[2];',
+            'uint64_t x=state[0];{uint64_t x=state[1];if(state[2]&1)goto inner;'
+            'x+=3;inner:state[3]=x;}return x^state[3];',
+            'if(state[0]&1)goto set;uint64_t x=3;set:x=state[1];return x;',
+        ])
+
+    def test_persistent_storage_is_not_treated_as_fresh_automatic_state(self):
+        for body in ['static uint64_t count=0;++count;state[0]=count;return count;',
+                     'extern uint64_t shared;return shared;']:
+            with self.subTest(body=body), self.assertRaisesRegex(Unsupported, 'automatic local'):
+                self.model(Graph(), body)
+
+    def test_skipped_initializers_cannot_reuse_prior_activation_values(self):
+        for body in [
+            'for(uint64_t i=0;i<2;++i){if(i)goto use;uint64_t x=state[0];'
+            'use:state[1]=x;}return state[1];',
+            'if(state[0]&1)goto use;uint64_t x=state[1];use:return x;',
+        ]:
+            with self.subTest(body=body), self.assertRaisesRegex(Unsupported, 'defined local value'):
+                self.model(Graph(), body)
+        body = ('for(uint64_t i=0;i<2;++i){if(i)goto use;'
+                'const struct {struct nirvana_view saved;} v={{address}};'
+                'use:nirvana_store(&m,address+8,8,nirvana_view_load(&m,v.saved,8));}return 0;')
+        with self.assertRaises(Unsupported): self.model(Graph(), body, source=False)
+
+    def test_other_backward_jumps_loop_entries_and_vlas_remain_unsupported(self):
+        bodies = [
+            'uint64_t i=0;again:;for(;i<3;++i){if(state[0]&1)goto again;}return i;',
+            'uint64_t i=0;again:;for(i=0;i<3;){++i;if(state[0]&1)goto again;}return i;',
+            'uint64_t i=0;again:;for(;i<3;){++i;}if(state[0]&1)goto again;return i;',
+            'if(state[0]&1)goto inside;for(uint64_t i=0;i<2;++i){inside:state[1]++;}return state[1];',
+            'if(state[0]&1)goto inside;{inside:state[1]++;}return state[1];',
+            '{inside:state[1]++;}{if(state[0]&1)goto inside;}return state[1];',
+            'uint64_t n=(state[0]&3)+1;uint64_t a[n];return state[1];',
+        ]
+        for body in bodies:
+            with self.subTest(body=body), self.assertRaises(Unsupported): self.model(Graph(), body)
+
+    def test_context_initialization_is_path_local_and_fresh_each_activation(self):
+        code = ('uint64_t nirvana_readable(uint64_t address,uint8_t *memory,uint64_t base,uint64_t size){'
+                'struct nirvana_memory initial={memory,base,size};'
+                'if(nirvana_load(&initial,address,8)&1)goto use;struct nirvana_memory m={memory,base,size};'
+                'use:return nirvana_load(&m,address,8);}')
+        with self.assertRaisesRegex(Unsupported, 'context differs'):
+            observe(Graph(), self.ast(code, 'nirvana_readable'), 'nirvana_readable', source=False)
+        code = ('uint64_t nirvana_readable(uint64_t address,uint8_t *memory,uint64_t base,uint64_t size){'
+                'for(uint64_t i=0;i<2;++i){if(i)goto use;struct nirvana_memory m={memory,base,size};'
+                'use:(void)nirvana_load(&m,address,8);}return 0;}')
+        with self.assertRaisesRegex(Unsupported, 'context differs'):
+            observe(Graph(), self.ast(code, 'nirvana_readable'), 'nirvana_readable', source=False)
+
+    def test_label_joins_keep_mixed_partial_and_unaligned_byte_origins(self):
+        g=Graph()
+        source=self.model(g,'uint64_t flag=state[3]&1;if(flag){'
+            'state[0]=(state[0]&~UINT64_C(65280))|UINT64_C(43520);'
+            'state[1]=(state[1]&~UINT64_C(255))|UINT64_C(18);'
+            'state[0]=(state[0]&UINT64_C(72057594037927935))|UINT64_C(3746994889972252672);'
+            '}else state[0]^=255;state[2]=state[0]^state[1];return state[2];')
+        generated=self.model(g,'if(nirvana_load(&m,address+24,8)&1)goto write;'
+            'nirvana_store(&m,address,8,nirvana_load(&m,address,8)^255);goto done;'
+            'write:nirvana_store(&m,address+1,1,170);nirvana_store(&m,address+7,2,0x1234);'
+            'done:nirvana_store(&m,address+16,8,nirvana_load(&m,address,8)^nirvana_load(&m,address+8,8));'
+            'return nirvana_load(&m,address+16,8);',source=False)
+        for flag in [0,1]:
+            for words in [[0,0,0,flag],[2**64-1,0x8877665544332211,3,flag]]:
+                self.assertEqual(g.evaluate(source.outputs,words),g.evaluate(generated.outputs,words))
+
+    def test_forward_label_joins_preserve_captured_record_addresses(self):
+        g=Graph();model=self.model(g,'uint64_t flag=nirvana_load(&m,address+24,8)&1;'
+            'uint64_t sum=0;for(uint64_t i=0;i<2;++i){'
+            'const struct {struct nirvana_view saved;} v={{address+i*8}};'
+            'if(flag)goto use;nirvana_store(&m,address+16,8,99);'
+            'use:sum+=nirvana_view_load(&m,v.saved,8);}return sum;',source=False)
+        for flag in [0,1]:
+            self.assertEqual(g.evaluate(model.outputs,[11,22,33,flag]),[33,11,22,33 if flag else 99,flag])
 
     def test_current_indices_do_not_re_evaluate_captured_view_initializers(self):
         body=('uint64_t i=0;const struct {struct nirvana_view saved;} v={{address+i*8}};'

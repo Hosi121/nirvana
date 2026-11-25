@@ -37,6 +37,26 @@ class CheckedRanges(unittest.TestCase):
         cls.solver=shutil.which(os.environ.get('NIRVANA_Z3','z3'))
         if not cls.solver: raise unittest.SkipTest('requires Z3')
 
+    def test_range_folded_comparisons_match_independent_bit_vector_operators(self):
+        g=Graph();differences=[];folded=0
+        for typ in [U64,Type(32,True)]:
+            low=g.cast(g.binary('&',g.inputs[0],g.const(3),U64),typ)
+            high=g.binary('+',g.cast(g.binary('&',g.inputs[1],g.const(3),U64),typ),g.const(8,typ),typ)
+            values=[low,high,g.const(0,typ),g.const(3,typ),g.const(4,typ)]
+            if typ.signed: values.append(g.binary('-',low,g.const(2,typ),typ))
+            for a in values:
+                for b in values:
+                    for op,smt in [('<','lt'),('<=','le'),('>','gt'),('>=','ge'),('==','='),('!=','distinct')]:
+                        result=g.binary(op,a,b,BOOL)
+                        folded+=g.constant(result) is not None
+                        operator=smt if op in ['==','!='] else ('bvs' if typ.signed else 'bvu')+smt
+                        differences.append(f'(distinct v{result} (ite ({operator} v{a} v{b}) #b1 #b0))')
+        self.assertGreater(folded,100)
+        script=g.smt()+'(assert (or '+' '.join(differences)+'))\n(check-sat)\n'
+        result=subprocess.run([self.solver,'-in','-smt2'],input=script,capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr or result.stdout)
+        self.assertEqual(result.stdout.strip(),'unsat')
+
     def test_informative_ranges_contain_all_smt_values_for_arbitrary_input_words(self):
         g=Graph();signed=Type(32,True)
         low=g.cast(g.cast(g.inputs[0],BYTE),signed)

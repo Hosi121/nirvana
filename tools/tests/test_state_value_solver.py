@@ -72,7 +72,7 @@ class StateValueProofs(unittest.TestCase):
              'return nirvana_load(&m,address+24,8);')
         result = self.compare(a,b)
         self.assertEqual(result.report['status'],'equivalent_under_model')
-        self.assertEqual(result.report['model'],'nirvana-state4-values-v7')
+        self.assertEqual(result.report['model'],'nirvana-state4-values-v8')
 
     def test_loop_completion_is_proved_over_all_words_including_wraparound(self):
         a = ('while(1){++state[1];if(state[0]&1){state[2]=200;break;}'
@@ -91,7 +91,9 @@ class StateValueProofs(unittest.TestCase):
     def test_same_outputs_at_the_unroll_limit_do_not_establish_equivalence(self):
         for body in ['while(state[0])--state[0];return 0;', 'for(;;){}']:
             generated = body.replace('state[0]', 'counter')
-            if 'counter' in generated: generated = 'uint64_t counter=nirvana_load(&m,address,8);'+generated
+            if 'counter' in generated:
+                generated = 'uint64_t counter=nirvana_load(&m,address,8);'+generated
+                generated = generated.replace('return 0;', 'nirvana_store(&m,address,8,counter);return 0;')
             result = self.compare(body,generated)
             self.assertEqual(result.report['status'],'unknown')
             self.assertEqual(result.report['reason'],'loop_bound_exhausted')

@@ -1,17 +1,19 @@
 """Translate a closed C11 subset into immutable state values.
 
-This oracle owns local snapshots and 32 individual state bytes. Function-body
-forward gotos retain their snapshots; bounded structured loops retain an
-explicit incomplete guard. Nested label scopes, scalar calls,
+This oracle owns local snapshots and 32 individual state bytes. Forward gotos
+to the same or an enclosing compound sequence retain their snapshots;
+bounded structured loops retain an explicit incomplete guard. A goto to an
+empty label immediately before its containing for loop is an outer continue
+only when that loop has no initializer or increment. Other backward jumps,
+jumps into nested control, scalar calls,
 volatile objects and unresolved addresses stay unsupported. The
 generated side uses the fixed Nirvana checked-memory helper contracts; C
 storage names and view field spellings do not identify values or addresses.
 """
 from dataclasses import dataclass,field
-from itertools import chain, islice
 
 from .. import c_footprint as cf, state_memory as sm
-from .terms import Graph, Type, U64, BYTE, BOOL, Unsupported, number
+from .terms import Graph, Type, U64, BOOL, Unsupported, number
 from . import helpers
 from .records import Records,View
 
@@ -30,14 +32,23 @@ def ctype(node):
     raise Unsupported('scalar type: ' + text)
 
 
+@dataclass(frozen=True)
+class ByteValue:
+    """An immutable byte slice; materialize extracts only when a load needs them."""
+    value: int
+    offset: int
+
+
 @dataclass
 class State:
     guard: int
     locals: dict
     memory: list
     records:dict=field(default_factory=dict)
+    contexts:frozenset=field(default_factory=frozenset)
 
-    def copy(self, guard): return State(guard, self.locals.copy(), self.memory.copy(),self.records.copy())
+    def copy(self, guard):
+        return State(guard, self.locals.copy(), self.memory.copy(), self.records.copy(), self.contexts)
 
 
 @dataclass
@@ -57,10 +68,12 @@ class Interpreter:
         self.graph, self.source = graph, source
         self.records=Records(graph,self.resolver)
         self.parameter=parameter
-        self.memory_context = None
         self.parameters = [n for n in cf.children(self.root) if n.get('kind') == 'ParmVarDecl']
         self.returns, self.work, self.assignments, self.declarations = [], 10000, 0, set()
-        self.gotos, self.labels, self.loops, self.truncated = [], {}, [], []
+        self.labels, self.frames, self.loops, self.truncated = {}, [], [], []
+        self.loop_jumps = {}
+        self.block_declarations = {}
+        loop_headers = {}
         if cf.type_key(self.root).split('(')[0].strip() not in ['uint64_t', 'unsigned long', 'unsigned long long']:
             raise Unsupported('return outside uint64_t profile')
         if source:
@@ -78,23 +91,45 @@ class Interpreter:
             pending.extend(cf.children(node))
         bodies = [n for n in cf.children(self.root) if n.get('kind') == 'CompoundStmt']
         if len(bodies) != 1: raise Unsupported('function body shape')
-        statements = self.statements = cf.children(bodies[0])
-        for index, statement in enumerate(statements):
-            if statement.get('kind') == 'LabelStmt':
-                parts = cf.children(statement)
-                if len(parts) != 1: raise Unsupported('label body shape')
-                self.labels[statement['declId']] = index
-        for index, statement in enumerate(statements):
-            pending = [statement]
-            while pending:
-                node = pending.pop()
-                if node.get('kind') == 'LabelStmt' and node is not statement:
-                    raise Unsupported('label outside function body sequence')
-                if node.get('kind') == 'GotoStmt':
-                    target = self.labels.get(node.get('targetLabelDeclId'))
-                    if target is None or target <= index:
-                        raise Unsupported('goto outside forward function-body control')
-                pending.extend(cf.children(node))
+        gotos = []
+        def control(node, ancestors=(), direct=False, loop_ancestors=()):
+            kind, parts = node.get('kind'), cf.children(node)
+            if kind in ['WhileStmt', 'ForStmt', 'DoStmt']:
+                loop_ancestors = (*loop_ancestors, node['id'])
+            if kind == 'CompoundStmt':
+                owner = node['id']
+                self.block_declarations[owner] = [declaration for statement in parts
+                    if statement.get('kind') == 'DeclStmt' for declaration in cf.children(statement)
+                    if declaration.get('kind') == 'VarDecl']
+                for index, statement in enumerate(parts):
+                    if statement.get('kind') == 'LabelStmt':
+                        self.labels[statement['declId']] = (owner, index)
+                        body = cf.children(statement)
+                        following = parts[index + 1] if index + 1 < len(parts) else {}
+                        loop_parts = cf.children(following)
+                        # Restarting an empty-init/empty-increment for loop is
+                        # exactly a continue, including from an inner loop.
+                        if (len(body) == 1 and body[0].get('kind') == 'NullStmt'
+                                and following.get('kind') == 'ForStmt' and len(loop_parts) == 5
+                                and not any(loop_parts[i] for i in [0, 1, 3])):
+                            loop_headers[statement['declId']] = following['id']
+                    control(statement, (*ancestors, (owner, index)), True, loop_ancestors)
+            else:
+                if kind == 'LabelStmt' and (not direct or len(parts) != 1):
+                    raise Unsupported('label outside compound sequence')
+                if kind == 'GotoStmt': gotos.append((node, ancestors, loop_ancestors))
+                for part in parts: control(part, ancestors, False, loop_ancestors)
+        control(bodies[0])
+        for node, ancestors, loop_ancestors in gotos:
+            target = self.labels.get(node.get('targetLabelDeclId'))
+            if target is not None and any(owner == target[0] and index < target[1] for owner, index in ancestors):
+                continue
+            loop_id = loop_headers.get(node.get('targetLabelDeclId'))
+            # A sibling statement after the loop cannot restart it.
+            if loop_id is not None and loop_id in loop_ancestors:
+                self.loop_jumps[node['id']] = loop_id
+            if node['id'] not in self.loop_jumps:
+                raise Unsupported('goto outside forward enclosing-sequence control')
 
     def spend(self):
         self.work -= 1
@@ -156,8 +191,7 @@ class Interpreter:
         if len(args) != arity: raise Unsupported('checked-memory helper arity')
         context = sm.strip(args[0]); children = cf.children(context)
         if (context.get('kind') != 'UnaryOperator' or context.get('opcode') != '&' or len(children) != 1
-                or sm.strip(children[0]).get('referencedDecl', {}).get('id') != self.memory_context
-                or self.memory_context is None):
+                or sm.strip(children[0]).get('referencedDecl', {}).get('id') not in state.contexts):
             raise Unsupported('checked-memory context differs from ABI')
         if mode=='view':
             view=self.records.evaluate(args[1],state,self.value)
@@ -170,12 +204,17 @@ class Interpreter:
 
     def load(self, state, place):
         offset, width = place
-        return self.graph.pack(state.memory[offset:offset + width])
+        parts = state.memory[offset:offset + width]
+        first = parts[0]
+        if all(part.value == first.value and part.offset == first.offset + i * 8
+               for i, part in enumerate(parts)):
+            return self.graph.extract(first.value, first.offset, width * 8)
+        return self.graph.pack([self.graph.extract(part.value, part.offset) for part in parts])
 
     def store(self, state, place, value):
         offset, width = place
         value = self.graph.cast(value, U64)
-        state.memory[offset:offset + width] = [self.graph.extract(value, i * 8) for i in range(width)]
+        state.memory[offset:offset + width] = [ByteValue(value, i * 8) for i in range(width)]
         self.assignments += 1
 
     def value(self, original, state):
@@ -231,16 +270,18 @@ class Interpreter:
             self.store(state, place, value)
 
     def declaration(self, node, state):
+        if node.get('storageClass') in ['static', 'extern']:
+            raise Unsupported('storage outside automatic local profile')
         parts = cf.children(node); g = self.graph
         typename = cf.type_key(node).replace('const ', '')
         if typename == 'struct nirvana_memory' and not self.source:
-            if self.memory_context is not None or len(parts) != 1 or parts[0].get('kind') != 'InitListExpr':
+            if len(parts) != 1 or parts[0].get('kind') != 'InitListExpr':
                 raise Unsupported('memory context initializer')
             args = [sm.strip(n) for n in cf.children(parts[0])]
             if (len(args) != 3 or [n.get('referencedDecl', {}).get('id') for n in args]
                     != [n['id'] for n in self.parameters[-3:]]):
                 raise Unsupported('memory context is not the fixed ABI')
-            self.memory_context = node['id']; return
+            state.contexts = state.contexts | {node['id']}; return
         if typename.startswith('struct '):
             if self.source or len(parts) != 1:
                 raise Unsupported('record outside immutable address setup')
@@ -260,7 +301,7 @@ class Interpreter:
         self.spend()
         kind, parts, g = node.get('kind'), cf.children(node), self.graph
         if g.constant(state.guard) == 0: return []
-        if kind == 'CompoundStmt': return self.sequence(parts, [state])
+        if kind == 'CompoundStmt': return self.sequence(node, [state])
         if kind == 'IfStmt' and len(parts) in [2, 3]:
             condition = g.truth(self.value(parts[0], state))
             yes = g.binary('&', state.guard, condition, BOOL)
@@ -268,17 +309,29 @@ class Interpreter:
             return self.statement(parts[1], state.copy(yes)) + (self.statement(parts[2], state.copy(no)) if len(parts) == 3 else [state.copy(no)])
         if kind == 'ReturnStmt' and len(parts) == 1:
             result = g.cast(self.value(parts[0], state), U64)
-            words = [g.pack(state.memory[n:n + 8]) for n in range(0, 32, 8)]
+            words = [self.load(state, (n, 8)) for n in range(0, 32, 8)]
             self.returns.append((state.guard, [result, *words])); return []
         if kind == 'GotoStmt':
-            self.gotos.append((node['targetLabelDeclId'], state)); return []
+            if node['id'] in self.loop_jumps:
+                for context in reversed(self.loops):
+                    if context['owner'] == self.loop_jumps[node['id']]:
+                        context['continue'][:] = self.join(context['continue'] + [state])
+                        return []
+                raise Unsupported('loop-header goto lacks an active loop')
+            target = node['targetLabelDeclId']; owner, _ = self.labels[target]
+            for frame in reversed(self.frames):
+                if frame['owner'] == owner:
+                    frame['pending'][target] = self.join(frame['pending'].get(target, []) + [state])
+                    return []
+            raise Unsupported('goto lacks an active enclosing sequence')
         if kind == 'LabelStmt' and len(parts) == 1:
             return self.statement(parts[0], state)
         if kind in ['WhileStmt', 'ForStmt', 'DoStmt']:
             return self.loop(node, state)
         if kind in ['BreakStmt', 'ContinueStmt']:
             if not self.loops: raise Unsupported('loop transfer outside a supported loop')
-            self.loops[-1]['break' if kind == 'BreakStmt' else 'continue'].append(state)
+            states = self.loops[-1]['break' if kind == 'BreakStmt' else 'continue']
+            states[:] = self.join(states + [state])
             return []
         if kind == 'DeclStmt':
             for declaration in parts:
@@ -330,7 +383,7 @@ class Interpreter:
             increment = increment if increment else None
         else: raise Unsupported('loop AST shape')
         active = self.statement(init, state) if init else [state]
-        context = {'break': [], 'continue': []}
+        context = {'owner': node['id'], 'break': [], 'continue': []}
         self.loops.append(context)
         exits = context['break']
         try:
@@ -338,13 +391,14 @@ class Interpreter:
                 entered = []
                 for current in active:
                     yes, no = ([current], []) if kind == 'DoStmt' and iteration == 0 else self.split(current, condition)
-                    entered.extend(yes); exits.extend(no)
+                    entered.extend(yes); exits[:] = self.join(exits + no)
                 if iteration == LOOP_LIMIT:
                     self.truncated.extend(current.guard for current in entered)
                     self.path_budget([])
                     break
                 active = [next_state for current in entered for next_state in self.statement(body, current)]
                 active.extend(context['continue']); context['continue'].clear()
+                active = self.join(active)
                 if increment:
                     active = [next_state for current in active for next_state in self.statement(increment, current)]
                 self.path_budget(active)
@@ -354,31 +408,80 @@ class Interpreter:
             self.loops.pop()
 
     def path_budget(self, active):
-        count = len(active) + len(self.returns) + len(self.gotos) + len(self.truncated)
-        count += sum(len(states) for context in self.loops for states in context.values())
+        count = len(active) + len(self.returns) + len(self.truncated)
+        count += sum(len(states) for frame in self.frames for states in frame['pending'].values())
+        count += sum(len(context[key]) for context in self.loops for key in ['break', 'continue'])
         if count > 64: raise Unsupported('C path budget')
 
-    def sequence(self, statements, states):
-        for statement in statements:
-            if not states: break
-            states = [next_state for state in states for next_state in self.statement(statement, state)]
-            self.path_budget(states)
-        return states
+    def join(self, states):
+        """Exact guarded values at a forward label; absent locals stay undefined."""
+        if not states: return []
+        g = self.graph
+        def byte(condition, a, b):
+            if a == b: return a
+            if a.offset == b.offset and g.type(a.value) == g.type(b.value):
+                return ByteValue(g.choose(condition, a.value, b.value), a.offset)
+            return ByteValue(g.choose(condition, g.extract(a.value, a.offset), g.extract(b.value, b.offset)), 0)
+        def record(condition, a, b):
+            if a == b: return a
+            if isinstance(a, View) and isinstance(b, View):
+                return View(g.choose(condition, a.address, b.address))
+            if isinstance(a, tuple) and isinstance(b, tuple) and len(a) == len(b):
+                return tuple(record(condition, x, y) for x, y in zip(a, b))
+            if type(a) is int and type(b) is int: return g.choose(condition, a, b)
+            raise Unsupported('incompatible captured records at a label')
+        result = states[0]
+        for current in states[1:]:
+            self.spend()
+            locals = {}
+            for identity in dict.fromkeys([*result.locals, *current.locals]):
+                a, b = current.locals.get(identity), result.locals.get(identity)
+                locals[identity] = None if a is None or b is None else g.choose(current.guard, a, b)
+            result = State(g.binary('|', result.guard, current.guard, BOOL), locals,
+                           [byte(current.guard, a, b) for a, b in zip(current.memory, result.memory)],
+                           {identity: record(current.guard, current.records[identity], result.records[identity])
+                            for identity in result.records if identity in current.records},
+                           result.contexts & current.contexts)
+        return [result]
+
+    def sequence(self, node, states):
+        owner = node['id']
+        # Automatic objects are fresh on every block activation, including when
+        # a forward goto skips their initializer on a later loop iteration.
+        for state in states:
+            for declaration in self.block_declarations[owner]:
+                identity = declaration['id']
+                if cf.type_key(declaration).replace('const ', '').startswith('struct '):
+                    state.records.pop(identity, None)
+                    state.contexts = state.contexts - {identity}
+                else:
+                    ctype(declaration)
+                    state.locals[identity] = None
+        frame = {'owner': owner, 'pending': {}}
+        self.frames.append(frame)
+        try:
+            for statement in cf.children(node):
+                if statement.get('kind') == 'LabelStmt':
+                    states = self.join(states + frame['pending'].pop(statement['declId'], []))
+                if not states:
+                    if not frame['pending']: break
+                    continue
+                states = [next_state for state in states for next_state in self.statement(statement, state)]
+                self.path_budget(states)
+            if frame['pending']: raise Unsupported('unconsumed forward label')
+            return states
+        finally:
+            self.frames.pop()
 
     def model(self):
         bodies = [n for n in cf.children(self.root) if n.get('kind') == 'CompoundStmt']
         if len(bodies) != 1: raise Unsupported('function body shape')
-        memory = [self.graph.extract(self.graph.inputs[n // 8], n % 8 * 8) for n in range(32)]
+        memory = [ByteValue(self.graph.inputs[n // 8], n % 8 * 8) for n in range(32)]
         locals={}
         if not self.source:
             locals[self.parameters[self.parameter]['id']]=self.graph.const(4224)
             for parameter,value in zip(self.parameters[-2:],[4096,512]): locals[parameter['id']]=self.graph.const(value)
         active = self.statement(bodies[0], State(self.graph.const(1, BOOL), locals, memory))
-        while self.gotos:
-            target, state = self.gotos.pop()
-            index = self.labels[target]
-            continuation = chain(cf.children(self.statements[index]), islice(self.statements, index + 1, None))
-            active.extend(self.sequence(continuation, [state]))
         if active: raise Unsupported('function may fall through')
         incomplete = self.graph.const(0, BOOL)
         for guard in self.truncated: incomplete = self.graph.binary('|', incomplete, guard, BOOL)
