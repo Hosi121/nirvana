@@ -1,6 +1,6 @@
 //! Static source-bound checks; these are not concrete execution comparisons.
 use nirvana::{
-    dataflow::{memory_ssa, ssa::SsaFunction, type_infer},
+    dataflow::{memory_ssa, ssa::SsaFunction, type_infer, value_width},
     ir::Program,
 };
 
@@ -33,6 +33,17 @@ impl Check {
             },
             evidence: None,
             reason: Some(reason),
+        }
+    }
+    fn storage_error(error: &value_width::ValidationError) -> Self {
+        Self {
+            status: if matches!(error, value_width::ValidationError::Invalid(_)) {
+                "rejected"
+            } else {
+                "unavailable"
+            },
+            evidence: None,
+            reason: Some(error.to_string()),
         }
     }
     fn checked<T>(
@@ -85,10 +96,12 @@ pub(super) struct Stage {
     input: String,
     report: Option<String>,
     types: Option<String>,
+    storage: Option<String>,
     graph: Check,
     queries: Check,
     addresses: Check,
     bounds: Check,
+    storage_widths: Check,
 }
 impl Stage {
     pub fn new(source: &Program) -> Self {
@@ -102,11 +115,55 @@ impl Stage {
             input,
             report: None,
             types: None,
+            storage: None,
             graph: Check::unavailable("register SSA unavailable".into()),
             queries: Check::unavailable("register SSA unavailable".into()),
             addresses: Check::unavailable("register SSA unavailable".into()),
             bounds: Check::unavailable("unsigned bound analysis unavailable".into()),
+            storage_widths: Check::unavailable("unsigned storage analysis unavailable".into()),
         };
+        let storage = value_width::ValueWidths::analyze(source);
+        stage.storage_widths = match (storage.widths(), storage.incoming()) {
+            (Some(widths), Some(incoming)) => match value_width::validate(source, widths, incoming)
+            {
+                Ok(e) => Check::passed(format!(
+                    "{{\"registers\":{},\"narrow_registers\":{},\"blocks\":{},\"edges\":{},\"assignments\":{},\"reads\":{},\"expressions\":{}}}",
+                    e.registers,
+                    e.narrow_registers,
+                    e.blocks,
+                    e.edges,
+                    e.assignments,
+                    e.reads,
+                    e.expressions
+                )),
+                Err(error) => Check::storage_error(&error),
+            },
+            _ => match storage.verification() {
+                Err(error) => Check::storage_error(error),
+                Ok(_) => Check {
+                    status: "rejected",
+                    evidence: None,
+                    reason: Some("checked storage certificate facts missing".into()),
+                },
+            },
+        };
+        stage.storage = Some(match storage.to_json() {
+            Ok(report) => report,
+            Err(reason) => {
+                if stage.storage_widths.status != "rejected" {
+                    stage.storage_widths = Check::unavailable(reason);
+                }
+                let status = stage.storage_widths.status;
+                let reason = stage
+                    .storage_widths
+                    .reason
+                    .as_deref()
+                    .unwrap_or("storage certificate unavailable");
+                format!(
+                    "{{\"schema\":\"nirvana-storage-widths-v1\",\"scope\":\"source-entry-storage-observations\",\"status\":{status:?},\"evidence\":null,\"widths\":null,\"incoming\":null,\"entry_block\":null,\"block_starts\":null,\"reason\":{reason:?}}}"
+                )
+            }
+        });
         // Type/layout candidates do not establish a source-language type. Only
         // the separately checked unsigned storage upper bounds are claimed.
         if let Some(types) = type_infer::TypeAnalysis::analyze(source) {
@@ -198,12 +255,13 @@ impl Stage {
         };
         stage
     }
-    pub fn statuses(&self) -> [&'static str; 4] {
+    pub fn statuses(&self) -> [&'static str; 5] {
         [
             self.graph.status,
             self.queries.status,
             self.addresses.status,
             self.bounds.status,
+            self.storage_widths.status,
         ]
     }
     pub fn json(&self, out: &std::path::Path) -> std::io::Result<String> {
@@ -214,8 +272,11 @@ impl Stage {
         if let Some(report) = &self.types {
             std::fs::write(out.join("type-constraints.json"), report)?;
         }
+        if let Some(report) = &self.storage {
+            std::fs::write(out.join("storage-widths.json"), report)?;
+        }
         Ok(format!(
-            "[{},{},{},{}]",
+            "[{},{},{},{},{}]",
             self.graph.json(
                 "memory_ssa_graph",
                 "nirvana-memory-ssa-graph-v1",
@@ -247,6 +308,14 @@ impl Stage {
                 "type_constraints",
                 "type-constraints.json",
                 self.types.is_some()
+            ),
+            self.storage_widths.json(
+                "storage_widths",
+                "nirvana-storage-widths-v1",
+                "value_width::validate",
+                "storage_widths",
+                "storage-widths.json",
+                self.storage.is_some()
             )
         ))
     }

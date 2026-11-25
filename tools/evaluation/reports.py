@@ -61,8 +61,7 @@ def index(report):
             'cohort denominator')
     for row in rows:
         architecture_shape(row.get('stage_checks', {'status': 'not_run'}))
-    memory_stages = any(row.get('stage_checks', {}).get('schema') in
-                        ['nirvana-evaluation-stages-v3', 'nirvana-evaluation-stages-v4', 'nirvana-evaluation-stages-v5']
+    memory_stages = any(row.get('stage_checks', {}).get('schema') in stages.MEMORY_SCHEMAS
                         for row in rows)
     require(not memory_stages or 'architecture_execution' in report['summary'],
             'missing architecture execution denominator')
@@ -75,8 +74,7 @@ def index(report):
                 and all(type(n) is int for counts in observed.values() for n in counts.values()),
                 'architecture execution denominator')
     analysis_stages = [row for row in rows
-                       if row.get('stage_checks', {}).get('schema') in
-                       ['nirvana-evaluation-stages-v4', 'nirvana-evaluation-stages-v5']]
+                       if row.get('stage_checks', {}).get('schema') in stages.ANALYSIS_SCHEMAS]
     require(not analysis_stages or 'architecture_analysis' in report['summary'],
             'missing architecture analysis denominator')
     if 'architecture_analysis' in report['summary']:
@@ -161,7 +159,7 @@ def replay(root, row):
     result['c_footprint'] = footprint['status']
     architecture = architecture_shape(row.get('stage_checks', {'status': 'not_run'}))
     if 'schema' in architecture:
-        require(architecture['schema'] not in ['nirvana-evaluation-stages-v4', 'nirvana-evaluation-stages-v5']
+        require(architecture['schema'] not in stages.ANALYSIS_SCHEMAS
                 or 'prepare_stdout_sha256' in semantic, 'analysis checks require retained probe metadata')
         stages.validate(architecture, semantic['profile']['step_limit'], directory / 'semantics',
                         semantic['profile']['requested_cases'], semantic['profile'].get('register_count'), retained=True)

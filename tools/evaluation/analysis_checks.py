@@ -8,14 +8,21 @@ from .semantic_pairs import unique_object
 
 NAMES = ('memory_ssa_graph', 'memory_ssa_queries')
 V5_NAMES = NAMES + ('memory_addresses', 'unsigned_bounds')
+V6_NAMES = V5_NAMES + ('storage_widths',)
+VERSION_NAMES = {4: NAMES, 5: V5_NAMES, 6: V6_NAMES}
+SCHEMA_NAMES = {f'nirvana-evaluation-stages-v{version}': names for version, names in VERSION_NAMES.items()}
 MODELS = ('nirvana-memory-ssa-graph-v1', 'nirvana-memory-ssa-coverage-v1',
-          'nirvana-modular-address-v1', 'nirvana-unsigned-bounds-v1')
+          'nirvana-modular-address-v1', 'nirvana-unsigned-bounds-v1', 'nirvana-storage-widths-v1')
 CHECKERS = ('memory_ssa::validate_graph', 'memory_ssa::validate',
-            'memory_ssa::validate', 'type_infer::check_bounds')
+            'memory_ssa::validate', 'type_infer::check_bounds', 'value_width::validate')
 GRAPH_FIELDS = {'blocks', 'definitions', 'accesses', 'phi_inputs', 'opaque_effects'}
 QUERY_FIELDS = {'queries', 'states', 'links', 'candidate_bytes'}
 ADDRESS_FIELDS = {'accesses', 'modular_forms', 'phi_inputs', 'source_atoms', 'basis_evaluations'}
 BOUND_FIELDS = {'values', 'assignments', 'phi_inputs', 'expressions'}
+STORAGE_FIELDS = {'registers', 'narrow_registers', 'blocks', 'edges', 'assignments', 'reads', 'expressions'}
+REPORT_FIELDS = ('memory_ssa', 'memory_ssa', 'memory_ssa', 'type_constraints', 'storage_widths')
+REPORT_NAMES = ('memory-ssa.json', 'memory-ssa.json', 'memory-ssa.json',
+                'type-constraints.json', 'storage-widths.json')
 MAX_BYTES = 16 * 1024 * 1024
 
 
@@ -24,9 +31,9 @@ def require(condition, message):
         raise ProtocolError('analysis ' + message)
 
 
-def counts(value, fields):
+def counts(value, fields, maximum=8_000_000):
     require(isinstance(value, dict) and set(value) == fields
-            and all(type(n) is int and 0 <= n <= 8_000_000 for n in value.values()), 'evidence counts')
+            and all(type(n) is int and 0 <= n <= maximum for n in value.values()), 'evidence counts')
 
 
 def members(value):
@@ -35,12 +42,12 @@ def members(value):
 
 
 def names_for_schema(schema):
-    return V5_NAMES if schema == 'nirvana-evaluation-stages-v5' else NAMES
+    return SCHEMA_NAMES.get(schema, NAMES)
 
 
 def names_for_rows(rows):
-    return (V5_NAMES if any(row.get('stage_checks', {}).get('schema') == 'nirvana-evaluation-stages-v5'
-                           for row in rows) else NAMES)
+    return max((names_for_schema(row.get('stage_checks', {}).get('schema')) for row in rows),
+               key=len, default=NAMES)
 
 
 def report_counts(report):
@@ -189,15 +196,54 @@ def bounds_counts(report, original_registers):
     return evidence
 
 
+def storage_counts(report, original_registers, input_entry):
+    fields = {'schema', 'scope', 'status', 'evidence', 'widths', 'incoming',
+              'entry_block', 'block_starts', 'reason'}
+    require(isinstance(report, dict) and set(report) == fields
+            and report['schema'] == MODELS[4]
+            and report['scope'] == 'source-entry-storage-observations'
+            and report['status'] in ['checked', 'unavailable', 'rejected'], 'storage artifact schema')
+    require(0 <= input_entry < 2**64, 'storage input entry PC')
+    if report['status'] != 'checked':
+        require(all(report[field] is None for field in
+                    ['evidence', 'widths', 'incoming', 'entry_block', 'block_starts'])
+                and isinstance(report['reason'], str) and 0 < len(report['reason']) <= 4096,
+                'storage fallback cannot retain partial facts')
+        return report['status'], None, report['reason']
+    require(report['reason'] is None, 'checked storage reason')
+    evidence = report['evidence']
+    counts(evidence, STORAGE_FIELDS, maximum=10_000_000)
+    widths, incoming, starts = (members(report[field]) for field in ['widths', 'incoming', 'block_starts'])
+    require(len(widths) == original_registers
+            and all(type(width) is int and width in [8, 16, 32, 64] for width in widths), 'storage widths')
+    require(0 < len(incoming) <= 100_000 and len(starts) == len(incoming)
+            and (len(incoming) + 4) * original_registers <= 1_000_000
+            and all(type(start) is int and 0 <= start < 2**64 for start in starts)
+            and starts == sorted(set(starts)), 'storage CFG rows')
+    for row in incoming:
+        require(row is None or isinstance(row, list) and len(row) == original_registers
+                and all(type(bits) is int and 0 <= bits <= 64 for bits in row), 'storage incoming row')
+    entry = report['entry_block']
+    require(type(entry) is int and 0 <= entry < len(incoming) and starts[entry] == input_entry
+            and incoming[entry] == [64] * original_registers, 'storage arbitrary initial boundary')
+    require(evidence['registers'] == original_registers
+            and evidence['narrow_registers'] == sum(width < 64 for width in widths)
+            and evidence['blocks'] == sum(row is not None for row in incoming)
+            and evidence['edges'] <= 2 * evidence['blocks']
+            and evidence['reads'] <= evidence['expressions'] <= 10_000_000
+            and evidence['assignments'] <= min(100_000, evidence['expressions']),
+            'storage count correspondence')
+    return 'passed', evidence, None
+
+
 def validate(entries, directory, original_registers, *, retained=False, version=4):
-    names = V5_NAMES if version == 5 else NAMES
-    require(version in [4, 5] and isinstance(entries, list) and len(entries) == len(names)
+    names = VERSION_NAMES.get(version, ())
+    require(version in VERSION_NAMES and isinstance(entries, list) and len(entries) == len(names)
             and all(isinstance(e, dict) for e in entries)
             and [e['name'] for e in entries] == list(names), 'check names')
     reports = {}
     for i, entry in enumerate(entries):
-        report_field = 'type_constraints' if i == 3 else 'memory_ssa'
-        report_name = 'type-constraints.json' if i == 3 else 'memory-ssa.json'
+        report_field, report_name = REPORT_FIELDS[i], REPORT_NAMES[i]
         fields = {'name', 'model', 'checker', 'status', 'input_ir', report_field, 'evidence', 'reason'}
         require(isinstance(entry, dict)
                 and set(entry) - {'input_ir_sha256', report_field + '_sha256'} == fields
@@ -205,6 +251,7 @@ def validate(entries, directory, original_registers, *, retained=False, version=
         require(entry['status'] in ['passed', 'unavailable', 'rejected'], 'check status')
         require(entry['input_ir'] == 'analysis-input.ir.txt'
                 and entry[report_field] in [None, report_name], 'artifact names')
+        require(i != 4 or entry[report_field] == report_name, 'storage certificate artifact required')
         for field in ['input_ir', report_field]:
             name = entry[field]
             if name is None:
@@ -218,36 +265,48 @@ def validate(entries, directory, original_registers, *, retained=False, version=
             entry[field + '_sha256'] = digest
             if field == 'input_ir':
                 header = path.read_text().splitlines()[0]
-                require(re.fullmatch(r'entry=[0-9]+ registers=' + str(original_registers), header) is not None,
-                        'original Low IR register binding')
+                match = re.fullmatch(r'entry=([0-9]+) registers=' + str(original_registers), header)
+                require(match is not None, 'original Low IR register binding')
+                input_entry = int(match.group(1))
             elif name not in reports:
                 raw = json.loads(path.read_text(), object_pairs_hook=unique_object)
                 if field == 'memory_ssa':
                     graph, coverage = report_counts(raw)
                     reports[name] = [graph, {k: v for k, v in (coverage or {}).items() if k != 'model'}]
-                    if version == 5:
+                    if version >= 5:
                         reports[name].append(modular_counts(raw))
-                else:
+                elif field == 'type_constraints':
                     reports[name] = bounds_counts(raw, original_registers)
+                else:
+                    reports[name] = storage_counts(raw, original_registers, input_entry)
+        if i == 4:
+            require((entry['status'], entry['evidence'], entry['reason']) == reports[report_name],
+                    'storage certificate outcome correspondence')
         if entry['status'] == 'passed':
             require(entry['reason'] is None and entry[report_field] is not None, 'passed evidence artifacts')
             evidence = entry['evidence']
-            count_fields = [GRAPH_FIELDS, QUERY_FIELDS, ADDRESS_FIELDS, BOUND_FIELDS][i]
+            count_fields = [GRAPH_FIELDS, QUERY_FIELDS, ADDRESS_FIELDS, BOUND_FIELDS, STORAGE_FIELDS][i]
             if i == 2:
                 require(isinstance(evidence, dict) and type(evidence.get('phi_checked')) is bool,
                         'modular phi check boolean')
                 counts({k: v for k, v in evidence.items() if k != 'phi_checked'}, count_fields)
             else:
-                counts(evidence, count_fields)
-            expected = reports[entry[report_field]] if i == 3 else reports[entry[report_field]][i]
+                counts(evidence, count_fields, maximum=10_000_000 if i == 4 else 8_000_000)
+            record = reports[entry[report_field]]
+            if i == 4:
+                expected = record[1]
+            elif i == 3:
+                expected = record
+            else:
+                expected = record[i]
             require(evidence == expected, 'checker evidence correspondence')
             require(i not in [1, 2] or entries[0]['status'] == 'passed', 'query/address graph prerequisite')
         else:
             require(entry['evidence'] is None and isinstance(entry['reason'], str)
                     and 0 < len(entry['reason']) <= 4096, 'unavailable or rejected reason')
-    require(all(entry['memory_ssa'] == entries[0]['memory_ssa'] for entry in entries[:3 if version == 5 else 2]),
+    require(all(entry['memory_ssa'] == entries[0]['memory_ssa'] for entry in entries[:3 if version >= 5 else 2]),
             'shared analysis artifact')
-    if version == 5 and entries[1]['status'] == 'passed':
+    if version >= 5 and entries[1]['status'] == 'passed':
         require(entries[2]['status'] == 'passed' and entries[2]['evidence']['phi_checked'],
                 'query check modular phi prerequisite')
     return entries

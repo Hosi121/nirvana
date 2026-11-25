@@ -200,7 +200,7 @@ impl Stages {
             .join(",");
         let parameter_registers: Vec<_> = output.parameters.iter().map(|reg| reg.0).collect();
         Ok(format!(
-            "{{\"schema\":\"nirvana-evaluation-stages-v5\",\"contract\":\"nirvana-stage-input-state-v5\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
+            "{{\"schema\":\"nirvana-evaluation-stages-v6\",\"contract\":\"nirvana-stage-input-state-v6\",\"original_registers\":{},\"status\":\"{status}\",\"prefix_budgets\":{:?},\"execution\":[{}],\"analysis_checks\":{analysis_checks},\"selected_c\":{{\"predicates\":{predicates},\"continuations\":{continuations},\"parameter_registers\":{parameter_registers:?},\"input_structure_checked\":{},\"display_structure_checked\":{},\"saved_value_rounds\":{},\"fallback_goto\":{}}},\"low_coverage\":{{\"steps_started\":{},\"syntactic_steps\":{},\"transfers_observed\":{},\"syntactic_transfers\":{},\"unobserved_transfers\":[{unobserved}]}}}}",
             self.original_registers,
             self.budgets,
             stages.join(","),

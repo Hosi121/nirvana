@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ from evaluation.semantics import ProtocolError
 from report_fixture import architecture, fixture, save
 
 
-def analysis_fixture(root, *, unavailable=False, version=4, phi_checked=True):
+def analysis_fixture(root, *, unavailable=False, version=4, phi_checked=True, storage_status='checked'):
     value = architecture(3, [0, 1, 4])
     value.update(schema='nirvana-evaluation-stages-v4', contract='nirvana-stage-input-state-v4',
                  original_registers=32)
@@ -42,8 +43,8 @@ def analysis_fixture(root, *, unavailable=False, version=4, phi_checked=True):
         value['analysis_checks'][1].update(status='unavailable', evidence=None, reason='query work budget')
         report['verification']['query_coverage'] = None
         report['queries'] = dict(status='unavailable', reason='query work budget')
-    if version == 5:
-        value.update(schema='nirvana-evaluation-stages-v5', contract='nirvana-stage-input-state-v5')
+    if version >= 5:
+        value.update(schema=f'nirvana-evaluation-stages-v{version}', contract=f'nirvana-stage-input-state-v{version}')
         address = dict(accesses=1, modular_forms=2 if phi_checked else 1,
                        phi_inputs=1 if phi_checked else 0, phi_checked=phi_checked,
                        source_atoms=1, basis_evaluations=4)
@@ -73,16 +74,42 @@ def analysis_fixture(root, *, unavailable=False, version=4, phi_checked=True):
             report['verification']['query_coverage'] = None
             report['queries'] = dict(status='unavailable', reason='phi identities unavailable')
         save(root, 'type-constraints.json', json.dumps(types))
+    if version == 6:
+        evidence = dict(registers=32, narrow_registers=1, blocks=2, edges=1,
+                        assignments=1, reads=1, expressions=3)
+        widths = [64] * 32
+        widths[1] = 8
+        next_row = [64] * 32
+        next_row[1] = 8
+        storage = dict(schema=checks.MODELS[4], scope='source-entry-storage-observations',
+                       status=storage_status, evidence=evidence.copy(), widths=widths,
+                       incoming=[None, [64] * 32, next_row], entry_block=1,
+                       block_starts=[8, 16, 32], reason=None)
+        status = 'passed'
+        reason = None
+        if storage_status != 'checked':
+            status = storage_status
+            reason = 'storage work budget' if status == 'unavailable' else 'unsigned storage check invalid: test control'
+            for field in ['evidence', 'widths', 'incoming', 'entry_block', 'block_starts']:
+                storage[field] = None
+            storage['reason'] = reason
+            value['status'] = 'rejected' if status == 'rejected' else 'inconclusive'
+        value['analysis_checks'].append(dict(name=checks.V6_NAMES[4], model=checks.MODELS[4],
+            checker=checks.CHECKERS[4], status=status, input_ir='analysis-input.ir.txt',
+            storage_widths='storage-widths.json', evidence=evidence.copy() if status == 'passed' else None,
+            reason=reason))
+        save(root, 'storage-widths.json', json.dumps(storage))
     save(root, 'analysis-input.ir.txt', 'entry=16 registers=32\noriginal Low IR\n')
     save(root, 'memory-ssa.json', json.dumps(report))
     return value, report
 
 
-def bound_report(root, *, version=4, unavailable=False, phi_checked=True):
+def bound_report(root, *, version=4, unavailable=False, phi_checked=True, storage_status='checked'):
     report = fixture(root)
     row = report['rows'][0]
     destination = root / row['artifacts'] / 'semantics'
-    value, _ = analysis_fixture(destination, version=version, unavailable=unavailable, phi_checked=phi_checked)
+    value, _ = analysis_fixture(destination, version=version, unavailable=unavailable,
+                                phi_checked=phi_checked, storage_status=storage_status)
     if version == 3:
         value.update(schema='nirvana-evaluation-stages-v3', contract='nirvana-stage-input-state-v3')
         value.pop('analysis_checks')
@@ -399,6 +426,178 @@ class AnalysisChecksV5(unittest.TestCase):
             result = reports.compare(b / 'report.json', a / 'report.json')
             self.assertEqual(result['rows'][0]['analysis_checks_added'], ['memory_addresses.phi_inputs'])
             self.assertEqual(result['analysis_regressions'], 0)
+
+
+class AnalysisChecksV6(unittest.TestCase):
+    def test_five_checks_bind_dense_storage_certificate_and_all_row_denominators(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            value, _ = analysis_fixture(root, version=6)
+            stages.validate(value, 4, root, 3, 32)
+            entries = value['analysis_checks']
+            self.assertEqual([entry['name'] for entry in entries], list(checks.V6_NAMES))
+            self.assertEqual([entry['status'] for entry in entries], ['passed'] * 5)
+            self.assertEqual(len({entry['input_ir_sha256'] for entry in entries}), 1)
+            self.assertEqual(len(entries[4]['storage_widths_sha256']), 64)
+            stages.validate(value, 4, root, 3, 32, retained=True)
+            rows = [dict(stage_checks=value), dict(status='tool_error'), dict(stage_checks={'status': 'not_run'})]
+            self.assertEqual(checks.summary(rows), {name: dict(passed=1, not_run=2) for name in checks.V6_NAMES})
+            self.assertEqual(checks.names_for_schema('nirvana-evaluation-stages-v5'), checks.V5_NAMES)
+            self.assertEqual(checks.names_for_schema('nirvana-evaluation-stages-v4'), checks.NAMES)
+
+    def test_storage_shape_counts_source_binding_and_typed_fields_reject_mutants(self):
+        changes = ['schema', 'scope', 'extra', 'missing-check', 'checker', 'model', 'artifact-name',
+                   'artifact-null', 'entry-evidence', 'proof-extra', 'count-bool', 'register-count',
+                   'narrow-count', 'width-size', 'width-bool', 'width-invalid', 'row-size',
+                   'row-bool', 'row-bits', 'row-count', 'entry-row', 'entry-null', 'entry-bool',
+                   'entry-index', 'entry-pc', 'start-bool', 'start-duplicate', 'start-order',
+                   'start-range', 'blocks', 'edges', 'reads', 'expressions', 'assignments',
+                   'checked-reason', 'outcome', 'duplicate-key', 'cell-budget']
+        for change in changes:
+            with tempfile.TemporaryDirectory() as directory, self.subTest(change=change):
+                root = Path(directory)
+                value, _ = analysis_fixture(root, version=6)
+                entry = value['analysis_checks'][4]
+                storage = json.loads((root / 'storage-widths.json').read_text())
+                proof = storage['evidence']
+                if change == 'schema': storage['schema'] = 'nirvana-storage-widths-v0'
+                elif change == 'scope': storage['scope'] = 'source-language-types'
+                elif change == 'extra': storage['extra'] = True
+                elif change == 'missing-check': value['analysis_checks'].pop()
+                elif change == 'checker': entry['checker'] = 'value_width::analyze'
+                elif change == 'model': entry['model'] = checks.MODELS[3]
+                elif change == 'artifact-name': entry['storage_widths'] = '../storage-widths.json'
+                elif change == 'artifact-null': entry['storage_widths'] = None
+                elif change == 'entry-evidence': entry['evidence']['reads'] += 1
+                elif change == 'proof-extra': proof['checked'] = True
+                elif change == 'count-bool': proof['reads'] = True
+                elif change == 'register-count': proof['registers'] = 31
+                elif change == 'narrow-count': proof['narrow_registers'] = 0
+                elif change == 'width-size': storage['widths'].pop()
+                elif change == 'width-bool': storage['widths'][1] = True
+                elif change == 'width-invalid': storage['widths'][1] = 7
+                elif change == 'row-size': storage['incoming'][2].pop()
+                elif change == 'row-bool': storage['incoming'][2][1] = False
+                elif change == 'row-bits': storage['incoming'][2][1] = 65
+                elif change == 'row-count': storage['incoming'].pop()
+                elif change == 'entry-row': storage['incoming'][1][1] = 8
+                elif change == 'entry-null': storage['incoming'][1] = None
+                elif change == 'entry-bool': storage['entry_block'] = True
+                elif change == 'entry-index': storage['entry_block'] = 3
+                elif change == 'entry-pc': storage['block_starts'][1] = 17
+                elif change == 'start-bool': storage['block_starts'][0] = False
+                elif change == 'start-duplicate': storage['block_starts'][2] = 16
+                elif change == 'start-order': storage['block_starts'].reverse()
+                elif change == 'start-range': storage['block_starts'][2] = 2**64
+                elif change == 'blocks': proof['blocks'] += 1
+                elif change == 'edges': proof['edges'] = 5
+                elif change == 'reads': proof['reads'] = proof['expressions'] + 1
+                elif change == 'expressions': proof['expressions'] = 10_000_001
+                elif change == 'assignments': proof['assignments'] = 100_001
+                elif change == 'checked-reason': storage['reason'] = 'unavailable'
+                elif change == 'outcome': entry.update(status='unavailable', evidence=None, reason='unavailable')
+                elif change == 'cell-budget':
+                    storage['incoming'] = [None] * 31250
+                    storage['incoming'][1] = [64] * 32
+                    storage['block_starts'] = list(range(8, 8 * 31251, 8))
+                raw = json.dumps(storage)
+                if change == 'duplicate-key':
+                    raw = raw.replace('"status": "checked"', '"status": "checked", "status": "checked"', 1)
+                save(root, 'storage-widths.json', raw)
+                with self.assertRaises((ProtocolError, KeyError)):
+                    stages.validate(value, 4, root, 3, 32)
+
+    def test_storage_observation_budget_keeps_valid_counts_above_ssa_work_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            value, _ = analysis_fixture(root, version=6)
+            storage = json.loads((root / 'storage-widths.json').read_text())
+            storage['evidence']['expressions'] = 9_000_000
+            value['analysis_checks'][4]['evidence']['expressions'] = 9_000_000
+            save(root, 'storage-widths.json', json.dumps(storage))
+            stages.validate(value, 4, root, 3, 32)
+
+    def test_fallback_certificate_keeps_other_four_checks_and_rejects_partial_facts(self):
+        for status in ['unavailable', 'rejected']:
+            with tempfile.TemporaryDirectory() as directory, self.subTest(status=status):
+                root = Path(directory)
+                value, _ = analysis_fixture(root, version=6, storage_status=status)
+                stages.validate(value, 4, root, 3, 32)
+                self.assertEqual([entry['status'] for entry in value['analysis_checks']], ['passed'] * 4 + [status])
+                self.assertEqual(value['status'], 'inconclusive' if status == 'unavailable' else 'rejected')
+                storage = json.loads((root / 'storage-widths.json').read_text())
+                self.assertTrue(all(storage[field] is None for field in
+                                    ['evidence', 'widths', 'incoming', 'entry_block', 'block_starts']))
+                stages.validate(value, 4, root, 3, 32, retained=True)
+                for field in ['evidence', 'widths', 'incoming', 'entry_block', 'block_starts', 'reason']:
+                    bad = copy.deepcopy(storage)
+                    bad[field] = None if field == 'reason' else [] if field != 'entry_block' else 0
+                    save(root, 'storage-widths.json', json.dumps(bad))
+                    entry = value['analysis_checks'][4]
+                    entry.pop('storage_widths_sha256')
+                    with self.subTest(field=field), self.assertRaises(ProtocolError):
+                        stages.validate(value, 4, root, 3, 32)
+
+    def test_replay_storage_hashes_raw_schema_and_artifact_relocation(self):
+        for change in ['intact', 'storage-hash', 'input-hash', 'artifact-tamper', 'missing-artifact',
+                       'v5-downgrade', 'v4-downgrade', 'missing-denominator', 'partial-denominator', 'bool-denominator']:
+            with tempfile.TemporaryDirectory() as directory, self.subTest(change=change):
+                root = Path(directory) / 'original'
+                report = bound_report(root, version=6)
+                row = report['rows'][0]
+                entry = row['stage_checks']['analysis_checks'][4]
+                if change == 'storage-hash': entry.pop('storage_widths_sha256')
+                elif change == 'input-hash': entry.pop('input_ir_sha256')
+                elif change == 'artifact-tamper':
+                    path = root / row['artifacts'] / 'semantics' / 'storage-widths.json'
+                    storage = json.loads(path.read_text())
+                    storage['widths'][1] = 16
+                    path.write_text(json.dumps(storage))
+                elif change == 'missing-artifact':
+                    (root / row['artifacts'] / 'semantics' / 'storage-widths.json').unlink()
+                elif change in ['v5-downgrade', 'v4-downgrade']:
+                    version = 5 if change == 'v5-downgrade' else 4
+                    row['stage_checks'].update(schema=f'nirvana-evaluation-stages-v{version}',
+                                               contract=f'nirvana-stage-input-state-v{version}')
+                    row['stage_checks']['analysis_checks'] = row['stage_checks']['analysis_checks'][:4 if version == 5 else 2]
+                    report['summary']['architecture_analysis'] = checks.summary(report['rows'])
+                elif change == 'missing-denominator': report['summary'].pop('architecture_analysis')
+                elif change == 'partial-denominator': report['summary']['architecture_analysis'].pop('storage_widths')
+                elif change == 'bool-denominator': report['summary']['architecture_analysis']['storage_widths']['passed'] = True
+                if change == 'intact':
+                    reports.index(report)
+                    relocated = Path(directory) / 'relocated'
+                    shutil.copytree(root, relocated)
+                    replayed = reports.replay(relocated, row)
+                    self.assertEqual(replayed['architecture_analysis'], dict.fromkeys(checks.V6_NAMES, 'passed'))
+                    self.assertEqual(replayed['probe_metadata'], 'replayed')
+                else:
+                    with self.assertRaises((ValueError, KeyError, OSError)):
+                        reports.index(report)
+                        reports.replay(root, row)
+
+    def test_v5_v6_comparisons_keep_legacy_denominators_and_report_storage_loss(self):
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = Path(directory) / 'a', Path(directory) / 'b'
+            def compare(left, right):
+                save(a, 'report.json', json.dumps(left))
+                save(b, 'report.json', json.dumps(right))
+                return reports.compare(a / 'report.json', b / 'report.json')
+            old, new = bound_report(a, version=5), bound_report(b, version=6)
+            self.assertEqual(set(old['summary']['architecture_analysis']), set(checks.V5_NAMES))
+            self.assertEqual(set(new['summary']['architecture_analysis']), set(checks.V6_NAMES))
+            result = compare(old, new)
+            self.assertEqual(result['analysis_regressions'], 0)
+            self.assertEqual(result['rows'][0]['analysis_checks_added'], ['storage_widths'])
+            old, new = bound_report(a, version=6), bound_report(b, version=5)
+            result = compare(old, new)
+            self.assertEqual(result['rows'][0]['analysis_checks_lost'], ['storage_widths'])
+            self.assertEqual(result['analysis_regressions'], 1)
+            self.assertEqual(result['candidate_analysis']['storage_widths'], {'not_run': 1})
+            new = bound_report(b, version=6, storage_status='unavailable')
+            result = compare(old, new)
+            self.assertEqual(result['rows'][0]['analysis_checks_lost'], ['storage_widths'])
+            self.assertEqual(result['candidate_analysis']['storage_widths'], {'unavailable': 1})
 
 
 if __name__ == '__main__':
