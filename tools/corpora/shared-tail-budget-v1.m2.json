@@ -1,0 +1,152 @@
+{
+  "schema": "nirvana-m2-checkpoint-v1",
+  "milestone": "M2",
+  "status": "declined",
+  "hypothesis": "Concentrating the existing total Step allowance on short shared tails will improve readable source recovery",
+  "reference_revision": "1ab8ad06c66171db58bdd8747549d52a9c34a1b6",
+  "candidate_revision": "be9ed54166cee5150472b333ad84e894e424e0e2",
+  "decision": "Decline automatic local8 retry: exact source topology distances worsen on both profiles, and each gains a static checked Store site. Keep this result as a negative development comparison.",
+  "policy": {
+    "retry_only": "CopyLimit2",
+    "local_copies": 8,
+    "total_steps": "2*reachable original instructions",
+    "source_items": 65536,
+    "expression_depth": 128,
+    "checker": "unchanged source/AST structure_verify::validate"
+  },
+  "profile": {
+    "corpus": "tools/corpora/structure-nested-v1.json",
+    "input_file": "tools/corpora/structure-nested-v1.inputs.txt",
+    "input_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+    "vectors": 65,
+    "compilers": [
+      "gcc-O2",
+      "clang18-O2"
+    ],
+    "contract": "nirvana-fixture-state4-checked-v1",
+    "step_limit": 4096,
+    "native": 130,
+    "generated_O0": 390,
+    "generated_O2": 390,
+    "stage_comparisons": 7800
+  },
+  "result": {
+    "source_distance_regressions": 2,
+    "semantic_regressions": 0,
+    "architecture_regressions": 0,
+    "analysis_regressions": 0,
+    "old4_same_generated_c_and_structure": true,
+    "typed_C_values": {
+      "unsupported": 2,
+      "reason": "label outside function body sequence",
+      "model": "nirvana-state4-values-v7"
+    },
+    "rows": [
+      {
+        "id": "nested-transfers-gcc-O2",
+        "object_sha256": "ad2bff275509b14d2cce1fa82bf7fd1e4d7371da96ba438f039fed4269ed2baa",
+        "before": {
+          "distance": 15,
+          "goto_syntax": 9,
+          "expressions": 279,
+          "condition_expressions": 29,
+          "read_sites": 6,
+          "write_sites": 6,
+          "fallback_goto": true,
+          "c_sha256": "2f3bb122adb9d1ba31118dcd8b430639466361867ca39d9717a584ed00a4d3d8"
+        },
+        "after": {
+          "distance": 18,
+          "goto_syntax": 4,
+          "expressions": 299,
+          "condition_expressions": 32,
+          "read_sites": 6,
+          "write_sites": 7,
+          "fallback_goto": false,
+          "c_sha256": "47c4dd1bcddff5bd466ea07fbe2c0649cefc38e06cc68dd7bdf93613426c9349"
+        },
+        "semantics": "passed"
+      },
+      {
+        "id": "nested-transfers-clang18-O2",
+        "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+        "before": {
+          "distance": 30,
+          "goto_syntax": 16,
+          "expressions": 443,
+          "condition_expressions": 79,
+          "read_sites": 9,
+          "write_sites": 8,
+          "fallback_goto": true,
+          "c_sha256": "5a9762dc9100b7fff2c8dcd035716765d03320b90d47bec95defb956957ba85a"
+        },
+        "after": {
+          "distance": 33,
+          "goto_syntax": 0,
+          "expressions": 468,
+          "condition_expressions": 81,
+          "read_sites": 9,
+          "write_sites": 9,
+          "fallback_goto": false,
+          "c_sha256": "76072144c69e3d457b0c349b0887253324b3e4075caeb6ee685a32ab5eb9d2b0"
+        },
+        "semantics": "passed"
+      }
+    ]
+  },
+  "tests": {
+    "targeted_rust": 10,
+    "full_state_prefix_pairs": 5120,
+    "clippy": "passed",
+    "rustfmt": "passed",
+    "full_rust": "in progress separately; no complete-suite claim in this checkpoint"
+  },
+  "next": "Explore bounded alternative follows of nested natural loops using existing ancestor continue/break boundaries. Preserve original Steps and validate every candidate; Clang inner loop is unrolled and is a separate case.",
+  "artifacts": {
+    "nested-augmented-baseline/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-augmented-baseline/report.json",
+      "sha256": "13e45114c23204cfee3ac861e38d43f6a7a76dcd553b46540117867e85428a0a"
+    },
+    "nested-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-after/report.json",
+      "sha256": "0fd0cb7c7ffc084cdc79adb0f6f597f7d5e65e5df314adb0568f5acbf2127142"
+    },
+    "nested-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-comparison.json",
+      "sha256": "a6033ffa84c8f382ec72bac4932b405068c30e8447ab774c2b8494e720a2d9e5"
+    },
+    "nested-values-before/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-values-before/report.json",
+      "sha256": "8817c0a6f9a23fd3d15ca129ad1989a3a98574308901f825cae1ff16e29e3a1f"
+    },
+    "nested-values-after/report.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-values-after/report.json",
+      "sha256": "a1726ba8ebaecbb0aa31b9055c8083e657be04f049a4d53d650613aab940d259"
+    },
+    "nested-values-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-values-comparison.json",
+      "sha256": "a122386efd53e6f4c1fcb998edcc55f300b9ce92034eed9e228790164a047eb3"
+    },
+    "m2-old4-comparison.json": {
+      "file": "target/runs/run-a37yw4tm/out/m2-old4-comparison.json",
+      "sha256": "9620e7d09809c16d1338c3fbb6480fbfa361bca7b526f1cacd8620d4aebd9128"
+    },
+    "nested-after-tools.json": {
+      "file": "target/runs/run-a37yw4tm/out/nested-after-tools.json",
+      "sha256": "8f139ef9bbbf817aa34d4373dc101ed69256aafa92777201b9602f3e2b725025"
+    },
+    "z3-toolchain.json": {
+      "file": "target/runs/run-a37yw4tm/out/z3-toolchain.json",
+      "sha256": "3a5bc50e7eda9b0f54265edfaa5823b7f040c027d3a7cb862a39908eec244203"
+    },
+    "z3-toolchain-verification.json": {
+      "file": "target/runs/run-a37yw4tm/out/z3-toolchain-verification.json",
+      "sha256": "26f4972bd6ea162f3c9396779ab65d12f96694218e009baeb5ccc24fbbcf6188"
+    }
+  },
+  "limits": [
+    "Fewer goto statements and successful structuring do not imply source similarity.",
+    "The report structure_regressions field tracks loss of measurability; source-distance regressions are retained in structure.regressed and must also be checked.",
+    "No all-input native-to-C equivalence claim; concrete observations and source/AST static checking have separate scopes."
+  ]
+}
