@@ -311,4 +311,20 @@ fn stages_last_updates_and_rejects_ambiguous_guards_and_multiple_latches() {
     let multiple = Program::new(0, 9, instructions).unwrap();
     let found = lane_patterns::discover(&multiple).unwrap();
     assert_eq!(propose(&multiple, &found, 0).unwrap_err(), Error::Boundary);
+    let mut instructions = source.instructions().to_vec();
+    instructions
+        .iter_mut()
+        .find(|i| i.address == 63)
+        .unwrap()
+        .control = Control::Return(Expr::Register(Reg(2)));
+    let early = Program::new(0, 9, instructions).unwrap();
+    let found = lane_patterns::discover(&early).unwrap();
+    let proposal = propose(&early, &found, 0).unwrap();
+    assert!(proposal.envelope().abrupt.contains(&63));
+    assert!(
+        !proposal
+            .source_region()
+            .source_to_region()
+            .contains_key(&63)
+    );
 }

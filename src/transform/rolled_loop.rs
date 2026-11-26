@@ -144,6 +144,14 @@ pub fn propose(
     let widths = ValueWidths::analyze(&padded);
     let stops = envelope.stops();
     let before = extraction::extract(&padded, envelope.header, &stops, Some(&widths))?;
+    // The feedback stop adds one candidate tag. Keep actual function Returns
+    // outside this cut until their explicit tag correspondence is supported.
+    if padded.instructions().iter().any(|i| {
+        before.source_to_region().contains_key(&i.address)
+            && matches!(i.control, Control::Return(_))
+    }) {
+        return Err(Error::Boundary);
+    }
     let control = controls::analyze(&padded, discovery, group, &envelope, counter)?;
     let mut selectors: Vec<_> = controls::single_register(&control.limit.lhs)
         .map(|reg| (reg, before.input_bit_caps()[reg.0].clamp(1, 4)))
