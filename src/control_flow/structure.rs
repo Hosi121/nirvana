@@ -166,6 +166,12 @@ struct BuildPlans<'a> {
     placement: Option<&'a mut placement_candidates::PlacementPlan>,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum RecoveryPolicy {
+    Established,
+    Extended,
+}
+
 impl StructuredFunction {
     pub fn recover(program: &Program) -> Result<Self, StructureError> {
         Self::recover_with_copy_limit(program, 2)
@@ -187,9 +193,18 @@ impl StructuredFunction {
         copy_limit: usize,
         step_limit: usize,
     ) -> Result<Self, StructureError> {
+        Self::recover_with_policy(program, copy_limit, step_limit, RecoveryPolicy::Extended)
+    }
+
+    fn recover_with_policy(
+        program: &Program,
+        copy_limit: usize,
+        step_limit: usize,
+        policy: RecoveryPolicy,
+    ) -> Result<Self, StructureError> {
         let analysis = ControlFlowAnalysis::compute(program.cfg()).expect("validated program CFG");
         if !analysis.is_reducible() {
-            return split::recover(program, &analysis, copy_limit, step_limit)
+            return split::recover(program, &analysis, copy_limit, step_limit, policy)
                 .ok_or(StructureError::Irreducible);
         }
         let postdom = PostDominators::compute(program.cfg()).ok();
@@ -197,15 +212,17 @@ impl StructuredFunction {
             Self::recover_reducible(program, copy_limit, step_limit, &analysis, postdom.as_ref());
         match selected {
             Ok(function) => Ok(function),
-            Err(reason) if copy_limit > 0 => Self::recover_with_placement_candidates(
-                program,
-                copy_limit,
-                step_limit,
-                &analysis,
-                postdom.as_ref(),
-                Some,
-            )
-            .ok_or(reason),
+            Err(reason) if policy == RecoveryPolicy::Extended && copy_limit > 0 => {
+                Self::recover_with_placement_candidates(
+                    program,
+                    copy_limit,
+                    step_limit,
+                    &analysis,
+                    postdom.as_ref(),
+                    Some,
+                )
+                .ok_or(reason)
+            }
             Err(reason) => Err(reason),
         }
     }

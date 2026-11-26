@@ -1,5 +1,5 @@
-//! Readable-only alternative loop-follow placement. Public/core recovery
-//! retains its established policy and per-block copy bound.
+//! Readable placement is selected independently of expanded core recovery.
+//! Every accepted layout retains the original correspondence and copy bounds.
 
 use crate::control_flow::structure::{StructureError, StructuredFunction};
 use crate::model::ir::Program;

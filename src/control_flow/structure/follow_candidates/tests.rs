@@ -162,6 +162,47 @@ fn checked_follow_placement_is_available_to_core_and_readable() {
 }
 
 #[test]
+fn execution_expansion_does_not_select_a_readable_layout_implicitly() {
+    let program = Program::new(
+        0,
+        5,
+        [4, 3, 5, 5, 0, 0]
+            .into_iter()
+            .enumerate()
+            .map(|(pc, target)| IrInstruction {
+                address: pc as u64,
+                size: 1,
+                assignments: vec![],
+                control: match pc {
+                    0..=3 => branch(reg(pc), target),
+                    4 => Control::Next,
+                    _ => Control::Return(reg(4)),
+                },
+            })
+            .collect(),
+    )
+    .unwrap();
+    let core = StructuredFunction::recover(&program).unwrap();
+    assert!(matches!(
+        StructuredFunction::recover_for_readable(&program),
+        Err(StructureError::CopyLimit { limit: 2, .. })
+    ));
+    for mask in 0..16 {
+        let mut input = vec![0; 5];
+        for (bit, value) in input[..4].iter_mut().enumerate() {
+            *value = if mask & (1 << bit) == 0 { 0 } else { u64::MAX };
+        }
+        input[4] = 0x55;
+        for budget in 0..=8 {
+            assert_eq!(
+                program.run_with_memory(&input, 0, &[], budget),
+                core.run_with_memory(&input, 0, &[], budget),
+            );
+        }
+    }
+}
+
+#[test]
 fn successful_primary_is_replaced_only_with_fewer_steps_and_copies() {
     let program = nested(false);
     let baseline = StructuredFunction::recover(&program).unwrap();

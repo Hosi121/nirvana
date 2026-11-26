@@ -18,6 +18,7 @@ pub(super) fn recover(
     analysis: &ControlFlowAnalysis,
     copy_limit: usize,
     step_limit: usize,
+    policy: RecoveryPolicy,
 ) -> Option<StructuredFunction> {
     if copy_limit < 2 || !bounded(source) || source.instructions().len() > step_limit {
         return None;
@@ -41,6 +42,7 @@ pub(super) fn recover(
         copy_limit,
         step_limit,
         attempts: 0,
+        policy,
         pending: std::collections::VecDeque::new(),
         deferred: Vec::new(),
     };
@@ -66,6 +68,9 @@ pub(super) fn recover(
         ) {
             return Some(function);
         }
+    }
+    if policy == RecoveryPolicy::Established {
+        return None;
     }
     // A new placement can make an earlier split constructible while duplicating
     // a return that a later traditional split shares. Keep established successful
@@ -116,6 +121,7 @@ struct Search<'a> {
     copy_limit: usize,
     step_limit: usize,
     attempts: usize,
+    policy: RecoveryPolicy,
     pending: std::collections::VecDeque<Work>,
     deferred: Vec<Completion>,
 }
@@ -130,7 +136,7 @@ impl Search<'_> {
         entries: EntryCandidates,
     ) -> Option<StructuredFunction> {
         let groups = entries.cyclic_groups();
-        for plan in plans(program, analysis, &entries) {
+        for plan in plans(program, analysis, &entries, self.policy) {
             if self.attempts == MAX_ATTEMPTS {
                 break;
             }
@@ -206,13 +212,15 @@ impl Search<'_> {
                 {
                     return Some(function);
                 }
-                self.deferred.push(Completion {
-                    program: candidate,
-                    analysis: candidate_analysis,
-                    origins: composed,
-                    lineage: path,
-                    step_limit: candidate_limit,
-                });
+                if self.policy == RecoveryPolicy::Extended {
+                    self.deferred.push(Completion {
+                        program: candidate,
+                        analysis: candidate_analysis,
+                        origins: composed,
+                        lineage: path,
+                        step_limit: candidate_limit,
+                    });
+                }
             } else if bounded(&candidate) {
                 let next = candidates(&candidate, &candidate_analysis);
                 if next.cyclic_groups() < groups {
@@ -470,8 +478,9 @@ fn plans(
     source: &Program,
     analysis: &ControlFlowAnalysis,
     entries: &EntryCandidates,
+    policy: RecoveryPolicy,
 ) -> Vec<SplitPlan> {
-    let mut plans = peeled_plans(source, analysis, entries);
+    let mut plans = peeled_plans(source, analysis, entries, policy);
     let original_count = plans.len();
     // Preserve the previous candidates and their order. Spend only remaining
     // attempt slots on regions whose terminal edge closes an internal cycle.
@@ -533,6 +542,7 @@ fn peeled_plans(
     source: &Program,
     analysis: &ControlFlowAnalysis,
     entries: &EntryCandidates,
+    policy: RecoveryPolicy,
 ) -> Vec<SplitPlan> {
     let EntryCandidates {
         edges: entry_edges,
@@ -549,11 +559,13 @@ fn peeled_plans(
             edges: CopyEdges::PeelPath,
         })
         .collect();
-    for plan in shared_entry_plans(source, entries) {
-        if plans.len() == MAX_ATTEMPTS {
-            return plans;
+    if policy == RecoveryPolicy::Extended {
+        for plan in shared_entry_plans(source, entries) {
+            if plans.len() == MAX_ATTEMPTS {
+                return plans;
+            }
+            plans.push(plan);
         }
-        plans.push(plan);
     }
     for &entry in entry_edges {
         append_paths(source, analysis, entry, None, None, &mut plans);

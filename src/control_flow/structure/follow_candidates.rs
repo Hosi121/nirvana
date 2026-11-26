@@ -55,10 +55,12 @@ impl FollowPlan {
 }
 
 impl StructuredFunction {
-    /// Optional readable placement search. The public recovery policy and its
-    /// errors remain the baseline; module/core callers do not use this path.
+    /// Readable layout selection has its own established candidate family.
+    /// New execution-safe candidates require a separate C-quality gate before
+    /// they participate in this selection, including display rewrite rounds.
     pub(crate) fn recover_for_readable(program: &Program) -> Result<Self, StructureError> {
-        let baseline = Self::recover(program);
+        let baseline =
+            Self::recover_with_policy(program, 2, usize::MAX, RecoveryPolicy::Established);
         if matches!(&baseline, Ok(function) if function.stats.extra_block_copies == 0) {
             return baseline;
         }
