@@ -3,6 +3,7 @@
 pub mod access_expr;
 pub mod add_division_expr;
 pub mod affine_region;
+pub mod allocated_storage;
 pub mod arithmetic_graph;
 pub mod bit_expr;
 pub mod context_remainder;

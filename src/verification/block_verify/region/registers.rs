@@ -2,8 +2,8 @@
 //! Every instruction, effect and control expression stays in place. Registers
 //! absent from all instructions retain their original input value on restore.
 use super::{Error, MAX_REGISTERS, shape};
-use crate::model::ir::{Assignment, Control, Expr, IrInstruction, Place, Program, Reg};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::model::ir::{Control, Expr, IrInstruction, Place, Program, Reg};
+use std::collections::BTreeSet;
 
 mod check;
 #[cfg(test)]
@@ -101,22 +101,6 @@ fn used(program: &Program) -> BTreeSet<usize> {
     }
     used
 }
-fn expression(source: &Expr, mapping: &BTreeMap<usize, Reg>) -> Result<Expr, Error> {
-    let e = |value| expression(value, mapping);
-    Ok(match source {
-        Expr::Const(value) => Expr::Const(*value),
-        Expr::Register(reg) => Expr::Register(*mapping.get(&reg.0).ok_or(Error::BoundaryMapping)?),
-        Expr::Unary(op, value) => Expr::unary(*op, e(value)?),
-        Expr::Binary(op, a, b) => Expr::binary(*op, e(a)?, e(b)?),
-        Expr::Load { address, width } => Expr::load(e(address)?, *width),
-        Expr::Select {
-            condition,
-            taken,
-            not_taken,
-        } => Expr::select(e(condition)?, e(taken)?, e(not_taken)?),
-    })
-}
-
 /// Reindex all syntactically read/written registers into a dense namespace.
 /// Source instruction/expression bounds remain the region bounds, while the
 /// source register space may be sparse. The emitted query retains its existing
@@ -200,49 +184,18 @@ pub fn compact_comparison(
 }
 
 fn build(source: &Program, registers: Vec<Reg>) -> Result<Compact, Error> {
-    let mapping: BTreeMap<_, _> = registers
+    let names = registers
         .iter()
         .enumerate()
-        .map(|(n, &reg)| (reg.0, Reg(n)))
+        .map(|(n, r)| (r.0, Reg(n)))
         .collect();
-    let mut instructions = Vec::new();
-    for instruction in source.instructions() {
-        let e = |value| expression(value, &mapping);
-        let mut assignments = Vec::new();
-        for assignment in &instruction.assignments {
-            let destination = match &assignment.destination {
-                Place::Register(reg) => {
-                    Place::Register(*mapping.get(&reg.0).ok_or(Error::BoundaryMapping)?)
-                }
-                Place::Memory { address, width } => Place::Memory {
-                    address: e(address)?,
-                    width: *width,
-                },
-            };
-            assignments.push(Assignment {
-                destination,
-                value: e(&assignment.value)?,
-            });
-        }
-        let control = match &instruction.control {
-            Control::Next => Control::Next,
-            Control::Jump(to) => Control::Jump(*to),
-            Control::Branch { condition, target } => Control::Branch {
-                condition: e(condition)?,
-                target: *target,
-            },
-            Control::Return(value) => Control::Return(e(value)?),
-        };
-        instructions.push(IrInstruction {
-            address: instruction.address,
-            size: instruction.size,
-            assignments,
-            control,
-        });
-    }
-    let entry = source.cfg().block(source.cfg().entry()).start;
-    let program =
-        Program::new(entry, registers.len(), instructions).map_err(|_| Error::BoundaryMapping)?;
+    let program = crate::model::ir::renaming::relabel(
+        source,
+        registers.len(),
+        &names,
+        crate::model::ir::renaming::Unmapped::Reject,
+    )
+    .ok_or(Error::BoundaryMapping)?;
     let result = Compact {
         source: source.clone(),
         program,

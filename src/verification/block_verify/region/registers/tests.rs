@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::ir::{BinaryOp, Width};
+use crate::model::ir::{Assignment, BinaryOp, Width};
 
 fn fixture() -> Program {
     let r = |n| Expr::Register(Reg(n));
@@ -99,6 +99,42 @@ fn edit(compact: &Compact, change: impl FnOnce(&mut Vec<IrInstruction>)) -> Comp
 }
 #[test]
 fn independent_checker_rejects_aliasing_operands_effects_and_dropped_control_loads() {
+    // Missing an original register must never fall back to an aliased dense ID.
+    let source = Program::new(
+        0,
+        2,
+        vec![IrInstruction {
+            address: 0,
+            size: 1,
+            assignments: vec![Assignment {
+                destination: Reg(0).into(),
+                value: Expr::Register(Reg(1)),
+            }],
+            control: Control::Return(Expr::Register(Reg(0))),
+        }],
+    )
+    .unwrap();
+    let candidate = Program::new(
+        0,
+        1,
+        vec![IrInstruction {
+            address: 0,
+            size: 1,
+            assignments: vec![Assignment {
+                destination: Reg(0).into(),
+                value: Expr::Register(Reg(0)),
+            }],
+            control: Control::Return(Expr::Register(Reg(0))),
+        }],
+    )
+    .unwrap();
+    let missing = Compact {
+        source,
+        program: candidate,
+        registers: vec![Reg(1)],
+    };
+    assert_eq!(missing.validate(), Err(Error::BoundaryMapping));
+
     let compact = compact(&fixture()).unwrap();
     let mut aliased = compact.clone();
     aliased.registers[0] = aliased.registers[1];

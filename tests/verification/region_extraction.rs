@@ -318,3 +318,109 @@ fn actual_selected_display_register_projection_and_region_queries() {
         now.elapsed().as_millis()
     );
 }
+
+#[test]
+#[ignore = "requires the Clang18 development fixture and Z3; validates real prepared storage lowering"]
+fn actual_prepared_display_checked_storage_lowering() {
+    use nirvana::block_verify::region::registers::compact;
+    use nirvana::readable::{self, ReadableOptions, SignedStorageProvenance};
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let raw = nirvana::frontend::lift_elf_auto(&bytes, "fixture")
+        .unwrap()
+        .program;
+    let output = readable::emit_middle_c_with_storage_provenance(
+        &nirvana::middle_ir::Function::from_low(&raw).unwrap(),
+        ReadableOptions {
+            stack_register: Some(Reg(nirvana::x86::RSP)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    let SignedStorageProvenance::Captured(snapshot) = output.signed_storage_provenance else {
+        panic!("no prepared source");
+    };
+    let source = &snapshot.source;
+    let dense = compact(source).unwrap();
+    let eligible: Vec<_> = dense
+        .registers()
+        .iter()
+        .filter(|r| !output.parameters.contains(r))
+        .copied()
+        .collect();
+    let allocation = nirvana::allocation::allocate_locals(source, &eligible).unwrap();
+    let mapping: Vec<_> = eligible
+        .iter()
+        .map(|&r| (r, allocation.color(r).unwrap()))
+        .collect();
+    let lowered = nirvana::transform::allocated_storage::lower(source, &mapping).unwrap();
+    lowered.validate().unwrap();
+    let compacted = compact(lowered.program()).unwrap();
+    let region = iteration(compacted.program());
+    let mut comparisons = 0;
+    for (input, memory) in fixture_states(source.register_count()) {
+        let full = source.run_with_memory(&input, 4096, &memory, 4096).unwrap();
+        assert!(matches!(full.status, RunStatus::Returned(_)));
+        let mut extended = lowered.extend_input(&input, u64::MAX).unwrap();
+        for (i, value) in extended.iter_mut().enumerate().skip(input.len()) {
+            *value = (i as u64).wrapping_mul(0x9e3779b97f4a7c15);
+        }
+        let compact_input = compacted.project_input(&extended).unwrap();
+        for budget in 0..=full.state.trace.len() + 1 {
+            let expected = source
+                .run_with_memory(&input, 4096, &memory, budget)
+                .unwrap();
+            let actual = compacted
+                .program()
+                .run_with_memory(&compact_input, 4096, &memory, budget)
+                .unwrap();
+            assert_eq!(actual.status, expected.status);
+            assert_eq!(actual.state.memory, expected.state.memory);
+            assert_eq!(actual.state.trace, expected.state.trace);
+            assert_eq!(actual.state.instruction, expected.state.instruction);
+            comparisons += 1;
+            if full.state.trace.get(budget) == Some(&region.source_entry()) {
+                compare(
+                    compacted.program(),
+                    &region,
+                    &actual.state.registers,
+                    4096,
+                    &actual.state.memory,
+                );
+            }
+        }
+    }
+    std::fs::write(
+        directory.join("storage.ir"),
+        format!(
+            "entry={} registers={}\n{:#?}\n",
+            compacted
+                .program()
+                .cfg()
+                .block(compacted.program().cfg().entry())
+                .start,
+            compacted.program().register_count(),
+            compacted.program().instructions()
+        ),
+    )
+    .unwrap();
+    let shared: Vec<_> = (0..compacted.program().register_count()).map(Reg).collect();
+    let outputs: Vec<_> = (0..region.program().register_count()).map(Reg).collect();
+    let query = query(region.program(), region.program(), &shared, &outputs).unwrap();
+    std::fs::write(directory.join("storage-identity.smt2"), query.smt2()).unwrap();
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
+        .with_timeout(std::time::Duration::from_secs(5));
+    assert_eq!(query.check(&solver), Verdict::EquivalentUnderModel);
+    println!(
+        "STORAGE-IR source_registers={} mapped={} bank_registers={} dense_registers={} region_registers={} comparisons={comparisons} identity_bytes={}",
+        source.register_count(),
+        mapping.len(),
+        lowered.program().register_count() - source.register_count(),
+        compacted.program().register_count(),
+        region.program().register_count(),
+        query.smt2().len()
+    );
+}

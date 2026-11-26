@@ -214,6 +214,8 @@ cargo run --example verify_definition_webs -- target/c-fixtures/cc-0/O2/diamond.
 後者の終了コード0はレポート生成の成功を表し、候補の採否はレポートに含まれます。
 `verify_definition_webs`はオブジェクトごとの改名候補と対応検査を表示します。
 
+[保存先IRへの下ろし変換](../src/transform/allocated_storage.rs)は、`allocation_verify`で元Programと色分けを検査してから、パラメータと分離した新しいbankへ写します。色が異なる保存先の分離、同じ色の共有、命令・式・幅・逐次順序の対応も検査します。新しいbankの初期値は任意で、初期値を読む割当ては拒否されます。[通常テスト](../src/transform/allocated_storage/tests.rs)は、先行Storeを残したLoad fault、lazy Select、全PC・予算、色の衝突や出力IRの改変を確認します。実Clangの最終表示IRでは35レジスタを9bankへ写し、番号投影後は12レジスタとなりました。5,569件の返り値・全RAM・最初のfault・PC・trace・予算比較を行い、全元レジスタの最終値を比較する番号投影の契約と分けて記録します。
+
 ## 元変数との対応評価
 
 [measure_source_recovery.py](../tools/measure_source_recovery.py)はGNU readelfを使い、非debug版と機械語が一致するGNU C O0/DWARF5コピーを参照します。

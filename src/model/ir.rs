@@ -4,6 +4,7 @@
 //! the effect IR in `crate::model::effects` and reuse this core machine.
 
 use std::fmt;
+pub(crate) mod renaming;
 
 use crate::control_flow::analysis::{ControlFlowAnalysis, UnresolvedControlFlow};
 use crate::control_flow::cfg::{Address, BuildError, Cfg, Flow, Instruction};
