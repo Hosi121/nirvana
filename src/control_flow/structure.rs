@@ -58,7 +58,7 @@ pub struct StructuredFunction {
     split_evidence: Option<SplitEvidence>,
 }
 
-/// Provenance for bounded node splitting. The final AST uses original PCs and
+/// Provenance for bounded entry-region splitting. The final AST uses original PCs and
 /// is independently checked against the untouched source program.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SplitEvidence {

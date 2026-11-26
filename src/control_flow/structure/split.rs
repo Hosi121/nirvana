@@ -1,4 +1,4 @@
-//! Bounded node splitting for multiple-entry cycles. Synthetic PCs exist only
+//! Bounded entry-region splitting for multiple-entry cycles. Synthetic PCs exist only
 //! while proposing a reducible graph. Routing steps are removed and original
 //! PCs restored before the independent source/AST checker accepts anything.
 
@@ -22,11 +22,8 @@ pub(super) fn recover(
     if copy_limit < 2 || !bounded(source) || source.instructions().len() > step_limit {
         return None;
     }
-    for (attempt, (from, to)) in candidates(source, analysis).into_iter().enumerate() {
-        if attempt >= MAX_ATTEMPTS {
-            break;
-        }
-        let Some((candidate, origins)) = proposal(source, from, to) else {
+    for (attempt, plan) in plans(source, analysis).into_iter().enumerate() {
+        let Some((candidate, origins)) = proposal(source, &plan) else {
             continue;
         };
         let candidate_analysis = ControlFlowAnalysis::compute(candidate.cfg()).ok()?;
@@ -80,12 +77,12 @@ pub(super) fn recover(
             emitted_block_copies: copies,
             extra_block_copies: copies - analysis.reachable().len(),
         };
-        let from = source.cfg().block(from);
-        let to = source.cfg().block(to);
+        let from = source.cfg().block(plan.from);
+        let to = source.cfg().block(plan.blocks[0]);
         recovered.split_evidence = Some(SplitEvidence {
             redirected_from: source.instructions()[from.instructions.end - 1].address,
             copied_entry: to.start,
-            copied_steps: to.instructions.len(),
+            copied_steps: plan.steps,
             attempted_candidates: attempt + 1,
         });
         return Some(recovered);
@@ -216,17 +213,77 @@ fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<(BlockId,
 
 type Origins = BTreeMap<u64, Option<u64>>;
 
-fn proposal(source: &Program, from: BlockId, to: BlockId) -> Option<(Program, Origins)> {
+struct SplitPlan {
+    from: BlockId,
+    blocks: Vec<BlockId>,
+    steps: usize,
+}
+
+fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
+    let cfg = source.cfg();
+    let entries = candidates(source, analysis);
+    // Preserve every old single-block attempt and its order before spending
+    // any of the remaining attempt budget on a longer entry path.
+    let mut plans: Vec<_> = entries
+        .iter()
+        .take(MAX_ATTEMPTS)
+        .map(|&(from, to)| SplitPlan {
+            from,
+            blocks: vec![to],
+            steps: cfg.block(to).instructions.len(),
+        })
+        .collect();
+    for (from, to) in entries {
+        let mut blocks = vec![to];
+        let mut steps = cfg.block(to).instructions.len();
+        while plans.len() < MAX_ATTEMPTS {
+            let successors = &cfg.block(*blocks.last().expect("entry path")).successors;
+            let Some(first) = successors.first() else {
+                break;
+            };
+            let Target::Block(next) = first.target else {
+                break;
+            };
+            if successors.iter().any(|edge| edge.target != first.target)
+                || next == from
+                || blocks.contains(&next)
+            {
+                break;
+            }
+            steps += cfg.block(next).instructions.len();
+            if steps > MAX_COPIED_STEPS {
+                break;
+            }
+            blocks.push(next);
+            plans.push(SplitPlan {
+                from,
+                blocks: blocks.clone(),
+                steps,
+            });
+        }
+        if plans.len() == MAX_ATTEMPTS {
+            break;
+        }
+    }
+    plans
+}
+
+fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
     let instructions = source.instructions();
-    let from = &instructions[source.cfg().block(from).instructions.end - 1];
-    let copied = source.cfg().block(to).instructions.clone();
-    let copied_entry = source.cfg().block(to).start;
+    let from = &instructions[source.cfg().block(plan.from).instructions.end - 1];
+    let copied: Vec<_> = plan
+        .blocks
+        .iter()
+        .flat_map(|&id| instructions[source.cfg().block(id).instructions.clone()].iter())
+        .collect();
+    let copied_entry = copied.first()?.address;
+    let copied_last = copied.last()?.address;
     let normal: BTreeMap<_, _> = instructions
         .iter()
         .enumerate()
         .map(|(i, instruction)| (instruction.address, (i * 2) as u64))
         .collect();
-    let duplicates: BTreeMap<_, _> = instructions[copied.clone()]
+    let duplicates: BTreeMap<_, _> = copied
         .iter()
         .enumerate()
         .map(|(i, instruction)| (instruction.address, ((instructions.len() + i) * 2) as u64))
@@ -237,7 +294,7 @@ fn proposal(source: &Program, from: BlockId, to: BlockId) -> Option<(Program, Or
     for (original, duplicate) in instructions
         .iter()
         .map(|i| (i, false))
-        .chain(instructions[copied.clone()].iter().map(|i| (i, true)))
+        .chain(copied.iter().map(|&i| (i, true)))
     {
         let address = if duplicate {
             duplicates[&original.address]
@@ -249,13 +306,14 @@ fn proposal(source: &Program, from: BlockId, to: BlockId) -> Option<(Program, Or
             if !duplicate && original.address == from.address && target == copied_entry {
                 return duplicates.get(&target).copied();
             }
-            // Copies keep their internal sequential steps together; outgoing
-            // edges (including a self-loop) return to the original graph.
-            if duplicate
-                && target == fallthrough
-                && original.address != instructions[copied.end - 1].address
-            {
-                return duplicates.get(&target).copied();
+            // A copied linear path keeps internal fallthroughs and jumps
+            // together. Its final outgoing edges return to the source CFG,
+            // including a backedge to an earlier block in the copied path.
+            if duplicate && original.address != copied_last {
+                return duplicates
+                    .get(&target)
+                    .copied()
+                    .or_else(|| normal.get(&target).copied());
             }
             normal.get(&target).copied()
         };
