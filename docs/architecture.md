@@ -93,7 +93,7 @@ PCごとのメモリviewを使う既存printerが生成した断片を固定し�
 | [dataflow](../src/dataflow/mod.rs) | SSA、生存範囲、アドレスの恒等関係、MemorySSA、型候補、変数割当て |
 | [transform](../src/transform/mod.rs) | IR還元、算術の復元、不要代入除去、評価順・ループの表示変換 |
 | [codegen](../src/codegen/mod.rs) | Cの式・宣言・描画、複数関数のoutline・局所変数・dispatch |
-| [verification](../src/verification/mod.rs) | 純粋式とブロック還元のSMTエンコード・反例の再実行 |
+| [verification](../src/verification/mod.rs) | 純粋式・ブロック・閉じたDAG領域のSMTエンコードと反例の再実行 |
 
 公開APIはこの配置で参照できます。従来の`nirvana::ir`や`nirvana::memory_ssa`などのパスも、[lib.rs](../src/lib.rs)の再公開で維持しています。
 解析固有の検査器は、候補を作る解析と同じディレクトリに置きます。`verification`はSMTによる検査を担当します。
@@ -121,6 +121,8 @@ CALLの戻り先Store、PLT targetのLoad、RET、DIV/IDIV、STOS・MOVSの部�
 POSIXアダプタはゲスト構造体とホストABIを変換します。TLS guardとstream handleの規則は実行モデルにあります。
 
 [module解析の対応検査](../src/dataflow/module_values/memory_verify.rs)は、元の命令と解析用イベントの代入・読取り・継続先を照合します。CALLのopaque効果、PLT読取り前のstack効果、DIVとREPの未知レジスタ出力を対応付け、入口から到達する効果がMemorySSAへ残ることを確認します。`FunctionValues.memory_projection()`とJSONの`memory_projection`は、その命令・代入・opaque出力・効果の件数を示します。閉じた呼出しのレジスタ効果は`call_footprint`の契約を使い、faultとREPの部分進捗はmodule実行の比較で扱います。
+
+[領域検証](../src/verification/block_verify/region.rs)は、閉じたDAGで分岐を跨ぐIR変換を比較します。共有する入口レジスタと正常終了時の必要値を明示し、返り値・全RAM・最初のfaultを照合します。内部の命令位置・trace・予算停止は実行用の対応検査で扱います。循環をDAGへ展開する際は、展開の完了条件を別に検査し、元Programに結び付いた入口の事実を使います。
 
 ## CFGの構造化
 

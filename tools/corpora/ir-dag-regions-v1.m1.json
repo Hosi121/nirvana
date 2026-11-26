@@ -1,0 +1,2044 @@
+{
+  "schema": "nirvana-dag-region-checkpoint-v1",
+  "milestone": "M1 entry/exit observation contracts supporting M2 memory-aware inverse-unroll validation",
+  "baseline_checkpoint": "tools/corpora/structure-partial-loops-v1.m2.json",
+  "candidate_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+  "status": "optional closed-DAG translation validation available; no default decompiler rewrite added",
+  "model": {
+    "id": "checked-memory-dag-region-v1",
+    "source": "validated integer/byte-memory Program pair with every direct edge resolved and an acyclic entry-reachable CFG",
+    "inputs": "Explicit shared registers have equal arbitrary u64 inputs; all other initial registers vary independently",
+    "normal_outputs": "Return value, all modeled RAM bytes and the explicitly declared live-out registers",
+    "fault_outputs": "First fault access/address/width and all already committed RAM; register/PC/trace snapshots have a separate executable contract",
+    "control": "Every reachable instruction is symbolically interpreted in topological order; completion is included in the difference query",
+    "unfolding": "A cyclic region requires a separately certified unfolding/completion construction. This API directly compares closed DAG Programs. The fixture uses distinct terminal tags0..2 and a disjoint exhaustion tag3.",
+    "trusted_components": [
+      "validated immutable Program and direct CFG",
+      "existing checked-memory-block primitive SMT kernel and scalar bit-vector encoder",
+      "guarded state merge and exact constant propagation across all predecessors",
+      "SMT solver/Rust compiler/runtime; actual counterexample replay",
+      "caller declaration of shared inputs and required normal live-outs"
+    ],
+    "default_path": "Existing block/path builders keep their original encoding mode; interning/equality definitions are opt-in for the DAG query"
+  },
+  "limits": {
+    "registers": 128,
+    "instructions_per_program": 128,
+    "source_expression_nodes_per_program": 65536,
+    "source_expression_depth": 128,
+    "encoding_expression_visits": 100000,
+    "memory_samples_including_witness": 4096,
+    "query_bytes": 4194304,
+    "concrete_witness_RAM_bytes": 65536,
+    "solver": "Caller-supplied Solver budget; constructor limits and solver/replay failures remain explicit."
+  },
+  "findings": [
+    {
+      "claim_id": "REGION-DAG-EFFECTS-001",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/verification.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "spec_delta": "New optional entry-to-return DAG verification scope; existing block and executable contracts unchanged",
+      "code_delta": "Compare effects across closed DAG regions rather than only unchanged block boundaries.",
+      "model_delta": "Guarded merges retain all RAM, return and first-fault fields; exact normal register facts require agreement from every predecessor. Shared inputs and normal live-outs are explicit.",
+      "check_command": "NIRVANA_Z3=... NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants -- --ignored --nocapture",
+      "previous_machine_result": "Only unchanged-block memory-aware queries were available; the initial private four-lane model timed out at2seconds.",
+      "current_machine_result": "Eight paired queries return UNSAT under their declared model; seven deliberately invalid candidates return SAT and replay in Rust.",
+      "drift_class": "coverage-gap",
+      "witness": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 52,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 19,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 44,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 88895,
+          "milliseconds": 1705,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes-80-registers",
+          "verdict": "equivalent",
+          "script_bytes": 91447,
+          "milliseconds": 1711,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "lazy-dead-load",
+          "verdict": "equivalent",
+          "script_bytes": 33033,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "post-fault-effects",
+          "verdict": "equivalent",
+          "script_bytes": 7590,
+          "milliseconds": 12,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "reordered-store",
+          "verdict": "counterexample",
+          "script_bytes": 31119,
+          "milliseconds": 271,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "missing-store",
+          "verdict": "counterexample",
+          "script_bytes": 28211,
+          "milliseconds": 158,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "eager-dead-load",
+          "verdict": "counterexample",
+          "script_bytes": 36295,
+          "milliseconds": 111,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-exit",
+          "verdict": "counterexample",
+          "script_bytes": 26299,
+          "milliseconds": 112,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-mark",
+          "verdict": "counterexample",
+          "script_bytes": 25306,
+          "milliseconds": 128,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "join-constants",
+          "verdict": "counterexample",
+          "script_bytes": 4422,
+          "milliseconds": 62,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "same-target-preserved",
+          "verdict": "equivalent",
+          "script_bytes": 4372,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "same-target-dropped",
+          "verdict": "counterexample",
+          "script_bytes": 4373,
+          "milliseconds": 102,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "oversized-witness",
+          "verdict": "replay_limit",
+          "script_bytes": 3017,
+          "milliseconds": 40,
+          "replayed": false,
+          "constrained_replayed": false
+        }
+      ],
+      "domain_wording": "The proof applies to these paired IR regions over arbitrary modeled inputs/RAM; loop reconstruction and whole native-to-C validity have separate boundaries.",
+      "domain_question": null,
+      "recommended_fix_target": "optional region-query constructor/encoder/replay; preserve source and candidate selection until a separate rewrite passes M0",
+      "lock_update": "ordinary shape/resource/replay tests, actual solver positive/negative/witness-size controls, legacy block/path tests, full Rust and unchanged M0 artifacts",
+      "epistemic_status": "machine-confirmed under declared input/model and source-bound checks"
+    },
+    {
+      "claim_id": "REGION-DAG-REPLAY-001",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/verification.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "spec_delta": "New optional entry-to-return DAG verification scope; existing block and executable contracts unchanged",
+      "code_delta": "Distinguish a large-model counterexample from failed bounded replay.",
+      "model_delta": "Check the bounded witness query without requesting a model first; bounded UNSAT returns ReplayLimit, preserving the unrestricted SAT outcome.",
+      "check_command": "NIRVANA_Z3=... NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants -- --ignored --nocapture",
+      "previous_machine_result": "Only unchanged-block memory-aware queries were available; the initial private four-lane model timed out at2seconds.",
+      "current_machine_result": "The oversized-witness case is unrestricted SAT but has no witness in64KiB RAM; its verdict is Unknown(ReplayLimit). The seven available witnesses and seven constrained witnesses reproduce real differences.",
+      "drift_class": "harness-drift",
+      "witness": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 52,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 19,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 44,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 88895,
+          "milliseconds": 1705,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes-80-registers",
+          "verdict": "equivalent",
+          "script_bytes": 91447,
+          "milliseconds": 1711,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "lazy-dead-load",
+          "verdict": "equivalent",
+          "script_bytes": 33033,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "post-fault-effects",
+          "verdict": "equivalent",
+          "script_bytes": 7590,
+          "milliseconds": 12,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "reordered-store",
+          "verdict": "counterexample",
+          "script_bytes": 31119,
+          "milliseconds": 271,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "missing-store",
+          "verdict": "counterexample",
+          "script_bytes": 28211,
+          "milliseconds": 158,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "eager-dead-load",
+          "verdict": "counterexample",
+          "script_bytes": 36295,
+          "milliseconds": 111,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-exit",
+          "verdict": "counterexample",
+          "script_bytes": 26299,
+          "milliseconds": 112,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-mark",
+          "verdict": "counterexample",
+          "script_bytes": 25306,
+          "milliseconds": 128,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "join-constants",
+          "verdict": "counterexample",
+          "script_bytes": 4422,
+          "milliseconds": 62,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "same-target-preserved",
+          "verdict": "equivalent",
+          "script_bytes": 4372,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "same-target-dropped",
+          "verdict": "counterexample",
+          "script_bytes": 4373,
+          "milliseconds": 102,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "oversized-witness",
+          "verdict": "replay_limit",
+          "script_bytes": 3017,
+          "milliseconds": 40,
+          "replayed": false,
+          "constrained_replayed": false
+        }
+      ],
+      "domain_wording": "Failure to produce a small concrete state is an explicit coverage limit, never evidence of equivalence.",
+      "domain_question": null,
+      "recommended_fix_target": "optional region-query constructor/encoder/replay; preserve source and candidate selection until a separate rewrite passes M0",
+      "lock_update": "ordinary shape/resource/replay tests, actual solver positive/negative/witness-size controls, legacy block/path tests, full Rust and unchanged M0 artifacts",
+      "epistemic_status": "machine-confirmed under declared input/model and source-bound checks"
+    },
+    {
+      "claim_id": "REGION-DAG-SHAPE-001",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/verification.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "spec_delta": "New optional entry-to-return DAG verification scope; existing block and executable contracts unchanged",
+      "code_delta": "Certify the source domain before constructing or cloning its symbolic model.",
+      "model_delta": "Check all source expression sizes/depths and closed edges, then topologically order the entry-reachable graph. Cycles and exhausted limits reject the query.",
+      "check_command": "NIRVANA_Z3=... NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants -- --ignored --nocapture",
+      "previous_machine_result": "Only unchanged-block memory-aware queries were available; the initial private four-lane model timed out at2seconds.",
+      "current_machine_result": "Seven ordinary API tests pass, including unreachable deep expressions, cycles/open edges,80-register boundaries, independent inputs, forged equal witnesses and solver absence.",
+      "drift_class": "coverage-gap",
+      "witness": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 52,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 19,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 44,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 88895,
+          "milliseconds": 1705,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes-80-registers",
+          "verdict": "equivalent",
+          "script_bytes": 91447,
+          "milliseconds": 1711,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "lazy-dead-load",
+          "verdict": "equivalent",
+          "script_bytes": 33033,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "post-fault-effects",
+          "verdict": "equivalent",
+          "script_bytes": 7590,
+          "milliseconds": 12,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "reordered-store",
+          "verdict": "counterexample",
+          "script_bytes": 31119,
+          "milliseconds": 271,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "missing-store",
+          "verdict": "counterexample",
+          "script_bytes": 28211,
+          "milliseconds": 158,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "eager-dead-load",
+          "verdict": "counterexample",
+          "script_bytes": 36295,
+          "milliseconds": 111,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-exit",
+          "verdict": "counterexample",
+          "script_bytes": 26299,
+          "milliseconds": 112,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-mark",
+          "verdict": "counterexample",
+          "script_bytes": 25306,
+          "milliseconds": 128,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "join-constants",
+          "verdict": "counterexample",
+          "script_bytes": 4422,
+          "milliseconds": 62,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "same-target-preserved",
+          "verdict": "equivalent",
+          "script_bytes": 4372,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "same-target-dropped",
+          "verdict": "counterexample",
+          "script_bytes": 4373,
+          "milliseconds": 102,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "oversized-witness",
+          "verdict": "replay_limit",
+          "script_bytes": 3017,
+          "milliseconds": 40,
+          "replayed": false,
+          "constrained_replayed": false
+        }
+      ],
+      "domain_wording": "Each normal path of the declared source domain terminates in a Return; traces/PC and guest instruction budgets stay on the executable contract.",
+      "domain_question": null,
+      "recommended_fix_target": "optional region-query constructor/encoder/replay; preserve source and candidate selection until a separate rewrite passes M0",
+      "lock_update": "ordinary shape/resource/replay tests, actual solver positive/negative/witness-size controls, legacy block/path tests, full Rust and unchanged M0 artifacts",
+      "epistemic_status": "machine-confirmed under declared input/model and source-bound checks"
+    }
+  ],
+  "validation": {
+    "rust": {
+      "revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--all-targets",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "returncode": 0,
+      "seconds": 511.88055080699996,
+      "log_sha256": "0e242e878df9c64cad581eff2b3ba3d2ae3159c0824fba24ea09028c80086212",
+      "targets": 26,
+      "passed": 1639,
+      "failed": 0,
+      "ignored": 68,
+      "target_summaries": [
+        "test result: ok. 289 passed; 0 failed; 10 ignored; 0 measured; 0 filtered out; finished in 1.75s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 179 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 29.04s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.88s",
+        "test result: ok. 148 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 71.38s",
+        "test result: ok. 112 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
+        "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.93s",
+        "test result: ok. 36 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 148.35s",
+        "test result: ok. 133 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.35s",
+        "test result: ok. 58 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 220.25s",
+        "test result: ok. 261 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 7.73s",
+        "test result: ok. 12 passed; 0 failed; 44 ignored; 0 measured; 0 filtered out; finished in 0.36s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "clippy_all_targets": "passed with -D warnings",
+    "rustfmt": "passed",
+    "ordinary_new_api_tests": 7,
+    "solver_trial": {
+      "schema": "nirvana-dag-region-trial-v1",
+      "revision": "82ffedd2df59758f1c0144d97f9c3cdd9f58f41c",
+      "dirty": true,
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--lib",
+        "memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants",
+        "--",
+        "--ignored",
+        "--nocapture"
+      ],
+      "returncode": 0,
+      "seconds": 14.231140481002512,
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "query_seconds": 5
+      },
+      "rows": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 52,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 19,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 44,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 88895,
+          "milliseconds": 1705,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "four-lanes-80-registers",
+          "verdict": "equivalent",
+          "script_bytes": 91447,
+          "milliseconds": 1711,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "lazy-dead-load",
+          "verdict": "equivalent",
+          "script_bytes": 33033,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "post-fault-effects",
+          "verdict": "equivalent",
+          "script_bytes": 7590,
+          "milliseconds": 12,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "reordered-store",
+          "verdict": "counterexample",
+          "script_bytes": 31119,
+          "milliseconds": 271,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "missing-store",
+          "verdict": "counterexample",
+          "script_bytes": 28211,
+          "milliseconds": 158,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "eager-dead-load",
+          "verdict": "counterexample",
+          "script_bytes": 36295,
+          "milliseconds": 111,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-exit",
+          "verdict": "counterexample",
+          "script_bytes": 26299,
+          "milliseconds": 112,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "wrong-mark",
+          "verdict": "counterexample",
+          "script_bytes": 25306,
+          "milliseconds": 128,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "join-constants",
+          "verdict": "counterexample",
+          "script_bytes": 4422,
+          "milliseconds": 62,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "same-target-preserved",
+          "verdict": "equivalent",
+          "script_bytes": 4372,
+          "milliseconds": 14,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "same-target-dropped",
+          "verdict": "counterexample",
+          "script_bytes": 4373,
+          "milliseconds": 102,
+          "replayed": true,
+          "constrained_replayed": true
+        },
+        {
+          "case": "oversized-witness",
+          "verdict": "replay_limit",
+          "script_bytes": 3017,
+          "milliseconds": 40,
+          "replayed": false,
+          "constrained_replayed": false
+        }
+      ],
+      "equivalent": 8,
+      "counterexamples": 7,
+      "replay_limits": 1,
+      "source_sha256": {
+        "src/verification/block_verify.rs": "46b1c312f00e974fb0de56371a0a4dd06988d6dfe44ff21c3b450b007e04f400",
+        "src/verification/block_verify/paths.rs": "9bbea23df16b9fe5b1f03fa8c0cadf56548d0b5222c3ae2ab802f87ce1e8e414",
+        "src/verification/block_verify/region.rs": "cf812f43406108e0acbfbcca46f64e5259cbfd7e49cccde7302d9fd59e83e591",
+        "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+        "src/verification/block_verify/region/shape.rs": "cd0766f7980106bc8fed127ee7acd0f3326f65d3c42b3c3de8a364d2167ace04",
+        "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+        "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+        "src/verification/verify.rs": "5dd3f5caf9ff1ba8f25d1cf934d67e1138eda774cf5a1fec44724d9ee7294763",
+        "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+      },
+      "artifacts": {
+        "post-fault-effects.after.ir": {
+          "bytes": 1263,
+          "sha256": "8dbe06bc4afd9b34935726fcfb072f18a99b538b5efec6cef9f88531469026b3"
+        },
+        "same-target-dropped.smt2": {
+          "bytes": 4373,
+          "sha256": "cd36dc3484d8bb938c00feb7ee01e384322cb6084dcd8f378e82150f75539980"
+        },
+        "reordered-store.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "reordered-store.alias-model.txt": {
+          "bytes": 1157,
+          "sha256": "2ff7003f6dcd94173231674016e5d89da5183a51eb23778b1c83b8274033e293"
+        },
+        "same-target-preserved.smt2": {
+          "bytes": 4372,
+          "sha256": "2dcc65373b60657e6b56b321ef8422ab38b8c1ea5754284197413f26c3ed7ea4"
+        },
+        "four-lanes-80-registers.after.ir": {
+          "bytes": 30394,
+          "sha256": "f37aa98efa10931ec95e957fc33a6fe865a4de077a55bb670f1e6560f069683a"
+        },
+        "reordered-store.smt2": {
+          "bytes": 31119,
+          "sha256": "80e5853357946779820ce245a4daf14cb760cfe3cb83f9ea20b3d5a801c4f638"
+        },
+        "missing-store.alias-model.txt": {
+          "bytes": 1157,
+          "sha256": "ccf0b54ed163256b7f69ebe025687ef818e215aa5712dcc6e100378e29f209f6"
+        },
+        "identity.after.ir": {
+          "bytes": 27077,
+          "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+        },
+        "wrong-mark.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "lazy-dead-load.after.ir": {
+          "bytes": 9619,
+          "sha256": "732c36c287602b064d7c47532cfd145aea4b6ea82e28044c4b73f5cf7f16d480"
+        },
+        "eager-dead-load.after.ir": {
+          "bytes": 9305,
+          "sha256": "0a8a771a6be29a2eb4adcbf45a44d5a63b7d07f23387e2ec5d5d07e8786ab96d"
+        },
+        "eager-dead-load.inputs.txt": {
+          "bytes": 290,
+          "sha256": "0445f2de7dd3decfcfa44faca0a79084203c50f242e8738d9591ba228dc606be"
+        },
+        "lazy-dead-load.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "eager-dead-load.alias-model.txt": {
+          "bytes": 2021,
+          "sha256": "00a9915d5f01617d4647557660e04ed15ae57014353078b7b3ff2d86f5e650f9"
+        },
+        "post-fault-effects.smt2": {
+          "bytes": 7590,
+          "sha256": "9058602bd3686dde7dade3649077793215458b100cd61b71d33d35eb397cb1b8"
+        },
+        "two-lanes.after.ir": {
+          "bytes": 16095,
+          "sha256": "6320415b089f63c4ecf083c47f5a8249dc5e4aa96a4c775338b7f60f599341c9"
+        },
+        "join-constants.smt2": {
+          "bytes": 4422,
+          "sha256": "38f6d53851cf45c19bc6554e3d6843715ae019ab2ae1ce718082aacc89b5f15f"
+        },
+        "eager-dead-load.smt2": {
+          "bytes": 36295,
+          "sha256": "af572609dad75c60b09e5fd7a0248f1f7d594f619b3594e192d05152f62b6f70"
+        },
+        "eager-dead-load.memory.bin": {
+          "bytes": 65535,
+          "sha256": "981f95a7d7f9f197c7bd66c38ee6cbb754fc7dbc89cd5d9df6838324369e4743"
+        },
+        "reordered-store.inputs.txt": {
+          "bytes": 234,
+          "sha256": "9e4a1455765d29a6744f40be200f4cbe70d8c502a639aa5c4be6f7740a832470"
+        },
+        "wrong-mark.after.ir": {
+          "bytes": 9175,
+          "sha256": "1333fd7d0dc096c48e4040e7636b390023ea64fd307de54f2d4c2a56acd98e5e"
+        },
+        "two-lanes.smt2": {
+          "bytes": 45522,
+          "sha256": "3559430d01c85a2966d1b23cdbbd0845fb2ca6ac14ffc946625cf017c52d4d89"
+        },
+        "same-target-preserved.before.ir": {
+          "bytes": 718,
+          "sha256": "0675f9aab4cda1852fc4b878080a5d07fc3f0ed358c3b6d22714d4807d5031ce"
+        },
+        "four-lanes-80-registers.before.ir": {
+          "bytes": 27078,
+          "sha256": "918c2f68bb520dafd13e4936cf4b5a575fcc80600be2817e8074bbc85b1aa5e7"
+        },
+        "trial.log": {
+          "bytes": 1741,
+          "sha256": "f80503eeec213115c2c43f638b2c798376d9405df1cf87e75f340580a5ed9004"
+        },
+        "one-lane.smt2": {
+          "bytes": 25218,
+          "sha256": "33405a6531a297c39f9e2ecdfe9f7ea10ecb0af2ac6e1c205cd9c9254fdda57b"
+        },
+        "same-target-preserved.after.ir": {
+          "bytes": 894,
+          "sha256": "458ba5eb5a16b2047582653e87efb1da511632f6c16e673d01f57835808b6997"
+        },
+        "four-lanes-80-registers.smt2": {
+          "bytes": 91447,
+          "sha256": "03622e630ba74ca9c40e56cdf6202f05a4592d4e6d9ea3faea2f997f75bab4f6"
+        },
+        "missing-store.after.ir": {
+          "bytes": 8351,
+          "sha256": "03b1f58bb43c23ff57200013fef07967d62d7fc9fa5af534b7e90540e9ec8183"
+        },
+        "lazy-dead-load.smt2": {
+          "bytes": 33033,
+          "sha256": "bcf6542f576356eb87da13932ea3c733cfef53c82f15cf970ecdc56f868151a6"
+        },
+        "missing-store.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "post-fault-effects.before.ir": {
+          "bytes": 1263,
+          "sha256": "80c6d38d81f122a37251e72904dfaecedb42a0c70dbc257ced12c08f81f96563"
+        },
+        "identity.before.ir": {
+          "bytes": 27077,
+          "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+        },
+        "wrong-mark.alias-model.txt": {
+          "bytes": 1157,
+          "sha256": "3e7b6859dbf445fdb63128dd97f5192dfd2dbd028ce0b2881b305f8da8d57e6c"
+        },
+        "same-target-dropped.before.ir": {
+          "bytes": 718,
+          "sha256": "0675f9aab4cda1852fc4b878080a5d07fc3f0ed358c3b6d22714d4807d5031ce"
+        },
+        "reordered-store.memory.bin": {
+          "bytes": 61935,
+          "sha256": "58a4afde94a204d688fceb8da90bfa6e848e5f5abcb7c06493980556a4acdaa0"
+        },
+        "four-lanes.after.ir": {
+          "bytes": 30393,
+          "sha256": "e8aed7e39acae3642ceca791f041431e24cfd19830299ae391d6d1cf6b8db0f1"
+        },
+        "join-constants.memory.bin": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "wrong-mark.inputs.txt": {
+          "bytes": 166,
+          "sha256": "98e5405961e0d13fbfaef726b990a057ed48b2d5ff7f02aacae0bfd43dc3a8f6"
+        },
+        "two-lanes.before.ir": {
+          "bytes": 14183,
+          "sha256": "16daa762aedaa90a4ad67640276816e6186a921a62a3e609ac3f57df07251ed0"
+        },
+        "wrong-exit.smt2": {
+          "bytes": 26299,
+          "sha256": "90f03da3ce58432dba0a5544914f87c0100155e900f456eaa485e2315aff751e"
+        },
+        "oversized-witness.smt2": {
+          "bytes": 3017,
+          "sha256": "e88939d3d707b52f22e140b927fcdbdde339b78df20c0da8dc8a5a22746fd61b"
+        },
+        "wrong-exit.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "join-constants.before.ir": {
+          "bytes": 1555,
+          "sha256": "6f66757773ca059b3a7c174019fb06adcbbc595a7e2f328abb546182b5a35ea3"
+        },
+        "join-constants.after.ir": {
+          "bytes": 1555,
+          "sha256": "81ca2c9dcaec36659e84f01c1de133338626607fe1930a5c79314d6082e9ceca"
+        },
+        "missing-store.smt2": {
+          "bytes": 28211,
+          "sha256": "2ab7c89583a98b99e9be7b704e5a580758cc81a61353c06ff010370beb65575a"
+        },
+        "four-lanes.smt2": {
+          "bytes": 88895,
+          "sha256": "ce7fd29332eaf79c4905e52689a405fda3c21d2e27b7c9b5fadaa6ea2deb1610"
+        },
+        "identity.smt2": {
+          "bytes": 50535,
+          "sha256": "7df4a7803cdb29689ff2aff244c3992aa7f42c3027b720a70cbeefab36dcf492"
+        },
+        "wrong-exit.after.ir": {
+          "bytes": 8946,
+          "sha256": "e4082e407cc54021463e6a251a1dc32e210a1f025508d86aafdd1b8997f6d411"
+        },
+        "wrong-mark.smt2": {
+          "bytes": 25306,
+          "sha256": "857e382828361610333ab5c12ad40c55221637e2f78ca4cd09de75bb6e12683a"
+        },
+        "wrong-exit.alias-model.txt": {
+          "bytes": 1157,
+          "sha256": "991bbe681915f66fbfe1ee0505e0685e3ba477d6aed851cd70810982b7cc76f8"
+        },
+        "wrong-exit.inputs.txt": {
+          "bytes": 229,
+          "sha256": "f511e90084f84e81f74d342598448c3a7b12b02c87796faa0723dcf7b849aa3c"
+        },
+        "wrong-mark.memory.bin": {
+          "bytes": 31049,
+          "sha256": "cca89e795f8a509cf785b25ac89b313c3667cb7e033637b92c43a4e3c5f73fae"
+        },
+        "missing-store.inputs.txt": {
+          "bytes": 245,
+          "sha256": "8a4a8b4c5cc7c61121a0e657e32328f88ed47767d08a73820ab1f78ee0dd3cc4"
+        },
+        "four-lanes.before.ir": {
+          "bytes": 27077,
+          "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+        },
+        "one-lane.after.ir": {
+          "bytes": 8946,
+          "sha256": "2a3ce97af9f5198575e3a184c2c225fe2da7bf5afdc2da332eb6a7b11737202e"
+        },
+        "eager-dead-load.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "same-target-dropped.after.ir": {
+          "bytes": 415,
+          "sha256": "27a712e6c67a178431126ddd13ce31f4090432517b77094279345129ee47055b"
+        },
+        "join-constants.inputs.txt": {
+          "bytes": 172,
+          "sha256": "55e0292d7ad664303dd59163176e851154b5f501b2ffee4a3ff2d0f31e2ac171"
+        },
+        "wrong-exit.memory.bin": {
+          "bytes": 65535,
+          "sha256": "03c7775d9507fbd0b3cf746a7fa5962f054171faa33fb6b3dfeac6311d187adb"
+        },
+        "reordered-store.after.ir": {
+          "bytes": 8946,
+          "sha256": "07f96f24c389e245b9c9ef0a792dbbd73b2011b965d2b7d4e8b3e52c0c49d85d"
+        },
+        "join-constants.alias-model.txt": {
+          "bytes": 323,
+          "sha256": "b11deaacdbcf093ecd561a829d76490c3462028d72bf5ddf48de9237ba31948a"
+        },
+        "same-target-dropped.memory.bin": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "missing-store.memory.bin": {
+          "bytes": 65535,
+          "sha256": "8c7dc4c28689bd1a7d4f580a9e8116183b2f7e237d53bf610418b024ff7511ee"
+        },
+        "same-target-dropped.inputs.txt": {
+          "bytes": 234,
+          "sha256": "698e38c65b76eda8e5cc8618c850160546e9896c9b43a0b2dc59bb70d235ecb3"
+        },
+        "one-lane.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        },
+        "same-target-dropped.alias-model.txt": {
+          "bytes": 373,
+          "sha256": "d7090929d6341d06d0756f7c3f830720c9023bb5cd45a35acb71deea16a6c07d"
+        }
+      },
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.00s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\nDAG-REGION identity verdict=equivalent bytes=50535 ms=52\nDAG-REGION one-lane verdict=equivalent bytes=25218 ms=19\nDAG-REGION two-lanes verdict=equivalent bytes=45522 ms=44\nDAG-REGION four-lanes verdict=equivalent bytes=88895 ms=1705\nDAG-REGION four-lanes-80-registers verdict=equivalent bytes=91447 ms=1711\nDAG-REGION lazy-dead-load verdict=equivalent bytes=33033 ms=14\nDAG-REGION post-fault-effects verdict=equivalent bytes=7590 ms=12\nDAG-REGION reordered-store verdict=counterexample replay=true constrained_replay=true bytes=31119 ms=271\nDAG-REGION missing-store verdict=counterexample replay=true constrained_replay=true bytes=28211 ms=158\nDAG-REGION eager-dead-load verdict=counterexample replay=true constrained_replay=true bytes=36295 ms=111\nDAG-REGION wrong-exit verdict=counterexample replay=true constrained_replay=true bytes=26299 ms=112\nDAG-REGION wrong-mark verdict=counterexample replay=true constrained_replay=true bytes=25306 ms=128\nDAG-REGION join-constants verdict=counterexample replay=true constrained_replay=true bytes=4422 ms=62\nDAG-REGION same-target-preserved verdict=equivalent bytes=4372 ms=14\nDAG-REGION same-target-dropped verdict=counterexample replay=true constrained_replay=true bytes=4373 ms=102\nDAG-REGION oversized-witness verdict=replay_limit bytes=3017 ms=40\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 298 filtered out; finished in 4.75s\n\n",
+      "scope": "Closed entry-reachable DAGs; arbitrary shared/unshared register inputs, all memory/base/size, return, first fault and declared normal live-outs. Candidate loop construction/unfolding completeness is separate; no automatic inverse-unroll pass is installed.",
+      "report_sha256": "c91d1de99adf175b57ac0393bc2a2239b2437b152beff15bb1b18a34172edd50",
+      "committed_source_attestation": {
+        "revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+        "all_scoped_source_hashes_match": true,
+        "meaning": "The solver run preceded the commit and recorded dirty=true; every retained source hash is byte-identical to the clean candidate. Git-only identity updates do not alter the encoded query."
+      }
+    },
+    "legacy_block_checks": {
+      "tests": 6,
+      "log_sha256": "a2fecabacb799e3ead166c209c2ce3de7c77b13ae4c9542792130c5e9dd140de",
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.66s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n\nrunning 6 tests\ntest block_verification::block_execution_stops_before_its_successor_and_retains_partial_faults ... ok\ntest block_verification::rejected_shapes_and_missing_solver_do_not_accept_a_program ... ok\ntest block_verification::an_unaccepted_reduction_retains_the_exact_original_ir_and_initial_inputs ... ok\ntest block_verification::memory_forwarding_partial_widths_and_lazy_reads_are_validated ... ok\ntest block_verification::independent_hidden_inputs_and_loop_boundaries_are_checked ... ok\ntest block_verification::memory_faults_aliases_and_first_fault_effects_produce_replayed_witnesses ... ok\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.20s\n\n"
+    },
+    "legacy_path_checks": {
+      "tests": 5,
+      "log_sha256": "beceac9d446e3250a455980aa373bf4a51a16c8ba9e5b1979b2e8dc08d83dc5f",
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.45s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 5 tests\ntest verification::block_verify::paths::enumerate::tests::every_diamond_prefix_is_retained_and_limits_discard_partial_sets ... ok\ntest verification::block_verify::paths::enumerate::tests::cycles_are_local_to_the_ancestor_region_and_parallel_edges_are_unique ... ok\ntest verification::block_verify::paths::tests::profiles_and_transfers_are_checked_before_encoding ... ok\ntest verification::block_verify::paths::tests::replay_requires_the_exact_prefix_and_zero_extended_input_width ... ok\ntest verification::block_verify::paths::enumerate::tests::all_small_forward_programs_match_an_instruction_path_oracle ... ok\n\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 294 filtered out; finished in 0.01s\n\n"
+    },
+    "m0": {
+      "fresh32": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "d0ab5a9b747e8c67e73e7a08bdb3300a79b7ba644742dff910739b0151eb5faf",
+            "report_sha256": "fc9ea14f840641d75eeca22809ac2efdcf4258bea02d7f8a4d2210e5fa92ceb9"
+          },
+          "after": {
+            "evaluation_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "6f38520b7579f814a47b75ed773791d7f9df67d4ecd24bee246841d0f883cf7d",
+            "report_sha256": "acd9b1443e3bddfd96ba0375a6afa61c62c7d851fe13cc9f6dd8899fa00f88de"
+          },
+          "requested": 32,
+          "structure": {
+            "equal": 32
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 32
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "equivalent_under_model": 17,
+            "unsupported": 11,
+            "unknown": 4
+          },
+          "candidate_architecture": {
+            "passed": 32
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 32
+            },
+            "middle_predicates": {
+              "not_applied": 31,
+              "passed": 1
+            },
+            "middle_memory": {
+              "not_applied": 32
+            },
+            "middle_saved": {
+              "not_applied": 32
+            },
+            "selected_semantic": {
+              "not_applied": 32
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 32
+            },
+            "memory_ssa_queries": {
+              "passed": 32
+            },
+            "memory_addresses": {
+              "passed": 32
+            },
+            "unsigned_bounds": {
+              "passed": 32
+            },
+            "storage_widths": {
+              "passed": 32
+            },
+            "selected_storage": {
+              "passed": 32
+            },
+            "selected_signed_storage": {
+              "passed": 32
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 32
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "identity": {
+          "schema": "nirvana-region-api-gate-v1",
+          "kind": "fresh32",
+          "profiles": 32,
+          "cohorts": {
+            "development": {
+              "profiles": 24,
+              "structure": {
+                "equal": 24
+              }
+            },
+            "holdout": {
+              "profiles": 8,
+              "structure": {
+                "equal": 8
+              }
+            }
+          },
+          "identical_c": 32,
+          "total_c": 32,
+          "changed_c_by_cohort": {},
+          "identical_ir": 96,
+          "total_ir": 96,
+          "identical_stage_metadata": 32,
+          "total_stage_metadata": 32,
+          "counts": {
+            "native": 544,
+            "generated_O0": 1632,
+            "generated_O2": 1632,
+            "stage_comparisons": 33660
+          },
+          "before_summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/partial-layout-v2-after/report.json",
+              "sha256": "fc9ea14f840641d75eeca22809ac2efdcf4258bea02d7f8a4d2210e5fa92ceb9"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/region-api-v2-after/report.json",
+              "sha256": "acd9b1443e3bddfd96ba0375a6afa61c62c7d851fe13cc9f6dd8899fa00f88de"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-initial-v2.json",
+              "sha256": "23ca994232002773fe9fee6c68d52d6eadb6379eabfedcf89ef7df3c2c9fa5a4"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 17,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 32
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-branch-inputs-v1.txt",
+              "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              },
+              "after": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              },
+              "after": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      },
+      "nested2": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "d0ab5a9b747e8c67e73e7a08bdb3300a79b7ba644742dff910739b0151eb5faf",
+            "report_sha256": "ce30566f4657c3adb9605af5379237400750589d206f71d2734a4fcbfdb9a4a5"
+          },
+          "after": {
+            "evaluation_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "6f38520b7579f814a47b75ed773791d7f9df67d4ecd24bee246841d0f883cf7d",
+            "report_sha256": "94cb280c55d86c1cf68b7a2c483b86df96f85e9a257dc1923d039b721a8d604d"
+          },
+          "requested": 2,
+          "structure": {
+            "equal": 2
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 2
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "unknown": 1,
+            "unsupported": 1
+          },
+          "candidate_architecture": {
+            "passed": 2
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 2
+            },
+            "middle_predicates": {
+              "not_applied": 2
+            },
+            "middle_memory": {
+              "not_applied": 2
+            },
+            "middle_saved": {
+              "not_applied": 2
+            },
+            "selected_semantic": {
+              "not_applied": 2
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 2
+            },
+            "memory_ssa_queries": {
+              "passed": 2
+            },
+            "memory_addresses": {
+              "passed": 2
+            },
+            "unsigned_bounds": {
+              "passed": 2
+            },
+            "storage_widths": {
+              "passed": 2
+            },
+            "selected_storage": {
+              "passed": 2
+            },
+            "selected_signed_storage": {
+              "passed": 2
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 2
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "identity": {
+          "schema": "nirvana-region-api-gate-v1",
+          "kind": "nested2",
+          "profiles": 2,
+          "cohorts": {
+            "development": {
+              "profiles": 2,
+              "structure": {
+                "equal": 2
+              }
+            },
+            "holdout": {
+              "profiles": 0,
+              "structure": {}
+            }
+          },
+          "identical_c": 2,
+          "total_c": 2,
+          "changed_c_by_cohort": {},
+          "identical_ir": 6,
+          "total_ir": 6,
+          "identical_stage_metadata": 2,
+          "total_stage_metadata": 2,
+          "counts": {
+            "native": 130,
+            "generated_O0": 390,
+            "generated_O2": 390,
+            "stage_comparisons": 7800
+          },
+          "before_summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/partial-layout-nested-after/report.json",
+              "sha256": "ce30566f4657c3adb9605af5379237400750589d206f71d2734a4fcbfdb9a4a5"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/region-api-nested-after/report.json",
+              "sha256": "94cb280c55d86c1cf68b7a2c483b86df96f85e9a257dc1923d039b721a8d604d"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.json",
+              "sha256": "1850be124214464ca917a570e42baa951be27cc87062ca27b01b78a894787dc7"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 65,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 2
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.inputs.txt",
+              "sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              },
+              "after": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              },
+              "after": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      }
+    },
+    "tools": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=376f7484d1a16cb62b4ddece5805eb4f0b85634c source_dirty=false",
+        "sha256": "6f38520b7579f814a47b75ed773791d7f9df67d4ecd24bee246841d0f883cf7d"
+      },
+      "candidate_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+      "partial_layout_v2": {
+        "version": "nirvana 0.1.0 git=376f7484d1a16cb62b4ddece5805eb4f0b85634c source_dirty=false",
+        "sha256": "a15700b7bd336d1ec83e831d6202c525763dc7f1aa8beb8d70acbc4c6618becd"
+      },
+      "partial_layout_nested": {
+        "version": "nirvana 0.1.0 git=376f7484d1a16cb62b4ddece5805eb4f0b85634c source_dirty=false",
+        "sha256": "a15700b7bd336d1ec83e831d6202c525763dc7f1aa8beb8d70acbc4c6618becd"
+      }
+    },
+    "existing_node_model_identity": {
+      "candidate_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+      "trial_revision": "a68a89fd90b0d132b5df4f84f390948fffaa294b",
+      "fixtures_sha256": "65ea707a4f9500824fd6c71bdeafc8f7f0516418c5efa808fc0214ec848fab52",
+      "model_sha256": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+      "bytes_identical": true,
+      "exported_pairs": 18,
+      "verified_positive_pairs": 12,
+      "meaning": "The clean current Rust exporter yields the exact eighteen raw pairs of the completed twelve-positive-pair TLC run. Event correspondence is bounded by that finite family and budgets0..6."
+    }
+  },
+  "solver_budget_observation": {
+    "profile": "The maintained actual solver trial uses5seconds per solver process, default Solver remains2seconds. Single-run timings are cost observations, not speed claims.",
+    "default_two_second_trial": {
+      "file": "target/region-api-trial-default2.json",
+      "sha256": "fcfe0796972d904d091eaf8c5afc3dfc48683feec6fa733a1850a6e45a9bf875",
+      "returncode": 101,
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "query_seconds": 2
+      },
+      "rows": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 94,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 19,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 37,
+          "replayed": false,
+          "alias_replayed": false
+        }
+      ],
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.12s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\nDAG-REGION identity verdict=equivalent bytes=50535 ms=94\nDAG-REGION one-lane verdict=equivalent bytes=25218 ms=19\nDAG-REGION two-lanes verdict=equivalent bytes=45522 ms=37\n\nthread 'verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants' (1393861) panicked at src/verification/block_verify/region/tests/smt.rs:388:13:\nassertion `left == right` failed: four-lanes\n  left: Unknown(SolverUnknown)\n right: EquivalentUnderModel\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... FAILED\n\nfailures:\n\nfailures:\n    verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 298 filtered out; finished in 2.22s\n\nerror: test failed, to rerun pass `--lib`\n"
+    },
+    "earlier_five_second_trial": {
+      "file": "target/region-api-trial-profile5.json",
+      "sha256": "3064806d3dcf8da520ec375cc5a6eb1a57310a4deb32033780db607673077ce3",
+      "returncode": 0,
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "query_seconds": 5
+      },
+      "rows": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 46,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 24,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 44,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "four-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 88895,
+          "milliseconds": 2029,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "four-lanes-80-registers",
+          "verdict": "equivalent",
+          "script_bytes": 91447,
+          "milliseconds": 2165,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "lazy-dead-load",
+          "verdict": "equivalent",
+          "script_bytes": 33033,
+          "milliseconds": 21,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "post-fault-effects",
+          "verdict": "equivalent",
+          "script_bytes": 7590,
+          "milliseconds": 16,
+          "replayed": false,
+          "alias_replayed": false
+        },
+        {
+          "case": "reordered-store",
+          "verdict": "counterexample",
+          "script_bytes": 31119,
+          "milliseconds": 199,
+          "replayed": true,
+          "alias_replayed": true
+        },
+        {
+          "case": "missing-store",
+          "verdict": "counterexample",
+          "script_bytes": 28211,
+          "milliseconds": 119,
+          "replayed": true,
+          "alias_replayed": true
+        },
+        {
+          "case": "eager-dead-load",
+          "verdict": "counterexample",
+          "script_bytes": 36295,
+          "milliseconds": 72,
+          "replayed": true,
+          "alias_replayed": true
+        },
+        {
+          "case": "wrong-exit",
+          "verdict": "counterexample",
+          "script_bytes": 26299,
+          "milliseconds": 85,
+          "replayed": true,
+          "alias_replayed": true
+        },
+        {
+          "case": "wrong-mark",
+          "verdict": "counterexample",
+          "script_bytes": 25306,
+          "milliseconds": 102,
+          "replayed": true,
+          "alias_replayed": true
+        },
+        {
+          "case": "join-constants",
+          "verdict": "counterexample",
+          "script_bytes": 4422,
+          "milliseconds": 40,
+          "replayed": true,
+          "alias_replayed": true
+        }
+      ],
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.09s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\nDAG-REGION identity verdict=equivalent bytes=50535 ms=46\nDAG-REGION one-lane verdict=equivalent bytes=25218 ms=24\nDAG-REGION two-lanes verdict=equivalent bytes=45522 ms=44\nDAG-REGION four-lanes verdict=equivalent bytes=88895 ms=2029\nDAG-REGION four-lanes-80-registers verdict=equivalent bytes=91447 ms=2165\nDAG-REGION lazy-dead-load verdict=equivalent bytes=33033 ms=21\nDAG-REGION post-fault-effects verdict=equivalent bytes=7590 ms=16\nDAG-REGION reordered-store verdict=counterexample replay=true alias_replay=true bytes=31119 ms=199\nDAG-REGION missing-store verdict=counterexample replay=true alias_replay=true bytes=28211 ms=119\nDAG-REGION eager-dead-load verdict=counterexample replay=true alias_replay=true bytes=36295 ms=72\nDAG-REGION wrong-exit verdict=counterexample replay=true alias_replay=true bytes=26299 ms=85\nDAG-REGION wrong-mark verdict=counterexample replay=true alias_replay=true bytes=25306 ms=102\nDAG-REGION join-constants verdict=counterexample replay=true alias_replay=true bytes=4422 ms=40\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 298 filtered out; finished in 5.14s\n\n"
+    },
+    "interpretation": "The identical four-lane formula was unknown at2seconds and proved under the5second test profile. No input/model property was relaxed. The final caller API still returns Unknown when its supplied budget is exhausted."
+  },
+  "source_sha256": {
+    "src/verification/block_verify.rs": "46b1c312f00e974fb0de56371a0a4dd06988d6dfe44ff21c3b450b007e04f400",
+    "src/verification/block_verify/paths.rs": "9bbea23df16b9fe5b1f03fa8c0cadf56548d0b5222c3ae2ab802f87ce1e8e414",
+    "src/verification/block_verify/region.rs": "cf812f43406108e0acbfbcca46f64e5259cbfd7e49cccde7302d9fd59e83e591",
+    "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+    "src/verification/block_verify/region/shape.rs": "cd0766f7980106bc8fed127ee7acd0f3326f65d3c42b3c3de8a364d2167ace04",
+    "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+    "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+    "src/verification/verify.rs": "5dd3f5caf9ff1ba8f25d1cf934d67e1138eda774cf5a1fec44724d9ee7294763",
+    "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+  },
+  "logs": {
+    "region-api-unit": {
+      "sha256": "c30a47373c427aa202669706a7c9d7bb0ce53d5423b3daab8b8c49fb76fbcd9d",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.85s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 8 tests\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... ignored, requires Z3; validates positive regions and replays negative witnesses\ntest verification::block_verify::region::tests::cycles_open_edges_and_foreign_register_mappings_are_rejected_before_solving ... ok\ntest verification::block_verify::region::tests::full_source_depth_and_size_are_checked_including_unreachable_expressions ... ok\ntest verification::block_verify::region::tests::entry_scope_allows_unreachable_cycles_and_distinct_source_addresses ... ok\ntest verification::block_verify::region::tests::normal_liveouts_are_explicit_and_fault_snapshots_keep_their_separate_scope ... ok\ntest verification::block_verify::region::tests::witnesses_replay_distinct_unshared_inputs_and_reject_a_forged_equal_result ... ok\ntest verification::block_verify::region::tests::an_unavailable_solver_keeps_an_explicit_unknown_verdict ... ok\ntest verification::block_verify::region::tests::the_machine_register_space_keeps_sparse_region_boundaries ... ok\n\ntest result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 291 filtered out; finished in 0.00s\n\n"
+    },
+    "region-api-clippy": {
+      "sha256": "32c533432b14bc187b5f039a9720320f38cc358a37c8e15e24d31f697946ccc4",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 8.44s\n"
+    }
+  },
+  "local_evidence": {
+    "references": {
+      "partial-layout-v2-after": {
+        "directory": "target/runs/run-a37yw4tm/out/partial-layout-v2-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/partial-layout-v2-after.tar.gz",
+        "sha256": "afa4eeefb1cb596a40e198bffb17462dba55adca1a39aac1251d6b1efb5d0f1d",
+        "uncompressed_bytes": 46856944,
+        "compressed_bytes": 3295537
+      },
+      "partial-layout-nested-after": {
+        "directory": "target/runs/run-a37yw4tm/out/partial-layout-nested-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/partial-layout-nested-after.tar.gz",
+        "sha256": "f8f21160df6ceb300ab4a0dbb0617b655e7184cac40d9daa8217290d1ce28cf2",
+        "uncompressed_bytes": 8045147,
+        "compressed_bytes": 449547
+      }
+    },
+    "storage": "Managed runs512MiB; shared Cargo intermediates2GiB/all target watchdog4GiB. Temporary solver outputs removed after their hashes/summary were retained; no extra worktree or debug-binary copy."
+  },
+  "reproduce": [
+    "python3 tools/dev.py cargo test --lib block_verify::region",
+    "NIRVANA_Z3=PATH_TO_Z3 NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants -- --ignored --nocapture",
+    "Set NIRVANA_REGION_REPORT to an empty managed experiment directory to retain each Program pair, SMT, concrete input/RAM and constrained witness model.",
+    "python3 tools/dev.py cargo test --all-targets --locked --no-fail-fast"
+  ],
+  "next_decision": "Extract a real compiler-expanded acyclic region with explicit continuation tags and source-bound entry facts, then validate a recovered loop unfolding. The development Clang nested distance remains30. Preserve fresh holdout isolation, full RAM/first fault and the separate executable PC/budget contract."
+}

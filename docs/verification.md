@@ -47,6 +47,15 @@ python3 -m unittest discover -s tools/tests
 ブロック検査は全到達境界の必要値・返り値・全メモリ・最初のfaultを比較し、入口関係の外にあるレジスタは左右独立に扱います。
 fault時は正確なfaultと全メモリを比較します。SATモデルは小さい具体メモリで再実行し、UNSAT判定にはモデルの全メモリ領域を使います。
 
+`checked-memory-dag-region-v1`は、[閉じたDAG領域](../src/verification/block_verify/region.rs)の入口からReturnまでを比較します。正常時の必要レジスタは呼出し側が指定し、共有しない初期値は左右独立です。全RAM・最初のfaultと、各経路の完了も問い合わせへ含めます。上限は128レジスタ・128命令・式深さ128で、source全体を検査してからcloneします。SATは最大64KiBの具体RAMで再生し、その範囲に反例がない場合は`ReplayLimit`へ戻します。
+
+[固定checkpoint](../tools/corpora/ir-dag-regions-v1.m1.json)は、任意のRAMと整数入力を持つ8組の同値判定、7組の反例再生、再生上限の対照1組を記録しています。検証プロファイルはsolver呼出しごとに5秒です。APIは渡されたsolver予算を使い、2秒で未判定となった結果もcheckpointへ残しています。展開を戻す候補の生成は、この検査を使う次の段階です。
+
+```sh
+NIRVANA_Z3=/path/to/z3 NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib \
+  memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants -- --ignored --nocapture
+```
+
 [隣接Storeの順序検査](../tests/verification/store_order.rs)は、両範囲への先行Loadと非重複を前提に、純粋な二つのStoreを入れ替えて比較します。1/2/4/8-byte幅、任意の相対offsetと64-bit折返しを含む36問い合わせでUNSATを得ました。先行読込みの欠如、条件付き読込み、重複、右辺のLoad、アドレス変更、異なる入力のaliasでは、6件のSATを具体IR実行で再現します。生成Cでは[採用条件とfaultの比較](../tests/codegen/c_evaluation.rs)をO0/O2・メモリviewの有無で確認します。適用範囲はflat RWの単一関数Cで、moduleの権限・外部効果・途中再開は元の順序を保ちます。
 同じモデルで、Storeが読むC保存先と独立な純粋更新の移動も照合します。加算・AND・OR・XORと1/2/4/8-byte幅の16問い合わせがUNSAT、格納値・アドレス・右辺Loadの依存を壊した3問い合わせが具体実行で再現するSATです。正常終了の全レジスタも比較します。生成器の依存は割当て後のC変数名で照合し、仮想レジスタが異なる同一保存先も[回帰検査](../tests/codegen/c_evaluation.rs)に含めます。
 
