@@ -1,0 +1,1781 @@
+{
+  "schema": "nirvana-region-feedback-checkpoint-v1",
+  "milestone": "M1 source-bound IR entry/exit contracts enabling M2 memory-aware loop reconstruction",
+  "baseline_checkpoint": "tools/corpora/ir-dag-regions-v1.m1.json",
+  "candidate_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+  "implementation_revisions": {
+    "extraction": "c31a59bfde5e7d0a33ea20edf624f8db05a79a7f",
+    "feedback_completion": "90c783d",
+    "dense_namespace": "f4a6590bd3a172b4a7edb73806e25f16c56eaf8d"
+  },
+  "status": "checked optional APIs available; automatic compiler-expanded loop reconstruction remains candidate-generation work",
+  "models": {
+    "dag": "checked-memory-dag-region-v1",
+    "feedback": "checked-region-feedback-completion-v1",
+    "register_projection": "checked-dense-register-projection-v1"
+  },
+  "findings": [
+    {
+      "claim_id": "REGION-EXTRACTION-001",
+      "drift_class": "coverage-gap",
+      "code_delta": "Source-bound DAG extraction keeps all source instructions/effects until explicit block continuations; capture true function return in fresh register and use disjoint terminal tags.",
+      "model_delta": "Independent block-CFG traversal checks instruction coverage, ordered assignments, branch arms, return capture, input masks and terminal stubs. Optional incoming bit facts are revalidated against the immutable source.",
+      "current_machine_result": "Actual Clang115-instruction/32-register source gives116-instruction/33-register region.590 concrete source/extraction states match original registers, fullRAM, fault and decoded exit.",
+      "domain_wording": "From the declared source entry until first continuation or Return/fault; source states satisfy any certified input caps. PC/trace/budget are a separate executable observation.",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/architecture.md",
+        "docs/verification.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "spec_delta": "Add optional explicit validation tools; normal decompiler output and core executable contracts retained",
+      "previous_machine_result": "Closed DAG queries were available; no checked real-region projection, sealed feedback completion or sparse namespace bridge",
+      "epistemic_status": "machine-confirmed under the stated model and checks",
+      "domain_question": null,
+      "recommended_fix_target": "source-bound optional extraction, feedback composition and namespace projection",
+      "lock_update": "positive/negative source-projection checks, actual solver control/replay, fixed M0 artifact identities"
+    },
+    {
+      "claim_id": "REGION-FEEDBACK-COMPLETION-001",
+      "drift_class": "coverage-gap",
+      "code_delta": "Compose bounded copies of a checked region at its entry feedback; keep a fresh last-round exhaustion flag. Complete is sealed only after unrestricted UNSAT.",
+      "model_delta": "Compare the exhaustion flag to the otherwise identical DAG with its final mark cleared. Insufficient bounds replay on the retained original cyclic Program.",
+      "current_machine_result": "With an arbitrary64bit counter and certified2bit limit,0/1/3 rounds are insufficient,4/5 complete. Without input caps4 remains insufficient. A separate four-lane source matches the certified cyclic candidate; wrong+2 increment has a RAM/return-observable counterexample replayed on both original cyclic Programs.",
+      "domain_wording": "Completion concerns this region up to a non-feedback continuation, true Return or first fault. BoundExceeded is insufficient unfolding, not proof of divergence. Normal observations include caller-declared live-outs.",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/architecture.md",
+        "docs/verification.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "spec_delta": "Add optional explicit validation tools; normal decompiler output and core executable contracts retained",
+      "previous_machine_result": "Closed DAG queries were available; no checked real-region projection, sealed feedback completion or sparse namespace bridge",
+      "epistemic_status": "machine-confirmed under the stated model and checks",
+      "domain_question": null,
+      "recommended_fix_target": "source-bound optional extraction, feedback composition and namespace projection",
+      "lock_update": "positive/negative source-projection checks, actual solver control/replay, fixed M0 artifact identities"
+    },
+    {
+      "claim_id": "REGION-DENSE-NAMESPACE-001",
+      "drift_class": "coverage-gap",
+      "code_delta": "Checked bijective register renaming removes unused sparse slots from the verification namespace; restore all unused original registers from their exact initial state. Comparisons use one map including shared/live-out registers.",
+      "model_delta": "Paired-tree checker compares operands, destinations, operators, widths, source PC/size, ordered assignments and control; distinct original registers remain distinct.",
+      "current_machine_result": "Selected Clang display input hash matches the previous M0 source:740-register namespace becomes38, region uses39.5764 full report comparisons and590 region states match. A five-active-register synthetic source retains all740 original slots over360 budget/fault comparisons.",
+      "domain_wording": "Alpha-renaming preserves full registers, RAM, firstfault, PC, trace and instruction-budget observations after restoration. Source namespace limit65536; emitted query remains128 registers. Common-map comparison currently requires equal original register counts.",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/architecture.md",
+        "docs/verification.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "spec_delta": "Add optional explicit validation tools; normal decompiler output and core executable contracts retained",
+      "previous_machine_result": "Closed DAG queries were available; no checked real-region projection, sealed feedback completion or sparse namespace bridge",
+      "epistemic_status": "machine-confirmed under the stated model and checks",
+      "domain_question": null,
+      "recommended_fix_target": "source-bound optional extraction, feedback composition and namespace projection",
+      "lock_update": "positive/negative source-projection checks, actual solver control/replay, fixed M0 artifact identities"
+    }
+  ],
+  "limits": {
+    "query_registers": 128,
+    "source_namespace_for_dense_projection": 65536,
+    "source_instructions_per_program": 128,
+    "expression_nodes": 65536,
+    "expression_depth": 128,
+    "query_bytes": 4194304,
+    "witness_memory_bytes": 65536,
+    "actual_solver_process_seconds": 5,
+    "default_solver_seconds": 2
+  },
+  "validation": {
+    "rust": {
+      "revision": "f4a6590bd3a172b4a7edb73806e25f16c56eaf8d",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--all-targets",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "returncode": 0,
+      "seconds": 1181.1855921550014,
+      "log_sha256": "aae6b628b770e1cb61c8cb7f6cd6772b89f42406936905f73886ec2a1dc8694c",
+      "targets": 26,
+      "passed": 1651,
+      "failed": 0,
+      "ignored": 72,
+      "target_summaries": [
+        "test result: ok. 301 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 4.13s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 179 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 68.44s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.16s",
+        "test result: ok. 148 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 164.20s",
+        "test result: ok. 112 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s",
+        "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.04s",
+        "test result: ok. 36 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 311.45s",
+        "test result: ok. 133 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 29.72s",
+        "test result: ok. 58 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 539.79s",
+        "test result: ok. 261 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 16.30s",
+        "test result: ok. 12 passed; 0 failed; 46 ignored; 0 measured; 0 filtered out; finished in 0.53s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "full_rust_attestation": {
+      "production_code_identical_at_candidate": true,
+      "only_difference_from_full_revision": [
+        "src/verification/block_verify/region/extraction/repeat/tests.rs"
+      ],
+      "meaning": "Only an ignored solver test was strengthened after the full suite. It was rerun with the complete22-test region group and clippy before the candidate commit."
+    },
+    "all_region_tests": {
+      "passed": 22,
+      "ordinary": 19,
+      "ignored_solver_tests_explicitly_run": 3,
+      "trial": {
+        "schema": "nirvana-dag-region-trial-v1",
+        "revision": "f4a6590bd3a172b4a7edb73806e25f16c56eaf8d",
+        "dirty": true,
+        "command": [
+          "python3",
+          "tools/dev.py",
+          "cargo",
+          "test",
+          "--lib",
+          "region::",
+          "--",
+          "--include-ignored",
+          "--nocapture",
+          "--test-threads=1"
+        ],
+        "returncode": 0,
+        "seconds": 36.25020131999918,
+        "solver": {
+          "version": "Z3 version 4.8.12 - 64 bit",
+          "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+          "query_seconds": 5
+        },
+        "rows": [
+          {
+            "case": "identity",
+            "verdict": "equivalent",
+            "script_bytes": 50535,
+            "milliseconds": 87,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "one-lane",
+            "verdict": "equivalent",
+            "script_bytes": 25218,
+            "milliseconds": 31,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "two-lanes",
+            "verdict": "equivalent",
+            "script_bytes": 45522,
+            "milliseconds": 69,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "four-lanes",
+            "verdict": "equivalent",
+            "script_bytes": 88895,
+            "milliseconds": 3648,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "four-lanes-80-registers",
+            "verdict": "equivalent",
+            "script_bytes": 91447,
+            "milliseconds": 4325,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "lazy-dead-load",
+            "verdict": "equivalent",
+            "script_bytes": 33033,
+            "milliseconds": 44,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "post-fault-effects",
+            "verdict": "equivalent",
+            "script_bytes": 7590,
+            "milliseconds": 29,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "reordered-store",
+            "verdict": "counterexample",
+            "script_bytes": 31119,
+            "milliseconds": 624,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "missing-store",
+            "verdict": "counterexample",
+            "script_bytes": 28211,
+            "milliseconds": 320,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "eager-dead-load",
+            "verdict": "counterexample",
+            "script_bytes": 36295,
+            "milliseconds": 191,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "wrong-exit",
+            "verdict": "counterexample",
+            "script_bytes": 26299,
+            "milliseconds": 233,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "wrong-mark",
+            "verdict": "counterexample",
+            "script_bytes": 25306,
+            "milliseconds": 268,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "join-constants",
+            "verdict": "counterexample",
+            "script_bytes": 4422,
+            "milliseconds": 105,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "same-target-preserved",
+            "verdict": "equivalent",
+            "script_bytes": 4372,
+            "milliseconds": 41,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "same-target-dropped",
+            "verdict": "counterexample",
+            "script_bytes": 4373,
+            "milliseconds": 192,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "oversized-witness",
+            "verdict": "replay_limit",
+            "script_bytes": 3017,
+            "milliseconds": 81,
+            "replayed": false,
+            "constrained_replayed": false
+          }
+        ],
+        "equivalent": 8,
+        "counterexamples": 7,
+        "replay_limits": 1,
+        "source_sha256": {
+          "src/verification/block_verify.rs": "46b1c312f00e974fb0de56371a0a4dd06988d6dfe44ff21c3b450b007e04f400",
+          "src/verification/block_verify/paths.rs": "9bbea23df16b9fe5b1f03fa8c0cadf56548d0b5222c3ae2ab802f87ce1e8e414",
+          "src/verification/block_verify/region.rs": "72b2593774ebd5aa1b04b4d985037a042e7dcb47d6fe1edbfc64a4218b7aeba0",
+          "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+          "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+          "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+          "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+          "src/verification/verify.rs": "5dd3f5caf9ff1ba8f25d1cf934d67e1138eda774cf5a1fec44724d9ee7294763",
+          "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+        },
+        "artifacts": {
+          "post-fault-effects.after.ir": {
+            "bytes": 1263,
+            "sha256": "8dbe06bc4afd9b34935726fcfb072f18a99b538b5efec6cef9f88531469026b3"
+          },
+          "same-target-dropped.smt2": {
+            "bytes": 4373,
+            "sha256": "cd36dc3484d8bb938c00feb7ee01e384322cb6084dcd8f378e82150f75539980"
+          },
+          "reordered-store.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "reordered-store.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "2ff7003f6dcd94173231674016e5d89da5183a51eb23778b1c83b8274033e293"
+          },
+          "candidate-wrong-false.smt2": {
+            "bytes": 49434,
+            "sha256": "6cbf398e7453ee171d02b7c93e1ef3d30d9bc161d2fcef04db31b3d7415f68f5"
+          },
+          "same-target-preserved.smt2": {
+            "bytes": 4372,
+            "sha256": "2dcc65373b60657e6b56b321ef8422ab38b8c1ea5754284197413f26c3ed7ea4"
+          },
+          "four-lanes-80-registers.after.ir": {
+            "bytes": 30394,
+            "sha256": "f37aa98efa10931ec95e957fc33a6fe865a4de077a55bb670f1e6560f069683a"
+          },
+          "candidate-wrong-true.smt2": {
+            "bytes": 50043,
+            "sha256": "778ced38ffb69b1e4981e669b7ec94e8b42da678daa7358601a8fb85459c2faa"
+          },
+          "reordered-store.smt2": {
+            "bytes": 31119,
+            "sha256": "80e5853357946779820ce245a4daf14cb760cfe3cb83f9ea20b3d5a801c4f638"
+          },
+          "missing-store.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "ccf0b54ed163256b7f69ebe025687ef818e215aa5712dcc6e100378e29f209f6"
+          },
+          "identity.after.ir": {
+            "bytes": 27077,
+            "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+          },
+          "wrong-mark.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "lazy-dead-load.after.ir": {
+            "bytes": 9619,
+            "sha256": "732c36c287602b064d7c47532cfd145aea4b6ea82e28044c4b73f5cf7f16d480"
+          },
+          "eager-dead-load.after.ir": {
+            "bytes": 9305,
+            "sha256": "0a8a771a6be29a2eb4adcbf45a44d5a63b7d07f23387e2ec5d5d07e8786ab96d"
+          },
+          "eager-dead-load.inputs.txt": {
+            "bytes": 290,
+            "sha256": "0445f2de7dd3decfcfa44faca0a79084203c50f242e8738d9591ba228dc606be"
+          },
+          "lazy-dead-load.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "rounds-1.smt2": {
+            "bytes": 10557,
+            "sha256": "19a5b94eeec4719e9aa819535d42ec154b436e9fc9c142b5d925e4f5d12c6c04"
+          },
+          "eager-dead-load.alias-model.txt": {
+            "bytes": 2021,
+            "sha256": "00a9915d5f01617d4647557660e04ed15ae57014353078b7b3ff2d86f5e650f9"
+          },
+          "post-fault-effects.smt2": {
+            "bytes": 7590,
+            "sha256": "9058602bd3686dde7dade3649077793215458b100cd61b71d33d35eb397cb1b8"
+          },
+          "two-lanes.after.ir": {
+            "bytes": 16095,
+            "sha256": "6320415b089f63c4ecf083c47f5a8249dc5e4aa96a4c775338b7f60f599341c9"
+          },
+          "join-constants.smt2": {
+            "bytes": 4422,
+            "sha256": "38f6d53851cf45c19bc6554e3d6843715ae019ab2ae1ce718082aacc89b5f15f"
+          },
+          "eager-dead-load.smt2": {
+            "bytes": 36295,
+            "sha256": "af572609dad75c60b09e5fd7a0248f1f7d594f619b3594e192d05152f62b6f70"
+          },
+          "eager-dead-load.memory.bin": {
+            "bytes": 65535,
+            "sha256": "981f95a7d7f9f197c7bd66c38ee6cbb754fc7dbc89cd5d9df6838324369e4743"
+          },
+          "reordered-store.inputs.txt": {
+            "bytes": 234,
+            "sha256": "9e4a1455765d29a6744f40be200f4cbe70d8c502a639aa5c4be6f7740a832470"
+          },
+          "wrong-mark.after.ir": {
+            "bytes": 9175,
+            "sha256": "1333fd7d0dc096c48e4040e7636b390023ea64fd307de54f2d4c2a56acd98e5e"
+          },
+          "two-lanes.smt2": {
+            "bytes": 45522,
+            "sha256": "3559430d01c85a2966d1b23cdbbd0845fb2ca6ac14ffc946625cf017c52d4d89"
+          },
+          "same-target-preserved.before.ir": {
+            "bytes": 718,
+            "sha256": "0675f9aab4cda1852fc4b878080a5d07fc3f0ed358c3b6d22714d4807d5031ce"
+          },
+          "four-lanes-80-registers.before.ir": {
+            "bytes": 27078,
+            "sha256": "918c2f68bb520dafd13e4936cf4b5a575fcc80600be2817e8074bbc85b1aa5e7"
+          },
+          "trial.log": {
+            "bytes": 5053,
+            "sha256": "42eb8485554fd69d9d98e8044533040319a310e768b2881934a37054601c810e"
+          },
+          "one-lane.smt2": {
+            "bytes": 25218,
+            "sha256": "33405a6531a297c39f9e2ecdfe9f7ea10ecb0af2ac6e1c205cd9c9254fdda57b"
+          },
+          "same-target-preserved.after.ir": {
+            "bytes": 894,
+            "sha256": "458ba5eb5a16b2047582653e87efb1da511632f6c16e673d01f57835808b6997"
+          },
+          "four-lanes-80-registers.smt2": {
+            "bytes": 91447,
+            "sha256": "03622e630ba74ca9c40e56cdf6202f05a4592d4e6d9ea3faea2f997f75bab4f6"
+          },
+          "missing-store.after.ir": {
+            "bytes": 8351,
+            "sha256": "03b1f58bb43c23ff57200013fef07967d62d7fc9fa5af534b7e90540e9ec8183"
+          },
+          "lazy-dead-load.smt2": {
+            "bytes": 33033,
+            "sha256": "bcf6542f576356eb87da13932ea3c733cfef53c82f15cf970ecdc56f868151a6"
+          },
+          "missing-store.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "post-fault-effects.before.ir": {
+            "bytes": 1263,
+            "sha256": "80c6d38d81f122a37251e72904dfaecedb42a0c70dbc257ced12c08f81f96563"
+          },
+          "identity.before.ir": {
+            "bytes": 27077,
+            "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+          },
+          "wrong-mark.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "3e7b6859dbf445fdb63128dd97f5192dfd2dbd028ce0b2881b305f8da8d57e6c"
+          },
+          "same-target-dropped.before.ir": {
+            "bytes": 718,
+            "sha256": "0675f9aab4cda1852fc4b878080a5d07fc3f0ed358c3b6d22714d4807d5031ce"
+          },
+          "rounds-3.smt2": {
+            "bytes": 24669,
+            "sha256": "9783bffda265639018a4dc4932bc4279a14add4d6333202f8505f14868c0e353"
+          },
+          "reordered-store.memory.bin": {
+            "bytes": 61935,
+            "sha256": "58a4afde94a204d688fceb8da90bfa6e848e5f5abcb7c06493980556a4acdaa0"
+          },
+          "rounds-0.smt2": {
+            "bytes": 1559,
+            "sha256": "0c97b09e55b133606fb2599dd14da6cda82bf447fc37327d94ed76996fcaf5ea"
+          },
+          "four-lanes.after.ir": {
+            "bytes": 30393,
+            "sha256": "e8aed7e39acae3642ceca791f041431e24cfd19830299ae391d6d1cf6b8db0f1"
+          },
+          "join-constants.memory.bin": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "wrong-mark.inputs.txt": {
+            "bytes": 166,
+            "sha256": "98e5405961e0d13fbfaef726b990a057ed48b2d5ff7f02aacae0bfd43dc3a8f6"
+          },
+          "two-lanes.before.ir": {
+            "bytes": 14183,
+            "sha256": "16daa762aedaa90a4ad67640276816e6186a921a62a3e609ac3f57df07251ed0"
+          },
+          "wrong-exit.smt2": {
+            "bytes": 26299,
+            "sha256": "90f03da3ce58432dba0a5544914f87c0100155e900f456eaa485e2315aff751e"
+          },
+          "oversized-witness.smt2": {
+            "bytes": 3017,
+            "sha256": "e88939d3d707b52f22e140b927fcdbdde339b78df20c0da8dc8a5a22746fd61b"
+          },
+          "wrong-exit.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "join-constants.before.ir": {
+            "bytes": 1555,
+            "sha256": "6f66757773ca059b3a7c174019fb06adcbbc595a7e2f328abb546182b5a35ea3"
+          },
+          "join-constants.after.ir": {
+            "bytes": 1555,
+            "sha256": "81ca2c9dcaec36659e84f01c1de133338626607fe1930a5c79314d6082e9ceca"
+          },
+          "missing-store.smt2": {
+            "bytes": 28211,
+            "sha256": "2ab7c89583a98b99e9be7b704e5a580758cc81a61353c06ff010370beb65575a"
+          },
+          "four-lanes.smt2": {
+            "bytes": 88895,
+            "sha256": "ce7fd29332eaf79c4905e52689a405fda3c21d2e27b7c9b5fadaa6ea2deb1610"
+          },
+          "identity.smt2": {
+            "bytes": 50535,
+            "sha256": "7df4a7803cdb29689ff2aff244c3992aa7f42c3027b720a70cbeefab36dcf492"
+          },
+          "wrong-exit.after.ir": {
+            "bytes": 8946,
+            "sha256": "e4082e407cc54021463e6a251a1dc32e210a1f025508d86aafdd1b8997f6d411"
+          },
+          "wrong-mark.smt2": {
+            "bytes": 25306,
+            "sha256": "857e382828361610333ab5c12ad40c55221637e2f78ca4cd09de75bb6e12683a"
+          },
+          "wrong-exit.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "991bbe681915f66fbfe1ee0505e0685e3ba477d6aed851cd70810982b7cc76f8"
+          },
+          "wrong-exit.inputs.txt": {
+            "bytes": 229,
+            "sha256": "f511e90084f84e81f74d342598448c3a7b12b02c87796faa0723dcf7b849aa3c"
+          },
+          "wrong-mark.memory.bin": {
+            "bytes": 31049,
+            "sha256": "cca89e795f8a509cf785b25ac89b313c3667cb7e033637b92c43a4e3c5f73fae"
+          },
+          "missing-store.inputs.txt": {
+            "bytes": 245,
+            "sha256": "8a4a8b4c5cc7c61121a0e657e32328f88ed47767d08a73820ab1f78ee0dd3cc4"
+          },
+          "four-lanes.before.ir": {
+            "bytes": 27077,
+            "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+          },
+          "one-lane.after.ir": {
+            "bytes": 8946,
+            "sha256": "2a3ce97af9f5198575e3a184c2c225fe2da7bf5afdc2da332eb6a7b11737202e"
+          },
+          "eager-dead-load.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "same-target-dropped.after.ir": {
+            "bytes": 415,
+            "sha256": "27a712e6c67a178431126ddd13ce31f4090432517b77094279345129ee47055b"
+          },
+          "join-constants.inputs.txt": {
+            "bytes": 172,
+            "sha256": "55e0292d7ad664303dd59163176e851154b5f501b2ffee4a3ff2d0f31e2ac171"
+          },
+          "wrong-exit.memory.bin": {
+            "bytes": 65535,
+            "sha256": "03c7775d9507fbd0b3cf746a7fa5962f054171faa33fb6b3dfeac6311d187adb"
+          },
+          "reordered-store.after.ir": {
+            "bytes": 8946,
+            "sha256": "07f96f24c389e245b9c9ef0a792dbbd73b2011b965d2b7d4e8b3e52c0c49d85d"
+          },
+          "join-constants.alias-model.txt": {
+            "bytes": 323,
+            "sha256": "b11deaacdbcf093ecd561a829d76490c3462028d72bf5ddf48de9237ba31948a"
+          },
+          "same-target-dropped.memory.bin": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "rounds-4.smt2": {
+            "bytes": 31813,
+            "sha256": "eacb26a9842c629c299b155069f52ac8301ea95ef29d58d25bce9a2c820cd47f"
+          },
+          "missing-store.memory.bin": {
+            "bytes": 65535,
+            "sha256": "8c7dc4c28689bd1a7d4f580a9e8116183b2f7e237d53bf610418b024ff7511ee"
+          },
+          "same-target-dropped.inputs.txt": {
+            "bytes": 234,
+            "sha256": "698e38c65b76eda8e5cc8618c850160546e9896c9b43a0b2dc59bb70d235ecb3"
+          },
+          "rounds-5.smt2": {
+            "bytes": 38965,
+            "sha256": "e0243373fb8d0605de26525e6ba854b9890bef2453bda55a510aeaa29ae4a734"
+          },
+          "one-lane.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "same-target-dropped.alias-model.txt": {
+            "bytes": 373,
+            "sha256": "d7090929d6341d06d0756f7c3f830720c9023bb5cd45a35acb71deea16a6c07d"
+          }
+        },
+        "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 22.56s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 22 tests\ntest verification::block_verify::region::extraction::repeat::tests::certified_cyclic_candidate_matches_unrolled_memory_and_rejects_wrong_increment ... REGION-CANDIDATE wrong=false verdict=equivalent bytes=49434 ms=640\nREGION-CANDIDATE wrong=true verdict=counterexample bytes=50043 ms=344\nok\ntest verification::block_verify::region::extraction::repeat::tests::completion_queries_distinguish_proven_bounds_exhaustion_and_unknown ... REGION-COMPLETE rounds=0 verdict=bound_exceeded bytes=1559 ms=111\nREGION-COMPLETE rounds=1 verdict=bound_exceeded bytes=10557 ms=184\nREGION-COMPLETE rounds=3 verdict=bound_exceeded bytes=24669 ms=259\nREGION-COMPLETE rounds=4 verdict=complete bytes=31813 ms=56\nREGION-COMPLETE rounds=5 verdict=complete bytes=38965 ms=61\nREGION-COMPLETE unbounded_inputs=bound_exceeded\nok\ntest verification::block_verify::region::extraction::repeat::tests::composition_tampering_and_missing_feedback_or_resources_are_rejected ... ok\ntest verification::block_verify::region::extraction::repeat::tests::missing_solver_never_seals_a_complete_region ... ok\ntest verification::block_verify::region::extraction::repeat::tests::repeated_regions_preserve_effects_values_and_faults_including_counter_wrap ... ok\ntest verification::block_verify::region::extraction::tests::boundaries_cycles_and_foreign_entry_facts_are_checked ... ok\ntest verification::block_verify::region::extraction::tests::cuts_preserve_full_effects_faults_and_distinct_function_return_values ... ok\ntest verification::block_verify::region::extraction::tests::independent_projection_checker_rejects_changed_effects_routes_caps_and_tags ... ok\ntest verification::block_verify::region::extraction::tests::same_target_branch_still_evaluates_its_faulting_condition ... ok\ntest verification::block_verify::region::extraction::tests::source_expression_depth_and_extra_capture_register_are_bounded ... ok\ntest verification::block_verify::region::registers::tests::comparison_uses_one_map_for_different_register_uses_and_boundary_only_slots ... ok\ntest verification::block_verify::region::registers::tests::independent_checker_rejects_aliasing_operands_effects_and_dropped_control_loads ... ok\ntest verification::block_verify::region::registers::tests::sparse_projection_preserves_full_reports_at_every_budget_and_fault_boundary ... ok\ntest verification::block_verify::region::registers::tests::unused_slots_restore_inputs_and_query_and_source_bounds_remain_distinct ... ok\ntest verification::block_verify::region::tests::an_unavailable_solver_keeps_an_explicit_unknown_verdict ... ok\ntest verification::block_verify::region::tests::cycles_open_edges_and_foreign_register_mappings_are_rejected_before_solving ... ok\ntest verification::block_verify::region::tests::entry_scope_allows_unreachable_cycles_and_distinct_source_addresses ... ok\ntest verification::block_verify::region::tests::full_source_depth_and_size_are_checked_including_unreachable_expressions ... ok\ntest verification::block_verify::region::tests::normal_liveouts_are_explicit_and_fault_snapshots_keep_their_separate_scope ... ok\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... DAG-REGION identity verdict=equivalent bytes=50535 ms=87\nDAG-REGION one-lane verdict=equivalent bytes=25218 ms=31\nDAG-REGION two-lanes verdict=equivalent bytes=45522 ms=69\nDAG-REGION four-lanes verdict=equivalent bytes=88895 ms=3648\nDAG-REGION four-lanes-80-registers verdict=equivalent bytes=91447 ms=4325\nDAG-REGION lazy-dead-load verdict=equivalent bytes=33033 ms=44\nDAG-REGION post-fault-effects verdict=equivalent bytes=7590 ms=29\nDAG-REGION reordered-store verdict=counterexample replay=true constrained_replay=true bytes=31119 ms=624\nDAG-REGION missing-store verdict=counterexample replay=true constrained_replay=true bytes=28211 ms=320\nDAG-REGION eager-dead-load verdict=counterexample replay=true constrained_replay=true bytes=36295 ms=191\nDAG-REGION wrong-exit verdict=counterexample replay=true constrained_replay=true bytes=26299 ms=233\nDAG-REGION wrong-mark verdict=counterexample replay=true constrained_replay=true bytes=25306 ms=268\nDAG-REGION join-constants verdict=counterexample replay=true constrained_replay=true bytes=4422 ms=105\nDAG-REGION same-target-preserved verdict=equivalent bytes=4372 ms=41\nDAG-REGION same-target-dropped verdict=counterexample replay=true constrained_replay=true bytes=4373 ms=192\nDAG-REGION oversized-witness verdict=replay_limit bytes=3017 ms=81\nok\ntest verification::block_verify::region::tests::the_machine_register_space_keeps_sparse_region_boundaries ... ok\ntest verification::block_verify::region::tests::witnesses_replay_distinct_unshared_inputs_and_reject_a_forged_equal_result ... ok\n\ntest result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 291 filtered out; finished in 12.72s\n\n",
+        "scope": "Closed entry-reachable DAGs; arbitrary shared/unshared register inputs, all memory/base/size, return, first fault and declared normal live-outs. Candidate loop construction/unfolding completeness is separate; no automatic inverse-unroll pass is installed."
+      },
+      "completion_cases": [
+        {
+          "rounds": 0,
+          "verdict": "bound_exceeded",
+          "script_bytes": 1559,
+          "milliseconds": 111
+        },
+        {
+          "rounds": 1,
+          "verdict": "bound_exceeded",
+          "script_bytes": 10557,
+          "milliseconds": 184
+        },
+        {
+          "rounds": 3,
+          "verdict": "bound_exceeded",
+          "script_bytes": 24669,
+          "milliseconds": 259
+        },
+        {
+          "rounds": 4,
+          "verdict": "complete",
+          "script_bytes": 31813,
+          "milliseconds": 56
+        },
+        {
+          "rounds": 5,
+          "verdict": "complete",
+          "script_bytes": 38965,
+          "milliseconds": 61
+        }
+      ],
+      "cyclic_comparison_cases": [
+        {
+          "wrong_increment": false,
+          "verdict": "equivalent",
+          "script_bytes": 49434,
+          "milliseconds": 640,
+          "normal_liveouts": "all original registers plus captured return"
+        },
+        {
+          "wrong_increment": true,
+          "verdict": "counterexample",
+          "script_bytes": 50043,
+          "milliseconds": 344,
+          "normal_liveouts": "capture of actual return only"
+        }
+      ],
+      "counterexample_contract": "Wrong increment must differ in actual RAM or function return/status, beyond a dead-register difference."
+    },
+    "actual_compiler_trial": {
+      "schema": "nirvana-checked-region-extraction-trial-v1",
+      "revision": "90c783d82b2fad2c2438f0a0067c5e9d477dc5ef",
+      "dirty": true,
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--test",
+        "verification",
+        "region_extraction::",
+        "--",
+        "--ignored",
+        "--nocapture"
+      ],
+      "returncode": 0,
+      "seconds": 24.348479673004476,
+      "source_sha256": {
+        "src/verification/block_verify/region.rs": "72b2593774ebd5aa1b04b4d985037a042e7dcb47d6fe1edbfc64a4218b7aeba0",
+        "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+        "src/verification/block_verify/region/extraction.rs": "212f6d5f8e5981a2d333455c4b39285ae0fc7f554f7928bd8e294114f61f6aec",
+        "src/verification/block_verify/region/extraction/check.rs": "c51c0bc8a2fa0577388f2ded73333e950882f67ae6b147f9bce21e0d4f760926",
+        "src/verification/block_verify/region/extraction/tests.rs": "4c2763a750647c92e7052d74e168b5ae0adc13a56b86247a0ef13ddc83769e75",
+        "tests/verification/region_extraction.rs": "20854c7f6ab9e4a6fd4bacbe86c9f0cb0005e5a82487a95210905ca063a326cc",
+        "tests/verification.rs": "78c28dbe6e5b7d60b25519821de36d05ccbd2ff477b7696ebd5ffb485d3b3a4e",
+        "src/verification/block_verify/region/registers.rs": "780d7f2f9f732c470abfdcddc3b3468889edc84fb54aa8c61d031e2536dc81d0",
+        "src/verification/block_verify/region/registers/check.rs": "ae054fd0fbc8a4cee046735487a828930694af9223a7f14686c84b6e90873a96",
+        "src/verification/block_verify/region/registers/tests.rs": "9c439d4788d14ffa6be439cf174469d2aa9c2bd684ffb9315e8f2bf15abc9009"
+      },
+      "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+      "inputs_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "query_seconds": 5
+      },
+      "artifacts": {
+        "dense.ir": {
+          "bytes": 54573,
+          "sha256": "c8623dd26345cddc53d99f932754eeafb0816d03fba80cf39fc2c10c3a7a65e6"
+        },
+        "region.ir": {
+          "bytes": 383394,
+          "sha256": "736291714c284bdd9bc58b7cf98853530244e8e64692c0fd6d65441b08fe5c88"
+        },
+        "selected-source.ir": {
+          "bytes": 54649,
+          "sha256": "56565e4b3a462187b954ae1190b368066df4d3d475c1dc960653e400a2f24742"
+        },
+        "trial.log": {
+          "bytes": 949,
+          "sha256": "88b27af0d46abe75e37bee994ce83f31b709f9572d1d42a9d1cee3e61ba72ae8"
+        },
+        "selected-identity.smt2": {
+          "bytes": 271801,
+          "sha256": "1019d730caa29fdc7c82c252447a87d2afa22108d2f3d03143991526a6ac6563"
+        },
+        "identity.smt2": {
+          "bytes": 344749,
+          "sha256": "5445830ac442486764f4b216fdb8484458a0411d2408f70b18b536c8e9e57fb1"
+        }
+      },
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 21.52s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n\nrunning 2 tests\nACTUAL source_steps=115 source_regs=32 header=32 follow=375 region_steps=116 region_regs=33 caps=[64, 64, 3, 64, 64, 64, 2, 64, 64, 64, 64, 64, 64, 64, 64, 64, 1, 1, 1, 1, 1, 32, 64, 0, 64, 64, 64, 64, 64, 64, 64, 64]\nACTUAL concrete_region_comparisons=590\nACTUAL self_verdict=EquivalentUnderModel bytes=344749 ms=795\ntest region_extraction::actual_compiler_region_extraction_probe ... ok\nDISPLAY source_registers=740 dense_registers=38 region_registers=39 prefix_comparisons=5764 region_comparisons=590 identity_bytes=271801 ms=951\ntest region_extraction::actual_selected_display_register_projection_and_region_queries ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 56 filtered out; finished in 1.84s\n\n",
+      "selected_source_identity": true,
+      "scope": "Projection rules checked against exact source Program and optional validated entry bit caps. Concrete original-to-region comparisons retain original registers, RAM, first fault and actual return/continuation. SMT identity is an encoder smoke check, not a source-to-region theorem. PC/trace/budget outside contract."
+    },
+    "actual_trial_source_attestation": "All scoped source hashes equal the clean candidate; the trial ran before its implementation commit with dirty=true. SMT identity trials confirm encoder acceptance, not whole source-to-C equivalence.",
+    "m0": {
+      "fresh32": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "6f38520b7579f814a47b75ed773791d7f9df67d4ecd24bee246841d0f883cf7d",
+            "report_sha256": "acd9b1443e3bddfd96ba0375a6afa61c62c7d851fe13cc9f6dd8899fa00f88de"
+          },
+          "after": {
+            "evaluation_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "c0d9e53d43b542f25250079e031ca9703fc149cc74d64e9ec97729c6db096e4b",
+            "report_sha256": "fc011a5ea750ddb8e515cd119fdbdbcb77d85ac8fae797a6b9e66826ceb730c7"
+          },
+          "requested": 32,
+          "structure": {
+            "equal": 32
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 32
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "equivalent_under_model": 17,
+            "unsupported": 11,
+            "unknown": 4
+          },
+          "candidate_architecture": {
+            "passed": 32
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 32
+            },
+            "middle_predicates": {
+              "not_applied": 31,
+              "passed": 1
+            },
+            "middle_memory": {
+              "not_applied": 32
+            },
+            "middle_saved": {
+              "not_applied": 32
+            },
+            "selected_semantic": {
+              "not_applied": 32
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 32
+            },
+            "memory_ssa_queries": {
+              "passed": 32
+            },
+            "memory_addresses": {
+              "passed": 32
+            },
+            "unsigned_bounds": {
+              "passed": 32
+            },
+            "storage_widths": {
+              "passed": 32
+            },
+            "selected_storage": {
+              "passed": 32
+            },
+            "selected_signed_storage": {
+              "passed": 32
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 32
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "artifacts": {
+          "schema": "nirvana-region-feedback-gate-v1",
+          "kind": "fresh32",
+          "profiles": 32,
+          "cohorts": {
+            "development": {
+              "profiles": 24,
+              "structure": {
+                "equal": 24
+              }
+            },
+            "holdout": {
+              "profiles": 8,
+              "structure": {
+                "equal": 8
+              }
+            }
+          },
+          "identical_c": 32,
+          "total_c": 32,
+          "changed_c_by_cohort": {},
+          "identical_ir": 96,
+          "total_ir": 96,
+          "identical_stage_metadata": 32,
+          "total_stage_metadata": 32,
+          "counts": {
+            "native": 544,
+            "generated_O0": 1632,
+            "generated_O2": 1632,
+            "stage_comparisons": 33660
+          },
+          "before_summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/region-api-v2-after/report.json",
+              "sha256": "acd9b1443e3bddfd96ba0375a6afa61c62c7d851fe13cc9f6dd8899fa00f88de"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/region-feedback-v2-after/report.json",
+              "sha256": "fc011a5ea750ddb8e515cd119fdbdbcb77d85ac8fae797a6b9e66826ceb730c7"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-initial-v2.json",
+              "sha256": "23ca994232002773fe9fee6c68d52d6eadb6379eabfedcf89ef7df3c2c9fa5a4"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 17,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 32
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-branch-inputs-v1.txt",
+              "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              },
+              "after": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              },
+              "after": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      },
+      "nested2": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "376f7484d1a16cb62b4ddece5805eb4f0b85634c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "6f38520b7579f814a47b75ed773791d7f9df67d4ecd24bee246841d0f883cf7d",
+            "report_sha256": "94cb280c55d86c1cf68b7a2c483b86df96f85e9a257dc1923d039b721a8d604d"
+          },
+          "after": {
+            "evaluation_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "c0d9e53d43b542f25250079e031ca9703fc149cc74d64e9ec97729c6db096e4b",
+            "report_sha256": "7910f9207c4466c789b6d6b0b1abb8ba50cc029d52c0a7b2778e0ddfd62c6b74"
+          },
+          "requested": 2,
+          "structure": {
+            "equal": 2
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 2
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "unknown": 1,
+            "unsupported": 1
+          },
+          "candidate_architecture": {
+            "passed": 2
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 2
+            },
+            "middle_predicates": {
+              "not_applied": 2
+            },
+            "middle_memory": {
+              "not_applied": 2
+            },
+            "middle_saved": {
+              "not_applied": 2
+            },
+            "selected_semantic": {
+              "not_applied": 2
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 2
+            },
+            "memory_ssa_queries": {
+              "passed": 2
+            },
+            "memory_addresses": {
+              "passed": 2
+            },
+            "unsigned_bounds": {
+              "passed": 2
+            },
+            "storage_widths": {
+              "passed": 2
+            },
+            "selected_storage": {
+              "passed": 2
+            },
+            "selected_signed_storage": {
+              "passed": 2
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 2
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "artifacts": {
+          "schema": "nirvana-region-feedback-gate-v1",
+          "kind": "nested2",
+          "profiles": 2,
+          "cohorts": {
+            "development": {
+              "profiles": 2,
+              "structure": {
+                "equal": 2
+              }
+            },
+            "holdout": {
+              "profiles": 0,
+              "structure": {}
+            }
+          },
+          "identical_c": 2,
+          "total_c": 2,
+          "changed_c_by_cohort": {},
+          "identical_ir": 6,
+          "total_ir": 6,
+          "identical_stage_metadata": 2,
+          "total_stage_metadata": 2,
+          "counts": {
+            "native": 130,
+            "generated_O0": 390,
+            "generated_O2": 390,
+            "stage_comparisons": 7800
+          },
+          "before_summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/region-api-nested-after/report.json",
+              "sha256": "94cb280c55d86c1cf68b7a2c483b86df96f85e9a257dc1923d039b721a8d604d"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/region-feedback-nested-after/report.json",
+              "sha256": "7910f9207c4466c789b6d6b0b1abb8ba50cc029d52c0a7b2778e0ddfd62c6b74"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.json",
+              "sha256": "1850be124214464ca917a570e42baa951be27cc87062ca27b01b78a894787dc7"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 65,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 2
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.inputs.txt",
+              "sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              },
+              "after": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              },
+              "after": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      }
+    },
+    "tools": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=2bec0e36008767c713cb54ec774ad51ec15c5400 source_dirty=false",
+        "sha256": "c0d9e53d43b542f25250079e031ca9703fc149cc74d64e9ec97729c6db096e4b"
+      },
+      "candidate_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+      "partial_layout_v2": {
+        "version": "nirvana 0.1.0 git=2bec0e36008767c713cb54ec774ad51ec15c5400 source_dirty=false",
+        "sha256": "17d1927d1c4303ebd8d22e8bf691e3a031a6bab54951723947d7cec5e2470ac0"
+      },
+      "partial_layout_nested": {
+        "version": "nirvana 0.1.0 git=2bec0e36008767c713cb54ec774ad51ec15c5400 source_dirty=false",
+        "sha256": "17d1927d1c4303ebd8d22e8bf691e3a031a6bab54951723947d7cec5e2470ac0"
+      }
+    },
+    "existing_node_model_identity": {
+      "candidate_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+      "trial_revision": "a68a89fd90b0d132b5df4f84f390948fffaa294b",
+      "fixtures_sha256": "65ea707a4f9500824fd6c71bdeafc8f7f0516418c5efa808fc0214ec848fab52",
+      "model_sha256": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+      "bytes_identical": true,
+      "exported_pairs": 18,
+      "verified_positive_pairs": 12,
+      "meaning": "The clean current Rust exporter yields the exact eighteen raw pairs of the completed twelve-positive-pair TLC run. Event correspondence is bounded by that finite family and budgets0..6."
+    },
+    "clippy": "all targets pass -D warnings",
+    "rustfmt": "all targets pass"
+  },
+  "solver_resource_observation": {
+    "failed_parallel_trial": {
+      "schema": "nirvana-dag-region-trial-v1",
+      "revision": "f4a6590bd3a172b4a7edb73806e25f16c56eaf8d",
+      "dirty": true,
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--lib",
+        "region::",
+        "--",
+        "--include-ignored",
+        "--nocapture"
+      ],
+      "returncode": 101,
+      "seconds": 28.397279689001152,
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "query_seconds": 5
+      },
+      "rows": [
+        {
+          "case": "identity",
+          "verdict": "equivalent",
+          "script_bytes": 50535,
+          "milliseconds": 119,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "one-lane",
+          "verdict": "equivalent",
+          "script_bytes": 25218,
+          "milliseconds": 34,
+          "replayed": false,
+          "constrained_replayed": false
+        },
+        {
+          "case": "two-lanes",
+          "verdict": "equivalent",
+          "script_bytes": 45522,
+          "milliseconds": 82,
+          "replayed": false,
+          "constrained_replayed": false
+        }
+      ],
+      "equivalent": 3,
+      "counterexamples": 0,
+      "replay_limits": 0,
+      "source_sha256": {
+        "src/verification/block_verify.rs": "46b1c312f00e974fb0de56371a0a4dd06988d6dfe44ff21c3b450b007e04f400",
+        "src/verification/block_verify/paths.rs": "9bbea23df16b9fe5b1f03fa8c0cadf56548d0b5222c3ae2ab802f87ce1e8e414",
+        "src/verification/block_verify/region.rs": "72b2593774ebd5aa1b04b4d985037a042e7dcb47d6fe1edbfc64a4218b7aeba0",
+        "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+        "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+        "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+        "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+        "src/verification/verify.rs": "5dd3f5caf9ff1ba8f25d1cf934d67e1138eda774cf5a1fec44724d9ee7294763",
+        "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+      },
+      "artifacts": {
+        "candidate-wrong-false.smt2": {
+          "bytes": 49434,
+          "sha256": "6cbf398e7453ee171d02b7c93e1ef3d30d9bc161d2fcef04db31b3d7415f68f5"
+        },
+        "candidate-wrong-true.smt2": {
+          "bytes": 50043,
+          "sha256": "778ced38ffb69b1e4981e669b7ec94e8b42da678daa7358601a8fb85459c2faa"
+        },
+        "identity.after.ir": {
+          "bytes": 27077,
+          "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+        },
+        "rounds-1.smt2": {
+          "bytes": 10557,
+          "sha256": "19a5b94eeec4719e9aa819535d42ec154b436e9fc9c142b5d925e4f5d12c6c04"
+        },
+        "two-lanes.after.ir": {
+          "bytes": 16095,
+          "sha256": "6320415b089f63c4ecf083c47f5a8249dc5e4aa96a4c775338b7f60f599341c9"
+        },
+        "two-lanes.smt2": {
+          "bytes": 45522,
+          "sha256": "3559430d01c85a2966d1b23cdbbd0845fb2ca6ac14ffc946625cf017c52d4d89"
+        },
+        "trial.log": {
+          "bytes": 4516,
+          "sha256": "863ccb9d313baabaa86602f5e3791946a26ebc87e9f7a897b2e7122640ef0537"
+        },
+        "one-lane.smt2": {
+          "bytes": 25218,
+          "sha256": "33405a6531a297c39f9e2ecdfe9f7ea10ecb0af2ac6e1c205cd9c9254fdda57b"
+        },
+        "identity.before.ir": {
+          "bytes": 27077,
+          "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+        },
+        "rounds-3.smt2": {
+          "bytes": 24669,
+          "sha256": "9783bffda265639018a4dc4932bc4279a14add4d6333202f8505f14868c0e353"
+        },
+        "rounds-0.smt2": {
+          "bytes": 1559,
+          "sha256": "0c97b09e55b133606fb2599dd14da6cda82bf447fc37327d94ed76996fcaf5ea"
+        },
+        "four-lanes.after.ir": {
+          "bytes": 30393,
+          "sha256": "e8aed7e39acae3642ceca791f041431e24cfd19830299ae391d6d1cf6b8db0f1"
+        },
+        "two-lanes.before.ir": {
+          "bytes": 14183,
+          "sha256": "16daa762aedaa90a4ad67640276816e6186a921a62a3e609ac3f57df07251ed0"
+        },
+        "four-lanes.smt2": {
+          "bytes": 88895,
+          "sha256": "ce7fd29332eaf79c4905e52689a405fda3c21d2e27b7c9b5fadaa6ea2deb1610"
+        },
+        "identity.smt2": {
+          "bytes": 50535,
+          "sha256": "7df4a7803cdb29689ff2aff244c3992aa7f42c3027b720a70cbeefab36dcf492"
+        },
+        "four-lanes.before.ir": {
+          "bytes": 27077,
+          "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+        },
+        "one-lane.after.ir": {
+          "bytes": 8946,
+          "sha256": "2a3ce97af9f5198575e3a184c2c225fe2da7bf5afdc2da332eb6a7b11737202e"
+        },
+        "rounds-4.smt2": {
+          "bytes": 31813,
+          "sha256": "eacb26a9842c629c299b155069f52ac8301ea95ef29d58d25bce9a2c820cd47f"
+        },
+        "rounds-5.smt2": {
+          "bytes": 38965,
+          "sha256": "e0243373fb8d0605de26525e6ba854b9890bef2453bda55a510aeaa29ae4a734"
+        },
+        "one-lane.before.ir": {
+          "bytes": 7736,
+          "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+        }
+      },
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 22.13s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 22 tests\ntest verification::block_verify::region::extraction::tests::independent_projection_checker_rejects_changed_effects_routes_caps_and_tags ... ok\ntest verification::block_verify::region::extraction::tests::cuts_preserve_full_effects_faults_and_distinct_function_return_values ... ok\ntest verification::block_verify::region::extraction::tests::same_target_branch_still_evaluates_its_faulting_condition ... ok\ntest verification::block_verify::region::extraction::repeat::tests::repeated_regions_preserve_effects_values_and_faults_including_counter_wrap ... ok\ntest verification::block_verify::region::extraction::tests::boundaries_cycles_and_foreign_entry_facts_are_checked ... ok\ntest verification::block_verify::region::registers::tests::comparison_uses_one_map_for_different_register_uses_and_boundary_only_slots ... ok\ntest verification::block_verify::region::extraction::repeat::tests::composition_tampering_and_missing_feedback_or_resources_are_rejected ... ok\ntest verification::block_verify::region::extraction::tests::source_expression_depth_and_extra_capture_register_are_bounded ... ok\ntest verification::block_verify::region::registers::tests::unused_slots_restore_inputs_and_query_and_source_bounds_remain_distinct ... ok\ntest verification::block_verify::region::tests::entry_scope_allows_unreachable_cycles_and_distinct_source_addresses ... ok\ntest verification::block_verify::region::tests::cycles_open_edges_and_foreign_register_mappings_are_rejected_before_solving ... ok\ntest verification::block_verify::region::tests::full_source_depth_and_size_are_checked_including_unreachable_expressions ... ok\ntest verification::block_verify::region::registers::tests::sparse_projection_preserves_full_reports_at_every_budget_and_fault_boundary ... ok\ntest verification::block_verify::region::tests::normal_liveouts_are_explicit_and_fault_snapshots_keep_their_separate_scope ... ok\ntest verification::block_verify::region::registers::tests::independent_checker_rejects_aliasing_operands_effects_and_dropped_control_loads ... ok\ntest verification::block_verify::region::tests::an_unavailable_solver_keeps_an_explicit_unknown_verdict ... ok\ntest verification::block_verify::region::tests::witnesses_replay_distinct_unshared_inputs_and_reject_a_forged_equal_result ... ok\ntest verification::block_verify::region::tests::the_machine_register_space_keeps_sparse_region_boundaries ... ok\ntest verification::block_verify::region::extraction::repeat::tests::missing_solver_never_seals_a_complete_region ... ok\nDAG-REGION identity verdict=equivalent bytes=50535 ms=119\nREGION-COMPLETE rounds=0 verdict=bound_exceeded bytes=1559 ms=134\nDAG-REGION one-lane verdict=equivalent bytes=25218 ms=34\nDAG-REGION two-lanes verdict=equivalent bytes=45522 ms=82\nREGION-COMPLETE rounds=1 verdict=bound_exceeded bytes=10557 ms=198\nREGION-COMPLETE rounds=3 verdict=bound_exceeded bytes=24669 ms=257\nREGION-COMPLETE rounds=4 verdict=complete bytes=31813 ms=58\nREGION-COMPLETE rounds=5 verdict=complete bytes=38965 ms=58\nREGION-CANDIDATE wrong=false verdict=equivalent bytes=49434 ms=715\nREGION-COMPLETE unbounded_inputs=bound_exceeded\ntest verification::block_verify::region::extraction::repeat::tests::completion_queries_distinguish_proven_bounds_exhaustion_and_unknown ... ok\nREGION-CANDIDATE wrong=true verdict=counterexample bytes=50043 ms=362\ntest verification::block_verify::region::extraction::repeat::tests::certified_cyclic_candidate_matches_unrolled_memory_and_rejects_wrong_increment ... ok\n\nthread 'verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants' (1598259) panicked at src/verification/block_verify/region/tests/smt.rs:435:13:\nassertion `left == right` failed: four-lanes\n  left: Unknown(SolverUnknown)\n right: EquivalentUnderModel\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... FAILED\n\nfailures:\n\nfailures:\n    verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants\n\ntest result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 291 filtered out; finished in 5.35s\n\nerror: test failed, to rerun pass `--lib`\n",
+      "scope": "Closed entry-reachable DAGs; arbitrary shared/unshared register inputs, all memory/base/size, return, first fault and declared normal live-outs. Candidate loop construction/unfolding completeness is separate; no automatic inverse-unroll pass is installed."
+    },
+    "serial_profile": "The same queries, inputs and5second budget pass with --test-threads=1. Parallel Unknown remains evidence of resource sensitivity, not an equivalence result. No solver timeout was raised and no source/model condition was removed."
+  },
+  "source_sha256": {
+    "src/verification/block_verify.rs": "46b1c312f00e974fb0de56371a0a4dd06988d6dfe44ff21c3b450b007e04f400",
+    "src/verification/verify.rs": "5dd3f5caf9ff1ba8f25d1cf934d67e1138eda774cf5a1fec44724d9ee7294763",
+    "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a",
+    "tests/verification/region_extraction.rs": "20854c7f6ab9e4a6fd4bacbe86c9f0cb0005e5a82487a95210905ca063a326cc",
+    "tests/verification.rs": "78c28dbe6e5b7d60b25519821de36d05ccbd2ff477b7696ebd5ffb485d3b3a4e",
+    "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+    "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+    "src/verification/block_verify/region/registers.rs": "780d7f2f9f732c470abfdcddc3b3468889edc84fb54aa8c61d031e2536dc81d0",
+    "src/verification/block_verify/region/extraction.rs": "212f6d5f8e5981a2d333455c4b39285ae0fc7f554f7928bd8e294114f61f6aec",
+    "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+    "src/verification/block_verify/region/registers/tests.rs": "9c439d4788d14ffa6be439cf174469d2aa9c2bd684ffb9315e8f2bf15abc9009",
+    "src/verification/block_verify/region/registers/check.rs": "ae054fd0fbc8a4cee046735487a828930694af9223a7f14686c84b6e90873a96",
+    "src/verification/block_verify/region/extraction/repeat.rs": "98b5c891186d1d30321e34d82e5702c84f7056ad5cc8fbdc30dbdb2ad806236c",
+    "src/verification/block_verify/region/extraction/tests.rs": "4c2763a750647c92e7052d74e168b5ae0adc13a56b86247a0ef13ddc83769e75",
+    "src/verification/block_verify/region/extraction/check.rs": "c51c0bc8a2fa0577388f2ded73333e950882f67ae6b147f9bce21e0d4f760926",
+    "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+    "src/verification/block_verify/region/extraction/repeat/tests.rs": "feeb357d0c3f15c0612ac495ae0ce6ce7860089290d1332d1f6a148d164908d5",
+    "src/verification/block_verify/region/extraction/repeat/check.rs": "edac7e267536269c7b57d63861dbdbe046ee4121a876f48c9d54127da2289689",
+    "src/verification/block_verify/region.rs": "72b2593774ebd5aa1b04b4d985037a042e7dcb47d6fe1edbfc64a4218b7aeba0"
+  },
+  "local_evidence": {
+    "completed_archives": {
+      "region-api-v2-after": {
+        "directory": "target/runs/run-a37yw4tm/out/region-api-v2-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/region-api-v2-after.tar.gz",
+        "sha256": "3a9cb0fdd993043b63b111911290a7ea15b2ea0e4b72b8b1d852ec94c26f1ce6",
+        "uncompressed_bytes": 46856933,
+        "compressed_bytes": 3294300
+      },
+      "region-api-nested-after": {
+        "directory": "target/runs/run-a37yw4tm/out/region-api-nested-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/region-api-nested-after.tar.gz",
+        "sha256": "97d7d2ee4348e149754779a520ef0910deba915d1e726f264e3206e7e16e756c",
+        "uncompressed_bytes": 8045129,
+        "compressed_bytes": 449257
+      }
+    },
+    "storage": "Shared intermediate soft2GiB/all-target watchdog4GiB; retained runs512MiB. Managed transient runs removed after their artifact hashes and essential logs were retained. No additional worktree or copied debug binary."
+  },
+  "reproduce": [
+    "python3 tools/dev.py cargo test --lib region::",
+    "NIRVANA_Z3=PATH NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib region:: -- --include-ignored --nocapture --test-threads=1",
+    "For solver query files set NIRVANA_REGION_REPORT and NIRVANA_REPEAT_REPORT to the managed experiment output directory.",
+    "Compile development tests/fixtures/evaluation/nested-transfers.c with the recorded Clang18 O2 flags; set NIRVANA_REGION_OBJECT,NIRVANA_REGION_OUTPUT,NIRVANA_Z3 and run python3 tools/dev.py cargo test --test verification region_extraction:: -- --ignored --nocapture",
+    "python3 tools/dev.py cargo test --all-targets --locked --no-fail-fast"
+  ],
+  "next_decision": "Preserve fixed M0 semantics/quality and fresh holdout isolation. Test source-bound entry prefixes and checked physical storage lowering before generating actual inverse-unroll candidates. Nested structure distances15/30 remain unchanged; these APIs alone do not improve default C."
+}
