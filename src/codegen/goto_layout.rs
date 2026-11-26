@@ -6,6 +6,8 @@
 //! or instruction-budget cutoffs. An empty routing cycle keeps one self-looping
 //! representative so a nonterminating path cannot turn into a return.
 
+pub mod loops;
+
 use crate::control_flow::cfg::{BlockId, Target};
 use crate::model::ir::{Control, Program};
 

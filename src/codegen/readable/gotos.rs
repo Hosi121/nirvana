@@ -1,107 +1,168 @@
-//! Readable fallback rendering from the original CFG layout.
+//! Readable fallback rendering with checked natural-loop scopes and local gotos.
 use super::*;
+use crate::codegen::goto_layout::loops::{Event, LoopLayout, Transfer};
+
+fn statement(transfer: Transfer) -> Option<String> {
+    match transfer {
+        Transfer::Fallthrough => None,
+        Transfer::Continue => Some("continue;".into()),
+        Transfer::Break => Some("break;".into()),
+        Transfer::Goto(target) => Some(format!("goto {target};")),
+    }
+}
 
 impl Printer<'_> {
     pub(super) fn gotos(&self, code: &mut String, program: &Program) -> Result<(), SequenceError> {
         let cfg = program.cfg();
         let layout = GotoLayout::compute(program);
-        let order = layout
+        let original_order = layout
             .as_ref()
             .map(|l| l.blocks().to_vec())
             .unwrap_or_else(|| cfg.reachable_blocks().into_iter().collect());
         let resolve = |id| layout.as_ref().map_or(id, |l| l.resolve(id));
         let block_at = |address| resolve(cfg.block_at(address).expect("validated destination"));
         let entry = layout.as_ref().map_or(cfg.entry(), |l| l.entry());
-        // Only destinations of jumps which survive fallthrough need labels.
+        let flat_next: BTreeMap<_, _> = original_order
+            .iter()
+            .enumerate()
+            .map(|(index, &id)| (id, original_order.get(index + 1).copied()))
+            .collect();
+        let targets = |id| {
+            let block = cfg.block(id);
+            let i = &program.instructions()[block.instructions.end - 1];
+            match &i.control {
+                Control::Next => vec![block_at(i.address + u64::from(i.size))],
+                Control::Jump(target) => vec![block_at(*target)],
+                Control::Branch { target, .. } => {
+                    vec![block_at(*target), block_at(i.address + u64::from(i.size))]
+                }
+                Control::Return(_) => vec![],
+            }
+        };
+        let flat_gotos: usize = original_order
+            .iter()
+            .map(|&id| {
+                targets(id)
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .iter()
+                    .filter(|&&target| Some(target) != flat_next[&id])
+                    .count()
+            })
+            .sum();
+        let loops = layout
+            .as_ref()
+            .and_then(|flat| LoopLayout::compute(program, flat))
+            .filter(|plan| plan.goto_count() < flat_gotos);
+        let events = loops
+            .as_ref()
+            .map(|plan| plan.events().to_vec())
+            .unwrap_or_else(|| original_order.iter().copied().map(Event::Block).collect());
+        let transfer = |from, target| {
+            if let Some(plan) = &loops {
+                plan.transfer(from, target).expect("checked source edge")
+            } else if flat_next[&from] == Some(target) {
+                Transfer::Fallthrough
+            } else {
+                Transfer::Goto(target)
+            }
+        };
+        let first = events.iter().find_map(|event| match event {
+            Event::Block(id) => Some(*id),
+            _ => None,
+        });
         let mut labels = BTreeSet::new();
-        if order.first() != Some(&entry) {
+        if first != Some(entry) {
             labels.insert(entry);
         }
-        for (index, &id) in order.iter().enumerate() {
-            let next = order.get(index + 1).copied();
-            let block = cfg.block(id);
-            let instruction = &program.instructions()[block.instructions.end - 1];
-            let mut target = |id| {
-                if Some(id) != next {
-                    labels.insert(id);
+        for &id in &original_order {
+            for target in targets(id) {
+                if let Transfer::Goto(target) = transfer(id, target) {
+                    labels.insert(target);
                 }
-            };
-            match &instruction.control {
-                Control::Next => {
-                    target(block_at(instruction.address + u64::from(instruction.size)))
-                }
-                Control::Jump(address) => target(block_at(*address)),
-                Control::Branch {
-                    target: address, ..
-                } => {
-                    target(block_at(*address));
-                    target(block_at(instruction.address + u64::from(instruction.size)));
-                }
-                Control::Return(_) => {}
             }
         }
-        if order.first() != Some(&entry) {
+        if first != Some(entry) {
             line(code, 1, &format!("goto {entry};"));
         }
-        for (index, &id) in order.iter().enumerate() {
-            let next = order.get(index + 1).copied();
+        let mut indent = 1;
+        for event in events {
+            let id = match event {
+                Event::Open(_) => {
+                    line(code, indent, "for (;;) {");
+                    indent += 1;
+                    continue;
+                }
+                Event::Close(_) => {
+                    indent -= 1;
+                    line(code, indent, "}");
+                    continue;
+                }
+                Event::Block(id) => id,
+            };
             let block = cfg.block(id);
             if labels.contains(&id) {
-                writeln!(code, "{id}:").unwrap();
+                // A header can have no emitted assignment or transfer. The null
+                // statement also makes a label before a closing brace valid C11.
+                if loops.is_some() {
+                    writeln!(code, "{id}:;").unwrap();
+                } else {
+                    writeln!(code, "{id}:").unwrap();
+                }
             }
             for instruction in &program.instructions()[block.instructions.clone()] {
-                self.assignments(code, 1, instruction.address, &instruction.assignments)?;
+                self.assignments(code, indent, instruction.address, &instruction.assignments)?;
             }
-            let instruction = &program.instructions()[block.instructions.end - 1];
-            match &instruction.control {
+            let i = &program.instructions()[block.instructions.end - 1];
+            match &i.control {
                 Control::Next | Control::Jump(_) => {
-                    let target = match instruction.control {
+                    let target = match i.control {
                         Control::Jump(address) => block_at(address),
-                        _ => block_at(instruction.address + u64::from(instruction.size)),
+                        _ => block_at(i.address + u64::from(i.size)),
                     };
-                    if Some(target) != next {
-                        line(code, 1, &format!("goto {target};"));
+                    if let Some(text) = statement(transfer(id, target)) {
+                        line(code, indent, &text);
                     }
                 }
                 Control::Branch { condition, target } => {
                     let taken = block_at(*target);
-                    let not_taken = block_at(instruction.address + u64::from(instruction.size));
+                    let not_taken = block_at(i.address + u64::from(i.size));
                     if taken == not_taken {
-                        self.value_statement(code, 1, condition, None, "(void)(", ");")?;
-                        if Some(taken) != next {
-                            line(code, 1, &format!("goto {taken};"));
+                        self.value_statement(code, indent, condition, None, "(void)(", ");")?;
+                        if let Some(text) = statement(transfer(id, taken)) {
+                            line(code, indent, &text);
                         }
                         continue;
                     }
                     let scoped = needs_sequence(condition);
                     if scoped {
-                        line(code, 1, "{");
+                        line(code, indent, "{");
                     }
-                    let inner = 1 + usize::from(scoped);
+                    let inner = indent + usize::from(scoped);
                     let mut temporary = self.first_temporary;
                     let value =
                         self.ordered_expression(code, inner, condition, None, &mut temporary)?;
-                    if Some(taken) == next {
-                        line(
-                            code,
-                            inner,
-                            &format!("if (!({})) goto {not_taken};", value.text),
-                        );
+                    let taken_transfer = transfer(id, taken);
+                    if taken_transfer == Transfer::Fallthrough {
+                        let text = statement(transfer(id, not_taken)).expect("distinct successor");
+                        line(code, inner, &format!("if (!({})) {text}", value.text));
                     } else {
-                        line(code, inner, &format!("if ({}) goto {taken};", value.text));
-                        if Some(not_taken) != next {
-                            line(code, inner, &format!("goto {not_taken};"));
+                        let text = statement(taken_transfer).expect("non-fallthrough");
+                        line(code, inner, &format!("if ({}) {text}", value.text));
+                        if let Some(text) = statement(transfer(id, not_taken)) {
+                            line(code, inner, &text);
                         }
                     }
                     if scoped {
-                        line(code, 1, "}");
+                        line(code, indent, "}");
                     }
                 }
                 Control::Return(value) => {
-                    self.value_statement(code, 1, value, None, "return ", ";")?
+                    self.value_statement(code, indent, value, None, "return ", ";")?
                 }
             }
         }
+        debug_assert_eq!(indent, 1);
         Ok(())
     }
 }

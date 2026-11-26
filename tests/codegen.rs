@@ -55,6 +55,8 @@ mod nested_for_backend;
 mod nonlocal_backend;
 #[path = "codegen/object_views.rs"]
 mod object_views;
+#[path = "codegen/partial_loops.rs"]
+mod partial_loops;
 #[path = "codegen/presentation.rs"]
 mod presentation;
 #[path = "codegen/readable.rs"]
