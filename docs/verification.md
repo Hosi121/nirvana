@@ -53,7 +53,9 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 
 [領域の切り出し](../src/verification/block_verify/region/extraction.rs)は、指定した入口から継続先へ達するまでをDAGに写します。元のレジスタ空間と逐次効果を保持し、実際の関数返り値と継続先を別に記録します。検査器は元CFGをblock単位で歩き直し、命令の被覆、分岐の両腕、Return式、追加prefixと終了タグを照合します。任意の入口値を使う形式と、同じ元Programで検査した`ValueWidths`のbit上限をprefixへ反映する形式を選べます。後者の契約は、その入口上限を満たす元の状態です。
 
-[実コンパイラ入力の任意実行テスト](../tests/verification/region_extraction.rs)は、開発用の入れ子ループobjectを読み、元IRの到達状態と不正アドレスについて、全元レジスタ・全RAM・最初のfault・継続先または実際の返り値を比較します。`NIRVANA_REGION_OBJECT`にobject、`NIRVANA_REGION_OUTPUT`に短期出力先、`NIRVANA_Z3`にsolverを指定し、`python3 tools/dev.py cargo test --test verification actual_compiler_region_extraction_probe -- --ignored --nocapture`で実行します。SMT自己比較はエンコーダの確認として記録します。切り出しの意味保存は投影検査と具体比較で確認し、循環候補の展開完了は次の検査対象です。
+[実コンパイラ入力の任意実行テスト](../tests/verification/region_extraction.rs)は、開発用の入れ子ループobjectを読み、元IRの到達状態と不正アドレスについて、全元レジスタ・全RAM・最初のfault・継続先または実際の返り値を比較します。`NIRVANA_REGION_OBJECT`にobject、`NIRVANA_REGION_OUTPUT`に短期出力先、`NIRVANA_Z3`にsolverを指定し、`python3 tools/dev.py cargo test --test verification actual_compiler_region_extraction_probe -- --ignored --nocapture`で実行します。SMT自己比較はエンコーダの確認として記録します。切り出しの意味保存は投影検査と具体比較で確認し、循環候補の[完了検査](../src/verification/block_verify/region/extraction/repeat.rs)は、この投影の入口へ戻る継続先だけを有限回接続します。最後の戻り辺に専用の打切り印を置き、そこへ到達できないとSMTで判定された場合に`Complete`を作ります。回数不足の反例は元の循環IRでも再生し、solverや再生の上限は未判定へ戻します。契約の終点は、戻り辺以外の継続先・実際のReturn・最初のfaultです。
+
+[完了検査の対照](../src/verification/block_verify/region/extraction/repeat/tests.rs)は、任意の64bit counterと検査済み2bit上限で、0・1・3回の不足、4・5回の完了を確認します。入口上限を外すと4回でも不足します。別に作った4段の展開IRと証明済み循環候補を全RAM・正常時の必要値まで比較し、増分を壊した候補の差を両方の循環IRで再生します。自動的な復元候補の生成は、この検査の上へ構築する次の段階です。
 
 
 ```sh

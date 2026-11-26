@@ -10,6 +10,7 @@ use crate::model::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Progr
 use std::collections::{BTreeMap, BTreeSet};
 
 mod check;
+pub mod repeat;
 #[cfg(test)]
 mod tests;
 
