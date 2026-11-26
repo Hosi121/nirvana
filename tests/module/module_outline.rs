@@ -754,6 +754,26 @@ split_three:
     mov 24(%rdi),%rax
     ret
 .size split_three,.-split_three
+.globl mixed_joins
+.type mixed_joins,@function
+mixed_joins:
+    cmpq $0,(%rdi)
+    jne .Lmixed_join_work
+    cmpq $0,8(%rdi)
+    jne .Lmixed_join_middle
+    addq $1,24(%rdi)
+    cmpq $0,16(%rdi)
+    jne .Lmixed_join_return
+.Lmixed_join_middle:
+    addq $2,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lmixed_join_return
+.Lmixed_join_work:
+    addq $4,24(%rdi)
+.Lmixed_join_return:
+    mov 24(%rdi),%rax
+    ret
+.size mixed_joins,.-mixed_joins
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -790,6 +810,7 @@ split_three:
         "split_component",
         "split_independent",
         "split_three",
+        "mixed_joins",
     ] {
         let function = plan
             .functions

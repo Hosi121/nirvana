@@ -896,7 +896,7 @@ fn sampled_six_instruction_cfgs_preserve_complete_rust_reports() {
         |graph, profile| larger_program(6, graph, profile),
         10,
     );
-    assert_eq!(result, (12267, 0));
+    assert_eq!(result, (12270, 0));
 }
 
 #[test]
@@ -907,7 +907,7 @@ fn sampled_seven_instruction_cfgs_preserve_complete_rust_reports() {
         |graph, profile| larger_program(7, graph, profile),
         10,
     );
-    assert_eq!(result, (12198, 3));
+    assert_eq!(result, (12213, 3));
 }
 
 fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
@@ -1012,4 +1012,70 @@ fn audit_cases(
     // Accepted edits were replayed above; known-negative fixtures stay
     // strict in model_trial_tests. The legacy cohorts still require zero.
     (recovered, accepted_mutants)
+}
+
+#[test]
+fn mixed_branch_joins_keep_a_shared_tail_within_two_copies() {
+    for profile in 0..3 {
+        let source = larger_program(6, 35431, profile);
+        let step = |address: usize| Node::Step {
+            address: address as u64,
+            assignments: source.instructions()[address].assignments.clone(),
+        };
+        let Control::Branch { condition, .. } = &source.instructions()[0].control else {
+            unreachable!()
+        };
+        let body = vec![
+            step(0),
+            Node::If {
+                condition: condition.clone(),
+                taken: vec![step(4)],
+                not_taken: vec![
+                    step(1),
+                    Node::If {
+                        condition: condition.clone(),
+                        taken: vec![],
+                        not_taken: vec![
+                            step(2),
+                            Node::If {
+                                condition: condition.clone(),
+                                taken: vec![step(5), Node::Return(r(2))],
+                                not_taken: vec![],
+                            },
+                        ],
+                    },
+                    step(3),
+                    Node::If {
+                        condition: condition.clone(),
+                        taken: vec![],
+                        not_taken: vec![step(4)],
+                    },
+                ],
+            },
+            step(5),
+            Node::Return(r(2)),
+        ];
+        structure_verify::validate(&source, &body).unwrap();
+        let recovered = StructuredFunction::recover_with_step_limit(&source, 2, 8)
+            .expect("mixed forward and post-dominator joins fit two copies");
+        assert!(recovered.evidence().compared_copies <= 8);
+        assert!(StructuredFunction::recover_with_step_limit(&source, 1, 8).is_err());
+        compare_split_reports(&source, &body, &recovered);
+    }
+}
+
+#[test]
+fn branch_local_joins_preserve_loop_latches_and_divergent_tails() {
+    for graph in [7049835, 9137340, 10895053, 11172220, 15641932] {
+        for profile in 0..3 {
+            let source = larger_program(7, graph, profile);
+            let original = source.instructions().to_vec();
+            let function = StructuredFunction::recover_with_step_limit(&source, 2, 14)
+                .expect("a local join choice keeps source copies bounded");
+            assert_eq!(source.instructions(), original);
+            assert!(function.evidence().compared_copies <= 14);
+            assert!(function.stats().emitted_block_copies <= function.stats().unique_blocks * 2);
+            compare_split_reports(&source, function.body(), &function);
+        }
+    }
 }

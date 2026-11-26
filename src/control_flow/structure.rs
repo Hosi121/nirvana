@@ -15,6 +15,7 @@ use crate::model::ir::{
 };
 
 mod follow_candidates;
+mod join_candidates;
 mod split;
 
 #[cfg(test)]
@@ -145,7 +146,13 @@ struct Builder<'a, 'b> {
     step_limit: usize,
     remaining_steps: usize,
     forward_dag: Option<ForwardDag>,
-    follow_plan: Option<&'b mut follow_candidates::FollowPlan>,
+    plans: BuildPlans<'b>,
+}
+
+#[derive(Default)]
+struct BuildPlans<'a> {
+    follow: Option<&'a mut follow_candidates::FollowPlan>,
+    join: Option<&'a mut join_candidates::JoinPlan>,
 }
 
 impl StructuredFunction {
@@ -198,7 +205,7 @@ impl StructuredFunction {
             postdom.as_ref(),
             true,
         );
-        match (baseline, proposed) {
+        let selected = match (baseline, proposed) {
             (Ok(old), Ok(new))
                 if new.stats.emitted_block_copies <= old.stats.emitted_block_copies
                     && new.evidence.compared_copies <= old.evidence.compared_copies
@@ -210,6 +217,17 @@ impl StructuredFunction {
             (Ok(old), _) => Ok(old),
             (Err(_), Ok(new)) => Ok(new),
             (Err(reason), Err(_)) => Err(reason),
+        };
+        match selected {
+            Ok(function) => Ok(function),
+            Err(reason) => Self::recover_with_join_candidates(
+                program,
+                copy_limit,
+                step_limit,
+                &analysis,
+                postdom.as_ref(),
+            )
+            .ok_or(reason),
         }
     }
 
@@ -221,25 +239,25 @@ impl StructuredFunction {
         postdom: Option<&PostDominators>,
         forward_joins: bool,
     ) -> Result<Self, StructureError> {
-        Self::recover_using_follow(
+        Self::recover_using_plans(
             program,
             copy_limit,
             step_limit,
             analysis,
             postdom,
             forward_joins,
-            None,
+            BuildPlans::default(),
         )
     }
 
-    fn recover_using_follow(
+    fn recover_using_plans(
         program: &Program,
         copy_limit: usize,
         step_limit: usize,
         analysis: &ControlFlowAnalysis,
         postdom: Option<&PostDominators>,
         forward_joins: bool,
-        follow_plan: Option<&mut follow_candidates::FollowPlan>,
+        plans: BuildPlans<'_>,
     ) -> Result<Self, StructureError> {
         let mut builder = Builder {
             program,
@@ -253,7 +271,7 @@ impl StructuredFunction {
             step_limit,
             remaining_steps: step_limit,
             forward_dag: forward_joins.then(|| ForwardDag::new(program.cfg(), analysis)),
-            follow_plan,
+            plans,
         };
         let body = builder.region(program.cfg().entry(), None, &[], None)?;
         if &builder.visited != builder.analysis.reachable() {
@@ -465,7 +483,7 @@ impl Builder<'_, '_> {
                 } else {
                     normal_follow
                 };
-                let follow = if let Some(plan) = &mut self.follow_plan {
+                let follow = if let Some(plan) = &mut self.plans.follow {
                     plan.select(current, &exits, contexts, normal_follow)?
                 } else {
                     normal_follow?
@@ -567,6 +585,11 @@ impl Builder<'_, '_> {
                         candidate.or(stop).or(strict_join)
                     } else {
                         strict_join
+                    };
+                    let join = if let Some(plan) = &mut self.plans.join {
+                        plan.select(current, join, strict_join, stop)
+                    } else {
+                        join
                     };
                     let taken_body = self.region(taken, join, contexts, None)?;
                     let not_body = self.region(not_taken, join, contexts, None)?;

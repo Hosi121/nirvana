@@ -75,14 +75,17 @@ impl StructuredFunction {
         let mut discovery = FollowPlan::default();
         // Record candidates in actual active scopes, including those reached
         // before an eventual copy/join failure. This build is not adopted.
-        let _ = Self::recover_using_follow(
+        let _ = Self::recover_using_plans(
             program,
             2,
             step_limit,
             &analysis,
             postdom.as_ref(),
             true,
-            Some(&mut discovery),
+            BuildPlans {
+                follow: Some(&mut discovery),
+                ..BuildPlans::default()
+            },
         );
         let mut selected = baseline;
         for chosen in discovery.candidates {
@@ -90,14 +93,17 @@ impl StructuredFunction {
                 chosen: Some(chosen),
                 candidates: Vec::new(),
             };
-            let candidate = Self::recover_using_follow(
+            let candidate = Self::recover_using_plans(
                 program,
                 2,
                 step_limit,
                 &analysis,
                 postdom.as_ref(),
                 true,
-                Some(&mut plan),
+                BuildPlans {
+                    follow: Some(&mut plan),
+                    ..BuildPlans::default()
+                },
             );
             selected = match (selected, candidate) {
                 (Ok(old), Ok(new))
@@ -119,7 +125,7 @@ impl StructuredFunction {
 
 // Bound only the optional search's reachable input before cloning syntax or
 // running more analysis. Unreachable instructions do not consume its budget.
-fn bounded_steps(program: &Program, reachable: &BTreeSet<BlockId>) -> Option<usize> {
+pub(super) fn bounded_steps(program: &Program, reachable: &BTreeSet<BlockId>) -> Option<usize> {
     let mut remaining = MAX_SYNTAX;
     let mut steps = 0;
     for &id in reachable {
