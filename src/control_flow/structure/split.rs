@@ -42,6 +42,7 @@ pub(super) fn recover(
         step_limit,
         attempts: 0,
         pending: std::collections::VecDeque::new(),
+        deferred: Vec::new(),
     };
     if let Some(function) = search.expand(
         source,
@@ -53,13 +54,32 @@ pub(super) fn recover(
         return Some(function);
     }
     while search.attempts < MAX_ATTEMPTS {
-        let work = search.pending.pop_front()?;
+        let Some(work) = search.pending.pop_front() else {
+            break;
+        };
         if let Some(function) = search.expand(
             &work.program,
             &work.analysis,
             &work.origins,
             &work.lineage,
             work.entries,
+        ) {
+            return Some(function);
+        }
+    }
+    // A new placement can make an earlier split constructible while duplicating
+    // a return that a later traditional split shares. Keep established successful
+    // trees first; source-checked alternatives complete only otherwise-refused
+    // proposals and consume no additional program-split attempts.
+    for work in std::mem::take(&mut search.deferred) {
+        let postdom = PostDominators::compute(work.program.cfg()).ok();
+        if let Some(function) = StructuredFunction::recover_with_placement_candidates(
+            &work.program,
+            copy_limit.min(4),
+            work.step_limit,
+            &work.analysis,
+            postdom.as_ref(),
+            |candidate| search.finish(candidate, &work.origins, &work.lineage),
         ) {
             return Some(function);
         }
@@ -81,6 +101,14 @@ struct Work {
     entries: EntryCandidates,
 }
 
+struct Completion {
+    program: Program,
+    analysis: ControlFlowAnalysis,
+    origins: Origins,
+    lineage: Lineage,
+    step_limit: usize,
+}
+
 struct Search<'a> {
     source: &'a Program,
     analysis: &'a ControlFlowAnalysis,
@@ -88,6 +116,7 @@ struct Search<'a> {
     step_limit: usize,
     attempts: usize,
     pending: std::collections::VecDeque<Work>,
+    deferred: Vec<Completion>,
 }
 
 impl Search<'_> {
@@ -153,14 +182,24 @@ impl Search<'_> {
                         .saturating_add(routes.saturating_mul(self.copy_limit.min(4)))
                 }
                 .min(MAX_AST_STEPS);
-                if let Ok(recovered) = StructuredFunction::recover_with_step_limit(
+                let postdom = PostDominators::compute(candidate.cfg()).ok();
+                if let Ok(recovered) = StructuredFunction::recover_reducible(
                     &candidate,
                     self.copy_limit.min(4),
                     candidate_limit,
+                    &candidate_analysis,
+                    postdom.as_ref(),
                 ) && let Some(function) = self.finish(recovered, &composed, &path)
                 {
                     return Some(function);
                 }
+                self.deferred.push(Completion {
+                    program: candidate,
+                    analysis: candidate_analysis,
+                    origins: composed,
+                    lineage: path,
+                    step_limit: candidate_limit,
+                });
             } else if bounded(&candidate) {
                 let next = candidates(&candidate, &candidate_analysis);
                 if next.cyclic_groups() < groups {

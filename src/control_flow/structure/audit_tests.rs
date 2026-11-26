@@ -896,7 +896,7 @@ fn sampled_six_instruction_cfgs_preserve_complete_rust_reports() {
         |graph, profile| larger_program(6, graph, profile),
         10,
     );
-    assert_eq!(result, (12270, 0));
+    assert_eq!(result, (12273, 0));
 }
 
 #[test]
@@ -907,7 +907,7 @@ fn sampled_seven_instruction_cfgs_preserve_complete_rust_reports() {
         |graph, profile| larger_program(7, graph, profile),
         10,
     );
-    assert_eq!(result, (12213, 3));
+    assert_eq!(result, (12240, 3));
 }
 
 fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
@@ -1077,5 +1077,55 @@ fn branch_local_joins_preserve_loop_latches_and_divergent_tails() {
             assert!(function.stats().emitted_block_copies <= function.stats().unique_blocks * 2);
             compare_split_reports(&source, function.body(), &function);
         }
+    }
+}
+
+#[test]
+fn a_shared_divergent_exit_follows_the_loop_without_duplication() {
+    for profile in 0..3 {
+        let source = larger_program(7, 12161596, profile);
+        let step = |address: usize| Node::Step {
+            address: address as u64,
+            assignments: source.instructions()[address].assignments.clone(),
+        };
+        let Control::Branch { condition, .. } = &source.instructions()[0].control else {
+            unreachable!()
+        };
+        let body = vec![
+            step(0),
+            Node::If {
+                condition: condition.clone(),
+                taken: vec![Node::Loop(vec![
+                    step(4),
+                    Node::If {
+                        condition: condition.clone(),
+                        taken: vec![Node::Break],
+                        not_taken: vec![],
+                    },
+                    step(5),
+                    Node::If {
+                        condition: condition.clone(),
+                        taken: vec![
+                            step(3),
+                            Node::If {
+                                condition: condition.clone(),
+                                taken: vec![Node::Break],
+                                not_taken: vec![],
+                            },
+                        ],
+                        not_taken: vec![step(6), Node::Return(r(2))],
+                    },
+                ])],
+                not_taken: vec![],
+            },
+            Node::Loop(vec![step(1), step(2)]),
+        ];
+        structure_verify::validate(&source, &body).unwrap();
+        let function = StructuredFunction::recover_with_step_limit(&source, 1, 7)
+            .expect("one divergent exit may follow while another exit returns inside the loop");
+        assert_eq!(function.stats().extra_block_copies, 0);
+        assert_eq!(function.evidence().compared_copies, 7);
+        assert!(StructuredFunction::recover_with_step_limit(&source, 1, 6).is_err());
+        compare_split_reports(&source, &body, &function);
     }
 }

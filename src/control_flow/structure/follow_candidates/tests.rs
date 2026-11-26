@@ -141,15 +141,23 @@ fn compare_prefixes(program: &Program, function: &StructuredFunction) {
 }
 
 #[test]
-fn alternative_follow_recovers_copy_failure_without_changing_public_policy() {
+fn checked_follow_placement_is_available_to_core_and_readable() {
     let program = nested(true);
-    let baseline = StructuredFunction::recover(&program).unwrap_err();
+    let analysis = ControlFlowAnalysis::compute(program.cfg()).unwrap();
+    let postdom = PostDominators::compute(program.cfg()).ok();
     assert!(matches!(
-        baseline,
-        StructureError::CopyLimit { limit: 2, .. }
+        StructuredFunction::recover_reducible(&program, 2, 32, &analysis, postdom.as_ref()),
+        Err(StructureError::CopyLimit { limit: 2, .. })
     ));
+    let core = StructuredFunction::recover(&program).unwrap();
+    assert_eq!(core.evidence().compared_copies, 14);
     let function = StructuredFunction::recover_for_readable(&program).unwrap();
-    assert_eq!(StructuredFunction::recover(&program).unwrap_err(), baseline);
+    assert!(function.evidence().compared_copies <= core.evidence().compared_copies);
+    assert_eq!(
+        StructuredFunction::recover(&program).unwrap().body(),
+        core.body()
+    );
+    compare_prefixes(&program, &core);
     compare_prefixes(&program, &function);
 }
 

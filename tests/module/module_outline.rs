@@ -774,6 +774,26 @@ mixed_joins:
     mov 24(%rdi),%rax
     ret
 .size mixed_joins,.-mixed_joins
+.globl shared_divergent_tail
+.type shared_divergent_tail,@function
+shared_divergent_tail:
+    cmpq $0,(%rdi)
+    jne .Lshared_divergent_header
+.Lshared_divergent_sink:
+    addq $1,24(%rdi)
+    jmp .Lshared_divergent_sink
+.Lshared_divergent_path:
+    cmpq $0,(%rdi)
+    jne .Lshared_divergent_sink
+.Lshared_divergent_header:
+    addq $2,24(%rdi)
+    cmpq $0,16(%rdi)
+    jne .Lshared_divergent_sink
+    cmpq $0,8(%rdi)
+    jne .Lshared_divergent_path
+    mov 24(%rdi),%rax
+    ret
+.size shared_divergent_tail,.-shared_divergent_tail
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -811,6 +831,7 @@ mixed_joins:
         "split_independent",
         "split_three",
         "mixed_joins",
+        "shared_divergent_tail",
     ] {
         let function = plan
             .functions

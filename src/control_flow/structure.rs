@@ -15,7 +15,7 @@ use crate::model::ir::{
 };
 
 mod follow_candidates;
-mod join_candidates;
+mod placement_candidates;
 mod split;
 
 #[cfg(test)]
@@ -152,7 +152,7 @@ struct Builder<'a, 'b> {
 #[derive(Default)]
 struct BuildPlans<'a> {
     follow: Option<&'a mut follow_candidates::FollowPlan>,
-    join: Option<&'a mut join_candidates::JoinPlan>,
+    placement: Option<&'a mut placement_candidates::PlacementPlan>,
 }
 
 impl StructuredFunction {
@@ -182,14 +182,32 @@ impl StructuredFunction {
                 .ok_or(StructureError::Irreducible);
         }
         let postdom = PostDominators::compute(program.cfg()).ok();
-        let baseline = Self::recover_using(
-            program,
-            copy_limit,
-            step_limit,
-            &analysis,
-            postdom.as_ref(),
-            false,
-        );
+        let selected =
+            Self::recover_reducible(program, copy_limit, step_limit, &analysis, postdom.as_ref());
+        match selected {
+            Ok(function) => Ok(function),
+            Err(reason) if copy_limit > 0 => Self::recover_with_placement_candidates(
+                program,
+                copy_limit,
+                step_limit,
+                &analysis,
+                postdom.as_ref(),
+                Some,
+            )
+            .ok_or(reason),
+            Err(reason) => Err(reason),
+        }
+    }
+
+    fn recover_reducible(
+        program: &Program,
+        copy_limit: usize,
+        step_limit: usize,
+        analysis: &ControlFlowAnalysis,
+        postdom: Option<&PostDominators>,
+    ) -> Result<Self, StructureError> {
+        let baseline =
+            Self::recover_using(program, copy_limit, step_limit, analysis, postdom, false);
         // The existing strategy already minimizes copies in this case. Avoid
         // extra analysis and keep its established layout unchanged.
         if matches!(&baseline, Ok(function) if function.stats.extra_block_copies == 0)
@@ -197,15 +215,9 @@ impl StructuredFunction {
         {
             return baseline;
         }
-        let proposed = Self::recover_using(
-            program,
-            copy_limit,
-            step_limit,
-            &analysis,
-            postdom.as_ref(),
-            true,
-        );
-        let selected = match (baseline, proposed) {
+        let proposed =
+            Self::recover_using(program, copy_limit, step_limit, analysis, postdom, true);
+        match (baseline, proposed) {
             (Ok(old), Ok(new))
                 if new.stats.emitted_block_copies <= old.stats.emitted_block_copies
                     && new.evidence.compared_copies <= old.evidence.compared_copies
@@ -217,17 +229,6 @@ impl StructuredFunction {
             (Ok(old), _) => Ok(old),
             (Err(_), Ok(new)) => Ok(new),
             (Err(reason), Err(_)) => Err(reason),
-        };
-        match selected {
-            Ok(function) => Ok(function),
-            Err(reason) => Self::recover_with_join_candidates(
-                program,
-                copy_limit,
-                step_limit,
-                &analysis,
-                postdom.as_ref(),
-            )
-            .ok_or(reason),
         }
     }
 
@@ -483,10 +484,15 @@ impl Builder<'_, '_> {
                 } else {
                     normal_follow
                 };
-                let follow = if let Some(plan) = &mut self.plans.follow {
-                    plan.select(current, &exits, contexts, normal_follow)?
+                let proposed_follow = if let Some(plan) = &mut self.plans.follow {
+                    plan.select(current, &exits, contexts, normal_follow)
                 } else {
-                    normal_follow?
+                    normal_follow
+                };
+                let follow = if let Some(plan) = &mut self.plans.placement {
+                    plan.loop_follow(current, &exits, contexts, proposed_follow)?
+                } else {
+                    proposed_follow?
                 };
                 let mut nested = contexts.to_vec();
                 nested.push(LoopContext {
@@ -586,8 +592,8 @@ impl Builder<'_, '_> {
                     } else {
                         strict_join
                     };
-                    let join = if let Some(plan) = &mut self.plans.join {
-                        plan.select(current, join, strict_join, stop)
+                    let join = if let Some(plan) = &mut self.plans.placement {
+                        plan.branch_join(current, join, strict_join, stop)
                     } else {
                         join
                     };
