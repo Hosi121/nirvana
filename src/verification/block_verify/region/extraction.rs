@@ -10,6 +10,7 @@ use crate::model::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Progr
 use std::collections::{BTreeMap, BTreeSet};
 
 mod check;
+pub mod live_out;
 pub mod repeat;
 #[cfg(test)]
 mod tests;
@@ -20,6 +21,7 @@ pub enum ExtractionError {
     Boundary,
     EntryFacts,
     Projection,
+    LiveOut,
 }
 impl From<Error> for ExtractionError {
     fn from(error: Error) -> Self {

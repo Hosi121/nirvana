@@ -49,6 +49,10 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 
 `checked-memory-dag-region-v1`は、[閉じたDAG領域](../src/verification/block_verify/region.rs)の入口からReturnまでを比較します。正常時の必要レジスタは呼出し側が指定し、共有しない初期値は左右独立です。全RAM・最初のfaultと、各経路の完了も問い合わせへ含めます。上限は128レジスタ・128命令・式深さ128で、source全体を検査してからcloneします。SATは最大64KiBの具体RAMで再生し、その範囲に反例がない場合は`ReplayLimit`へ戻します。
 
+`query_at_returns`は、正常な終了タグごとに比較するレジスタを指定します。未指定のタグでは共通する全レジスタを比較し、返り値・全RAM・最初のfaultは全経路で観測します。反例のRust再生も実際の終了タグから同じ観測を選びます。既存の一律比較と分け、`checked-memory-dag-return-outputs-v1`として記録します。
+
+[継続先の生存値](../src/verification/block_verify/region/extraction/live_out.rs)は、各継続先を任意入力の入口としてSSAと生存解析を作り直します。元の入口から未到達のblockも対象に含め、元Programと終了タグの対応を保持します。独立した命令・式の走査が、除外した値の書換え前のreadを全経路で検査します。実際の関数返り値を捕捉するスロットも各行に残します。上限は16継続先と検査work 800万で、超過時は候補全体を保留します。
+
 [固定checkpoint](../tools/corpora/ir-dag-regions-v1.m1.json)は、任意のRAMと整数入力を持つ8組の同値判定、7組の反例再生、再生上限の対照1組を記録しています。検証プロファイルはsolver呼出しごとに5秒です。APIは渡されたsolver予算を使い、2秒で未判定となった結果もcheckpointへ残しています。 複数のSMT検査をまとめる固定profileは`--test-threads=1`で実行し、並列実行で5秒の未判定となった記録も保持します。展開を戻す候補の生成は、この検査を使う次の段階です。
 
 [領域の切り出し](../src/verification/block_verify/region/extraction.rs)は、指定した入口から継続先へ達するまでをDAGに写します。元のレジスタ空間と逐次効果を保持し、実際の関数返り値と継続先を別に記録します。検査器は元CFGをblock単位で歩き直し、命令の被覆、分岐の両腕、Return式、追加prefixと終了タグを照合します。任意の入口値を使う形式と、同じ元Programで検査した`ValueWidths`のbit上限をprefixへ反映する形式を選べます。後者の契約は、その入口上限を満たす元の状態です。

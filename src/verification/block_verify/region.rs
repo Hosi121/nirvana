@@ -9,12 +9,17 @@ use crate::model::ir::{RunReport, RunStatus};
 
 mod encode;
 pub mod extraction;
+mod observations;
 pub mod registers;
 mod shape;
 #[cfg(test)]
 mod tests;
 
+use observations::Observations;
+pub use observations::ReturnOutputs;
+
 pub const MODEL_ID: &str = "checked-memory-dag-region-v1";
+pub const RETURN_OUTPUTS_MODEL_ID: &str = "checked-memory-dag-return-outputs-v1";
 pub const MAX_REGISTERS: usize = 128;
 pub const MAX_INSTRUCTIONS: usize = 128;
 const MAX_EXPRESSIONS: usize = 65_536;
@@ -69,7 +74,7 @@ pub struct Query {
     samples: Vec<(String, String)>,
     before: Program,
     after: Program,
-    outputs: Vec<Reg>,
+    outputs: Observations,
     input_names: Vec<String>,
     candidate_names: Vec<String>,
 }
@@ -84,15 +89,36 @@ pub fn query(
     shared: &[Reg],
     outputs: &[Reg],
 ) -> Result<Query, Error> {
+    build_query(before, after, shared, Observations::uniform(outputs)?)
+}
+
+/// Compare registers selected by the normal Return value, usually an extracted
+/// continuation tag. Return values, all RAM and first faults remain observed.
+/// An unlisted Return observes every register in the common namespace. A row
+/// with an empty register list explicitly observes no registers at that Return.
+/// The caller supplies the semantic justification for each declared interface.
+pub fn query_at_returns(
+    before: &Program,
+    after: &Program,
+    shared: &[Reg],
+    outputs: &[ReturnOutputs],
+) -> Result<Query, Error> {
+    build_query(before, after, shared, Observations::at_returns(outputs)?)
+}
+
+fn build_query(
+    before: &Program,
+    after: &Program,
+    shared: &[Reg],
+    mut outputs: Observations,
+) -> Result<Query, Error> {
     let left_order = shape::inspect(before)?;
     let right_order = shape::inspect(after)?;
     let common = before.register_count().min(after.register_count());
-    if shared.len() > MAX_REGISTERS
-        || outputs.len() > MAX_REGISTERS
-        || shared.iter().chain(outputs).any(|r| r.0 >= common)
-    {
+    if shared.len() > MAX_REGISTERS || shared.iter().any(|r| r.0 >= common) {
         return Err(Error::BoundaryMapping);
     }
+    outputs.validate(common)?;
     let shared: Registers = shared.iter().map(|r| r.0).collect();
     let mut builder = Builder {
         declarations: BTreeMap::new(),
@@ -114,12 +140,7 @@ pub fn query(
         format!("(distinct {} {})", left.exit_kind, right.exit_kind),
         format!("(distinct {} {})", left.exit_value, right.exit_value),
     ];
-    normal.extend(outputs.iter().map(|r| {
-        format!(
-            "(distinct {} {})",
-            left.registers[r.0], right.registers[r.0]
-        )
-    }));
+    normal.extend(outputs.differences(&left, &right));
     let different = format!(
         "(or (not {left_complete}) (not {right_complete}) (xor {} {}) (and (not {}) (not {}) (or (distinct {} {}) (distinct {} {}) (distinct {} {}))) (distinct (select {} memory_witness) (select {} memory_witness)) (and {} {} (or {})))",
         left.alive,
@@ -139,7 +160,8 @@ pub fn query(
         normal.join(" ")
     );
     let mut script = format!(
-        "; Nirvana {MODEL_ID}; arbitrary input words, base, size and RAM.\n(set-logic QF_AUFBV)\n"
+        "; Nirvana {}; arbitrary input words, base, size and RAM.\n(set-logic QF_AUFBV)\n",
+        outputs.model_id()
     );
     for (name, sort) in &builder.declarations {
         script.push_str(&format!("(declare-fun {name} () {sort})\n"));
@@ -166,7 +188,7 @@ pub fn query(
         samples: builder.samples,
         before: before.clone(),
         after: after.clone(),
-        outputs: outputs.to_vec(),
+        outputs,
         input_names,
         candidate_names,
     })
@@ -220,7 +242,7 @@ impl Query {
             .map_err(|_| UnknownReason::InvalidCounterexample)?;
         if matches!(before.status, RunStatus::Suspended)
             || matches!(after.status, RunStatus::Suspended)
-            || !differs(&before, &after, &self.outputs)
+            || !differs(&before, &after, self.outputs.at(&before.status))
         {
             return Err(UnknownReason::InvalidCounterexample);
         }
