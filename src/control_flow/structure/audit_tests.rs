@@ -644,6 +644,91 @@ fn split_entry_region_keeps_its_last_internal_backedge() {
     }
 }
 
+#[test]
+fn splitting_a_whole_cyclic_component_shares_the_return_tail() {
+    for graph in [13652, 14961, 15393] {
+        for profile in 0..3 {
+            let source = program5(graph, profile);
+            let recovered = StructuredFunction::recover_with_step_limit(&source, 2, 8)
+                .unwrap_or_else(|error| panic!("graph={graph}: {error}"));
+            assert!(recovered.evidence().compared_copies <= 8);
+            assert!(recovered.split_evidence().unwrap().attempted_candidates <= 16);
+            assert!(StructuredFunction::recover_with_step_limit(&source, 1, 8).is_err());
+            // Count return Steps independently of loop/if nesting; the
+            // shared epilogue must fit the original two-copy policy.
+            fn count(nodes: &[Node]) -> usize {
+                nodes
+                    .iter()
+                    .map(|node| match node {
+                        Node::Step { address: 4, .. } => 1,
+                        Node::Loop(body) => count(body),
+                        Node::If {
+                            taken, not_taken, ..
+                        } => count(taken) + count(not_taken),
+                        _ => 0,
+                    })
+                    .sum()
+            }
+            assert_eq!(count(recovered.body()), 1);
+            compare_split_reports(&source, recovered.body(), &recovered);
+        }
+    }
+}
+
+#[test]
+fn whole_component_copies_obey_the_eight_original_instruction_limit() {
+    let base = program5(13652, 0);
+    for width in [2, 3] {
+        let lengths = [1, 3, 3, width, 1];
+        let mut starts = [0u64; 5];
+        for index in 1..5 {
+            starts[index] = starts[index - 1] + lengths[index - 1];
+        }
+        let mut instructions = Vec::new();
+        for (index, original) in base.instructions().iter().enumerate() {
+            for offset in 0..lengths[index] {
+                let control = if offset + 1 < lengths[index] {
+                    Control::Next
+                } else {
+                    match &original.control {
+                        Control::Branch { condition, target } => Control::Branch {
+                            condition: condition.clone(),
+                            target: starts[*target as usize],
+                        },
+                        control => control.clone(),
+                    }
+                };
+                instructions.push(IrInstruction {
+                    address: starts[index] + offset,
+                    size: 1,
+                    assignments: vec![],
+                    control,
+                });
+            }
+        }
+        let source = Program::new(0, 3, instructions).unwrap();
+        let recovered = StructuredFunction::recover(&source);
+        if width == 2 {
+            let function = recovered.as_ref().expect("an eight-step component fits");
+            assert_eq!(function.split_evidence().unwrap().copied_steps, 8);
+        }
+        if let Ok(function) = recovered {
+            // A nine-step component may use another valid smaller proposal,
+            // but cannot be copied whole by bypassing the region-step limit.
+            assert!(function.split_evidence().unwrap().copied_steps <= 8);
+            for counter in [0, 1, 2, u64::MAX] {
+                for budget in 0..=30 {
+                    let input = [counter, 0, 0x55];
+                    assert_eq!(
+                        source.run_with_memory(&input, 0, &[], budget).unwrap(),
+                        function.run_with_memory(&input, 0, &[], budget).unwrap()
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn compare_split_reports(source: &Program, body: &[Node], recovered: &StructuredFunction) {
     for counter in [0, 1, 2, u64::MAX] {
         for pointer in [0, 1, 3, u64::MAX] {

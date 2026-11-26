@@ -236,7 +236,8 @@ struct SplitPlan {
 }
 
 fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
-    let mut plans = peeled_plans(source, analysis);
+    let entries = candidates(source, analysis);
+    let mut plans = peeled_plans(source, analysis, &entries);
     let original_count = plans.len();
     // Preserve the previous candidates and their order. Spend only remaining
     // attempt slots on regions whose terminal edge closes an internal cycle.
@@ -256,15 +257,53 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
             plans.push(region);
         }
     }
+    // A component with two external entries can be split into two complete
+    // single-entry regions. This also preserves a common return outside the
+    // component, instead of distributing it among several peeled side exits.
+    for &(from, to) in &entries.edges {
+        if plans.len() == MAX_ATTEMPTS {
+            break;
+        }
+        let group = entries.component[to.index()];
+        let mut blocks = vec![to];
+        blocks.extend(
+            source
+                .cfg()
+                .blocks()
+                .iter()
+                .map(|block| block.id)
+                .filter(|&id| id != to && entries.component[id.index()] == group),
+        );
+        let steps = blocks
+            .iter()
+            .map(|&id| source.cfg().block(id).instructions.len())
+            .sum();
+        if steps <= MAX_COPIED_STEPS
+            && !plans.iter().any(|plan| {
+                plan.from == from && plan.blocks == blocks && plan.edges == CopyEdges::CloneRegion
+            })
+        {
+            plans.push(SplitPlan {
+                from,
+                blocks,
+                steps,
+                edges: CopyEdges::CloneRegion,
+            });
+        }
+    }
     plans
 }
 
-fn peeled_plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
+fn peeled_plans(
+    source: &Program,
+    analysis: &ControlFlowAnalysis,
+    entries: &EntryCandidates,
+) -> Vec<SplitPlan> {
     let cfg = source.cfg();
     let EntryCandidates {
         edges: entries,
         component,
-    } = candidates(source, analysis);
+    } = entries;
     // Preserve every old single-block attempt and its order before spending
     // any of the remaining attempt budget on a longer forward entry path.
     let mut plans: Vec<_> = entries
@@ -277,7 +316,7 @@ fn peeled_plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPl
             edges: CopyEdges::PeelPath,
         })
         .collect();
-    for &entry in &entries {
+    for &entry in entries {
         append_paths(source, analysis, entry, None, None, &mut plans);
         if plans.len() == MAX_ATTEMPTS {
             return plans;
@@ -289,7 +328,7 @@ fn peeled_plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPl
     // can accept this placement; the same attempt budget covers every phase.
     let headers: BTreeSet<_> = entries.iter().map(|&(_, to)| to).collect();
     for restrict_to_component in [false, true] {
-        for &entry in &entries {
+        for &entry in entries {
             let group = component[entry.1.index()];
             for &header in &headers {
                 if header != entry.0

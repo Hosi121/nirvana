@@ -687,6 +687,26 @@ split_cycle:
     addq $2,24(%rdi)
     jmp .Lcycle_second
 .size split_cycle,.-split_cycle
+.globl split_component
+.type split_component,@function
+split_component:
+    cmpq $0,(%rdi)
+    jne .Lcomponent_second
+.Lcomponent_first:
+    addq $1,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lcomponent_third
+.Lcomponent_second:
+    cmpq $0,16(%rdi)
+    jne .Lcomponent_return
+.Lcomponent_third:
+    addq $2,24(%rdi)
+    cmpq $0,(%rdi)
+    jne .Lcomponent_first
+.Lcomponent_return:
+    mov 24(%rdi),%rax
+    ret
+.size split_component,.-split_component
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -720,6 +740,7 @@ split_cycle:
         "split_header",
         "split_exit",
         "split_cycle",
+        "split_component",
     ] {
         let function = plan
             .functions
@@ -736,7 +757,16 @@ split_cycle:
     let mut rows = Vec::new();
     let mut memories = Vec::new();
     for instruction in module.program.instructions() {
-        for input in [[0, 0, 85, 0], [0, 1, 85, 0], [1, 0, 85, 0], [1, 1, 85, 0]] {
+        for input in [
+            [0, 0, 85, 0],
+            [0, 1, 85, 0],
+            [1, 0, 85, 0],
+            [1, 1, 85, 0],
+            [0, 0, 0, 0],
+            [0, 1, 0, 0],
+            [1, 0, 0, 0],
+            [1, 1, 0, 0],
+        ] {
             for budget in 0..=10 {
                 let case = fixture::Case {
                     input,
