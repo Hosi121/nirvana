@@ -26,6 +26,7 @@ pub use continuations::{
     EffectOrderEvidence, MODEL_ID as CONTINUATION_MODEL_ID,
     STORE_ORDER_MODEL_ID as CONTINUATION_STORE_ORDER_MODEL_ID, StoreOrderEvidence,
 };
+mod gotos;
 mod idioms;
 mod locals;
 mod loops;
