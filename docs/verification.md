@@ -200,9 +200,9 @@ cargo build --example inspect_stack_frame --example measure_variables
 python3 tools/measure_source_recovery.py --help
 ```
 
-## Quint・TLA+の導入候補
+## Quint・TLA+による構造対応の検査
 
-2026-11-26の調査では、M2の受理済み候補をQuintの独立モデルで監査する案を選んだ。正本は[実行契約](equivalence.md)と[層間契約](architecture.md)。初回成果物は有限のraw IR/AST集合とRust再生用adapterとし、モデル・検証器の実行は次の検証段階で行う。
+M2の受理済み候補をQuintの独立モデルで監査する。正本は[実行契約](equivalence.md)と[層間契約](architecture.md)。[最初の実行可能モデル](../models/README.md)は、共有末尾・外側continue・同一後続への条件評価について、手書きASTと実回復ASTの計6組を扱う。命令予算0〜6でTLCの有限状態探索を行い、改変した候補と実Rustでの再生を別のゲートにする。版・入力hash・反例は[checkpoint](../tools/corpora/structured-events-v1.m2.json)へ保存する。
 
 | 対象 | 最初に確かめること |
 | --- | --- |
@@ -218,7 +218,7 @@ Quintの[言語仕様](https://quint.sh/docs/language-basics)に合わせ、構�
 
 非空の正対照には共有tail・外側continue・同一後続へのfault可能な条件を使う。独立実行器へStep欠落・枝交換・transfer深さ変更・Eval削除・control前の予算停止を入れ、負対照の検出も確認する。[既存の構造改変対照](../tests/control_flow/structure_verification.rs)と[prefix比較](../tests/control_flow/structure_splitting.rs)を出発点にする。モデル側のIR/AST実行は、検査対象のFlowGraph loweringから独立させる。
 
-任意のraw ASTを実行するには、[`execute_nodes`](../src/control_flow/structure.rs)のモジュール内にテスト用adapterが必要である。具体的な観測cutでは、元IRの[`run_with_memory`](../src/model/ir.rs)とstatus・全register・RAM/base/layout・trace・instructionを直接比較する。[`Contract::compare`](../src/model/observe.rs)は途中停止を未判定とする最終状態向けの契約である。全Stepコピー・途中再開の検査は`validate_reentries`を別のゲートにする。抽象的な枝列には実入力で再現できないものも含まれるため、実行意味の反例として報告する範囲は具体的なRunReportで再生できたものに限る。
+初回の[テスト用adapter](../src/control_flow/structure/model_trial_tests.rs)は、raw ASTを実際の[`execute_nodes`](../src/control_flow/structure.rs)で実行する。具体的な観測cutでは、元IRの[`run_with_memory`](../src/model/ir.rs)とstatus・全register・RAM/base/layout・trace・instructionを直接比較する。[`Contract::compare`](../src/model/observe.rs)は途中停止を未判定とする最終状態向けの契約である。全Stepコピー・途中再開の検査は`validate_reentries`を別のゲートにする。抽象的な枝列には実入力で再現できないものも含まれるため、初回は各改変ASTの具体的な差をRustで確認し、TLC traceの自動具体化を次の接続点にする。
 
 MemorySSAでは、Initial・Storeの静的位置とsource byte・Opaqueを具体writerとし、φは先行辺を選ぶ操作として扱う。opaqueのMay writeが何も書かない場合や部分書込みでも、[現在の検査器](../src/dataflow/memory_ssa/verify/queries.rs)は以前のwriterを覆う義務を保持する。`unknown_bytes`もこの被覆を保つ。初回は1 PCに1アクセス・root Load・一意なbyte tagへ絞り、元IRのprefix実行で前向きのwriterと比較する。raw証跡の注入にはprivateなAnalysis用adapterが必要で、query生成器による補修を介さず検査する。実CALL/REPのopaqueとの対応は、効果付きの内部検査と[`module_values::memory_verify`](../src/dataflow/module_values/memory_verify.rs)を別に照合する。照会の未取得・予算到達は未判定として残す。
 

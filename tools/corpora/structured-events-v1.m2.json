@@ -1,0 +1,280 @@
+{
+  "schema": "nirvana-structured-events-trial-v1",
+  "milestone": "M2 structure correspondence",
+  "status": "passed",
+  "toolchain": {
+    "quint": {
+      "url": "https://github.com/quint-co/quint/releases/download/v0.34.0/quint-linux-amd64",
+      "sha256": "5091d7d1ea944e794d9106c7e62e3b844d70f77ddbbcbb4feb5ee5a6025b5ac7",
+      "bytes": 134278696
+    },
+    "java": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openjdk-21/openjdk-21-jre-headless_21.0.13.1+2-1~24.04.1_amd64.deb",
+      "sha256": "18d6aabaf7232290322d53afff075e412d93832253dd9fc2c769d5579362e9ba",
+      "bytes": 46674706
+    },
+    "apalache": {
+      "url": "https://github.com/apalache-mc/apalache/releases/download/v0.62.4/apalache-0.62.4.tgz",
+      "sha256": "b781b53bba32fac14ac2e02b0332e1dc2edc64cb7b850c0608d8142cc7aa2ef4",
+      "bytes": 192038424
+    },
+    "versions": {
+      "quint": "0.34.0",
+      "apalache": "0.62.4",
+      "java": "Picked up JAVA_TOOL_OPTIONS: -Xmx512m -Xss8m\nopenjdk version \"21.0.13.1\" 2026-11-17\nOpenJDK Runtime Environment (build 21.0.13.1+2-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.1+2-1-24.04.1-Ubuntu, mixed mode, sharing)"
+    }
+  },
+  "checks": [
+    {
+      "name": "build-exporter",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "build",
+        "--locked",
+        "--example",
+        "structure_model"
+      ],
+      "returncode": 0,
+      "seconds": 8.332808874998591,
+      "log_sha256": "aecb1dce5830df1076ced9aaf864b08b315b40766dbff652e6209e4002909396"
+    },
+    {
+      "name": "rust-replay",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--lib",
+        "control_flow::structure::model_trial_tests::exported_trial_candidates_replay_through_real_validator_and_executor",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "returncode": 0,
+      "seconds": 8.93354340299993,
+      "log_sha256": "095d78f7c48376837508d401bad94baa14ac7bec328670da7f93c129bf4753f7"
+    },
+    {
+      "name": "positive-tlc",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 0,
+      "seconds": 11.11385923099806,
+      "log_sha256": "50c3fd7db0cba427ac460ce91e351531c13bbd31ab2739a4e0c468253aebaf90",
+      "generated_states": 569,
+      "distinct_states": 473
+    },
+    {
+      "name": "terminal-observations",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "run",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/structured_events.qnt",
+        "--backend=typescript",
+        "--max-samples=1000",
+        "--max-steps=60",
+        "--seed=0x4e495256414e41",
+        "--verbosity=2"
+      ],
+      "returncode": 0,
+      "seconds": 1.5894053880001593,
+      "log_sha256": "e331c7d41a70bab675495d513eb5e8ba935f29934ffae9b1f3864c89f2e0247b",
+      "observations": {
+        "returned": 456,
+        "faulted": 95,
+        "suspended": 449
+      }
+    },
+    {
+      "name": "swapped-arms",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/negative-3/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 1,
+      "seconds": 4.999495276999369,
+      "log_sha256": "2283ed5dfe62dea5634e11b255dd3ad101c7f565e45617223a8c1ef21bb3271d",
+      "case": 3,
+      "rust_verdict": "rejected",
+      "reason": "step-pc",
+      "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 3,\n  phase |-> 0,\n  cursor |-> 6,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 3,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 3,\n  phase |-> 0,\n  cursor |-> 4,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 0 ]\n\nState 4: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 3,\n  phase |-> 0,\n  cursor |-> 4,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"step-pc\",\n  outcome |-> 0 ]\n\n28 states generated, 27 distinct states found, 11 states left on queue.\nThe depth of the complete state graph search is 4."
+    },
+    {
+      "name": "missing-step",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/negative-4/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 1,
+      "seconds": 6.078156322000723,
+      "log_sha256": "f6aa58ea98cf8fd75f354192fe1bbfae9ed184d2e859e6856f33926d83598557",
+      "case": 4,
+      "rust_verdict": "rejected",
+      "reason": "step-pc",
+      "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 4,\n  phase |-> 1,\n  cursor |-> 4,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 0,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 0 ]\n\nState 4: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 1,\n          phase |-> 0,\n          cursor |-> 0,\n          stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>> ] },\n  reason |-> \"\",\n  outcome |-> 0 ]\n\nState 5: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 1,\n          phase |-> 0,\n          cursor |-> 0,\n          stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>> ] },\n  reason |-> \"step-pc\",\n  outcome |-> 0 ]\n\n40 states generated, 39 distinct states found, 11 states left on queue.\nThe depth of the complete state graph search is 5."
+    },
+    {
+      "name": "dropped-evaluation",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/negative-5/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 1,
+      "seconds": 6.16571749799914,
+      "log_sha256": "045be091985722309f01624919f6e31a36d0bc7dab95c39c3d2b22d676d5c4c4",
+      "case": 5,
+      "rust_verdict": "rejected",
+      "reason": "condition-evaluation",
+      "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 5,\n  phase |-> 0,\n  cursor |-> 3,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 5,\n  phase |-> 1,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 5,\n  phase |-> 1,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"condition-evaluation\",\n  outcome |-> -1 ]\n\n16 states generated, 15 distinct states found, 5 states left on queue.\nThe depth of the complete state graph search is 3."
+    },
+    {
+      "name": "wrong-outer-depth",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/negative-6/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 1,
+      "seconds": 5.098915216000023,
+      "log_sha256": "d540a3e414086cb7206099816efea29fbd2ccdf5c46923e4055bdce805e0ec62",
+      "case": 6,
+      "rust_verdict": "rejected",
+      "reason": "step-pc",
+      "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 8,\n  stack |-> <<>>,\n  remaining |-> 2,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 7,\n  stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>>,\n  remaining |-> 2,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {[pc |-> 0, phase |-> 0, cursor |-> 8, stack |-> <<>>]},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 1,\n  cursor |-> 6,\n  stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 4: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 1,\n          cursor |-> 6,\n          stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>> ] },\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 5: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 1,\n          cursor |-> 6,\n          stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>> ] },\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 6: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 6,\n  phase |-> 1,\n  cursor |-> 4,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 7: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 1,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE],\n         [first |-> 0, next |-> 0, looped |-> FALSE] >>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 1 ]\n\nState 8: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 0,\n          cursor |-> 1,\n          stack |->\n              << [first |-> 7, next |-> 0, looped |-> TRUE],\n                 [first |-> 5, next |-> 0, looped |-> TRUE],\n                 [first |-> 0, next |-> 0, looped |-> FALSE] >> ] },\n  reason |-> \"\",\n  outcome |-> 1 ]\n\nState 9: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 0,\n          cursor |-> 1,\n          stack |->\n              << [first |-> 7, next |-> 0, looped |-> TRUE],\n                 [first |-> 5, next |-> 0, looped |-> TRUE],\n                 [first |-> 0, next |-> 0, looped |-> FALSE] >> ] },\n  reason |-> \"step-pc\",\n  outcome |-> 1 ]\n\n63 states generated, 60 distinct states found, 8 states left on queue.\nThe depth of the complete state graph search is 9."
+    },
+    {
+      "name": "reordered-assignments",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/negative-7/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 1,
+      "seconds": 5.985181689000456,
+      "log_sha256": "d7f7052ae2ad6efc75b4f8ded14ff12ee4dc4018c46f626004e9ae59c115ca27",
+      "case": 7,
+      "rust_verdict": "rejected",
+      "reason": "ordered-body",
+      "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 7,\n  phase |-> 0,\n  cursor |-> 6,\n  stack |-> <<>>,\n  remaining |-> 2,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 7,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 2,\n  which |-> 7,\n  phase |-> 0,\n  cursor |-> 3,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 1 ]\n\nState 4: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 2,\n  which |-> 7,\n  phase |-> 0,\n  cursor |-> 3,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 1,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"ordered-body\",\n  outcome |-> 1 ]\n\n31 states generated, 30 distinct states found, 11 states left on queue.\nThe depth of the complete state graph search is 4."
+    },
+    {
+      "name": "early-budget-executor",
+      "command": [
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/toolchain/quint",
+        "verify",
+        "/home/hosi/nirvana/target/runs/run-vxon3xh0/out/negative-8/structured_events.qnt",
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        "--server-endpoint=localhost:45873",
+        "--tlc-config=/home/hosi/nirvana/target/runs/run-vxon3xh0/out/tlc.json",
+        "--verbosity=4"
+      ],
+      "returncode": 1,
+      "seconds": 4.993727810000564,
+      "log_sha256": "82ddfea350ab314c43e8c1b3ccb5bd540407b1070f62de9f910621f58c94200b",
+      "case": 8,
+      "rust_verdict": "accepted",
+      "reason": "budget-before-control",
+      "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 8,\n  phase |-> 0,\n  cursor |-> 6,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 8,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1130, col 3 to line 1142, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 8,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"budget-before-control\",\n  outcome |-> -1 ]\n\n16 states generated, 15 distinct states found, 5 states left on queue.\nThe depth of the complete state graph search is 3."
+    }
+  ],
+  "workspace_revision": "79c3a44a2f42ce0b0c393e0e868c3a8676c772d8",
+  "workspace_dirty": true,
+  "source_sha256": {
+    "models/structured_events.qnt": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+    "examples/structure_model.rs": "bca9bbb3d503fd34598be7d757b8b3a4a331f1df24ff82c354ef4552efd2a5ae",
+    "tests/support/formal_structure.rs": "660587dc199c9bee50d629de4d30c171b5fd502cc6ef13efece832f86cbc3b60",
+    "src/control_flow/structure/model_trial_tests.rs": "fab5bb9367e70b8c8433b3a3b86342032b7bfc049893943cdb392cb49ad8e62c",
+    "tools/quint_trial.py": "ab0cd02a312761952bf3a6d7ec3b80d93867cc364c0bd71a9f480a3529f9c67c",
+    "src/control_flow/structure.rs": "2872f27ccd08048858d46ba5a7e3c664e7a21eb9953da03ca4cafa72fa8fa0ff",
+    "src/control_flow/structure_verify.rs": "f614de7c3a5603bcab5d0e73a3243be793c05b4fdaf9daf2f64dd0e7190c1268",
+    "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+  },
+  "exporter_sha256": "a5e0aa7f5e569e5966cddbb6239ec3baadb502d2d89dfab81eeb06b33f43ada6",
+  "fixtures_sha256": "00ca9b1c50705a0a29f8cf591d5fefd2a954178f59e4ee2216aeb8ca7fb31ec9",
+  "bounds": {
+    "positive_pairs": 6,
+    "budgets": [
+      0,
+      6
+    ],
+    "max_loop_depth": 2,
+    "stack_guard": 8
+  },
+  "rust_replay": {
+    "normal_pair_reports": 336,
+    "rejected_ast_mutations": 5,
+    "executor_mutation": "model-only early-budget fault injection; real executor passes"
+  },
+  "limits": [
+    "Finite exported family, not an unbounded proof of the recovery algorithm.",
+    "Event tokens assume shared deterministic primitive semantics; only the designated condition Load may fault.",
+    "Symbolic branch outcomes overapproximate concrete data; Rust replay finds concrete witnesses per AST mutation, not automated TLC-trace concretization.",
+    "MemorySSA, module CALL, native ISA lifting and arithmetic are separate contracts."
+  ],
+  "integrated_revision": "7e6357cde6bf2cd4bab59c79bd05bbcaed8ad46b",
+  "validation": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "related_control_flow_tests": 8,
+    "clippy_all_targets": "passed",
+    "rustfmt": "passed",
+    "python_syntax": "passed",
+    "logs": {
+      "clippy": {
+        "sha256": "4b816b4d62b77df7001f4430808d52b872e6f1014ba55862fb1005e3fb3af0e5",
+        "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 10.78s\n"
+      },
+      "control": {
+        "sha256": "5c37a0c1b2c99722763739419575f107e62664d01f1c5690532de12fa5eaf3fd",
+        "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.79s\n     Running tests/control_flow.rs (target/cargo-cache/debug/deps/control_flow-3515794dc92d1160)\n\nrunning 8 tests\ntest structure_verification::faulting_assignments_are_compared_as_ordered_memory_operations ... ok\ntest structure_verification::equal_successor_branch_must_still_evaluate_its_faulting_condition_once ... ok\ntest structure_verification::assignment_changes_order_and_omitted_empty_steps_are_rejected ... ok\ntest structure_verification::unreachable_source_instructions_are_excluded_but_reachable_ast_tails_are_not ... ok\ntest structure_verification::swapped_arms_and_changed_conditions_are_rejected_without_inputs ... ok\ntest structure_verification::loop_targets_are_lexical_and_outer_transfers_cannot_be_rebound ... ok\ntest structure_verification::silent_cycles_invalid_scopes_and_resource_limits_are_explicit_errors ... ok\ntest structure_verification::recovered_shapes_and_shared_copies_have_exact_flow_evidence ... ok\n\ntest result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s\n\n"
+      },
+      "fmt": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "text": ""
+      },
+      "run": {
+        "sha256": "88008aa1347171209e81a699f9d863be575747c1b392d0d214fb4d07d337b165",
+        "text": "build-exporter: exit 0\nrust-replay: exit 0\npositive-tlc: exit 0\nterminal-observations: exit 0\nswapped-arms: exit 1\nmissing-step: exit 1\ndropped-evaluation: exit 1\nwrong-outer-depth: exit 1\nreordered-assignments: exit 1\nearly-budget-executor: exit 1\nPassed; report: target/structured-events-trial.json\n"
+      }
+    }
+  }
+}
