@@ -58,6 +58,7 @@ pub struct StructuredFunction {
     evidence: StructureEvidence,
     split_evidence: Option<SplitEvidence>,
     split_sites: Vec<SplitSite>,
+    split_redirects: Vec<SplitRedirect>,
 }
 
 /// Provenance for bounded entry-region splitting. The final AST uses original PCs and
@@ -81,6 +82,16 @@ pub struct SplitSite {
     pub redirected_from: Address,
     pub copied_entry: Address,
     pub copied_steps: usize,
+}
+
+/// Source instruction owners for every redirected edge. Several edges may
+/// enter the same copied region; its original steps are charged once per stage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SplitRedirect {
+    /// Zero-based index into `StructuredFunction::split_sites()`.
+    pub stage: usize,
+    pub redirected_from: Address,
+    pub copied_entry: Address,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -293,6 +304,7 @@ impl StructuredFunction {
             evidence,
             split_evidence: None,
             split_sites: Vec::new(),
+            split_redirects: Vec::new(),
         })
     }
 
@@ -316,6 +328,10 @@ impl StructuredFunction {
 
     pub fn split_sites(&self) -> &[SplitSite] {
         &self.split_sites
+    }
+
+    pub fn split_redirects(&self) -> &[SplitRedirect] {
+        &self.split_redirects
     }
 
     pub fn execute(&self, input: &[u64], step_limit: usize) -> Result<Execution, ExecutionError> {

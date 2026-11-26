@@ -896,7 +896,7 @@ fn sampled_six_instruction_cfgs_preserve_complete_rust_reports() {
         |graph, profile| larger_program(6, graph, profile),
         10,
     );
-    assert_eq!(result, (12273, 0));
+    assert_eq!(result, (12279, 0));
 }
 
 #[test]
@@ -907,7 +907,7 @@ fn sampled_seven_instruction_cfgs_preserve_complete_rust_reports() {
         |graph, profile| larger_program(7, graph, profile),
         10,
     );
-    assert_eq!(result, (12240, 3));
+    assert_eq!(result, (12249, 3));
 }
 
 fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
@@ -1127,5 +1127,63 @@ fn a_shared_divergent_exit_follows_the_loop_without_duplication() {
         assert_eq!(function.evidence().compared_copies, 7);
         assert!(StructuredFunction::recover_with_step_limit(&source, 1, 6).is_err());
         compare_split_reports(&source, &body, &function);
+    }
+}
+
+#[test]
+fn shared_entry_regions_charge_one_copy_and_record_each_redirect() {
+    for (count, graph, limit) in [
+        (6, 374132, 9),
+        (6, 333168, 9),
+        (7, 14912188, 7),
+        (7, 12119490, 9),
+        (7, 3955419, 8),
+    ] {
+        for profile in 0..3 {
+            let source = larger_program(count, graph, profile);
+            let before = source.instructions().to_vec();
+            let function = StructuredFunction::recover_with_step_limit(&source, 2, limit)
+                .unwrap_or_else(|error| panic!("count={count} graph={graph}: {error}"));
+            assert_eq!(source.instructions(), before);
+            assert!(function.evidence().compared_copies <= limit);
+            let summary = function.split_evidence().unwrap();
+            assert!(summary.copied_steps <= 8 && summary.attempted_candidates <= 16);
+            assert_eq!(
+                summary.copied_steps,
+                function
+                    .split_sites()
+                    .iter()
+                    .map(|site| site.copied_steps)
+                    .sum()
+            );
+            assert!(function.split_redirects().len() >= 2);
+            assert!(
+                function
+                    .split_redirects()
+                    .iter()
+                    .all(|edge| edge.stage < function.split_sites().len())
+            );
+            if graph == 374132 {
+                assert_eq!(function.split_sites().len(), 1);
+                assert_eq!(function.split_sites()[0].copied_steps, 2);
+                assert_eq!(
+                    function.split_redirects(),
+                    [
+                        SplitRedirect {
+                            stage: 0,
+                            redirected_from: 1,
+                            copied_entry: 2
+                        },
+                        SplitRedirect {
+                            stage: 0,
+                            redirected_from: 1,
+                            copied_entry: 4
+                        },
+                    ]
+                );
+            }
+            assert!(StructuredFunction::recover_with_step_limit(&source, 1, limit).is_err());
+            compare_split_reports(&source, function.body(), &function);
+        }
     }
 }

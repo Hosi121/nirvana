@@ -90,6 +90,7 @@ pub(super) fn recover(
 #[derive(Clone, Default)]
 struct Lineage {
     sites: Vec<SplitSite>,
+    redirects: Vec<SplitRedirect>,
     copied_steps: usize,
 }
 
@@ -146,13 +147,24 @@ impl Search<'_> {
             if total > MAX_COPIED_STEPS {
                 continue;
             }
-            let from = program.cfg().block(plan.from);
-            let to = program.cfg().block(plan.blocks[0]);
+            let redirects: Vec<_> = plan
+                .redirects
+                .iter()
+                .map(|&(from, to)| {
+                    let from = program.cfg().block(from);
+                    SplitRedirect {
+                        stage: lineage.sites.len(),
+                        redirected_from: origins
+                            [&program.instructions()[from.instructions.end - 1].address]
+                            .owner,
+                        copied_entry: origins[&program.cfg().block(to).start].owner,
+                    }
+                })
+                .collect();
+            let first = redirects.first()?;
             let site = SplitSite {
-                redirected_from: origins
-                    [&program.instructions()[from.instructions.end - 1].address]
-                    .owner,
-                copied_entry: origins[&to.start].owner,
+                redirected_from: first.redirected_from,
+                copied_entry: first.copied_entry,
                 copied_steps,
             };
             let Some((candidate, local)) = proposal(program, &plan) else {
@@ -166,6 +178,7 @@ impl Search<'_> {
             };
             let mut path = lineage.clone();
             path.sites.push(site);
+            path.redirects.extend(redirects);
             path.copied_steps = total;
             if candidate_analysis.is_reducible() {
                 let routes = composed
@@ -267,6 +280,7 @@ impl Search<'_> {
             attempted_candidates: self.attempts,
         });
         recovered.split_sites = lineage.sites.clone();
+        recovered.split_redirects = lineage.redirects.clone();
         Some(recovered)
     }
 }
@@ -447,7 +461,7 @@ enum CopyEdges {
 
 #[derive(Clone)]
 struct SplitPlan {
-    from: BlockId,
+    redirects: Vec<(BlockId, BlockId)>,
     blocks: Vec<BlockId>,
     edges: CopyEdges,
 }
@@ -469,7 +483,7 @@ fn plans(
         let terminal = source
             .cfg()
             .block(*plan.blocks.last().expect("entry region"));
-        if terminal.successors.iter().any(
+        if plan.edges == CopyEdges::PeelPath && terminal.successors.iter().any(
             |edge| matches!(edge.target, Target::Block(target) if plan.blocks.contains(&target)),
         ) {
             let mut region = plan.clone();
@@ -500,11 +514,13 @@ fn plans(
             .sum();
         if steps <= MAX_COPIED_STEPS
             && !plans.iter().any(|plan| {
-                plan.from == from && plan.blocks == blocks && plan.edges == CopyEdges::CloneRegion
+                plan.redirects == [(from, to)]
+                    && plan.blocks == blocks
+                    && plan.edges == CopyEdges::CloneRegion
             })
         {
             plans.push(SplitPlan {
-                from,
+                redirects: vec![(from, to)],
                 blocks,
                 edges: CopyEdges::CloneRegion,
             });
@@ -519,21 +535,27 @@ fn peeled_plans(
     entries: &EntryCandidates,
 ) -> Vec<SplitPlan> {
     let EntryCandidates {
-        edges: entries,
+        edges: entry_edges,
         component,
     } = entries;
     // Preserve every old single-block attempt and its order before spending
     // any of the remaining attempt budget on a longer forward entry path.
-    let mut plans: Vec<_> = entries
+    let mut plans: Vec<_> = entry_edges
         .iter()
         .take(MAX_ATTEMPTS)
         .map(|&(from, to)| SplitPlan {
-            from,
+            redirects: vec![(from, to)],
             blocks: vec![to],
             edges: CopyEdges::PeelPath,
         })
         .collect();
-    for &entry in entries {
+    for plan in shared_entry_plans(source, entries) {
+        if plans.len() == MAX_ATTEMPTS {
+            return plans;
+        }
+        plans.push(plan);
+    }
+    for &entry in entry_edges {
         append_paths(source, analysis, entry, None, None, &mut plans);
         if plans.len() == MAX_ATTEMPTS {
             return plans;
@@ -543,9 +565,9 @@ fn peeled_plans(
     // Side exits can keep targeting it while the copied forward path grows.
     // Only an actually reducible proposal and the final source/AST checker
     // can accept this placement; the same attempt budget covers every phase.
-    let headers: BTreeSet<_> = entries.iter().map(|&(_, to)| to).collect();
+    let headers: BTreeSet<_> = entry_edges.iter().map(|&(_, to)| to).collect();
     for restrict_to_component in [false, true] {
-        for &entry in entries {
+        for &entry in entry_edges {
             let group = component[entry.1.index()];
             for &header in &headers {
                 if header != entry.0
@@ -563,6 +585,62 @@ fn peeled_plans(
                     if plans.len() == MAX_ATTEMPTS {
                         return plans;
                     }
+                }
+            }
+        }
+    }
+    plans
+}
+
+// Keep one header in the original cyclic component. External entries into
+// the remaining blocks share one copied region instead of duplicating that
+// region separately for each entry. Both the copied region's inner loops and
+// all original-header backedges remain subject to the usual reducibility check.
+fn shared_entry_plans(source: &Program, entries: &EntryCandidates) -> Vec<SplitPlan> {
+    let groups: BTreeSet<_> = entries
+        .edges
+        .iter()
+        .map(|&(_, to)| entries.component[to.index()])
+        .collect();
+    let mut plans = Vec::new();
+    for group in groups {
+        let members: Vec<_> = source
+            .cfg()
+            .blocks()
+            .iter()
+            .map(|block| block.id)
+            .filter(|id| entries.component[id.index()] == group)
+            .collect();
+        for &header in &members {
+            let redirects: Vec<_> = entries
+                .edges
+                .iter()
+                .copied()
+                .filter(|&(_, to)| entries.component[to.index()] == group && to != header)
+                .collect();
+            if redirects.len() < 2 {
+                continue;
+            }
+            let first = redirects[0].1;
+            let mut blocks = vec![first];
+            blocks.extend(
+                members
+                    .iter()
+                    .copied()
+                    .filter(|&id| id != header && id != first),
+            );
+            let steps: usize = blocks
+                .iter()
+                .map(|&id| source.cfg().block(id).instructions.len())
+                .sum();
+            if steps <= MAX_COPIED_STEPS {
+                plans.push(SplitPlan {
+                    redirects,
+                    blocks,
+                    edges: CopyEdges::CloneRegion,
+                });
+                if plans.len() == MAX_ATTEMPTS {
+                    return plans;
                 }
             }
         }
@@ -612,10 +690,10 @@ fn append_paths(
         blocks.push(next);
         if !plans
             .iter()
-            .any(|plan| plan.from == from && plan.blocks == blocks)
+            .any(|plan| plan.redirects == [(from, to)] && plan.blocks == blocks)
         {
             plans.push(SplitPlan {
-                from,
+                redirects: vec![(from, to)],
                 blocks: blocks.clone(),
                 edges: CopyEdges::PeelPath,
             });
@@ -625,13 +703,21 @@ fn append_paths(
 
 fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
     let instructions = source.instructions();
-    let from = &instructions[source.cfg().block(plan.from).instructions.end - 1];
+    let redirects: BTreeSet<_> = plan
+        .redirects
+        .iter()
+        .map(|&(from, to)| {
+            (
+                instructions[source.cfg().block(from).instructions.end - 1].address,
+                source.cfg().block(to).start,
+            )
+        })
+        .collect();
     let copied: Vec<_> = plan
         .blocks
         .iter()
         .flat_map(|&id| instructions[source.cfg().block(id).instructions.clone()].iter())
         .collect();
-    let copied_entry = copied.first()?.address;
     let copied_last = copied.last()?.address;
     let normal: BTreeMap<_, _> = instructions
         .iter()
@@ -658,7 +744,7 @@ fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
         };
         let fallthrough = original.address.checked_add(u64::from(original.size))?;
         let resolve = |target: u64| -> Option<u64> {
-            if !duplicate && original.address == from.address && target == copied_entry {
+            if !duplicate && redirects.contains(&(original.address, target)) {
                 return duplicates.get(&target).copied();
             }
             // A peeled path returns its final edges to the original graph.

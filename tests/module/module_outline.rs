@@ -794,6 +794,47 @@ shared_divergent_tail:
     mov 24(%rdi),%rax
     ret
 .size shared_divergent_tail,.-shared_divergent_tail
+.globl shared_entries
+.type shared_entries,@function
+shared_entries:
+    cmpq $0,(%rdi)
+    jne .Lshared_entries_header
+    cmpq $0,8(%rdi)
+    jne .Lshared_entries_tail
+.Lshared_entries_path:
+    addq $1,24(%rdi)
+    jmp .Lshared_entries_header
+.Lshared_entries_header:
+    cmpq $0,16(%rdi)
+    jne .Lshared_entries_header
+.Lshared_entries_tail:
+    addq $2,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lshared_entries_path
+    mov 24(%rdi),%rax
+    ret
+.size shared_entries,.-shared_entries
+.globl shared_loop_entries
+.type shared_loop_entries,@function
+shared_loop_entries:
+    cmpq $0,(%rdi)
+    jne .Lshared_loop_branch
+.Lshared_loop_header:
+    cmpq $0,8(%rdi)
+    jne .Lshared_loop_tail
+.Lshared_loop_path:
+    addq $1,24(%rdi)
+    jmp .Lshared_loop_tail
+.Lshared_loop_branch:
+    cmpq $0,16(%rdi)
+    jne .Lshared_loop_path
+.Lshared_loop_tail:
+    addq $2,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lshared_loop_header
+    mov 24(%rdi),%rax
+    ret
+.size shared_loop_entries,.-shared_loop_entries
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -832,6 +873,8 @@ shared_divergent_tail:
         "split_three",
         "mixed_joins",
         "shared_divergent_tail",
+        "shared_entries",
+        "shared_loop_entries",
     ] {
         let function = plan
             .functions
@@ -850,6 +893,17 @@ shared_divergent_tail:
             assert_eq!(
                 function.structured.as_ref().unwrap().split_sites().len(),
                 count
+            );
+        }
+        if matches!(name, "shared_entries" | "shared_loop_entries") {
+            assert!(
+                function
+                    .structured
+                    .as_ref()
+                    .unwrap()
+                    .split_redirects()
+                    .len()
+                    >= 2
             );
         }
     }
