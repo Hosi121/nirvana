@@ -15,13 +15,46 @@ pub struct PartitionedVerdict {
 pub struct InputPartitions<'a> {
     query: &'a Query,
     guards: Vec<String>,
+    model: &'static str,
 }
 impl InputPartitions<'_> {
+    /// Refine every input case by the exhaustive fault/return/default cases.
+    /// The original disequality and every observation remain in each script.
+    pub fn with_return_partitions(mut self) -> Result<Self, Error> {
+        let count = self
+            .guards
+            .len()
+            .checked_mul(self.query.partitions.len())
+            .ok_or(Error::Limit)?;
+        if count > 256 {
+            return Err(Error::Limit);
+        }
+        let mut guards = Vec::with_capacity(count);
+        for input in &self.guards {
+            for output in &self.query.partitions {
+                let guard = format!("(and {input} {output})");
+                if self
+                    .query
+                    .script
+                    .len()
+                    .saturating_add(guard.len())
+                    .saturating_add(96)
+                    > MAX_SCRIPT
+                {
+                    return Err(Error::Limit);
+                }
+                guards.push(guard);
+            }
+        }
+        self.guards = guards;
+        self.model = "checked-input-return-partitions-v1";
+        Ok(self)
+    }
     pub fn smt2(&self) -> impl Iterator<Item = String> + '_ {
         self.guards.iter().enumerate().map(|(index, guard)| {
             format!(
-                "{}; checked-input-bit-partitions-v1 part={index}\n(assert {guard})\n",
-                self.query.script
+                "{}; {} part={index}\n(assert {guard})\n",
+                self.query.script, self.model
             )
         })
     }
@@ -68,6 +101,7 @@ impl Query {
         Ok(InputPartitions {
             query: self,
             guards,
+            model: "checked-input-bit-partitions-v1",
         })
     }
     /// Each script adds a guard to the unchanged original disequality. Guards

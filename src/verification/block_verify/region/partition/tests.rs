@@ -46,6 +46,21 @@ fn partitions_keep_the_original_query_and_zero_budget_starts_no_solver() {
     assert!(q.input_partitions(Reg(0), 0).is_err());
     assert!(q.input_partitions(Reg(0), 5).is_err());
     assert_eq!(q.input_partitions(Reg(0), 4).unwrap().smt2().count(), 16);
+    let refined = q
+        .input_partitions(Reg(0), 2)
+        .unwrap()
+        .with_return_partitions()
+        .unwrap();
+    assert_eq!(refined.smt2().count(), 12);
+    assert!(refined.smt2().all(|script| script.starts_with(q.smt2())
+        && script.contains("checked-input-return-partitions-v1")));
+    let result = refined.check(&Solver::new("/nirvana-no-solver"), Duration::ZERO);
+    assert_eq!(result.checked, 0);
+    assert_eq!(result.total, 12);
+    assert_eq!(
+        result.verdict,
+        Verdict::Unknown(UnknownReason::SolverTimeout)
+    );
 }
 
 #[test]
@@ -74,6 +89,10 @@ fn generated_guards_cover_all_words_and_omitting_a_case_is_detected() {
             input_guards("input", bits),
         ));
     }
+
+    let input = input_guards("input", 2);
+    let output = observations.partition_guards("normal", "tag");
+    families.push((String::from("(declare-fun normal () Bool)\n(declare-fun tag () (_ BitVec 64))\n(declare-fun input () (_ BitVec 64))\n"),input.iter().flat_map(|i|output.iter().map(move|o|format!("(and {i} {o})"))).collect()));
     for (declarations, guards) in families {
         let formula = |guards: &[String]| {
             format!(
@@ -103,7 +122,14 @@ fn generated_guards_cover_all_words_and_omitting_a_case_is_detected() {
             .verdict,
         Verdict::Counterexample(_)
     ));
-    println!("PARTITION-COVERAGE all_words=true omission_controls=34");
+    let refined = q
+        .input_partitions(Reg(0), 2)
+        .unwrap()
+        .with_return_partitions()
+        .unwrap()
+        .check(&solver, Duration::from_secs(5));
+    assert!(matches!(refined.verdict, Verdict::Counterexample(_)));
+    println!("PARTITION-COVERAGE all_words=true omission_controls=50");
 }
 
 #[test]
