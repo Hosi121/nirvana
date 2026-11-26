@@ -19,6 +19,7 @@ const REPLAY_BYTES: u64 = 65536;
 type Registers = BTreeSet<usize>;
 
 pub mod paths;
+pub mod region;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockCounterexample {
@@ -55,8 +56,10 @@ struct Builder {
     definitions: Vec<String>,
     samples: Vec<(String, String)>,
     visits: usize,
+    interning: Option<BTreeMap<(String, String), String>>,
 }
 
+#[derive(Clone)]
 struct State {
     registers: Vec<String>,
     memory: String,
@@ -78,9 +81,23 @@ impl Builder {
         name.into()
     }
     fn define(&mut self, sort: &str, term: String) -> String {
+        if let Some(name) = self
+            .interning
+            .as_ref()
+            .and_then(|memo| memo.get(&(sort.into(), term.clone())))
+        {
+            return name.clone();
+        }
         let name = format!("v{}", self.definitions.len());
-        self.definitions
-            .push(format!("(define-fun {name} () {sort} {term})\n"));
+        if let Some(memo) = &mut self.interning {
+            memo.insert((sort.into(), term.clone()), name.clone());
+            self.definitions.push(format!(
+                "(declare-fun {name} () {sort})\n(assert (= {name} {term}))\n"
+            ));
+        } else {
+            self.definitions
+                .push(format!("(define-fun {name} () {sort} {term})\n"));
+        }
         name
     }
     fn bool(&mut self, term: String) -> String {
@@ -298,6 +315,7 @@ pub fn block_query(
         definitions: Vec::new(),
         samples: Vec::new(),
         visits: 0,
+        interning: None,
     };
     builder.declare("initial_memory", ARRAY);
     builder.declare("base", WORD);

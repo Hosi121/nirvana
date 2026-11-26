@@ -93,6 +93,7 @@ pub fn path_query(
         definitions: Vec::new(),
         samples: Vec::new(),
         visits: 0,
+        interning: None,
     };
     builder.declare("initial_memory", ARRAY);
     builder.declare("base", WORD);
