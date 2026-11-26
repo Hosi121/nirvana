@@ -302,7 +302,13 @@ fn certified_cyclic_candidate_matches_unrolled_memory_and_rejects_wrong_incremen
             panic!("candidate bound did not complete");
         };
         let shared: Vec<_> = (0..5).map(Reg).collect();
-        let outputs: Vec<_> = (0..6).map(Reg).collect();
+        // Positive comparison retains every original normal register. The
+        // negative must also differ under the C return/RAM/first-fault scope.
+        let outputs: Vec<_> = if wrong {
+            vec![Reg(5)]
+        } else {
+            (0..6).map(Reg).collect()
+        };
         let query = region::query(&baseline, complete.program(), &shared, &outputs).unwrap();
         if let Some(directory) = std::env::var_os("NIRVANA_REPEAT_REPORT") {
             std::fs::write(
@@ -335,11 +341,7 @@ fn certified_cyclic_candidate_matches_unrolled_memory_and_rejects_wrong_incremen
                     matches!(left.status, RunStatus::Returned(_))
                         && matches!(right.status, RunStatus::Returned(_))
                 );
-                assert!(
-                    left.state.registers != right.state.registers
-                        || left.state.memory != right.state.memory
-                        || left.status != right.status
-                );
+                assert!(left.state.memory != right.state.memory || left.status != right.status);
                 assert_eq!(&witness.before.state.registers[..5], left.state.registers);
                 assert_eq!(&witness.after.state.registers[..5], right.state.registers);
                 assert_eq!(witness.before.state.memory, left.state.memory);
