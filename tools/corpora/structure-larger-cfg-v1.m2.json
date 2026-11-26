@@ -1,0 +1,1928 @@
+{
+  "schema": "nirvana-larger-cfg-checkpoint-v1",
+  "milestone": "M2 multi-stage structure recovery; M0 fixed-input semantic and structure gate",
+  "baseline_revision": "823c3a578a468fb2dc1c7114e58dbcd14a3763bb",
+  "candidate_revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+  "prior_checkpoint": "tools/corpora/structure-entry-cycles-v1.m2.json",
+  "status": "Two/three independent multiple-entry cycles now recover within shared limits; fixed7-instruction sample gains3 recoveries, with no previous-success regressions. Larger sampled inputs retain111 explicit refusals.",
+  "corpora": {
+    "sample6": {
+      "source_instructions": 6,
+      "radix": 14,
+      "full_topology_space": 537824,
+      "sampled_topologies": 4096,
+      "effect_profiles": 3,
+      "forced_prefix": [],
+      "selection": "Append unique (index*214013+2531011) % full_topology_space, index starting at0, until4096 IDs; preserve insertion order.",
+      "ordered_ids_sha256": "6e193876202d5638a46f8551bc3538f6002cbf635374d98457fb8589810b7956",
+      "ids_encoding": "UTF-8 compact JSON array, separators comma/colon, no newline",
+      "budget_inclusive": [
+        0,
+        10
+      ]
+    },
+    "sample7": {
+      "source_instructions": 7,
+      "radix": 16,
+      "full_topology_space": 16777216,
+      "sampled_topologies": 4096,
+      "effect_profiles": 3,
+      "forced_prefix": [
+        13031738
+      ],
+      "selection": "Append unique (index*214013+2531011) % full_topology_space, index starting at0, until4096 IDs; preserve insertion order.",
+      "ordered_ids_sha256": "69109d8c1dd29c6c8def26abd27ce21eb8f0dacd55fec9e54f2b831a395b00d1",
+      "ids_encoding": "UTF-8 compact JSON array, separators comma/colon, no newline",
+      "budget_inclusive": [
+        0,
+        10
+      ]
+    }
+  },
+  "grammar": {
+    "entry": 0,
+    "register_count": 3,
+    "final_instruction": "Return(r2), no assignments",
+    "earlier_controls": "digit0=Next;1..n=Jump(digit-1);n+1..2n=Branch(target=digit-n-1);2n+1=Return(r2)",
+    "condition": "r0 for profiles0/1; Select(r0,Load(r1,U8),0) for profile2",
+    "effects": "For each nonfinal PC, repeat program(0,profile).instructions()[pc%3].assignments from the unchanged4-instruction generator."
+  },
+  "generator_identity": {
+    "reference": "823c3a578a468fb2dc1c7114e58dbcd14a3763bb",
+    "unchanged_functions_sha256": {
+      "r": "2e0b36649fc9cd7750ab0c3b984c7b45b022a13e6e13727ec586fbc00c39da67",
+      "k": "a9c58047f2753703b1648f28f32be78c4922a4000d2e0694c2e0628654c03e00",
+      "binary": "f8f5999b96a19225d4c2145f4eb420e7032190a78da251ce6b12ef650b16307c",
+      "assign": "a9b4d1ed9e2b0779efad5bef265a42543bb743250ecb351651c5591ef22acd85",
+      "store": "639e6459b5783a3a27f0831cd54aa58a40e401b174ead4e246820bbfaf031aad",
+      "program": "21d05c50f580a52b67957e5e4310564b88eb6d310edfbb5fb054adeacf42b5e4",
+      "program5": "9092bae8028ada67151eefbb8c9a2e485c57d38a48f626b563bc2e464e7f07c2",
+      "larger_program": "8e591213dd460f7a58d83ae04d5d452a1fc01425f8b663646f56de5036588eca",
+      "sampled_larger_graphs": "73bdbd5e75c899e0569447a8969f05e3149e3058f3b08d981c0b5a0050ae80fc"
+    }
+  },
+  "observation": {
+    "api": "Program::run_with_memory versus public StructuredFunction::run_with_memory",
+    "contract": "Exact complete RunReport: all registers and RAM/base/layout, returned value or first fault, trace and attempted instruction, including instruction-budget termination. Shared primitive Machine semantics.",
+    "inputs": {
+      "r0": [
+        0,
+        1,
+        2,
+        "0xffffffffffffffff"
+      ],
+      "r1": [
+        0,
+        1,
+        3,
+        "0xffffffffffffffff"
+      ],
+      "r2": "0x55",
+      "memory_base": 0,
+      "memories": [
+        [],
+        [
+          1,
+          2,
+          3,
+          4
+        ]
+      ]
+    },
+    "sample_budgets_inclusive": [
+      0,
+      10
+    ],
+    "legacy_budgets_inclusive": [
+      0,
+      6
+    ],
+    "default_copy_limit": 2,
+    "comparisons_per_sample_candidate": 352,
+    "edits": "Six first-site syntax edits are tried. Accepted edits also undergo exact full-report comparison; known-invalid fixtures remain strict negative controls."
+  },
+  "results": {
+    "sample6": {
+      "before": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 12288,
+        "recovered": 12267,
+        "comparisons": 4317984,
+        "mutants": 45378,
+        "accepted_mutants": 0,
+        "rejected": [
+          {
+            "error": "CopyLimit { block: BlockId(4), limit: 2 }",
+            "count": 3,
+            "example_graph": 35431,
+            "example_profile": 0
+          },
+          {
+            "error": "Irreducible",
+            "count": 18,
+            "example_graph": 374132,
+            "example_profile": 0
+          }
+        ],
+        "refused_cases": [
+          [
+            0,
+            374132
+          ],
+          [
+            0,
+            400185
+          ],
+          [
+            0,
+            35431
+          ],
+          [
+            0,
+            366684
+          ],
+          [
+            0,
+            348064
+          ],
+          [
+            0,
+            333168
+          ],
+          [
+            0,
+            333153
+          ],
+          [
+            1,
+            374132
+          ],
+          [
+            1,
+            400185
+          ],
+          [
+            1,
+            35431
+          ],
+          [
+            1,
+            366684
+          ],
+          [
+            1,
+            348064
+          ],
+          [
+            1,
+            333168
+          ],
+          [
+            1,
+            333153
+          ],
+          [
+            2,
+            374132
+          ],
+          [
+            2,
+            400185
+          ],
+          [
+            2,
+            35431
+          ],
+          [
+            2,
+            366684
+          ],
+          [
+            2,
+            348064
+          ],
+          [
+            2,
+            333168
+          ],
+          [
+            2,
+            333153
+          ]
+        ]
+      },
+      "after": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 12288,
+        "recovered": 12267,
+        "comparisons": 4317984,
+        "mutants": 45378,
+        "accepted_mutants": 0,
+        "rejected": [
+          {
+            "error": "CopyLimit { block: BlockId(4), limit: 2 }",
+            "count": 3,
+            "example_graph": 35431,
+            "example_profile": 0
+          },
+          {
+            "error": "Irreducible",
+            "count": 18,
+            "example_graph": 374132,
+            "example_profile": 0
+          }
+        ],
+        "refused_cases": [
+          [
+            0,
+            374132
+          ],
+          [
+            0,
+            400185
+          ],
+          [
+            0,
+            35431
+          ],
+          [
+            0,
+            366684
+          ],
+          [
+            0,
+            348064
+          ],
+          [
+            0,
+            333168
+          ],
+          [
+            0,
+            333153
+          ],
+          [
+            1,
+            374132
+          ],
+          [
+            1,
+            400185
+          ],
+          [
+            1,
+            35431
+          ],
+          [
+            1,
+            366684
+          ],
+          [
+            1,
+            348064
+          ],
+          [
+            1,
+            333168
+          ],
+          [
+            1,
+            333153
+          ],
+          [
+            2,
+            374132
+          ],
+          [
+            2,
+            400185
+          ],
+          [
+            2,
+            35431
+          ],
+          [
+            2,
+            366684
+          ],
+          [
+            2,
+            348064
+          ],
+          [
+            2,
+            333168
+          ],
+          [
+            2,
+            333153
+          ]
+        ]
+      },
+      "artifacts": {
+        "before_report_sha256": "d9f54b2945d9325f5d1f373b194b52d66051e926a83d2b15c18967ef05166357",
+        "after_report_sha256": "d9f54b2945d9325f5d1f373b194b52d66051e926a83d2b15c18967ef05166357",
+        "before_log_sha256": "7025df1830f51a723f66b13c9f45cd1f7689fa0b4d3593cf503722f1625f99c1",
+        "after_log_sha256": "ea1006fbc8ce1ba55a26136f22c49b2034c8498e7176b2f195f76d3fa7bc6dda",
+        "after_log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.04s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":12288,\"recovered\":12267,\"comparisons\":4317984,\"mutants\":45378,\"accepted_mutants\":0,\"rejected\":[{\"error\":\"CopyLimit { block: BlockId(4), limit: 2 }\",\"count\":3,\"example_graph\":35431,\"example_profile\":0},{\"error\":\"Irreducible\",\"count\":18,\"example_graph\":374132,\"example_profile\":0}],\"refused_cases\":[[0, 374132], [0, 400185], [0, 35431], [0, 366684], [0, 348064], [0, 333168], [0, 333153], [1, 374132], [1, 400185], [1, 35431], [1, 366684], [1, 348064], [1, 333168], [1, 333153], [2, 374132], [2, 400185], [2, 35431], [2, 366684], [2, 348064], [2, 333168], [2, 333153]]}\n\ntest control_flow::structure::audit_tests::sampled_six_instruction_cfgs_preserve_complete_rust_reports ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 276 filtered out; finished in 4.68s\n\n"
+      }
+    },
+    "sample7": {
+      "before": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 12288,
+        "recovered": 12195,
+        "comparisons": 4293696,
+        "mutants": 46044,
+        "accepted_mutants": 3,
+        "rejected": [
+          {
+            "error": "CopyLimit { block: BlockId(1), limit: 2 }",
+            "count": 6,
+            "example_graph": 12161596,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(2), limit: 2 }",
+            "count": 3,
+            "example_graph": 10895053,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(3), limit: 2 }",
+            "count": 3,
+            "example_graph": 9137340,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(4), limit: 2 }",
+            "count": 3,
+            "example_graph": 10456508,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(5), limit: 2 }",
+            "count": 12,
+            "example_graph": 15599836,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(6), limit: 2 }",
+            "count": 6,
+            "example_graph": 12165099,
+            "example_profile": 0
+          },
+          {
+            "error": "Irreducible",
+            "count": 60,
+            "example_graph": 13031738,
+            "example_profile": 0
+          }
+        ],
+        "refused_cases": [
+          [
+            0,
+            13031738
+          ],
+          [
+            0,
+            12161596
+          ],
+          [
+            0,
+            4930763
+          ],
+          [
+            0,
+            6000828
+          ],
+          [
+            0,
+            10456508
+          ],
+          [
+            0,
+            11144156
+          ],
+          [
+            0,
+            12558045
+          ],
+          [
+            0,
+            14912188
+          ],
+          [
+            0,
+            12901869
+          ],
+          [
+            0,
+            15599836
+          ],
+          [
+            0,
+            580333
+          ],
+          [
+            0,
+            4906202
+          ],
+          [
+            0,
+            6663915
+          ],
+          [
+            0,
+            10775771
+          ],
+          [
+            0,
+            13221132
+          ],
+          [
+            0,
+            11172220
+          ],
+          [
+            0,
+            5951706
+          ],
+          [
+            0,
+            11133627
+          ],
+          [
+            0,
+            11263438
+          ],
+          [
+            0,
+            12119490
+          ],
+          [
+            0,
+            12165099
+          ],
+          [
+            0,
+            6004331
+          ],
+          [
+            0,
+            16620779
+          ],
+          [
+            0,
+            3955419
+          ],
+          [
+            0,
+            15641932
+          ],
+          [
+            0,
+            9137340
+          ],
+          [
+            0,
+            10895053
+          ],
+          [
+            0,
+            11582701
+          ],
+          [
+            0,
+            13210603
+          ],
+          [
+            0,
+            7049835
+          ],
+          [
+            0,
+            12231756
+          ],
+          [
+            1,
+            13031738
+          ],
+          [
+            1,
+            12161596
+          ],
+          [
+            1,
+            4930763
+          ],
+          [
+            1,
+            6000828
+          ],
+          [
+            1,
+            10456508
+          ],
+          [
+            1,
+            11144156
+          ],
+          [
+            1,
+            12558045
+          ],
+          [
+            1,
+            14912188
+          ],
+          [
+            1,
+            12901869
+          ],
+          [
+            1,
+            15599836
+          ],
+          [
+            1,
+            580333
+          ],
+          [
+            1,
+            4906202
+          ],
+          [
+            1,
+            6663915
+          ],
+          [
+            1,
+            10775771
+          ],
+          [
+            1,
+            13221132
+          ],
+          [
+            1,
+            11172220
+          ],
+          [
+            1,
+            5951706
+          ],
+          [
+            1,
+            11133627
+          ],
+          [
+            1,
+            11263438
+          ],
+          [
+            1,
+            12119490
+          ],
+          [
+            1,
+            12165099
+          ],
+          [
+            1,
+            6004331
+          ],
+          [
+            1,
+            16620779
+          ],
+          [
+            1,
+            3955419
+          ],
+          [
+            1,
+            15641932
+          ],
+          [
+            1,
+            9137340
+          ],
+          [
+            1,
+            10895053
+          ],
+          [
+            1,
+            11582701
+          ],
+          [
+            1,
+            13210603
+          ],
+          [
+            1,
+            7049835
+          ],
+          [
+            1,
+            12231756
+          ],
+          [
+            2,
+            13031738
+          ],
+          [
+            2,
+            12161596
+          ],
+          [
+            2,
+            4930763
+          ],
+          [
+            2,
+            6000828
+          ],
+          [
+            2,
+            10456508
+          ],
+          [
+            2,
+            11144156
+          ],
+          [
+            2,
+            12558045
+          ],
+          [
+            2,
+            14912188
+          ],
+          [
+            2,
+            12901869
+          ],
+          [
+            2,
+            15599836
+          ],
+          [
+            2,
+            580333
+          ],
+          [
+            2,
+            4906202
+          ],
+          [
+            2,
+            6663915
+          ],
+          [
+            2,
+            10775771
+          ],
+          [
+            2,
+            13221132
+          ],
+          [
+            2,
+            11172220
+          ],
+          [
+            2,
+            5951706
+          ],
+          [
+            2,
+            11133627
+          ],
+          [
+            2,
+            11263438
+          ],
+          [
+            2,
+            12119490
+          ],
+          [
+            2,
+            12165099
+          ],
+          [
+            2,
+            6004331
+          ],
+          [
+            2,
+            16620779
+          ],
+          [
+            2,
+            3955419
+          ],
+          [
+            2,
+            15641932
+          ],
+          [
+            2,
+            9137340
+          ],
+          [
+            2,
+            10895053
+          ],
+          [
+            2,
+            11582701
+          ],
+          [
+            2,
+            13210603
+          ],
+          [
+            2,
+            7049835
+          ],
+          [
+            2,
+            12231756
+          ]
+        ],
+        "accepted_edit_cases": [
+          [
+            0,
+            12126506,
+            5
+          ],
+          [
+            1,
+            12126506,
+            5
+          ],
+          [
+            2,
+            12126506,
+            5
+          ]
+        ]
+      },
+      "after": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 12288,
+        "recovered": 12198,
+        "comparisons": 4294752,
+        "mutants": 46058,
+        "accepted_mutants": 3,
+        "rejected": [
+          {
+            "error": "CopyLimit { block: BlockId(1), limit: 2 }",
+            "count": 6,
+            "example_graph": 12161596,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(2), limit: 2 }",
+            "count": 3,
+            "example_graph": 10895053,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(3), limit: 2 }",
+            "count": 3,
+            "example_graph": 9137340,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(4), limit: 2 }",
+            "count": 3,
+            "example_graph": 10456508,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(5), limit: 2 }",
+            "count": 12,
+            "example_graph": 15599836,
+            "example_profile": 0
+          },
+          {
+            "error": "CopyLimit { block: BlockId(6), limit: 2 }",
+            "count": 6,
+            "example_graph": 12165099,
+            "example_profile": 0
+          },
+          {
+            "error": "Irreducible",
+            "count": 57,
+            "example_graph": 4930763,
+            "example_profile": 0
+          }
+        ],
+        "refused_cases": [
+          [
+            0,
+            12161596
+          ],
+          [
+            0,
+            4930763
+          ],
+          [
+            0,
+            6000828
+          ],
+          [
+            0,
+            10456508
+          ],
+          [
+            0,
+            11144156
+          ],
+          [
+            0,
+            12558045
+          ],
+          [
+            0,
+            14912188
+          ],
+          [
+            0,
+            12901869
+          ],
+          [
+            0,
+            15599836
+          ],
+          [
+            0,
+            580333
+          ],
+          [
+            0,
+            4906202
+          ],
+          [
+            0,
+            6663915
+          ],
+          [
+            0,
+            10775771
+          ],
+          [
+            0,
+            13221132
+          ],
+          [
+            0,
+            11172220
+          ],
+          [
+            0,
+            5951706
+          ],
+          [
+            0,
+            11133627
+          ],
+          [
+            0,
+            11263438
+          ],
+          [
+            0,
+            12119490
+          ],
+          [
+            0,
+            12165099
+          ],
+          [
+            0,
+            6004331
+          ],
+          [
+            0,
+            16620779
+          ],
+          [
+            0,
+            3955419
+          ],
+          [
+            0,
+            15641932
+          ],
+          [
+            0,
+            9137340
+          ],
+          [
+            0,
+            10895053
+          ],
+          [
+            0,
+            11582701
+          ],
+          [
+            0,
+            13210603
+          ],
+          [
+            0,
+            7049835
+          ],
+          [
+            0,
+            12231756
+          ],
+          [
+            1,
+            12161596
+          ],
+          [
+            1,
+            4930763
+          ],
+          [
+            1,
+            6000828
+          ],
+          [
+            1,
+            10456508
+          ],
+          [
+            1,
+            11144156
+          ],
+          [
+            1,
+            12558045
+          ],
+          [
+            1,
+            14912188
+          ],
+          [
+            1,
+            12901869
+          ],
+          [
+            1,
+            15599836
+          ],
+          [
+            1,
+            580333
+          ],
+          [
+            1,
+            4906202
+          ],
+          [
+            1,
+            6663915
+          ],
+          [
+            1,
+            10775771
+          ],
+          [
+            1,
+            13221132
+          ],
+          [
+            1,
+            11172220
+          ],
+          [
+            1,
+            5951706
+          ],
+          [
+            1,
+            11133627
+          ],
+          [
+            1,
+            11263438
+          ],
+          [
+            1,
+            12119490
+          ],
+          [
+            1,
+            12165099
+          ],
+          [
+            1,
+            6004331
+          ],
+          [
+            1,
+            16620779
+          ],
+          [
+            1,
+            3955419
+          ],
+          [
+            1,
+            15641932
+          ],
+          [
+            1,
+            9137340
+          ],
+          [
+            1,
+            10895053
+          ],
+          [
+            1,
+            11582701
+          ],
+          [
+            1,
+            13210603
+          ],
+          [
+            1,
+            7049835
+          ],
+          [
+            1,
+            12231756
+          ],
+          [
+            2,
+            12161596
+          ],
+          [
+            2,
+            4930763
+          ],
+          [
+            2,
+            6000828
+          ],
+          [
+            2,
+            10456508
+          ],
+          [
+            2,
+            11144156
+          ],
+          [
+            2,
+            12558045
+          ],
+          [
+            2,
+            14912188
+          ],
+          [
+            2,
+            12901869
+          ],
+          [
+            2,
+            15599836
+          ],
+          [
+            2,
+            580333
+          ],
+          [
+            2,
+            4906202
+          ],
+          [
+            2,
+            6663915
+          ],
+          [
+            2,
+            10775771
+          ],
+          [
+            2,
+            13221132
+          ],
+          [
+            2,
+            11172220
+          ],
+          [
+            2,
+            5951706
+          ],
+          [
+            2,
+            11133627
+          ],
+          [
+            2,
+            11263438
+          ],
+          [
+            2,
+            12119490
+          ],
+          [
+            2,
+            12165099
+          ],
+          [
+            2,
+            6004331
+          ],
+          [
+            2,
+            16620779
+          ],
+          [
+            2,
+            3955419
+          ],
+          [
+            2,
+            15641932
+          ],
+          [
+            2,
+            9137340
+          ],
+          [
+            2,
+            10895053
+          ],
+          [
+            2,
+            11582701
+          ],
+          [
+            2,
+            13210603
+          ],
+          [
+            2,
+            7049835
+          ],
+          [
+            2,
+            12231756
+          ]
+        ],
+        "accepted_edit_cases": [
+          [
+            0,
+            12126506,
+            5
+          ],
+          [
+            1,
+            12126506,
+            5
+          ],
+          [
+            2,
+            12126506,
+            5
+          ]
+        ]
+      },
+      "artifacts": {
+        "before_report_sha256": "947bc3ae168a3909a36676b2d11bf9a1aad726a795be5970808ee7a39c04643d",
+        "after_report_sha256": "e35b5da4ce3aed0ec8ab0f31ee9ec8218dd383478faadc58c811ee24d8a10041",
+        "before_log_sha256": "f7259e740fdc46792983472628682587c5c4babfd11fe72716708028a074b982",
+        "after_log_sha256": "4900e880efc81c0b4496c5cea319428f9d03e59edb7617c70305860d0b6ef461",
+        "after_log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.12s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":12288,\"recovered\":12198,\"comparisons\":4294752,\"mutants\":46058,\"accepted_mutants\":3,\"rejected\":[{\"error\":\"CopyLimit { block: BlockId(1), limit: 2 }\",\"count\":6,\"example_graph\":12161596,\"example_profile\":0},{\"error\":\"CopyLimit { block: BlockId(2), limit: 2 }\",\"count\":3,\"example_graph\":10895053,\"example_profile\":0},{\"error\":\"CopyLimit { block: BlockId(3), limit: 2 }\",\"count\":3,\"example_graph\":9137340,\"example_profile\":0},{\"error\":\"CopyLimit { block: BlockId(4), limit: 2 }\",\"count\":3,\"example_graph\":10456508,\"example_profile\":0},{\"error\":\"CopyLimit { block: BlockId(5), limit: 2 }\",\"count\":12,\"example_graph\":15599836,\"example_profile\":0},{\"error\":\"CopyLimit { block: BlockId(6), limit: 2 }\",\"count\":6,\"example_graph\":12165099,\"example_profile\":0},{\"error\":\"Irreducible\",\"count\":57,\"example_graph\":4930763,\"example_profile\":0}],\"refused_cases\":[[0, 12161596], [0, 4930763], [0, 6000828], [0, 10456508], [0, 11144156], [0, 12558045], [0, 14912188], [0, 12901869], [0, 15599836], [0, 580333], [0, 4906202], [0, 6663915], [0, 10775771], [0, 13221132], [0, 11172220], [0, 5951706], [0, 11133627], [0, 11263438], [0, 12119490], [0, 12165099], [0, 6004331], [0, 16620779], [0, 3955419], [0, 15641932], [0, 9137340], [0, 10895053], [0, 11582701], [0, 13210603], [0, 7049835], [0, 12231756], [1, 12161596], [1, 4930763], [1, 6000828], [1, 10456508], [1, 11144156], [1, 12558045], [1, 14912188], [1, 12901869], [1, 15599836], [1, 580333], [1, 4906202], [1, 6663915], [1, 10775771], [1, 13221132], [1, 11172220], [1, 5951706], [1, 11133627], [1, 11263438], [1, 12119490], [1, 12165099], [1, 6004331], [1, 16620779], [1, 3955419], [1, 15641932], [1, 9137340], [1, 10895053], [1, 11582701], [1, 13210603], [1, 7049835], [1, 12231756], [2, 12161596], [2, 4930763], [2, 6000828], [2, 10456508], [2, 11144156], [2, 12558045], [2, 14912188], [2, 12901869], [2, 15599836], [2, 580333], [2, 4906202], [2, 6663915], [2, 10775771], [2, 13221132], [2, 11172220], [2, 5951706], [2, 11133627], [2, 11263438], [2, 12119490], [2, 12165099], [2, 6004331], [2, 16620779], [2, 3955419], [2, 15641932], [2, 9137340], [2, 10895053], [2, 11582701], [2, 13210603], [2, 7049835], [2, 12231756]],\"accepted_edit_cases\":[[0, 12126506, 5], [1, 12126506, 5], [2, 12126506, 5]]}\n\ntest control_flow::structure::audit_tests::sampled_seven_instruction_cfgs_preserve_complete_rust_reports ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 276 filtered out; finished in 5.46s\n\n"
+      }
+    },
+    "legacy4": {
+      "before": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 3000,
+        "recovered": 3000,
+        "comparisons": 672000,
+        "mutants": 10505,
+        "accepted_mutants": 0,
+        "rejected": [],
+        "refused_cases": []
+      },
+      "after": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 3000,
+        "recovered": 3000,
+        "comparisons": 672000,
+        "mutants": 10505,
+        "accepted_mutants": 0,
+        "rejected": [],
+        "refused_cases": []
+      },
+      "artifacts": {
+        "before_report_sha256": "e886a22df51f05f6b128062c08e4514f919063b946636db0c0917c995b4c8e00",
+        "after_report_sha256": "e886a22df51f05f6b128062c08e4514f919063b946636db0c0917c995b4c8e00",
+        "before_log_sha256": "8f5cbae402c9b1264fec5f647de342ac9250cca536b2f153047ecd07b8b161c9",
+        "after_log_sha256": "8a9ec8c643c4d97513a1c00bc0684f98c2ad3fb12163def5cd03bca3524eea79",
+        "after_log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 8.98s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":3000,\"recovered\":3000,\"comparisons\":672000,\"mutants\":10505,\"accepted_mutants\":0,\"rejected\":[],\"refused_cases\":[]}\n\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 276 filtered out; finished in 0.59s\n\n"
+      }
+    },
+    "legacy5": {
+      "before": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 62208,
+        "recovered": 62208,
+        "comparisons": 13934592,
+        "mutants": 224034,
+        "accepted_mutants": 0,
+        "rejected": [],
+        "refused_cases": []
+      },
+      "after": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 62208,
+        "recovered": 62208,
+        "comparisons": 13934592,
+        "mutants": 224034,
+        "accepted_mutants": 0,
+        "rejected": [],
+        "refused_cases": []
+      },
+      "artifacts": {
+        "before_report_sha256": "38e027820d2acf9027e81d573011d6e0954f1dfd5209661ec7e846f3dc37f0cc",
+        "after_report_sha256": "38e027820d2acf9027e81d573011d6e0954f1dfd5209661ec7e846f3dc37f0cc",
+        "before_log_sha256": "bd54e6961cf4f9b8f1635028238e00219e4201d17c0b34de05e90cc029694d9d",
+        "after_log_sha256": "99b5fa7833537b9df62c29c0d1bbd19d7fdc3cb6b9edb6a506c80a834affccf7",
+        "after_log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.27s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":62208,\"recovered\":62208,\"comparisons\":13934592,\"mutants\":224034,\"accepted_mutants\":0,\"rejected\":[],\"refused_cases\":[]}\n\ntest control_flow::structure::audit_tests::generated_five_instruction_cfgs_preserve_complete_rust_reports ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 276 filtered out; finished in 14.08s\n\n"
+      }
+    }
+  },
+  "membership_comparison": {
+    "sample6": {
+      "requested": 12288,
+      "newly_recovered": 0,
+      "regressions": 0,
+      "remaining_refusals": 21,
+      "new_case_ids": []
+    },
+    "sample7": {
+      "requested": 12288,
+      "newly_recovered": 3,
+      "regressions": 0,
+      "remaining_refusals": 90,
+      "new_case_ids": [
+        [
+          0,
+          13031738
+        ],
+        [
+          1,
+          13031738
+        ],
+        [
+          2,
+          13031738
+        ]
+      ]
+    },
+    "legacy4": {
+      "requested": 3000,
+      "newly_recovered": 0,
+      "regressions": 0,
+      "remaining_refusals": 0,
+      "new_case_ids": []
+    },
+    "legacy5": {
+      "requested": 62208,
+      "newly_recovered": 0,
+      "regressions": 0,
+      "remaining_refusals": 0,
+      "new_case_ids": []
+    }
+  },
+  "findings": [
+    {
+      "claim_id": "STRUCT-LARGER-EVAL-001",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "models/structured_events.qnt"
+      ],
+      "drift_class": "evaluation-harness assumption",
+      "previous_machine_result": "The larger7-instruction audit failed on an accepted Continue-to-Break edit, although no differing source event was produced.",
+      "witness": {
+        "graph": 12126506,
+        "profiles": [
+          0,
+          1,
+          2
+        ],
+        "edit_kind": 5
+      },
+      "domain_wording": "Exiting an inner loop can reach a later copy of exactly the same infinite Step loop. Routing changes while observable source events remain the same. Syntactic alteration alone does not establish invalidity.",
+      "spec_delta": "none; event order, faults, attempted instruction, state and budgets remain required",
+      "code_delta": "Replay accepted syntactic edits, preserve strict rejection for known-invalid controls, and retain zero-acceptance gates on both original small corpora.",
+      "model_delta": "Add original routing and the equivalent edit as two positive pairs; structured_events.qnt and six negative controls remain unchanged.",
+      "fix_revision": "823c3a578a468fb2dc1c7114e58dbcd14a3763bb",
+      "checks": [
+        "aliased_transfer_edits_keep_events_while_a_real_exit_change_is_rejected",
+        "exported_trial_candidates_replay_through_real_validator_and_executor"
+      ],
+      "rust_replay": "6240 source/edited full-report comparisons at budgets0..64; a later footer exit mutation is rejected.",
+      "recommended_fix_target": "audit classification; keep production validator semantics",
+      "epistemic_status": "Finite Rust replay and symbolic-branch TLC model confirm the declared cases, not arbitrary recovery correctness."
+    },
+    {
+      "claim_id": "STRUCT-LARGER-SPLIT-001",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/architecture.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "drift_class": "coverage-gap",
+      "witness": {
+        "generator": "larger_program(7,0xc6d93a,profile)",
+        "profiles": [
+          0,
+          1,
+          2
+        ]
+      },
+      "previous_machine_result": "All3 profiles refused Irreducible because one redirect leaves another independent multiple-entry component.",
+      "current_machine_result": "All3 recover; exact full-state comparisons pass; actual ELF2/3-cycle functions recover and pass every-PC resume comparisons.",
+      "spec_delta": "none; original-PC events, original-step budgets, state, fault and checked fallback remain observable",
+      "code_delta": "Compose original-PC mappings across bounded entry-split stages; prioritize strict reductions in residual cyclic components; retain all source owners for synthetic branch routing.",
+      "model_delta": "Multi-stage regions use real Rust/source-AST checking and generated C; their shapes extend beyond the unchanged finite formal family.",
+      "fix_revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+      "checks": [
+        "independent_cycles_compose_source_pcs_and_share_the_global_copy_budget",
+        "independent_cycles_keep_source_history_full_state_and_exact_budgets",
+        "divergent_regions_keep_every_resume_budget_and_full_generated_c_state"
+      ],
+      "source_identity_witness": "For two cycles, redirects retain original source owners0→1 and3→4, although the second redirect may pass through synthetic false-branch routing.",
+      "recommended_fix_target": "bounded proposal search and original-PC composition; final acceptance remains against untouched source",
+      "epistemic_status": "machine-confirmed for declared samples, reports and finite budgets"
+    }
+  ],
+  "limits": {
+    "source_and_queued_intermediate_blocks": 128,
+    "source_and_queued_intermediate_steps": 1024,
+    "source_and_queued_intermediate_expression_nodes": 65536,
+    "registers": 4096,
+    "global_candidate_attempts": 16,
+    "global_original_steps_cloned_on_accepted_path": 8,
+    "candidate_ast_steps": 8192,
+    "default_final_source_block_copies": 2,
+    "policy": "Each stage composes source identities. Synthetic routing consumes neither original ticks nor original-clone budget. All stage attempts share one counter. Final total real steps, per-source-block copies and independent source/AST correspondence are rechecked. Nine independent cycles retain the checked fallback.",
+    "remaining": "21 six-instruction and90 seven-instruction sampled programs remain refused under these fixed limits; this is sampled coverage, not a completeness result."
+  },
+  "validation": {
+    "rust": {
+      "revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--all-targets",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "returncode": 0,
+      "seconds": 508.570128708001,
+      "log_sha256": "0933dc781c0b833e46da85c8017688b7a09bdcc7c72d1e6a742f0c13b2c2b561",
+      "targets": 26,
+      "passed": 1617,
+      "failed": 0,
+      "ignored": 67,
+      "target_summaries": [
+        "test result: ok. 268 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 1.71s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 179 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 28.96s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.87s",
+        "test result: ok. 147 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 67.54s",
+        "test result: ok. 112 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
+        "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.14s",
+        "test result: ok. 36 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 150.81s",
+        "test result: ok. 133 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.61s",
+        "test result: ok. 58 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 216.32s",
+        "test result: ok. 261 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 8.56s",
+        "test result: ok. 12 passed; 0 failed; 44 ignored; 0 measured; 0 filtered out; finished in 0.36s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "clippy": "all targets; -D warnings; passed",
+    "rustfmt": "passed",
+    "generated_c": {
+      "cases": 19656,
+      "comparisons": 117936,
+      "resume": "Every original instruction in13 ELF functions, including independent2/3-cycle functions",
+      "inputs": 8,
+      "budgets_inclusive": [
+        0,
+        20
+      ],
+      "backends": [
+        "core",
+        "readable",
+        "locals"
+      ],
+      "optimizations": [
+        "O0",
+        "O2"
+      ],
+      "sanitizer": "UBSan",
+      "contract": "all80 registers, full backing RAM bytes, PC/status/fault and budget state",
+      "cohort_change": "All previous11 functions,8 inputs and budgets0..10 retained. Add2 independent-cycle functions and budgets11..20 as a supplemental generated-C cohort; primary sampled before/after inputs unchanged."
+    },
+    "effects_c": {
+      "positive_two_three_cycle_comparisons": 104,
+      "bounded_nine_cycle_fallback_comparisons": 124,
+      "optimizations": [
+        "O0",
+        "O2"
+      ],
+      "contract": "Full checked effect state and output at each selected stop budget."
+    },
+    "formal": {
+      "schema": "nirvana-structured-events-trial-v1",
+      "milestone": "M2 structure correspondence",
+      "status": "passed",
+      "toolchain": {
+        "quint": {
+          "url": "https://github.com/quint-co/quint/releases/download/v0.34.0/quint-linux-amd64",
+          "sha256": "5091d7d1ea944e794d9106c7e62e3b844d70f77ddbbcbb4feb5ee5a6025b5ac7",
+          "bytes": 134278696
+        },
+        "java": {
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openjdk-21/openjdk-21-jre-headless_21.0.13.1+2-1~24.04.1_amd64.deb",
+          "sha256": "18d6aabaf7232290322d53afff075e412d93832253dd9fc2c769d5579362e9ba",
+          "bytes": 46674706
+        },
+        "apalache": {
+          "url": "https://github.com/apalache-mc/apalache/releases/download/v0.62.4/apalache-0.62.4.tgz",
+          "sha256": "b781b53bba32fac14ac2e02b0332e1dc2edc64cb7b850c0608d8142cc7aa2ef4",
+          "bytes": 192038424
+        },
+        "versions": {
+          "quint": "0.34.0",
+          "apalache": "0.62.4",
+          "java": "Picked up JAVA_TOOL_OPTIONS: -Xmx512m -Xss8m\nopenjdk version \"21.0.13.1\" 2026-11-17\nOpenJDK Runtime Environment (build 21.0.13.1+2-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.1+2-1-24.04.1-Ubuntu, mixed mode, sharing)"
+        }
+      },
+      "workspace_revision": "823c3a578a468fb2dc1c7114e58dbcd14a3763bb",
+      "workspace_dirty": false,
+      "source_sha256": {
+        "models/structured_events.qnt": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+        "examples/structure_model.rs": "bca9bbb3d503fd34598be7d757b8b3a4a331f1df24ff82c354ef4552efd2a5ae",
+        "tests/support/formal_structure.rs": "e9ec21c62dd9244212716b0fb29e09706e377d500bf08b71dc83f01ad182619c",
+        "src/control_flow/structure/model_trial_tests.rs": "d0f3d93124b9b5aa56fbc83e0ada3a6b6112aa21828df2e95f7de9e6b4a8af88",
+        "tools/quint_trial.py": "610d2903d3a6a91af44f7fdaae5c7c93c5a312ec5add64cd3a925bc77faa4167",
+        "src/control_flow/structure.rs": "d39bee637d2e358bf9d689c6cf2a793605c9b34d426492febe6f10992a88ec3c",
+        "src/control_flow/structure_verify.rs": "f614de7c3a5603bcab5d0e73a3243be793c05b4fdaf9daf2f64dd0e7190c1268",
+        "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+      },
+      "exporter_sha256": "791da98c432c3ab9af2ef160e1d7fb5e4290d61c18ea3a0ec507cbc01c46a54d",
+      "fixtures_sha256": "1441272f47fdccab440bfa15e850437f6a9b72216d43bdbd1442bb058f658c36",
+      "bounds": {
+        "positive_pairs": 8,
+        "budgets": [
+          0,
+          6
+        ],
+        "max_loop_depth": 2,
+        "stack_guard": 8
+      },
+      "rust_replay": {
+        "normal_pair_reports": 448,
+        "rejected_ast_mutations": 5,
+        "executor_mutation": "model-only early-budget fault injection; real executor passes"
+      },
+      "limits": [
+        "Finite exported family, not an unbounded proof of the recovery algorithm.",
+        "Event tokens assume shared deterministic primitive semantics; only the designated condition Load may fault.",
+        "Symbolic branch outcomes overapproximate concrete data; Rust replay finds concrete witnesses per AST mutation, not automated TLC-trace concretization.",
+        "MemorySSA, module CALL, native ISA lifting and arithmetic are separate contracts."
+      ],
+      "report_sha256": "e48e7a07d1686746ff903029918b93a4dffb74702a1961bf01c7d027bb3c720c",
+      "checks": [
+        {
+          "name": "build-exporter",
+          "returncode": 0,
+          "seconds": 8.243723416999273,
+          "log_sha256": "459be2c0c679d31a7865c1e3bf9b10b2622c4047bb0f579290ca6c6e483ba61b"
+        },
+        {
+          "name": "rust-replay",
+          "returncode": 0,
+          "seconds": 8.150864347997413,
+          "log_sha256": "1bfbd7b5d491e84b513f06b0f993b4750b1cab791f6a0e4b0040860e862682d6"
+        },
+        {
+          "name": "positive-tlc",
+          "returncode": 0,
+          "seconds": 51.91732003099605,
+          "log_sha256": "9d189f89c3e712b6851955d029abdc1d504ef5815c31b20498e13691e310c49a",
+          "generated_states": 1047,
+          "distinct_states": 905
+        },
+        {
+          "name": "terminal-observations",
+          "returncode": 0,
+          "seconds": 1.851664150999568,
+          "log_sha256": "0ab4294d51bc1ccccbaaf3783a1329fb1f6300a788dc839aaafeaef7301b6a2d",
+          "observations": {
+            "returned": 362,
+            "faulted": 73,
+            "suspended": 565
+          }
+        },
+        {
+          "name": "swapped-arms",
+          "returncode": 1,
+          "seconds": 5.149671370003489,
+          "log_sha256": "a29effe54a6a3719bdff6308dc8494601c1be16ba117187524f36937b4b93905",
+          "case": 3,
+          "rust_verdict": "rejected",
+          "reason": "step-pc",
+          "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 3,\n  phase |-> 0,\n  cursor |-> 6,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 3,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 3,\n  phase |-> 0,\n  cursor |-> 4,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 0 ]\n\nState 4: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 3,\n  phase |-> 0,\n  cursor |-> 4,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"step-pc\",\n  outcome |-> 0 ]\n\n28 states generated, 27 distinct states found, 11 states left on queue.\nThe depth of the complete state graph search is 4."
+        },
+        {
+          "name": "missing-step",
+          "returncode": 1,
+          "seconds": 5.05120762399747,
+          "log_sha256": "c06d7015729ee371db091b41b466c563b184965abcd4571d39abaedf9625b3c2",
+          "case": 4,
+          "rust_verdict": "rejected",
+          "reason": "step-pc",
+          "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 4,\n  phase |-> 1,\n  cursor |-> 4,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 0,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 0 ]\n\nState 4: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 1,\n          phase |-> 0,\n          cursor |-> 0,\n          stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>> ] },\n  reason |-> \"\",\n  outcome |-> 0 ]\n\nState 5: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 4,\n  phase |-> 0,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 1,\n          phase |-> 0,\n          cursor |-> 0,\n          stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>> ] },\n  reason |-> \"step-pc\",\n  outcome |-> 0 ]\n\n40 states generated, 39 distinct states found, 11 states left on queue.\nThe depth of the complete state graph search is 5."
+        },
+        {
+          "name": "dropped-evaluation",
+          "returncode": 1,
+          "seconds": 5.138593140000012,
+          "log_sha256": "0b39fb447195b66e12f0597366866757fd2a9217741ac65bf5cf55d327c75490",
+          "case": 5,
+          "rust_verdict": "rejected",
+          "reason": "condition-evaluation",
+          "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 5,\n  phase |-> 0,\n  cursor |-> 3,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 5,\n  phase |-> 1,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 5,\n  phase |-> 1,\n  cursor |-> 2,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"condition-evaluation\",\n  outcome |-> -1 ]\n\n16 states generated, 15 distinct states found, 5 states left on queue.\nThe depth of the complete state graph search is 3."
+        },
+        {
+          "name": "wrong-outer-depth",
+          "returncode": 1,
+          "seconds": 5.073078451001493,
+          "log_sha256": "ed0e586e872fcc219205a32c30277556e487b8c53e26ce3084c8fb3bfe80bdf0",
+          "case": 6,
+          "rust_verdict": "rejected",
+          "reason": "step-pc",
+          "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 8,\n  stack |-> <<>>,\n  remaining |-> 2,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 7,\n  stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>>,\n  remaining |-> 2,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {[pc |-> 0, phase |-> 0, cursor |-> 8, stack |-> <<>>]},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 1,\n  cursor |-> 6,\n  stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 4: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 1,\n          cursor |-> 6,\n          stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>> ] },\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 5: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 1,\n          cursor |-> 6,\n          stack |-> <<[first |-> 7, next |-> 0, looped |-> TRUE]>> ] },\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 6: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 1,\n  which |-> 6,\n  phase |-> 1,\n  cursor |-> 4,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 7: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 1,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE],\n         [first |-> 0, next |-> 0, looped |-> FALSE] >>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 1 ]\n\nState 8: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 0,\n          cursor |-> 1,\n          stack |->\n              << [first |-> 7, next |-> 0, looped |-> TRUE],\n                 [first |-> 5, next |-> 0, looped |-> TRUE],\n                 [first |-> 0, next |-> 0, looped |-> FALSE] >> ] },\n  reason |-> \"\",\n  outcome |-> 1 ]\n\nState 9: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 6,\n  phase |-> 0,\n  cursor |-> 5,\n  stack |->\n      << [first |-> 7, next |-> 0, looped |-> TRUE],\n         [first |-> 5, next |-> 0, looped |-> TRUE] >>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0, 1>>,\n  instruction |-> 1,\n  seen |->\n      { [ pc |-> 0,\n          phase |-> 0,\n          cursor |-> 1,\n          stack |->\n              << [first |-> 7, next |-> 0, looped |-> TRUE],\n                 [first |-> 5, next |-> 0, looped |-> TRUE],\n                 [first |-> 0, next |-> 0, looped |-> FALSE] >> ] },\n  reason |-> \"step-pc\",\n  outcome |-> 1 ]\n\n63 states generated, 60 distinct states found, 8 states left on queue.\nThe depth of the complete state graph search is 9."
+        },
+        {
+          "name": "reordered-assignments",
+          "returncode": 1,
+          "seconds": 6.357593975997588,
+          "log_sha256": "daf5e7d6fae9333b0a7b90bf4cbd59eda02820a3db864d03ecbbfcf397bf11b0",
+          "case": 7,
+          "rust_verdict": "rejected",
+          "reason": "ordered-body",
+          "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 7,\n  phase |-> 0,\n  cursor |-> 6,\n  stack |-> <<>>,\n  remaining |-> 2,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 7,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 2,\n  which |-> 7,\n  phase |-> 0,\n  cursor |-> 3,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> 1 ]\n\nState 4: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 2,\n  which |-> 7,\n  phase |-> 0,\n  cursor |-> 3,\n  stack |-> <<[first |-> 0, next |-> 2, looped |-> FALSE]>>,\n  remaining |-> 1,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"ordered-body\",\n  outcome |-> 1 ]\n\n31 states generated, 30 distinct states found, 11 states left on queue.\nThe depth of the complete state graph search is 4."
+        },
+        {
+          "name": "early-budget-executor",
+          "returncode": 1,
+          "seconds": 6.173122987995157,
+          "log_sha256": "604585976fe2c4f1515f09a2477614cdb5a69ec65bc28874348b9af8745cd4ac",
+          "case": 8,
+          "rust_verdict": "accepted",
+          "reason": "budget-before-control",
+          "counterexample": "Error: Invariant q_inv is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\ns = [ pc |-> 0,\n  which |-> 8,\n  phase |-> 0,\n  cursor |-> 6,\n  stack |-> <<>>,\n  remaining |-> 1,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<>>,\n  instruction |-> -1,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 2: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 8,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 0,\n  bad |-> FALSE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"\",\n  outcome |-> -1 ]\n\nState 3: <step line 1488, col 3 to line 1500, col 52 of module structured_events>\ns = [ pc |-> 0,\n  which |-> 8,\n  phase |-> 1,\n  cursor |-> 5,\n  stack |-> <<>>,\n  remaining |-> 0,\n  status |-> 4,\n  bad |-> TRUE,\n  trace |-> <<0>>,\n  instruction |-> 0,\n  seen |-> {},\n  reason |-> \"budget-before-control\",\n  outcome |-> -1 ]\n\n16 states generated, 15 distinct states found, 5 states left on queue.\nThe depth of the complete state graph search is 3."
+        }
+      ]
+    },
+    "formal_current_export_identity": {
+      "candidate_revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+      "trial_revision": "823c3a578a468fb2dc1c7114e58dbcd14a3763bb",
+      "fixtures_sha256": "1441272f47fdccab440bfa15e850437f6a9b72216d43bdbd1442bb058f658c36",
+      "model_sha256": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+      "bytes_identical": true,
+      "meaning": "The current Rust exporter yields the exact same fourteen model pairs as the completed eight-positive-pair TLC run. New multi-stage regions are checked with Rust and generated C, outside that finite model family."
+    },
+    "m0": {
+      "comparison": {
+        "schema": "nirvana-structure-comparison-v2",
+        "metric": "nirvana-control-topology-v1",
+        "before": {
+          "evaluation_revision": "85d0e6bf32b7900e1aeea549383f514f24639c94",
+          "evaluation_dirty": false,
+          "binary_build": {
+            "model": "nirvana-rust-target-build-v1",
+            "package_version": "0.1.0",
+            "source_revision": "85d0e6bf32b7900e1aeea549383f514f24639c94",
+            "source_dirty": false
+          },
+          "decompiler_sha256": "7a375f58dcb887ad7df090a6fdaf07d593666a2d2271fd5f877570d95e488d15",
+          "report_sha256": "0dbcb0a2c0a66497f26359c3f5978eb7aa147586e06380cf71240fdba576bbf7"
+        },
+        "after": {
+          "evaluation_revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+          "evaluation_dirty": false,
+          "binary_build": {
+            "model": "nirvana-rust-target-build-v1",
+            "package_version": "0.1.0",
+            "source_revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+            "source_dirty": false
+          },
+          "decompiler_sha256": "6777a48681ec7b23dd28fe39e405832ca120f3825ecdd96b1ca469ef3a81d13b",
+          "report_sha256": "ec0218c49b58016245103a813c287db1afc408175acc0980b2691b34ffa02711"
+        },
+        "requested": 24,
+        "structure": {
+          "equal": 24
+        },
+        "structure_regressions": 0,
+        "candidate_semantics": {
+          "passed": 24
+        },
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "state_value_counterexamples": 0,
+        "candidate_state_values": {
+          "equivalent_under_model": 17,
+          "unsupported": 7
+        },
+        "candidate_architecture": {
+          "passed": 24
+        },
+        "candidate_execution": {
+          "low_middle": {
+            "passed": 24
+          },
+          "middle_predicates": {
+            "not_applied": 23,
+            "passed": 1
+          },
+          "middle_memory": {
+            "not_applied": 24
+          },
+          "middle_saved": {
+            "not_applied": 24
+          },
+          "selected_semantic": {
+            "not_applied": 24
+          }
+        },
+        "candidate_analysis": {
+          "memory_ssa_graph": {
+            "passed": 24
+          },
+          "memory_ssa_queries": {
+            "passed": 24
+          },
+          "memory_addresses": {
+            "passed": 24
+          },
+          "unsigned_bounds": {
+            "passed": 24
+          },
+          "storage_widths": {
+            "passed": 24
+          },
+          "selected_storage": {
+            "passed": 24
+          },
+          "selected_signed_storage": {
+            "passed": 24
+          }
+        },
+        "candidate_semantic_state_pairs": {
+          "not_applied": 24
+        },
+        "semantic_regressions": 0,
+        "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+      },
+      "identity": {
+        "schema": "nirvana-larger-cfg-m0-comparison-v1",
+        "kind": "initial",
+        "profiles": 24,
+        "identical": {
+          "c": 24,
+          "ir": 72,
+          "stage_metadata": 24
+        },
+        "total": {
+          "c": 24,
+          "ir": 72,
+          "stage_metadata": 24
+        },
+        "counts": {
+          "native": 408,
+          "generated_O0": 1224,
+          "generated_O2": 1224,
+          "stage_comparisons": 25500
+        },
+        "summary": {
+          "requested": 24,
+          "status": {
+            "measured": 24
+          },
+          "failures_by_stage": {},
+          "distances": {
+            "exact": 24
+          },
+          "cohorts": {
+            "development": 16,
+            "holdout": 8
+          },
+          "architecture": {
+            "passed": 24
+          },
+          "architecture_execution": {
+            "low_middle": {
+              "passed": 24
+            },
+            "middle_predicates": {
+              "not_applied": 23,
+              "passed": 1
+            },
+            "middle_memory": {
+              "not_applied": 24
+            },
+            "middle_saved": {
+              "not_applied": 24
+            },
+            "selected_semantic": {
+              "not_applied": 24
+            }
+          },
+          "architecture_analysis": {
+            "memory_ssa_graph": {
+              "passed": 24
+            },
+            "memory_ssa_queries": {
+              "passed": 24
+            },
+            "memory_addresses": {
+              "passed": 24
+            },
+            "unsigned_bounds": {
+              "passed": 24
+            },
+            "storage_widths": {
+              "passed": 24
+            },
+            "selected_storage": {
+              "passed": 24
+            },
+            "selected_signed_storage": {
+              "passed": 24
+            }
+          },
+          "c_footprint": {
+            "measured": 24
+          },
+          "state_memory_sites": {
+            "measured": 16,
+            "partial": 8
+          },
+          "state_values": {
+            "equivalent_under_model": 17,
+            "unsupported": 7
+          }
+        },
+        "reports": {
+          "before": {
+            "file": "target/runs/run-a37yw4tm/out/entry-cycles-initial-after/report.json",
+            "sha256": "0dbcb0a2c0a66497f26359c3f5978eb7aa147586e06380cf71240fdba576bbf7"
+          },
+          "after": {
+            "file": "target/runs/run-a37yw4tm/out/larger-cfg-initial-after/report.json",
+            "sha256": "ec0218c49b58016245103a813c287db1afc408175acc0980b2691b34ffa02711"
+          }
+        }
+      },
+      "comparison_file": "target/runs/run-a37yw4tm/out/larger-cfg-initial-comparison.json",
+      "comparison_sha256": "6fe56f434ff3571e11071db77b655f8c31d0259fe494c6c7c982405592fd5a49",
+      "tools": {
+        "decompiler": {
+          "version": "nirvana 0.1.0 git=97f0f15752a81146d3d82642119bf54cb5343f29 source_dirty=false",
+          "sha256": "6777a48681ec7b23dd28fe39e405832ca120f3825ecdd96b1ca469ef3a81d13b"
+        },
+        "candidate_revision": "97f0f15752a81146d3d82642119bf54cb5343f29",
+        "larger_cfg_initial": {
+          "version": "nirvana 0.1.0 git=97f0f15752a81146d3d82642119bf54cb5343f29 source_dirty=false",
+          "sha256": "5c1912d9a7841bef4699f26c4edfdb6017298125c68ed87dcccfdd9416a42ab1"
+        }
+      },
+      "reference_tools": {
+        "decompiler": {
+          "version": "nirvana 0.1.0 git=85d0e6bf32b7900e1aeea549383f514f24639c94 source_dirty=false",
+          "sha256": "7a375f58dcb887ad7df090a6fdaf07d593666a2d2271fd5f877570d95e488d15"
+        },
+        "candidate_revision": "85d0e6bf32b7900e1aeea549383f514f24639c94",
+        "entry_cycles_initial": {
+          "version": "nirvana 0.1.0 git=85d0e6bf32b7900e1aeea549383f514f24639c94 source_dirty=false",
+          "sha256": "3dcd0e814127e35c6b10c10fd27ad063b49ee478aea064deceedfdf4d0d22eef"
+        }
+      },
+      "reference_reuse": {
+        "reference_report_runtime": "85d0e6bf32b7900e1aeea549383f514f24639c94",
+        "evaluation_baseline_revision": "823c3a578a468fb2dc1c7114e58dbcd14a3763bb",
+        "changed_files": [
+          "docs/x86-64-roadmap.md",
+          "models/README.md",
+          "src/control_flow/structure/audit_tests.rs",
+          "src/control_flow/structure/model_trial_tests.rs",
+          "tests/support/formal_structure.rs",
+          "tools/corpora/structure-entry-cycles-v1.m2.json",
+          "tools/quint_trial.py"
+        ],
+        "changed_src_modules": [
+          "src/control_flow/structure/audit_tests.rs",
+          "src/control_flow/structure/model_trial_tests.rs"
+        ],
+        "production_runtime_changed": false,
+        "reason": "Both changed src modules are exclusively cfg(test); other changes are tests, the formal exporter/trial, docs and stored checkpoints. The main/probe runtime sources and Cargo/build inputs are unchanged."
+      },
+      "holdout": "Aggregate results and artifact identities only; holdout source/output contents were not used for tuning."
+    }
+  },
+  "logs": {
+    "provenance": {
+      "sha256": "2e0dfda158bc1784c3db32a5cec138b462ff39209e2bbf0ac2a605441d916787",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 8.88s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\ntest control_flow::structure::audit_tests::independent_cycles_compose_source_pcs_and_share_the_global_copy_budget ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 276 filtered out; finished in 0.04s\n\n"
+    },
+    "splitting": {
+      "sha256": "f9cd0fb0ce2b6787cc5a944141944038bf2949b777acecc3226f69c52eaff0f0",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 8.66s\n     Running tests/control_flow.rs (target/cargo-cache/debug/deps/control_flow-3515794dc92d1160)\n\nrunning 9 tests\ntest structure_splitting::long_entry_blocks_and_oversized_whole_input_decline_atomically ... ok\ntest structure_splitting::irreducible_cycle_inside_an_outer_loop_preserves_the_outer_loop ... ok\ntest structure_splitting::restored_copies_are_rechecked_against_the_source_not_only_the_proposal ... ok\ntest structure_splitting::copied_multistep_block_keeps_internal_fallthroughs_and_partial_fault_state ... ok\ntest structure_splitting::copied_loads_stores_and_faulting_conditions_keep_order_and_all_prior_writes ... ok\ntest structure_splitting::splitting_restores_original_pcs_full_state_traces_and_reentry_correspondence ... ok\ntest structure_splitting::original_copy_and_step_limits_remain_acceptance_conditions ... ok\ntest structure_splitting::independent_cycles_keep_source_history_full_state_and_exact_budgets ... ok\ntest structure_splitting::too_many_independent_cycles_retain_the_checked_fallback ... ok\n\ntest result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.26s\n\n"
+    },
+    "effects": {
+      "sha256": "e481f06585277fabaaaed6f1e329bbfb3d87a33378462da81dad3b189df1b13d",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.90s\n     Running tests/codegen.rs (target/cargo-cache/debug/deps/codegen-49d3cfe043d6a3fc)\n\nrunning 10 tests\ntest effects_readable::core_only_effect_program_omits_unreachable_labels_and_accepts_empty_output ... ok\ntest effects_readable::initial_string_views_are_bounded_escaped_and_leave_mutable_ram_authoritative ... ok\ntest effects_readable::split_nested_loop_exits_use_the_structured_checked_renderer ... ok\ntest effects_readable::returning_and_divergent_arms_use_the_structured_checked_renderer ... ok\ntest effects_readable::nested_outer_transfers_preserve_instruction_budget_and_registers ... ok\ntest effects_readable::unavailable_structure_falls_back_atomically_to_the_checked_renderer ... ok\ntest effects_readable::independent_cycles_use_the_structured_checked_renderer ... ok\ntest effects_readable::ordered_stores_and_degenerate_branches_retain_the_first_fault ... ok\n21896 branch/loop C observations matched full state and stops\ntest effects_readable::real_branches_loops_keep_call_clobbers_lazy_reads_and_all_steps ... ok\n52500 effect C observations: 31556 completed return/fault observations; 20944 incomplete/invalid/unmodeled stop states. Full registers/RAM/output/status/consumption/pc/steps matched\ntest effects_readable::structured_effects_match_full_state_output_faults_and_every_stop_boundary ... ok\n\ntest result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 138 filtered out; finished in 4.69s\n\n"
+    },
+    "module": {
+      "sha256": "7b1f45013a9b92d28129af6d6448a826377a0198d93c1f0397bdcee31a1f0294",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.56s\n     Running tests/module.rs (target/cargo-cache/debug/deps/module-b37bcbd9e140e2a8)\n\nrunning 1 test\n19656 resume/input/budget cases, 117936 complete C-state comparisons\ntest module_outline::divergent_regions_keep_every_resume_budget_and_full_generated_c_state ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 14.51s\n\n"
+    },
+    "clippy": {
+      "sha256": "03b25bd95428cc67be53b7cc5b009d7acb65f2601756bfdaa18d7eac1f1fa905",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 8.86s\n"
+    },
+    "format": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text": ""
+    }
+  },
+  "source_sha256": {
+    "src/control_flow/structure.rs": "a76d674bd36a89ec46451e6ae4b6577a98b41ab4fe27885ec672a677fcd460e3",
+    "src/control_flow/structure/split.rs": "b2a32053f573ff668fdadb4bea317606c955fe2bb02af24d8b6025c0c08ba0d5",
+    "src/control_flow/structure_verify.rs": "f614de7c3a5603bcab5d0e73a3243be793c05b4fdaf9daf2f64dd0e7190c1268",
+    "src/control_flow/structure/audit_tests.rs": "5de3c0aecfc612f6c46cc60bd43084538f8eb97d545b91447882e0dd3001e5ef",
+    "tests/control_flow/structure_splitting.rs": "b2f70af56e0526acb3b2b8f39e99254d1fe04074a0a6056327a9ad5ace7cecca",
+    "tests/codegen/effects_readable.rs": "fca277c90dc4a235d1e9f1411ec1988b2e68d9589daad0f3683b463c71f0f03c",
+    "tests/module/module_outline.rs": "175b908cd799f87afcae05510b3c0e7d2451e7631600efdbae4618a59de7115f"
+  },
+  "local_evidence": {
+    "candidate_report": "target/runs/run-a37yw4tm/out/larger-cfg-initial-after/report.json",
+    "reference_archive": {
+      "archive": "target/runs/run-a37yw4tm/out/cold/entry-cycles-initial-after.tar.gz",
+      "sha256": "6a6e7f08a1ce2e57be428fb9ebc73701dbd52c25224fa62340aad0cefb5159ee",
+      "uncompressed_bytes": 29599871,
+      "compressed_bytes": 2229017
+    },
+    "archive_verification": "Every regular member was verified by SHA-256 and byte length before removing expanded historical evidence."
+  },
+  "reproduce": [
+    "python3 tools/dev.py cargo test --lib control_flow::structure::audit_tests -- --include-ignored --nocapture",
+    "python3 tools/dev.py cargo test --test module divergent_regions_keep_every_resume_budget -- --nocapture",
+    "python3 tools/dev.py run -- python3 tools/quint_trial.py --out {out} --report target/structured-events-trial.json",
+    "python3 tools/dev.py cargo test --all-targets --locked --no-fail-fast"
+  ],
+  "next_decision": "Keep the full small-corpus gates and fixed larger-sample membership. Classify the111 remaining refusals by shared-return placement, copy pressure and candidate-budget exhaustion before choosing the next bounded recovery change."
+}

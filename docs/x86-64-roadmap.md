@@ -119,7 +119,9 @@ M0の段階形式v4は、この世代グラフと候補被覆の検査を各行�
 
 M2の次の比較は、[入れ子ループの固定baseline](../tools/corpora/structure-nested-v1.m2-baseline.json)を使う。GCC/Clang O2の構造距離は15/30で、短い共有出口の複製上限から関数全体がgoto形式へ落ちている。65入力のnative・IR・O0/O2生成C比較を固定した。[局所複製上限の再配分](../tools/corpora/shared-tail-budget-v1.m2.json)ではgotoが減った一方、距離が18/33、静的writeが各1箇所増えたため見送った。[出口配置の比較](../tools/corpora/nested-follow-v1.m2.json)では、GCCの構造距離15とwrite数を保ち、goto 9→3・式node 279→272となった。元IR/ASTの対応検査も通る。初回24構成のC本文は同じで、元ソースへの構造距離は引き続き15/30として扱う。Clangの未観測2遷移は未知として保持する。
 
-[実Rust監査からの構造回復修正](../tools/corpora/structure-divergent-v1.m2.json)で固定3,000構成を、[入口領域](../tools/corpora/structure-entry-regions-v1.m2.json)と[循環領域の修正](../tools/corpora/structure-entry-cycles-v1.m2.json)で固定62,208構成を全件復元した。内部の戻り辺を保つ候補と循環成分全体の複製を、従来のコピー・命令数・探索上限と対応検査で受理する。両集合の全件復元を回帰ゲートに固定し、初回24構成の意味・構造・段階間検査も維持した。次は、より大きいCFGと複数の独立した循環成分を、入力・予算を固定して評価する。
+[実Rust監査からの構造回復修正](../tools/corpora/structure-divergent-v1.m2.json)で固定3,000構成を、[入口領域](../tools/corpora/structure-entry-regions-v1.m2.json)と[循環領域の修正](../tools/corpora/structure-entry-cycles-v1.m2.json)で固定62,208構成を全件復元した。内部の戻り辺を保つ候補と循環成分全体の複製を、従来のコピー・命令数・探索上限と対応検査で受理する。両集合の全件復元を回帰ゲートに固定し、初回24構成の意味・構造・段階間検査も維持した。
+
+[大きいCFGのcheckpoint](../tools/corpora/structure-larger-cfg-v1.m2.json)では、6・7命令の各12,288構成を固定した。元PC対応を合成する複数段の入口複製で、7命令の復元が12,195→12,198構成となり、独立した2・3循環の実ELFも途中再開を含む生成C比較を通した。既存の成功例と初回24構成の意味・構造を維持し、残る111構成の拒否を分母に保持した。次は共有returnの配置・コピー上限・候補探索の不足を分類してから、次の変更を選ぶ。
 
 ## M2で早期に扱う制御フロー変換
 
