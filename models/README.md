@@ -24,18 +24,21 @@ Linux x86-64と`dpkg-deb`があれば、SHA-256を固定したQuint・Java・Apa
 
 ## 実Rust実装の監査
 
-[小CFG監査](../src/control_flow/structure/audit_tests.rs)は1,000種類の4命令CFGに3種類の効果を与え、実際の復元器・検査器・公開実行APIを検査する。正常復元した2,841構成の636,384件で完全なRunReportが一致し、改変AST9,799件を検査器が拒否した。復元を拒否した159構成も[監査checkpoint](../tools/corpora/rust-structure-audit-v1.m2.json)に残している。
+[小CFG監査](../src/control_flow/structure/audit_tests.rs)は、元IRと復元したStructured ASTを公開実行APIで動かし、完全な`RunReport`を比較する。観測には全レジスタ・RAM・返り値・fault・実行trace・命令予算切れを含む。同じ入力とコピー上限で、対応漏れの修正前後を比較した。
+
+| 固定集合 | 修正前の復元成功 | 修正後の復元成功 | 修正後の全状態比較 |
+| --- | ---: | ---: | ---: |
+| 4命令CFG × 3効果 | 2,841 / 3,000 | 3,000 / 3,000 | 672,000 |
+| 5命令CFG × 3効果 | 61,962 / 62,208 | 61,995 / 62,208 | 13,886,880 |
+
+5命令集合は最初の2修正後に固定し、共有末尾の修正前後を比較した。
+
+4命令集合では、返る枝と無限ループの混在、および異なるループ出口の復元を修正した。5命令集合では、共有するループ末尾を合流点として選び、1コピー・全5ステップで復元する例を追加した。生成Cも全命令位置からの再開と予算切れを含む5,544件で全状態が一致した。変更前の[監査checkpoint](../tools/corpora/rust-structure-audit-v1.m2.json)と、各修正・拒否件数・固定評価の結果を含む[修正checkpoint](../tools/corpora/structure-divergent-v1.m2.json)を保存している。
 
 ```sh
-python3 tools/dev.py cargo test --lib control_flow::structure::audit_tests -- --include-ignored --skip recovery_should_accept_a_return_or_divergent_arm --nocapture
+python3 tools/dev.py cargo test --lib control_flow::structure::audit_tests -- --include-ignored --nocapture
 ```
 
-終了する枝と無限ループの枝が混在すると、妥当なStructured ASTが存在しても復元器が`MissingJoin`や`MissingLoopFollow`を返す対応漏れを確認した。構造検査を通る手書きASTと72件の全状態比較が、その構造を表現できることの証跡になる。最小例は`if (x) return y; for (;;) {}`に相当する3命令IRである。
+通常のテスト実行には、返る枝と無限ループ、異なるループ出口、共有末尾の回帰テストが入る。有限列挙の2件は上のコマンドで明示的に実行する。5命令集合で残る213件の拒否は、ノード分割後の構造化や探索上限の調査対象として分母に保持する。
 
-次の再現テストは現状`MissingJoin`で失敗する。既知の対応漏れとして通常実行から外し、修正時の合格条件を保存している。
-
-```sh
-python3 tools/dev.py cargo test --lib control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm -- --ignored --exact --nocapture
-```
-
-この監査は実Rust間の有限差分検査で、共通のMachineが実装する原始演算の意味は別のoracleで確認する。
+この監査は有限の実Rust差分検査である。共通の`Machine`が実装する原始演算には生成Cとnativeを別のoracleとして使う。先のQuint/TLCの対象は同じ6組を維持し、今回の追加形状にはRustと生成Cでの検査範囲を記録している。

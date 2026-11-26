@@ -1,0 +1,646 @@
+{
+  "schema": "nirvana-rust-structure-recovery-checkpoint-v1",
+  "milestone": "M2 compiler-aware CFG recovery; M0 same-input semantic and structure gate",
+  "status": "three finite-audit recovery gaps fixed; original 3000 programs recovered; extended cohort retains 213 refusals",
+  "baseline_revision": "8a334370e5488bb17cfe97d42925f298d152195f",
+  "candidate_revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+  "prior_checkpoint": "tools/corpora/rust-structure-audit-v1.m2.json",
+  "corpora": {
+    "rust-cfg4-effects3-v1": {
+      "id": "rust-cfg4-effects3-v1",
+      "cfg_topologies": 1000,
+      "effect_profiles": 3,
+      "source_instructions": 4,
+      "entry": 0,
+      "last_instruction": "Return(r2)",
+      "first_three_controls": "For each independent digit0..9: Next; Jump(0..3); Branch(condition,0..3); Return(r2)",
+      "effects": [
+        "none",
+        "register dependency chain and byte Store",
+        "partial Store prefix, faulting Load and lazy Select"
+      ],
+      "register_count": 3,
+      "counter_hex": [
+        "0x0",
+        "0x1",
+        "0x2",
+        "0xffffffffffffffff"
+      ],
+      "pointer_hex": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0xffffffffffffffff"
+      ],
+      "accumulator_hex": "0x55",
+      "memory_base": 0,
+      "memories": [
+        [],
+        [
+          1,
+          2,
+          3,
+          4
+        ]
+      ],
+      "budgets": [
+        0,
+        6
+      ],
+      "default_copy_limit": 2
+    },
+    "rust-cfg5-effects3-v1": {
+      "cfg_topologies": 20736,
+      "effect_profiles": 3,
+      "source_instructions": 5,
+      "entry": 0,
+      "last_instruction": "Return(r2)",
+      "first_four_controls": "For each independent digit0..11: Next; Jump(0..4); Branch(condition,0..4); Return(r2)",
+      "effects": "Reuse the first three instruction effect lists of the unchanged four-instruction generator; PCs3 and4 have no effects",
+      "concrete_inputs_and_observation": "Same registers, memories, budgets0..6 and exact RunReport as rust-cfg4-effects3-v1",
+      "default_copy_limit": 2
+    }
+  },
+  "observation": "Exact RunReport: status/return/fault, every IR register, RAM/base/layout, trace and attempted instruction. Real Program::run_with_memory versus StructuredFunction::run_with_memory; shared primitive Machine semantics.",
+  "original_generator_identity": {
+    "original_four_instruction_generator_unchanged": true,
+    "source_prefix_sha256": "f9353bac1aed48a7a6766dce4fc67479175769f5e56a339619250df67e495f41"
+  },
+  "rounds": [
+    {
+      "name": "baseline",
+      "revision": "8a334370e5488bb17cfe97d42925f298d152195f",
+      "result": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 3000,
+        "recovered": 2841,
+        "comparisons": 636384,
+        "mutants": 9799,
+        "accepted_mutants": 0,
+        "rejected": [
+          {
+            "error": "Irreducible",
+            "count": 15,
+            "example_graph": 207,
+            "example_profile": 0
+          },
+          {
+            "error": "MissingJoin(BlockId(0))",
+            "count": 126,
+            "example_graph": 27,
+            "example_profile": 0
+          },
+          {
+            "error": "MissingJoin(BlockId(1))",
+            "count": 9,
+            "example_graph": 382,
+            "example_profile": 0
+          },
+          {
+            "error": "MissingJoin(BlockId(2))",
+            "count": 3,
+            "example_graph": 623,
+            "example_profile": 0
+          },
+          {
+            "error": "MissingLoopFollow(BlockId(0))",
+            "count": 6,
+            "example_graph": 358,
+            "example_profile": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "divergent branch arms",
+      "revision": "06c9cc19af70f630dd25544b846a39f146874c9a",
+      "result": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 3000,
+        "recovered": 2994,
+        "comparisons": 670656,
+        "mutants": 10477,
+        "accepted_mutants": 0,
+        "rejected": [
+          {
+            "error": "MissingLoopFollow(BlockId(0))",
+            "count": 6,
+            "example_graph": 358,
+            "example_profile": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "divergent loop exit tails",
+      "revision": "b914da4e00dbf378cc2765e13e13e17cc8f7ddb7",
+      "result": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 3000,
+        "recovered": 3000,
+        "comparisons": 672000,
+        "mutants": 10505,
+        "accepted_mutants": 0,
+        "rejected": []
+      }
+    },
+    {
+      "name": "forward shared-latch joins",
+      "revision": "b9dd74f19bc56eb82b78b5af1aee45d44bfad3b0",
+      "result": {
+        "schema": "nirvana-rust-structure-audit-v1",
+        "requested": 3000,
+        "recovered": 3000,
+        "comparisons": 672000,
+        "mutants": 10505,
+        "accepted_mutants": 0,
+        "rejected": []
+      }
+    }
+  ],
+  "extended_cohort": {
+    "before_revision": "b914da4e00dbf378cc2765e13e13e17cc8f7ddb7",
+    "before": {
+      "schema": "nirvana-rust-structure-audit-v1",
+      "requested": 62208,
+      "recovered": 61962,
+      "comparisons": 13879488,
+      "mutants": 222973,
+      "accepted_mutants": 0,
+      "rejected": [
+        {
+          "error": "CopyLimit { block: BlockId(1), limit: 2 }",
+          "count": 3,
+          "example_graph": 13124,
+          "example_profile": 0
+        },
+        {
+          "error": "CopyLimit { block: BlockId(2), limit: 2 }",
+          "count": 3,
+          "example_graph": 14084,
+          "example_profile": 0
+        },
+        {
+          "error": "CopyLimit { block: BlockId(3), limit: 2 }",
+          "count": 3,
+          "example_graph": 3285,
+          "example_profile": 0
+        },
+        {
+          "error": "Irreducible",
+          "count": 237,
+          "example_graph": 2852,
+          "example_profile": 0
+        }
+      ]
+    },
+    "after_revision": "b9dd74f19bc56eb82b78b5af1aee45d44bfad3b0",
+    "after": {
+      "schema": "nirvana-rust-structure-audit-v1",
+      "requested": 62208,
+      "recovered": 61995,
+      "comparisons": 13886880,
+      "mutants": 223127,
+      "accepted_mutants": 0,
+      "rejected": [
+        {
+          "error": "Irreducible",
+          "count": 213,
+          "example_graph": 2852,
+          "example_profile": 0
+        }
+      ]
+    }
+  },
+  "test_contract_update": {
+    "revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+    "reason": "The old fallback fixtures asserted MissingJoin for a shape now recovered. Preserve it as a positive all-state/stop-boundary check and test atomic fallback with a currently rejected nested multiple-entry cycle.",
+    "positive_effect_c_comparisons": 52,
+    "fallback_effect_c_comparisons": 52,
+    "initial_full_test_exit": 101,
+    "initial_full_test_failure": "effects_readable::unavailable_structure_falls_back_atomically_to_the_checked_renderer; stale MissingJoin expectation",
+    "initial_full_test_log_sha256": "520d54617d29fbe3dd0d85873857249493e8421f31138b4409246f735b4558d4"
+  },
+  "findings": [
+    {
+      "claim_id": "STRUCT-DIVERGENT-001",
+      "drift_class": "coverage-gap",
+      "epistemic_status": "fixed and machine-checked on the frozen finite cohorts",
+      "cause": "Recovery required global post-dominance even when a reachable arm never returns. PostDominators correctly requires a real exit path.",
+      "code_delta": "Recover independent arms and independent loop exit tails when global post-dominance is unavailable; final exact source/AST validation still gates acceptance.",
+      "spec_delta": "none; original-step budgets, all registers/RAM, faults and trace remain observable",
+      "model_delta": "unchanged six-pair formal model; new mixed-exit shapes are checked by real Rust and generated C",
+      "fix_revisions": [
+        "06c9cc19af70f630dd25544b846a39f146874c9a",
+        "b914da4e00dbf378cc2765e13e13e17cc8f7ddb7"
+      ]
+    },
+    {
+      "claim_id": "STRUCT-LATCH-002",
+      "drift_class": "coverage-gap",
+      "epistemic_status": "before/after recovery regression, constructive witness and finite differential audit",
+      "example": {
+        "generator": "program5",
+        "graph": 3285,
+        "profile": 0
+      },
+      "cause": "A finite-exit-path post-dominance stop can cross a backedge and hide the shared latch in the forward DAG, forcing repeated tail copies.",
+      "code_delta": "When no explicit lexical stop exists and the first forward search fails, retry without the inferred post-dominance stop in the same loop scope and shared visit budget.",
+      "spec_delta": "none; one-copy/five-original-step regression passes without raising copy or step limits",
+      "model_delta": "unchanged; real Rust and generated C validate the new shape",
+      "fix_revision": "b9dd74f19bc56eb82b78b5af1aee45d44bfad3b0"
+    }
+  ],
+  "validation": {
+    "rust": {
+      "returncode": 0,
+      "seconds": 499.24062618699827,
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--all-targets",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+      "targets": 26,
+      "passed": 1602,
+      "failed": 0,
+      "ignored": 65,
+      "log_sha256": "e98b83b1c1a6410407b5f6c13b19906104a35abc0aafed7d5fc8d225a2514699",
+      "target_summaries": [
+        "test result: ok. 256 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 1.82s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 179 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 32.47s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.16s",
+        "test result: ok. 145 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 76.42s",
+        "test result: ok. 111 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.16s",
+        "test result: ok. 36 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 162.81s",
+        "test result: ok. 133 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 12.87s",
+        "test result: ok. 58 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 185.15s",
+        "test result: ok. 261 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 7.05s",
+        "test result: ok. 12 passed; 0 failed; 44 ignored; 0 measured; 0 filtered out; finished in 0.35s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "generated_c": {
+      "cases": 924,
+      "full_state_comparisons": 5544,
+      "backends": [
+        "core",
+        "readable",
+        "locals"
+      ],
+      "optimizations": [
+        "O0",
+        "O2"
+      ],
+      "sanitizer": "UBSan"
+    },
+    "clippy": "all targets; -D warnings; passed",
+    "rustfmt": "passed",
+    "formal_model_identity": {
+      "revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+      "fixtures_sha256": "00ca9b1c50705a0a29f8cf591d5fefd2a954178f59e4ee2216aeb8ca7fb31ec9",
+      "model_sha256": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+      "exported_pairs": 12,
+      "tlc_rerun": false,
+      "scope": "Byte-identical six-positive-pair family and negative controls; prior finite TLC result retained; new shapes checked by Rust/C only"
+    },
+    "m0": {
+      "comparison": {
+        "schema": "nirvana-structure-comparison-v2",
+        "metric": "nirvana-control-topology-v1",
+        "before": {
+          "evaluation_revision": "79c3a44a2f42ce0b0c393e0e868c3a8676c772d8",
+          "evaluation_dirty": false,
+          "binary_build": {
+            "model": "nirvana-rust-target-build-v1",
+            "package_version": "0.1.0",
+            "source_revision": "6d11667f60624afde8f147e8045ea80d5c1b977e",
+            "source_dirty": false
+          },
+          "decompiler_sha256": "654bcfaf5cbbb1aea4d91d55d77919ec1fcf3c302a10a7406c2cd8972921fa5e",
+          "report_sha256": "79cd52beddd406a328285a5bb82b3baabcfb5194ba3a5de99a14bacb3eaebf89"
+        },
+        "after": {
+          "evaluation_revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+          "evaluation_dirty": false,
+          "binary_build": {
+            "model": "nirvana-rust-target-build-v1",
+            "package_version": "0.1.0",
+            "source_revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+            "source_dirty": false
+          },
+          "decompiler_sha256": "3dd45b236de2d9b0c3a8a54743cb153550505f2c9449b2176e68776344294538",
+          "report_sha256": "634b8145dc96490cf6b48c6b4c1ceaded9a27e4bc33591952b938f802e43ee51"
+        },
+        "requested": 24,
+        "structure": {
+          "equal": 24
+        },
+        "structure_regressions": 0,
+        "candidate_semantics": {
+          "passed": 24
+        },
+        "architecture_regressions": 0,
+        "analysis_regressions": 0,
+        "c_footprint_regressions": 0,
+        "state_memory_regressions": 0,
+        "state_value_regressions": 0,
+        "state_value_counterexamples": 0,
+        "candidate_state_values": {
+          "equivalent_under_model": 17,
+          "unsupported": 7
+        },
+        "candidate_architecture": {
+          "passed": 24
+        },
+        "candidate_execution": {
+          "low_middle": {
+            "passed": 24
+          },
+          "middle_predicates": {
+            "not_applied": 23,
+            "passed": 1
+          },
+          "middle_memory": {
+            "not_applied": 24
+          },
+          "middle_saved": {
+            "not_applied": 24
+          },
+          "selected_semantic": {
+            "not_applied": 24
+          }
+        },
+        "candidate_analysis": {
+          "memory_ssa_graph": {
+            "passed": 24
+          },
+          "memory_ssa_queries": {
+            "passed": 24
+          },
+          "memory_addresses": {
+            "passed": 24
+          },
+          "unsigned_bounds": {
+            "passed": 24
+          },
+          "storage_widths": {
+            "passed": 24
+          },
+          "selected_storage": {
+            "passed": 24
+          },
+          "selected_signed_storage": {
+            "passed": 24
+          }
+        },
+        "candidate_semantic_state_pairs": {
+          "not_applied": 24
+        },
+        "semantic_regressions": 0,
+        "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+      },
+      "comparison_artifact": {
+        "file": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/divergence-initial-comparison.json",
+        "sha256": "842674655a99eaa770a29cbcfc03d0ab6f5a2350fd498046d8767554d4ad9aee",
+        "row_details": "retained separately; checkpoint includes aggregate comparison only"
+      },
+      "identity": {
+        "schema": "nirvana-divergence-m0-comparison-v1",
+        "kind": "initial",
+        "profiles": 24,
+        "identical": {
+          "c": 24,
+          "ir": 72,
+          "stage_metadata": 24
+        },
+        "total": {
+          "c": 24,
+          "ir": 72,
+          "stage_metadata": 24
+        },
+        "counts": {
+          "native": 408,
+          "generated_O0": 1224,
+          "generated_O2": 1224,
+          "stage_comparisons": 25500
+        },
+        "summary": {
+          "requested": 24,
+          "status": {
+            "measured": 24
+          },
+          "failures_by_stage": {},
+          "distances": {
+            "exact": 24
+          },
+          "cohorts": {
+            "development": 16,
+            "holdout": 8
+          },
+          "architecture": {
+            "passed": 24
+          },
+          "architecture_execution": {
+            "low_middle": {
+              "passed": 24
+            },
+            "middle_predicates": {
+              "not_applied": 23,
+              "passed": 1
+            },
+            "middle_memory": {
+              "not_applied": 24
+            },
+            "middle_saved": {
+              "not_applied": 24
+            },
+            "selected_semantic": {
+              "not_applied": 24
+            }
+          },
+          "architecture_analysis": {
+            "memory_ssa_graph": {
+              "passed": 24
+            },
+            "memory_ssa_queries": {
+              "passed": 24
+            },
+            "memory_addresses": {
+              "passed": 24
+            },
+            "unsigned_bounds": {
+              "passed": 24
+            },
+            "storage_widths": {
+              "passed": 24
+            },
+            "selected_storage": {
+              "passed": 24
+            },
+            "selected_signed_storage": {
+              "passed": 24
+            }
+          },
+          "c_footprint": {
+            "measured": 24
+          },
+          "state_memory_sites": {
+            "measured": 16,
+            "partial": 8
+          },
+          "state_values": {
+            "equivalent_under_model": 17,
+            "unsupported": 7
+          }
+        },
+        "reports": {
+          "before": {
+            "file": "target/runs/run-a37yw4tm/out/rmw-initial-after/report.json",
+            "sha256": "79cd52beddd406a328285a5bb82b3baabcfb5194ba3a5de99a14bacb3eaebf89"
+          },
+          "after": {
+            "file": "target/runs/run-a37yw4tm/out/divergence-initial-after/report.json",
+            "sha256": "634b8145dc96490cf6b48c6b4c1ceaded9a27e4bc33591952b938f802e43ee51"
+          }
+        }
+      },
+      "tools": {
+        "decompiler": {
+          "version": "nirvana 0.1.0 git=70ecd480476fee79ed4cde44a8aab40215e83519 source_dirty=false",
+          "sha256": "3dd45b236de2d9b0c3a8a54743cb153550505f2c9449b2176e68776344294538"
+        },
+        "candidate_revision": "70ecd480476fee79ed4cde44a8aab40215e83519",
+        "divergence_initial": {
+          "version": "nirvana 0.1.0 git=70ecd480476fee79ed4cde44a8aab40215e83519 source_dirty=false",
+          "sha256": "770251f3949a33a3ff48ff61f067cbfbb76f8db95306dda7a1f6996bd36316bd"
+        }
+      },
+      "reference_tools": {
+        "decompiler": {
+          "version": "nirvana 0.1.0 git=6d11667f60624afde8f147e8045ea80d5c1b977e source_dirty=false",
+          "sha256": "654bcfaf5cbbb1aea4d91d55d77919ec1fcf3c302a10a7406c2cd8972921fa5e"
+        },
+        "candidate_probe": {
+          "version": "nirvana 0.1.0 git=6d11667f60624afde8f147e8045ea80d5c1b977e source_dirty=false",
+          "sha256": "b32c47070bb938c4d126ee8af3c5fe3d4b64fd8e1de5016d3792a19fc92b7016"
+        },
+        "candidate_revision": "6d11667f60624afde8f147e8045ea80d5c1b977e",
+        "rmw_initial": {
+          "version": "nirvana 0.1.0 git=6d11667f60624afde8f147e8045ea80d5c1b977e source_dirty=false",
+          "sha256": "b32c47070bb938c4d126ee8af3c5fe3d4b64fd8e1de5016d3792a19fc92b7016"
+        }
+      },
+      "reference_reuse": {
+        "reference_revision": "6d11667f60624afde8f147e8045ea80d5c1b977e",
+        "task_baseline_revision": "8a334370e5488bb17cfe97d42925f298d152195f",
+        "production_files_compared": 266,
+        "normalization": "remove the two cfg(test) module declarations only; new test-only modules have no non-test references",
+        "equivalence_manifest_sha256": "7b3711e98159ba6e80be3c09c8445fb048070858530505ffbd8c4eae6255b231",
+        "new_src_modules": "audit_tests and model_trial_tests are cfg(test)-only; all existing production Rust, Cargo manifests/lock and build.rs match"
+      }
+    }
+  },
+  "local_evidence": {
+    "candidate_report": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/divergence-initial-after/report.json",
+    "reference_archive": {
+      "archive": "target/runs/run-a37yw4tm/out/cold/rmw-initial-after.tar.gz",
+      "sha256": "ec5f53d7b1051a779ec82aba735138db4354a35fe2a8949a468bdde2f16b70c9",
+      "member_hashes": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/cold/rmw-initial-after.manifest.json",
+      "verification": "Every regular file was checked against its SHA-256 and byte length in the completed archive before deleting the expanded directory.",
+      "restore": "tar -xzf target/runs/run-a37yw4tm/out/cold/rmw-initial-after.tar.gz -C target/runs/run-a37yw4tm/out"
+    }
+  },
+  "source_sha256": {
+    "src/control_flow/structure.rs": "03b71b24c19ad5f7ebf03521d951b09b69529a8b8dc1fab4195f4b163f98a1b8",
+    "src/control_flow/structure/audit_tests.rs": "1a6f04a6c77cd291d30af9a5ae8f35f110498ccc3baa15f639f6f06fb4028a18",
+    "src/control_flow/structure/split.rs": "f40aee33eca2e1100841d8adf8e49fe4961aefe5022b8085114744a7a18137fa",
+    "src/control_flow/structure_verify.rs": "f614de7c3a5603bcab5d0e73a3243be793c05b4fdaf9daf2f64dd0e7190c1268",
+    "src/control_flow/postdom.rs": "7f8c03b8c6e75e25f1092b51d4c6aca0e674268f656dcc481c89538688c7d52d",
+    "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a",
+    "tests/module/module_outline.rs": "0f420981cfe54df2a92642f8369220631a782b0e62596bb9609c7d05a0978402",
+    "tests/model/ir_and_structure.rs": "f64b84e07c75146a699ed1b9b0eb906c08b6a0317f40d5d41d37346d7b1b508f",
+    "tests/codegen/effects_readable.rs": "3c73b22da146bd26120fcdb9542687bbeb70cf71fe389093b63a41c898428bdd"
+  },
+  "logs": {
+    "divergence-round1": {
+      "sha256": "80ecf6de931f4eabb67df071158da015ada7a8c43060a048db0de71458411e8a",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.57s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 4 tests\nmixed-exit witness: StructureEvidence { original_steps: 4, compared_copies: 4, flow_nodes: 10 }; recovery=Err(MissingLoopFollow(BlockId(0)))\nconstructive structured witness: StructureEvidence { original_steps: 3, compared_copies: 3, flow_nodes: 7 }; recovery=Ok(StructureStats { unique_blocks: 3, emitted_block_copies: 3, extra_block_copies: 0 })\ntest control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm ... ok\ntest control_flow::structure::audit_tests::mixed_return_and_divergent_loop_exits_have_a_structured_witness ... ok\ntest control_flow::structure::audit_tests::divergent_arm_has_a_valid_structured_witness_with_exact_rust_reports ... ok\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":3000,\"recovered\":2994,\"comparisons\":670656,\"mutants\":10477,\"accepted_mutants\":0,\"rejected\":[{\"error\":\"MissingLoopFollow(BlockId(0))\",\"count\":6,\"example_graph\":358,\"example_profile\":0}]}\n\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ok\n\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 257 filtered out; finished in 0.63s\n\n"
+    },
+    "divergence-round2": {
+      "sha256": "326415218a44e413b860fc5dbe347ee19171423fb7c7fc8714ed768f38876fae",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.63s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 4 tests\nconstructive structured witness: StructureEvidence { original_steps: 3, compared_copies: 3, flow_nodes: 7 }; recovery=Ok(StructureStats { unique_blocks: 3, emitted_block_copies: 3, extra_block_copies: 0 })\nmixed-exit witness: StructureEvidence { original_steps: 4, compared_copies: 4, flow_nodes: 10 }; recovery=Ok(StructureStats { unique_blocks: 4, emitted_block_copies: 4, extra_block_copies: 0 })\ntest control_flow::structure::audit_tests::divergent_arm_has_a_valid_structured_witness_with_exact_rust_reports ... ok\ntest control_flow::structure::audit_tests::mixed_return_and_divergent_loop_exits_have_a_structured_witness ... ok\ntest control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm ... ok\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":3000,\"recovered\":3000,\"comparisons\":672000,\"mutants\":10505,\"accepted_mutants\":0,\"rejected\":[]}\n\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ok\n\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 259 filtered out; finished in 0.60s\n\n"
+    },
+    "divergence-latch-before": {
+      "sha256": "c2d9db044daf62ceeda5152db4d795c5d56a719ed8829a27bb2cda667676b427",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.87s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n\nthread 'control_flow::structure::audit_tests::forward_latch_join_fits_one_copy_and_five_steps' (755946) panicked at src/control_flow/structure/audit_tests.rs:384:10:\nthe shared latch has a validated one-copy, five-step tree: CopyLimit { block: BlockId(3), limit: 1 }\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest control_flow::structure::audit_tests::forward_latch_join_fits_one_copy_and_five_steps ... FAILED\n\nfailures:\n\nfailures:\n    control_flow::structure::audit_tests::forward_latch_join_fits_one_copy_and_five_steps\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 262 filtered out; finished in 0.00s\n\nerror: test failed, to rerun pass `--lib`\n"
+    },
+    "divergence-latch-after": {
+      "sha256": "68d0987c36a0d9e4dd9edbd0df96a155c3d2d0cfdb0386631a8c3436c2c17fa7",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.85s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\ntest control_flow::structure::audit_tests::forward_latch_join_fits_one_copy_and_five_steps ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 262 filtered out; finished in 0.00s\n\n"
+    },
+    "divergence-round3-audit4": {
+      "sha256": "bf42a232fbf120da7be1393217b9da6a09814184752d7969c6c7a8ebe072f6c4",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.06s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":3000,\"recovered\":3000,\"comparisons\":672000,\"mutants\":10505,\"accepted_mutants\":0,\"rejected\":[]}\n\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 262 filtered out; finished in 0.63s\n\n"
+    },
+    "divergence-round3-audit5": {
+      "sha256": "5bf55eb9cb1d83d8da9767942cfe4a022d3eef825ff9b1a05818f492644c3488",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.23s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":62208,\"recovered\":61995,\"comparisons\":13886880,\"mutants\":223127,\"accepted_mutants\":0,\"rejected\":[{\"error\":\"Irreducible\",\"count\":213,\"example_graph\":2852,\"example_profile\":0}]}\n\ntest control_flow::structure::audit_tests::generated_five_instruction_cfgs_preserve_complete_rust_reports ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 262 filtered out; finished in 15.02s\n\n"
+    },
+    "divergence-round3-tests": {
+      "sha256": "c4527b768691f177f92f8726b0b89170bf2da676d45ac44c3ef278d42e338080",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.30s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 6 tests\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ignored, bounded 3000-CFG implementation audit; run explicitly with --ignored --exact\ntest control_flow::structure::audit_tests::generated_five_instruction_cfgs_preserve_complete_rust_reports ... ignored, bounded 62208-program follow-up audit; run explicitly\nconstructive structured witness: StructureEvidence { original_steps: 3, compared_copies: 3, flow_nodes: 7 }; recovery=Ok(StructureStats { unique_blocks: 3, emitted_block_copies: 3, extra_block_copies: 0 })\nmixed-exit witness: StructureEvidence { original_steps: 4, compared_copies: 4, flow_nodes: 10 }; recovery=Ok(StructureStats { unique_blocks: 4, emitted_block_copies: 4, extra_block_copies: 0 })\ntest control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm ... ok\ntest control_flow::structure::audit_tests::divergent_arm_has_a_valid_structured_witness_with_exact_rust_reports ... ok\ntest control_flow::structure::audit_tests::mixed_return_and_divergent_loop_exits_have_a_structured_witness ... ok\ntest control_flow::structure::audit_tests::forward_latch_join_fits_one_copy_and_five_steps ... ok\n\ntest result: ok. 4 passed; 0 failed; 2 ignored; 0 measured; 257 filtered out; finished in 0.00s\n\n"
+    },
+    "divergence-round3-c": {
+      "sha256": "f37020d85cf13099505684e48756d56981b72c9a445ecfa63ad7025c83407858",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.46s\n     Running tests/module.rs (target/cargo-cache/debug/deps/module-b37bcbd9e140e2a8)\n\nrunning 1 test\n924 resume/input/budget cases, 5544 complete C-state comparisons\ntest module_outline::divergent_regions_keep_every_resume_budget_and_full_generated_c_state ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 2.15s\n\n"
+    },
+    "divergence-round3-clippy": {
+      "sha256": "575f10db1913f6bad15b4288a9c1cfd25dc64dc47a95eecf86185038747e3643",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 9.50s\n"
+    },
+    "divergence-fmt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text": ""
+    },
+    "divergence-updated-model": {
+      "sha256": "dccb43f81cf6e2d0aead31c02f53be47583ae78bb2cfc24f9390fc28123ee279",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.54s\n     Running tests/model.rs (target/cargo-cache/debug/deps/model-4766d26a692c9671)\n\nrunning 1 test\ntest ir_and_structure::recovers_returning_and_divergent_arms_with_exact_stop_boundaries ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 133 filtered out; finished in 0.00s\n\n"
+    },
+    "divergence-updated-effects": {
+      "sha256": "16e42679b30cbb0bdfc28c1afce249d9a704457f53c63ffe19c4f86181b6ee41",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 12.21s\n     Running tests/codegen.rs (target/cargo-cache/debug/deps/codegen-49d3cfe043d6a3fc)\n\nrunning 8 tests\ntest effects_readable::core_only_effect_program_omits_unreachable_labels_and_accepts_empty_output ... ok\ntest effects_readable::initial_string_views_are_bounded_escaped_and_leave_mutable_ram_authoritative ... ok\ntest effects_readable::returning_and_divergent_arms_use_the_structured_checked_renderer ... ok\ntest effects_readable::unavailable_structure_falls_back_atomically_to_the_checked_renderer ... ok\ntest effects_readable::nested_outer_transfers_preserve_instruction_budget_and_registers ... ok\ntest effects_readable::ordered_stores_and_degenerate_branches_retain_the_first_fault ... ok\n21896 branch/loop C observations matched full state and stops\ntest effects_readable::real_branches_loops_keep_call_clobbers_lazy_reads_and_all_steps ... ok\n52500 effect C observations: 31556 completed return/fault observations; 20944 incomplete/invalid/unmodeled stop states. Full registers/RAM/output/status/consumption/pc/steps matched\ntest effects_readable::structured_effects_match_full_state_output_faults_and_every_stop_boundary ... ok\n\ntest result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 138 filtered out; finished in 5.04s\n\n"
+    },
+    "divergence-updated-clippy": {
+      "sha256": "9cd57efcfdbd6822a6b038eacb05d338440dc3e9a4fd9694c250735b50f23a03",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 8.84s\n"
+    }
+  },
+  "limits": [
+    "Finite topology enumeration and concrete inputs/budgets; universal Rust semantics remain outside this result.",
+    "Rust executors share primitive Machine evaluation. The generated C implementations and fixed native/IR/C M0 comparisons provide separate checks.",
+    "The extended cohort retains 213 Irreducible refusals in its 62208-program denominator. This error also represents bounded node-split/structured-tree search failure, rather than proof that no bounded structured representation exists.",
+    "The prior Quint/TLC result covers the unchanged six exported positive pairs; it is not expanded to the newly recovered mixed terminating/divergent shapes.",
+    "Hold-out evaluation uses aggregates and artifact identities; its source and row details were kept sealed."
+  ],
+  "next_decision": "Investigate shared exits of nested loops after node splitting on the retained 213 refusals, preserving the existing copy/step/visit budgets and validator. Do not use a larger public copy limit to count them as recovered."
+}
