@@ -59,7 +59,7 @@ fn exported_trial_candidates_replay_through_real_validator_and_executor() {
             witnesses += 1;
         }
     }
-    assert_eq!(positives, 448);
+    assert_eq!(positives, 672);
     assert_eq!(witnesses, 5);
     assert!(outcomes.into_iter().all(|seen| seen));
 }

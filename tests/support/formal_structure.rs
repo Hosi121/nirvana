@@ -2,6 +2,9 @@
 use super::library::ir::{Assignment, Control, Expr, IrInstruction, Program, Reg, Width};
 use super::library::structure::{Node, StructuredFunction};
 
+#[path = "formal_structure/placement.rs"]
+mod placement;
+
 pub struct Case {
     pub name: &'static str,
     pub program: Program,
@@ -260,5 +263,6 @@ pub fn cases() -> Vec<Case> {
         body: edited,
         early_budget: false,
     });
+    result.extend(placement::cases());
     result
 }

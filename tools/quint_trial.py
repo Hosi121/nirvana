@@ -99,11 +99,11 @@ def quint_value(value):
     return json.dumps(value)
 
 
-def export(out, exporter, selected=(0, 1, 2, 9, 10, 11, 12, 13)):
+def export(out, exporter, selected=(0, 1, 2, 9, 10, 11, 12, 13, 14, 15, 16, 17)):
     result = subprocess.run([str(exporter)], check=True, capture_output=True, text=True, timeout=20)
     data = json.loads(result.stdout)
     verdicts = [case['verdict'] for case in data['cases']]
-    if verdicts != ['accepted'] * 3 + ['rejected'] * 5 + ['accepted'] * 6:
+    if verdicts != ['accepted'] * 3 + ['rejected'] * 5 + ['accepted'] * 10:
         raise ValueError(f'unexpected Rust acceptance gate: {verdicts}')
     (out / 'fixtures.json').write_text(result.stdout)
     (out / 'fixtures.qnt').write_text(
@@ -184,7 +184,10 @@ def trial(out, quint, env, toolchain):
         entry['counterexample'] = text[start:end]
 
     inputs = ['models/structured_events.qnt', 'examples/structure_model.rs',
-              'tests/support/formal_structure.rs', 'src/control_flow/structure/model_trial_tests.rs',
+              'tests/support/formal_structure.rs', 'tests/support/formal_structure/placement.rs',
+              'src/control_flow/structure/model_trial_tests.rs',
+              'src/control_flow/structure/split.rs', 'src/control_flow/structure/placement_candidates.rs',
+              'src/control_flow/structure/follow_candidates.rs',
               'tools/quint_trial.py', 'src/control_flow/structure.rs', 'src/control_flow/structure_verify.rs',
               'src/model/ir.rs']
     return {'schema': 'nirvana-structured-events-trial-v1', 'milestone': 'M2 structure correspondence',
@@ -193,8 +196,8 @@ def trial(out, quint, env, toolchain):
             'workspace_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip()),
             'source_sha256': {p: sha(ROOT / p) for p in inputs},
             'exporter_sha256': sha(exporter), 'fixtures_sha256': sha(out / 'fixtures.json'),
-            'bounds': {'positive_pairs': 8, 'budgets': [0, 6], 'max_loop_depth': 2, 'stack_guard': 8},
-            'rust_replay': {'normal_pair_reports': 448, 'rejected_ast_mutations': 5,
+            'bounds': {'positive_pairs': 12, 'budgets': [0, 6], 'max_loop_depth': 2, 'stack_guard': 8},
+            'rust_replay': {'normal_pair_reports': 672, 'rejected_ast_mutations': 5,
                             'executor_mutation': 'model-only early-budget fault injection; real executor passes'},
             'limits': ['Finite exported family, not an unbounded proof of the recovery algorithm.',
                        'Event tokens assume shared deterministic primitive semantics; only the designated condition Load may fault.',
