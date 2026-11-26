@@ -75,15 +75,7 @@ fn compare(source: &Program, slice: &Region, input: &[u64], base: u64, memory: &
     );
 }
 
-#[test]
-#[ignore]
-fn actual_compiler_region_extraction_probe() {
-    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
-    std::fs::create_dir_all(&directory).unwrap();
-    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
-    let source = nirvana::binary::frontend::lift_elf_auto(&bytes, "fixture")
-        .unwrap()
-        .program;
+fn iteration(source: &Program) -> Region {
     let analysis = ControlFlowAnalysis::compute(source.cfg()).unwrap();
     let natural = analysis
         .natural_loops()
@@ -109,16 +101,58 @@ fn actual_compiler_region_extraction_probe() {
     else {
         panic!("no follow");
     };
-    let widths = ValueWidths::analyze(&source);
+    let widths = ValueWidths::analyze(source);
     let entry = source.cfg().block(natural.header).start;
     let follow = source.cfg().block(follow).start;
-    let slice = extract(&source, entry, &[entry, follow], Some(&widths)).unwrap();
+    extract(source, entry, &[entry, follow], Some(&widths)).unwrap()
+}
+
+fn fixture_states(registers: usize) -> Vec<(Vec<u64>, Vec<u8>)> {
+    let text = std::fs::read_to_string("tools/corpora/structure-nested-v1.inputs.txt").unwrap();
+    let states: Vec<_> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let words: Vec<u64> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(words.len(), 4);
+            let mut memory: Vec<_> = (0..512usize).map(|i| (i * 29 + 7) as u8).collect();
+            for (n, value) in words.iter().enumerate() {
+                memory[128 + n * 8..136 + n * 8].copy_from_slice(&value.to_le_bytes());
+            }
+            let mut input = vec![0; registers];
+            input[nirvana::binary::x86::RDI] = 4224;
+            input[nirvana::binary::x86::RSP] = 4600;
+            (input, memory)
+        })
+        .collect();
+    assert_eq!(states.len(), 65);
+    states
+}
+
+#[test]
+#[ignore]
+fn actual_compiler_region_extraction_probe() {
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let source = nirvana::binary::frontend::lift_elf_auto(&bytes, "fixture")
+        .unwrap()
+        .program;
+    let slice = iteration(&source);
     println!(
         "ACTUAL source_steps={} source_regs={} header={} follow={} region_steps={} region_regs={} caps={:?}",
         source.instructions().len(),
         source.register_count(),
         slice.source_entry(),
-        follow,
+        slice
+            .continuations()
+            .iter()
+            .copied()
+            .find(|&pc| pc != slice.source_entry())
+            .unwrap(),
         slice.program().instructions().len(),
         slice.program().register_count(),
         slice.input_bit_caps()
@@ -128,23 +162,8 @@ fn actual_compiler_region_extraction_probe() {
         format!("{:#?}", slice.program().instructions()),
     )
     .unwrap();
-    let text = std::fs::read_to_string("tools/corpora/structure-nested-v1.inputs.txt").unwrap();
     let mut comparisons = 0;
-    let mut inputs = 0;
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        inputs += 1;
-        let words: Vec<u64> = line
-            .split_whitespace()
-            .map(|s| s.parse().unwrap())
-            .collect();
-        assert_eq!(words.len(), 4);
-        let mut memory: Vec<_> = (0..512usize).map(|i| (i * 29 + 7) as u8).collect();
-        for (n, value) in words.iter().enumerate() {
-            memory[128 + n * 8..136 + n * 8].copy_from_slice(&value.to_le_bytes());
-        }
-        let mut input = vec![0; source.register_count()];
-        input[nirvana::binary::x86::RDI] = 4224;
-        input[nirvana::binary::x86::RSP] = 4600;
+    for (input, memory) in fixture_states(source.register_count()) {
         let full = source.run_with_memory(&input, 4096, &memory, 4096).unwrap();
         assert!(matches!(full.status, RunStatus::Returned(_)));
         for (budget, &pc) in full.state.trace.iter().enumerate() {
@@ -164,7 +183,6 @@ fn actual_compiler_region_extraction_probe() {
             comparisons += 1;
         }
     }
-    assert_eq!(inputs, 65);
     assert!(comparisons > 0);
     println!("ACTUAL concrete_region_comparisons={comparisons}");
     let shared: Vec<_> = (0..source.register_count()).map(Reg).collect();
@@ -179,6 +197,124 @@ fn actual_compiler_region_extraction_probe() {
     println!(
         "ACTUAL self_verdict={verdict:?} bytes={} ms={}",
         q.smt2().len(),
+        now.elapsed().as_millis()
+    );
+}
+
+#[test]
+#[ignore = "requires the development fixture object and Z3; compares selected sparse display IR at every prefix"]
+fn actual_selected_display_register_projection_and_region_queries() {
+    use nirvana::block_verify::region::registers::compact;
+    use nirvana::readable::{self, ReadableOptions, StorageProvenance};
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let raw = nirvana::frontend::lift_elf_auto(&bytes, "fixture")
+        .unwrap()
+        .program;
+    let output = readable::emit_middle_c_with_storage_provenance(
+        &nirvana::middle_ir::Function::from_low(&raw).unwrap(),
+        ReadableOptions {
+            stack_register: Some(Reg(nirvana::x86::RSP)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    let StorageProvenance::Captured(snapshot) = output.storage_provenance else {
+        panic!("missing selected storage input");
+    };
+    let source = &snapshot.source;
+    let compact = compact(source).unwrap();
+    assert!(compact.program().register_count() < source.register_count());
+    let slice = iteration(compact.program());
+    for (name, program) in [
+        ("selected-source.ir", source.as_ref()),
+        ("dense.ir", compact.program()),
+    ] {
+        std::fs::write(
+            directory.join(name),
+            format!(
+                "entry={} registers={}\n{:#?}\n",
+                program.cfg().block(program.cfg().entry()).start,
+                program.register_count(),
+                program.instructions()
+            ),
+        )
+        .unwrap();
+    }
+    let mut prefixes = 0;
+    let mut regions = 0;
+    for (input, memory) in fixture_states(source.register_count()) {
+        let dense = compact.project_input(&input).unwrap();
+        let full = source.run_with_memory(&input, 4096, &memory, 4096).unwrap();
+        assert!(matches!(full.status, RunStatus::Returned(_)));
+        for budget in 0..=full.state.trace.len() + 1 {
+            let expected = source
+                .run_with_memory(&input, 4096, &memory, budget)
+                .unwrap();
+            let mut actual = compact
+                .program()
+                .run_with_memory(&dense, 4096, &memory, budget)
+                .unwrap();
+            if full.state.trace.get(budget) == Some(&slice.source_entry()) {
+                for pointer in [4224, 4095, 4608, u64::MAX] {
+                    let mut entry = actual.state.registers.clone();
+                    entry[compact.dense_register(Reg(nirvana::x86::RDI)).unwrap().0] = pointer;
+                    compare(
+                        compact.program(),
+                        &slice,
+                        &entry,
+                        4096,
+                        &actual.state.memory,
+                    );
+                    regions += 1;
+                }
+                compare(
+                    compact.program(),
+                    &slice,
+                    &actual.state.registers,
+                    4096,
+                    &[],
+                );
+                regions += 1;
+            }
+            actual.state.registers = compact
+                .restore_registers(&input, &actual.state.registers)
+                .unwrap();
+            assert_eq!(actual, expected);
+            prefixes += 1;
+        }
+        for pointer in [4095, 4608, u64::MAX] {
+            let mut input = input.clone();
+            input[nirvana::x86::RDI] = pointer;
+            let expected = source.run_with_memory(&input, 4096, &memory, 4096).unwrap();
+            let mut actual = compact
+                .program()
+                .run_with_memory(&compact.project_input(&input).unwrap(), 4096, &memory, 4096)
+                .unwrap();
+            actual.state.registers = compact
+                .restore_registers(&input, &actual.state.registers)
+                .unwrap();
+            assert_eq!(actual, expected);
+            prefixes += 1;
+        }
+    }
+    let shared: Vec<_> = (0..compact.program().register_count()).map(Reg).collect();
+    let outputs: Vec<_> = (0..slice.program().register_count()).map(Reg).collect();
+    let query = query(slice.program(), slice.program(), &shared, &outputs).unwrap();
+    std::fs::write(directory.join("selected-identity.smt2"), query.smt2()).unwrap();
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
+        .with_timeout(std::time::Duration::from_secs(5));
+    let now = std::time::Instant::now();
+    assert_eq!(query.check(&solver), Verdict::EquivalentUnderModel);
+    println!(
+        "DISPLAY source_registers={} dense_registers={} region_registers={} prefix_comparisons={prefixes} region_comparisons={regions} identity_bytes={} ms={}",
+        source.register_count(),
+        compact.program().register_count(),
+        slice.program().register_count(),
+        query.smt2().len(),
         now.elapsed().as_millis()
     );
 }

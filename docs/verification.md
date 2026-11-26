@@ -57,6 +57,11 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 
 [完了検査の対照](../src/verification/block_verify/region/extraction/repeat/tests.rs)は、任意の64bit counterと検査済み2bit上限で、0・1・3回の不足、4・5回の完了を確認します。入口上限を外すと4回でも不足します。別に作った4段の展開IRと証明済み循環候補を全RAM・正常時の必要値まで比較し、増分を壊した候補の差を両方の循環IRで再生します。自動的な復元候補の生成は、この検査の上へ構築する次の段階です。
 
+[レジスタ番号の投影](../src/verification/block_verify/region/registers.rs)は、疎な表示IRから命令に現れるレジスタだけを詰め、番号の対応を式・逐次代入・制御から独立に検査します。使われない元のレジスタは正確な入口状態から復元でき、全レジスタ・PC・trace・RAM・fault・命令予算の観測を保ちます。sourceの番号空間は最大65,536、問い合わせ側は既存の128レジスタ上限です。異なるIRの比較には`compact_comparison`を使い、共有入力と必要な終了値を含む共通の対応表を作ります。最初の形式は同じ元レジスタ空間の二つのProgramを扱います。
+
+実Clangの選択済み表示IRで740→38レジスタを確認し、5,764件の全状態比較と反復領域590件を照合しました。保存済みのM0入力とのhashも一致しています。投影後のProgramで値域を解析・検査し直してから領域を切り出すため、元の番号空間の証跡を取り違えずに利用できます。SMT自己比較は問い合わせへの入力確認であり、ソースから生成Cまでの全体証明とは別の観測です。
+
+
 
 ```sh
 NIRVANA_Z3=/path/to/z3 NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib \

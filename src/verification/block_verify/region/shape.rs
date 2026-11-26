@@ -41,7 +41,15 @@ pub(super) fn inspect(program: &Program) -> Result<Vec<u64>, Error> {
 /// The same source/expression preflight also permits a cyclic source before
 /// extraction. No recursive source clone happens until this check succeeds.
 pub(super) fn bounded_successors(program: &Program) -> Result<BTreeMap<u64, Vec<u64>>, Error> {
-    if program.register_count() > MAX_REGISTERS || program.instructions().len() > MAX_INSTRUCTIONS {
+    bounded_source(program, MAX_REGISTERS)
+}
+
+pub(super) fn bounded_source(
+    program: &Program,
+    register_limit: usize,
+) -> Result<BTreeMap<u64, Vec<u64>>, Error> {
+    if program.register_count() > register_limit || program.instructions().len() > MAX_INSTRUCTIONS
+    {
         return Err(Error::Limit);
     }
     let mut expressions = Vec::new();
