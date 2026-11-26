@@ -100,6 +100,50 @@ fn discovers_varying_indices_while_preserving_the_invariant_xor_operand() {
 }
 
 #[test]
+fn bindings_require_a_live_current_value_and_keep_load_events_opaque() {
+    let source = fixture(&[1, 2, 3], false, false);
+    let discovery = discover(&source).unwrap();
+    for kernel in discovery.kernels() {
+        let point = discovery.ssa().point(kernel.load).unwrap();
+        let pointer = point.reads.iter().find(|r| r.register == Reg(1)).unwrap();
+        assert_eq!(
+            discovery.available_register(kernel.load, pointer.value),
+            Some(Reg(1))
+        );
+        assert!(discovery.register_expression(kernel.load, Reg(5)).is_some());
+        assert!(
+            discovery
+                .register_expression(kernel.update, Reg(3))
+                .is_none()
+        );
+    }
+    let initial = discovery
+        .ssa()
+        .values
+        .iter()
+        .position(|v| matches!(v, Definition::Initial { register: Reg(5) }))
+        .unwrap();
+    assert_eq!(
+        discovery.available_register(discovery.kernels()[0].load, ValueId(initial)),
+        None
+    );
+    assert_eq!(
+        discovery.available_register(
+            Site {
+                instruction: u64::MAX,
+                assignment: None
+            },
+            ValueId(initial)
+        ),
+        None
+    );
+    assert_eq!(
+        discovery.available_register(discovery.kernels()[0].load, ValueId(usize::MAX)),
+        None
+    );
+}
+
+#[test]
 fn unrelated_literals_widths_and_incomplete_families_keep_distinct_patterns() {
     assert!(
         discover(&fixture(&[1, 2], false, false))

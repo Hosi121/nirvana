@@ -74,6 +74,7 @@ pub struct LaneGroup {
 pub struct Discovery {
     source: Program,
     ssa: SsaFunction,
+    aliases: Vec<ValueId>,
     kernels: Vec<Kernel>,
     groups: Vec<LaneGroup>,
 }
@@ -86,6 +87,58 @@ impl Discovery {
     }
     pub fn ssa(&self) -> &SsaFunction {
         &self.ssa
+    }
+    /// Find storage that holds this exact normalized SSA value before a point.
+    /// A non-entry register without an incoming phi stays unavailable; its
+    /// original input value is not assumed to survive an earlier overwrite.
+    pub fn available_register(&self, site: Site, value: ValueId) -> Option<Reg> {
+        let wanted = *self.aliases.get(value.0)?;
+        let block = self
+            .ssa
+            .blocks
+            .iter()
+            .find(|block| block.points.iter().any(|point| point.site == site))?;
+        let mut current = vec![None; self.source.register_count()];
+        if block.start == self.ssa.entry {
+            for (id, definition) in self.ssa.values.iter().enumerate() {
+                if let Definition::Initial { register } = definition {
+                    current[register.0] = Some(ValueId(id));
+                }
+            }
+        }
+        for &id in &block.phis {
+            let Definition::Phi { register, .. } = self.ssa.values[id.0] else {
+                return None;
+            };
+            current[register.0] = Some(id);
+        }
+        for point in &block.points {
+            if point.site == site {
+                break;
+            }
+            if let Some(id) = point.definition {
+                let Definition::Assignment { register, .. } = self.ssa.values[id.0] else {
+                    return None;
+                };
+                current[register.0] = Some(id);
+            }
+        }
+        current
+            .iter()
+            .position(|value| value.is_some_and(|value| self.aliases[value.0] == wanted))
+            .map(Reg)
+    }
+    /// Expand a read's pure copy/definition chain in this retained source.
+    /// Captured loads remain separate events and are unavailable as pure terms.
+    pub fn register_expression(&self, site: Site, register: Reg) -> Option<PatternExpr> {
+        let value = self
+            .ssa
+            .point(site)?
+            .reads
+            .iter()
+            .find(|read| read.register == register)?
+            .value;
+        resolve::pure_value(&self.source, &self.ssa, &self.aliases, value)
     }
     pub fn belongs_to(&self, source: &Program) -> bool {
         self.source.register_count() == source.register_count()
@@ -191,6 +244,7 @@ pub fn discover(source: &Program) -> Result<Discovery, Error> {
     Ok(Discovery {
         source: source.clone(),
         ssa: graph,
+        aliases,
         kernels,
         groups,
     })

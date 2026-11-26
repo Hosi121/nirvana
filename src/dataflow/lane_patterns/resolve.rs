@@ -226,6 +226,41 @@ impl Resolve<'_, '_> {
     }
 }
 
+pub(super) fn pure_value(
+    source: &Program,
+    graph: &SsaFunction,
+    aliases: &[ValueId],
+    value: ValueId,
+) -> Option<PatternExpr> {
+    let instructions = source
+        .instructions()
+        .iter()
+        .map(|i| (i.address, i))
+        .collect();
+    let points = graph
+        .blocks
+        .iter()
+        .flat_map(|block| &block.points)
+        .map(|point| (point.site, point))
+        .collect();
+    let mut budget = Budget::new();
+    let mut context = Resolve {
+        graph,
+        instructions: &instructions,
+        points: &points,
+        aliases,
+        cut: ValueId(usize::MAX),
+        load: None,
+        budget: &mut budget,
+    };
+    let expression = context.value(value, 0)?;
+    if context.load.is_some() || context.budget.exhausted {
+        None
+    } else {
+        Some(expression)
+    }
+}
+
 pub(super) fn kernel(
     graph: &SsaFunction,
     instructions: &Instructions<'_>,
