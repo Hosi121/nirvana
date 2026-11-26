@@ -99,11 +99,11 @@ def quint_value(value):
     return json.dumps(value)
 
 
-def export(out, exporter, selected=(0, 1, 2, 9, 10, 11)):
+def export(out, exporter, selected=(0, 1, 2, 9, 10, 11, 12, 13)):
     result = subprocess.run([str(exporter)], check=True, capture_output=True, text=True, timeout=20)
     data = json.loads(result.stdout)
     verdicts = [case['verdict'] for case in data['cases']]
-    if verdicts != ['accepted'] * 3 + ['rejected'] * 5 + ['accepted'] * 4:
+    if verdicts != ['accepted'] * 3 + ['rejected'] * 5 + ['accepted'] * 6:
         raise ValueError(f'unexpected Rust acceptance gate: {verdicts}')
     (out / 'fixtures.json').write_text(result.stdout)
     (out / 'fixtures.qnt').write_text(
@@ -193,8 +193,8 @@ def trial(out, quint, env, toolchain):
             'workspace_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip()),
             'source_sha256': {p: sha(ROOT / p) for p in inputs},
             'exporter_sha256': sha(exporter), 'fixtures_sha256': sha(out / 'fixtures.json'),
-            'bounds': {'positive_pairs': 6, 'budgets': [0, 6], 'max_loop_depth': 2, 'stack_guard': 8},
-            'rust_replay': {'normal_pair_reports': 336, 'rejected_ast_mutations': 5,
+            'bounds': {'positive_pairs': 8, 'budgets': [0, 6], 'max_loop_depth': 2, 'stack_guard': 8},
+            'rust_replay': {'normal_pair_reports': 448, 'rejected_ast_mutations': 5,
                             'executor_mutation': 'model-only early-budget fault injection; real executor passes'},
             'limits': ['Finite exported family, not an unbounded proof of the recovery algorithm.',
                        'Event tokens assume shared deterministic primitive semantics; only the designated condition Load may fault.',

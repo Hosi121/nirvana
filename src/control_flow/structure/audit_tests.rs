@@ -749,16 +749,139 @@ fn compare_split_reports(source: &Program, body: &[Node], recovered: &Structured
     }
 }
 
+#[test]
+fn aliased_transfer_edits_keep_events_while_a_real_exit_change_is_rejected() {
+    for profile in 0..3 {
+        let source = larger_program(7, 12126506, profile);
+        let function = StructuredFunction::recover(&source).unwrap();
+        let mut edited = function.clone();
+        assert!(mutate(&mut edited.body, 5));
+        structure_verify::validate(&source, &edited.body).unwrap();
+        let mut wrong = function.body.clone();
+        let Some(Node::Loop(body)) = wrong.last_mut() else {
+            unreachable!()
+        };
+        assert_eq!(body.last(), Some(&Node::Continue));
+        *body.last_mut().unwrap() = Node::Break;
+        assert!(structure_verify::validate(&source, &wrong).is_err());
+        for counter in [0, 1, 2, u64::MAX] {
+            for pointer in [0, 1, 3, u64::MAX] {
+                for memory in [&[][..], &[1, 2, 3, 4][..]] {
+                    for budget in 0..=64 {
+                        let input = [counter, pointer, 0x55];
+                        assert_eq!(
+                            source.run_with_memory(&input, 0, memory, budget).unwrap(),
+                            edited.run_with_memory(&input, 0, memory, budget).unwrap()
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn larger_program(count: usize, mut graph: usize, profile: usize) -> Program {
+    let radix = 2 * count + 2;
+    let template = program(0, profile);
+    let mut instructions = Vec::new();
+    for pc in 0..count {
+        let choice = if pc + 1 == count {
+            radix - 1
+        } else {
+            let choice = graph % radix;
+            graph /= radix;
+            choice
+        };
+        let control = if choice == 0 {
+            Control::Next
+        } else if choice <= count {
+            Control::Jump((choice - 1) as u64)
+        } else if choice <= 2 * count {
+            Control::Branch {
+                condition: if profile == 2 {
+                    Expr::select(r(0), Expr::load(r(1), Width::U8), k(0))
+                } else {
+                    r(0)
+                },
+                target: (choice - count - 1) as u64,
+            }
+        } else {
+            Control::Return(r(2))
+        };
+        instructions.push(IrInstruction {
+            address: pc as u64,
+            size: 1,
+            assignments: if pc + 1 == count {
+                vec![]
+            } else {
+                template.instructions()[pc % 3].assignments.clone()
+            },
+            control,
+        });
+    }
+    Program::new(0, 3, instructions).unwrap()
+}
+
+fn sampled_larger_graphs(count: usize) -> Vec<usize> {
+    let space = (2 * count + 2).pow((count - 1) as u32);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cases = Vec::new();
+    // Two separate multiple-entry cycles, followed by Return(r2).
+    if count == 7 {
+        cases.push(0xc6d93a);
+        seen.insert(0xc6d93a);
+    }
+    let mut index = 0;
+    while cases.len() < 4096 {
+        let graph = (index * 214013 + 2531011) % space;
+        if seen.insert(graph) {
+            cases.push(graph);
+        }
+        index += 1;
+    }
+    cases
+}
+
+#[test]
+#[ignore = "bounded4096-topology six-instruction sample; run explicitly"]
+fn sampled_six_instruction_cfgs_preserve_complete_rust_reports() {
+    audit_cases(
+        &sampled_larger_graphs(6),
+        |graph, profile| larger_program(6, graph, profile),
+        10,
+    );
+}
+
+#[test]
+#[ignore = "bounded4096-topology seven-instruction sample; run explicitly"]
+fn sampled_seven_instruction_cfgs_preserve_complete_rust_reports() {
+    audit_cases(
+        &sampled_larger_graphs(7),
+        |graph, profile| larger_program(7, graph, profile),
+        10,
+    );
+}
+
 fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
-    let requested = graphs * 3;
+    let cases: Vec<_> = (0..graphs).collect();
+    assert_eq!(audit_cases(&cases, make, 6), (graphs * 3, 0));
+}
+
+fn audit_cases(
+    graphs: &[usize],
+    make: impl Fn(usize, usize) -> Program,
+    maximum_budget: usize,
+) -> (usize, usize) {
+    let requested = graphs.len() * 3;
     let mut recovered = 0;
     let mut comparisons = 0;
     let mut rejected = BTreeMap::<String, (usize, usize, usize)>::new();
     let mut refused_cases = Vec::new();
     let mut mutants = 0;
     let mut accepted_mutants = 0;
+    let mut accepted_edit_cases = Vec::new();
     for profile in 0..3 {
-        for graph in 0..graphs {
+        for &graph in graphs {
             let source = make(graph, profile);
             let function = match StructuredFunction::recover(&source) {
                 Ok(f) => f,
@@ -780,6 +903,7 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
                 }
                 mutants += 1;
                 if structure_verify::validate(&source, &candidate).is_ok() {
+                    accepted_edit_cases.push([profile, graph, kind]);
                     accepted_mutants += 1;
                     let mut altered = function.clone();
                     altered.body = candidate;
@@ -792,7 +916,7 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
                     for pointer in [0, 1, 3, u64::MAX] {
                         let input = [counter, pointer, 0x55];
                         for memory in [&[][..], &[1, 2, 3, 4][..]] {
-                            for budget in 0..=6 {
+                            for budget in 0..=maximum_budget {
                                 let expected =
                                     source.run_with_memory(&input, 0, memory, budget).unwrap();
                                 let actual = candidate
@@ -819,8 +943,13 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
         }
         write!(errors,"{{\"error\":{error:?},\"count\":{count},\"example_graph\":{graph},\"example_profile\":{profile}}}").unwrap();
     }
+    let accepted_details = if accepted_edit_cases.is_empty() {
+        String::new()
+    } else {
+        format!(",\"accepted_edit_cases\":{accepted_edit_cases:?}")
+    };
     let report = format!(
-        "{{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":{requested},\"recovered\":{recovered},\"comparisons\":{comparisons},\"mutants\":{mutants},\"accepted_mutants\":{accepted_mutants},\"rejected\":[{errors}],\"refused_cases\":{refused_cases:?}}}\n"
+        "{{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":{requested},\"recovered\":{recovered},\"comparisons\":{comparisons},\"mutants\":{mutants},\"accepted_mutants\":{accepted_mutants},\"rejected\":[{errors}],\"refused_cases\":{refused_cases:?}{accepted_details}}}\n"
     );
     if let Some(path) = std::env::var_os("NIRVANA_STRUCTURE_AUDIT_REPORT") {
         std::fs::write(path, &report).unwrap();
@@ -831,9 +960,8 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
         requested
     );
     assert!(recovered > 0 && comparisons > 0 && mutants > 0);
-    assert_eq!(accepted_mutants, 0, "negative controls must be rejected");
-    assert_eq!(
-        recovered, requested,
-        "fixed CFG recovery coverage regressed"
-    );
+    // A syntactic transfer edit may preserve the entire event sequence.
+    // Accepted edits were replayed above; known-negative fixtures stay
+    // strict in model_trial_tests. The legacy cohorts still require zero.
+    (recovered, accepted_mutants)
 }

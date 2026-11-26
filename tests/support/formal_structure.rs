@@ -194,5 +194,71 @@ pub fn cases() -> Vec<Case> {
             .to_vec();
         result.push(case);
     }
+    let branch = |target| Control::Branch {
+        condition: r(0),
+        target,
+    };
+    let program = || {
+        Program::new(
+            0,
+            2,
+            [
+                branch(2),
+                Control::Jump(1),
+                branch(1),
+                Control::Next,
+                branch(1),
+                branch(3),
+                Control::Return(r(1)),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(pc, control)| instruction(pc as u64, vec![], control))
+            .collect(),
+        )
+        .unwrap()
+    };
+    let original = StructuredFunction::recover(&program())
+        .unwrap()
+        .body()
+        .to_vec();
+    let mut edited = original.clone();
+    fn replace_inner_continue(nodes: &mut [Node]) -> bool {
+        for node in nodes {
+            if let Node::Loop(body) = node
+                && matches!(
+                    body.as_slice(),
+                    [Node::Step { address: 1, .. }, Node::Continue]
+                )
+            {
+                body[1] = Node::Break;
+                return true;
+            }
+            let changed = match node {
+                Node::Loop(body) => replace_inner_continue(body),
+                Node::If {
+                    taken, not_taken, ..
+                } => replace_inner_continue(taken) || replace_inner_continue(not_taken),
+                _ => false,
+            };
+            if changed {
+                return true;
+            }
+        }
+        false
+    }
+    assert!(replace_inner_continue(&mut edited));
+    result.push(Case {
+        name: "recovered-routing-alias",
+        program: program(),
+        body: original,
+        early_budget: false,
+    });
+    result.push(Case {
+        name: "equivalent-transfer-edit",
+        program: program(),
+        body: edited,
+        early_budget: false,
+    });
     result
 }
