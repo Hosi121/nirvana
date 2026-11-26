@@ -628,6 +628,20 @@ split_outer:
     addq $2,24(%rdi)
     jmp .Louter_entry
 .size split_outer,.-split_outer
+.globl split_forward
+.type split_forward,@function
+split_forward:
+    cmpq $0,(%rdi)
+    jne .Lforward_condition
+.Lforward_self:
+    addq $1,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lforward_self
+.Lforward_condition:
+    cmpq $0,16(%rdi)
+    jne split_forward
+    jmp .Lforward_self
+.size split_forward,.-split_forward
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -657,6 +671,7 @@ split_outer:
         "split_nested",
         "split_linear",
         "split_outer",
+        "split_forward",
     ] {
         let function = plan
             .functions

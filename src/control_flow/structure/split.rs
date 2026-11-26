@@ -223,7 +223,7 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
     let cfg = source.cfg();
     let entries = candidates(source, analysis);
     // Preserve every old single-block attempt and its order before spending
-    // any of the remaining attempt budget on a longer entry path.
+    // any of the remaining attempt budget on a longer forward entry path.
     let mut plans: Vec<_> = entries
         .iter()
         .take(MAX_ATTEMPTS)
@@ -237,14 +237,20 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
         let mut blocks = vec![to];
         let mut steps = cfg.block(to).instructions.len();
         while plans.len() < MAX_ATTEMPTS {
-            let successors = &cfg.block(*blocks.last().expect("entry path")).successors;
-            let Some(first) = successors.first() else {
+            let current = *blocks.last().expect("entry path");
+            // Drop only dominance-proven natural backedges when choosing the
+            // next forward block. The proposal retains those real edges,
+            // including natural loops internal to the copied region.
+            let mut successors = cfg.block(current).successors.iter().filter(|edge| {
+                !matches!(edge.target, Target::Block(target) if analysis.dominates(target, current))
+            });
+            let Some(first) = successors.next() else {
                 break;
             };
             let Target::Block(next) = first.target else {
                 break;
             };
-            if successors.iter().any(|edge| edge.target != first.target)
+            if successors.any(|edge| edge.target != first.target)
                 || next == from
                 || blocks.contains(&next)
             {
@@ -306,7 +312,7 @@ fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
             if !duplicate && original.address == from.address && target == copied_entry {
                 return duplicates.get(&target).copied();
             }
-            // A copied linear path keeps internal fallthroughs and jumps
+            // A copied forward path keeps internal fallthroughs and jumps
             // together. Its final outgoing edges return to the source CFG,
             // including a backedge to an earlier block in the copied path.
             if duplicate && original.address != copied_last {

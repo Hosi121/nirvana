@@ -517,6 +517,47 @@ fn split_loop_exits_share_a_divergent_follow_within_five_steps() {
     }
 }
 
+#[test]
+fn split_forward_entry_path_keeps_internal_natural_backedges() {
+    for profile in 0..3 {
+        let source = program5(4412, profile);
+        let step = |address: usize| Node::Step {
+            address: address as u64,
+            assignments: source.instructions()[address].assignments.clone(),
+        };
+        let Control::Branch { condition, .. } = &source.instructions()[0].control else {
+            unreachable!()
+        };
+        let branch = |taken, not_taken| Node::If {
+            condition: condition.clone(),
+            taken,
+            not_taken,
+        };
+        let body = vec![Node::Loop(vec![
+            step(0),
+            branch(
+                vec![step(2), branch(vec![Node::Continue], vec![step(3)])],
+                vec![],
+            ),
+            Node::Loop(vec![
+                step(1),
+                branch(vec![Node::Continue], vec![]),
+                step(2),
+                branch(vec![Node::ContinueOuter { levels: 1 }], vec![]),
+                step(3),
+            ]),
+        ])];
+        structure_verify::validate(&source, &body).unwrap();
+        let recovered = StructuredFunction::recover_with_step_limit(&source, 2, 6)
+            .expect("a proven natural backedge does not block the forward entry path");
+        assert_eq!(recovered.split_evidence().unwrap().copied_steps, 2);
+        assert_eq!(recovered.evidence().compared_copies, 6);
+        assert!(StructuredFunction::recover_with_step_limit(&source, 2, 5).is_err());
+        assert!(StructuredFunction::recover_with_step_limit(&source, 1, 6).is_err());
+        compare_split_reports(&source, &body, &recovered);
+    }
+}
+
 fn compare_split_reports(source: &Program, body: &[Node], recovered: &StructuredFunction) {
     for counter in [0, 1, 2, u64::MAX] {
         for pointer in [0, 1, 3, u64::MAX] {
