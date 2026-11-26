@@ -250,6 +250,42 @@ class ReportTests(unittest.TestCase):
                               (interval(4, 4), interval(4, 4), 'equal')]:
             self.assertEqual(reports.interval_change(a, b), wanted)
 
+    def test_measured_distance_regression_is_visible_without_stage_loss(self):
+        dump = '''uint64_t nirvana_readable(void)
+ [B4 (ENTRY)]
+   Succs (1): B3
+ [B3]
+   1: input
+   T: if [B3.1]
+   Succs (2): B2 B1
+ [B2]
+   1: return 7;
+   Succs (1): B0
+ [B1]
+   1: return 8;
+   Succs (1): B0
+ [B0 (EXIT)]
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = Path(directory) / 'a', Path(directory) / 'b'
+            before, after = fixture(a), fixture(b)
+            row = after['rows'][0]
+            root = b / row['artifacts']
+            raw, stats = cg.parse_dump(dump, 'nirvana_readable')
+            generated, removed = cg.normalize(raw)
+            source = cg.graph_from_json(json.loads((root / 'source_cfg.json').read_text())['graph'])
+            row['generated_cfg'] = {
+                **stats, **removed, 'nodes': len(generated['nodes']), 'edges': len(generated['edges']),
+                'graph_sha256': save(root, 'generated_cfg.json', json.dumps({'graph': generated})),
+                'dump_sha256': save(root, 'generated_cfg.stderr.txt', dump),
+            }
+            row['distance'] = cg.distance(source, generated)
+            self.assertGreater(row['distance']['lower_bound'], 0)
+            result = self.compare(a, b, before, after)
+            self.assertEqual(result['structure_regressions'], 0)
+            self.assertEqual(result['structure_distance_regressions'], 1)
+            self.assertEqual(result['structure'], {'regressed': 1})
+
     def test_initial_corpus_locks_four_development_and_two_holdout_families(self):
         path = evaluate_structure.ROOT / 'tools/corpora/structure-initial-v1.json'
         cases = evaluate_structure.load_cases(path)

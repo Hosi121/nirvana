@@ -428,6 +428,7 @@ def compare(before_path, after_path):
             'requested': len(rows),
             'structure': dict(Counter(row['distance'] for row in rows)),
             'structure_regressions': sum(row['structure_regression'] for row in rows),
+            'structure_distance_regressions': sum(row['distance'] == 'regressed' for row in rows),
             'candidate_semantics': dict(Counter(row['after_semantics'] for row in rows)),
             'architecture_regressions': sum(row['architecture_regression'] for row in rows),
             'analysis_regressions': sum(row['analysis_regression'] for row in rows),
