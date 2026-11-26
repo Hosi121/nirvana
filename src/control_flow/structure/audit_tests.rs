@@ -345,7 +345,6 @@ fn program5(mut graph: usize, profile: usize) -> Program {
 }
 
 #[test]
-#[ignore = "known bounded-recovery gap: a shared loop latch is duplicated"]
 fn forward_latch_join_fits_one_copy_and_five_steps() {
     let source = program5(3285, 0);
     let step = |address| Node::Step {

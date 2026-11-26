@@ -570,6 +570,21 @@ mixed:
     mov 16(%rdi),%rax
     ret
 .size mixed,.-mixed
+.globl latch
+.type latch,@function
+latch:
+    cmpq $0,(%rdi)
+    jne .Lshared_latch
+    cmpq $0,8(%rdi)
+    jne .Lshared_latch
+    cmpq $0,16(%rdi)
+    jne .Llatch_return
+.Lshared_latch:
+    jmp latch
+.Llatch_return:
+    mov 24(%rdi),%rax
+    ret
+.size latch,.-latch
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -592,7 +607,7 @@ mixed:
     .unwrap();
     let plan = module_outline::recover(&module.program).unwrap();
     check_plan(&module, &plan);
-    for name in ["main", "mixed"] {
+    for name in ["main", "mixed", "latch"] {
         let function = plan
             .functions
             .iter()

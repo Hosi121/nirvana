@@ -514,14 +514,17 @@ impl Builder<'_, '_> {
                         None => return Err(StructureError::MissingJoin(current)),
                     };
                     let join = if let Some(dag) = &mut self.forward_dag {
-                        dag.common_join(
-                            taken,
-                            not_taken,
-                            stop.or(strict_join),
-                            contexts.last().map(|context| &context.body),
-                        )
-                        .or(stop)
-                        .or(strict_join)
+                        let scope = contexts.last().map(|context| &context.body);
+                        let mut candidate =
+                            dag.common_join(taken, not_taken, stop.or(strict_join), scope);
+                        if candidate.is_none() && stop.is_none() && strict_join.is_some() {
+                            // Finite-path post-dominance can cross a backedge.
+                            // If that inferred stop hides a shared latch, try
+                            // the forward DAG within the same loop scope.
+                            // Explicit lexical stops and visit budgets remain.
+                            candidate = dag.common_join(taken, not_taken, None, scope);
+                        }
+                        candidate.or(stop).or(strict_join)
                     } else {
                         strict_join
                     };
