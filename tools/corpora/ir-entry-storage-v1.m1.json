@@ -1,0 +1,1659 @@
+{
+  "schema": "nirvana-entry-storage-checkpoint-v1",
+  "milestone": "M1 explicit entry/exit and physical storage contracts supporting M2 compiler-aware region candidates",
+  "baseline_checkpoint": "tools/corpora/ir-region-feedback-v1.m1.json",
+  "candidate_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+  "implementation_revisions": {
+    "prefix": "9433f12",
+    "allocated_storage": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700"
+  },
+  "status": "checked entry-prefix completion and physical storage lowering are public opt-in APIs; normal decompiler output retained",
+  "findings": [
+    {
+      "claim_id": "ENTRY-PREFIX-COMPLETION-001",
+      "drift_class": "coverage-gap",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/architecture.md",
+        "docs/verification.md"
+      ],
+      "spec_delta": "Extend the completion boundary to an actual source entry prefix, retaining its branch/initializer/effect semantics",
+      "code_delta": "Prefixed validates source identity, terminal mappings, unrestricted feedback inputs, relocation, one-time initial flag and feedback connection; Complete retains the initial source region",
+      "model_delta": "Same checked DAG memory model and exhaustion reachability; prefix itself supplies correlations instead of narrowing the feedback input domain",
+      "previous_machine_result": "Only same-entry feedback unfolding was available; bit caps alone admit unreachable long-running equal-exit states",
+      "current_machine_result": "Certified2bit limit without prefix still exceeds4 rounds. Real initialization and guard prove3/4 complete;0/2 replay exhaustion from the original prefix.864 ordinary concrete cases preserve original registers/RAM/decoded exit/fault.",
+      "domain_wording": "The source prefix may carry independently validated caps at its own entry; the feedback region accepts arbitrary input words. PC/trace/budget observations remain separate for this composite DAG.",
+      "domain_question": null,
+      "recommended_fix_target": "actual source prefix, checked composition and original-source replay; preserve the declared boundary",
+      "lock_update": "source/tag/domain/resource/tampering controls, actual solver queries and full/M0 checks",
+      "epistemic_status": "machine-confirmed under the declared model and checked projection"
+    },
+    {
+      "claim_id": "ALLOCATED-STORAGE-IR-001",
+      "drift_class": "coverage-gap",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/architecture.md",
+        "docs/verification.md"
+      ],
+      "spec_delta": "Make the existing storage assignment into an immutable executable Program with a retained source and independent correspondence check",
+      "code_delta": "Validate source/color ownership before bounded cloning; allocate a disjoint fresh bank, check color separation and exact emitted relabeling, expose exact-input poison extension",
+      "model_delta": "Existing independent allocation_verify inductive read invariant plus iterative instruction/operand/operator/width/PC/size/control correspondence; common renaming emitter and checker also serve bijective dense projection",
+      "previous_machine_result": "C storage metadata and test-only relabeling existed; physical storage was not exposed as a checked public IR transform",
+      "current_machine_result": "Actual prepared Clang input maps35 logical registers into9 fresh slots. Dense Program has12 active registers and a13-register region.5569 return/RAM/firstfault/PC/trace/budget comparisons pass.840 ordinary cases include a committed Store before a later Load fault, poison slots and lazy effects.",
+      "domain_wording": "Return/all RAM/first fault/PC/trace/instruction-budget observations; full original logical register snapshots remain at the original layer. u64 physical slots precede independent C width/render checks.",
+      "domain_question": null,
+      "recommended_fix_target": "physical storage IR and its source-bound proof; use this explicit API before automatic M2 candidate selection",
+      "lock_update": "initial-read and interfering-color rejection, fresh-bank separation, sparse labels, malformed emitter/evidence controls, partial faults and actual binary comparisons",
+      "epistemic_status": "machine-confirmed under the inductive storage invariant and actual interpreter comparisons"
+    }
+  ],
+  "model_ids": {
+    "completion": "checked-region-feedback-completion-v1",
+    "memory_dag": "checked-memory-dag-region-v1",
+    "storage": "checked-allocated-storage-ir-v1",
+    "dense_projection": "checked-dense-register-projection-v1"
+  },
+  "contracts": {
+    "prefix": "Region from actual entry prefix until non-feedback continuation, real Return or first fault; source register values/RAM retained under entry facts",
+    "storage": "Same original operations and guest steps under a physical-slot read invariant; return/RAM/firstfault/PC/trace/budget retained",
+    "dense": "Bijective namespace with restoration of every unused original input slot; complete source register reports retained",
+    "cross_stage": "Source Programs and certificate register namespaces are bound explicitly. Do not infer original source variables from physical slot counts. SMT identity trials attest encoder acceptance, not source-to-C correctness."
+  },
+  "validation": {
+    "rust": {
+      "revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--all-targets",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "returncode": 0,
+      "seconds": 519.5452647220009,
+      "log_sha256": "1fa592b9ebab15de051966a726847610b12b798bae10ab7633b44d09608458ca",
+      "targets": 26,
+      "passed": 1656,
+      "failed": 0,
+      "ignored": 74,
+      "target_summaries": [
+        "test result: ok. 306 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 1.73s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 179 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 30.02s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.40s",
+        "test result: ok. 148 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 73.42s",
+        "test result: ok. 112 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s",
+        "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s",
+        "test result: ok. 36 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 148.27s",
+        "test result: ok. 133 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.45s",
+        "test result: ok. 58 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 222.17s",
+        "test result: ok. 261 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 8.49s",
+        "test result: ok. 12 passed; 0 failed; 47 ignored; 0 measured; 0 filtered out; finished in 0.39s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "region_group": {
+      "passed": 25,
+      "ordinary": 21,
+      "explicit_solver_tests": 4,
+      "profile": "same5second solver process budget, --test-threads=1",
+      "legacy_trial": {
+        "schema": "nirvana-dag-region-trial-v1",
+        "revision": "9433f12abd68869c22915230129fa53c5ddf1bc8",
+        "dirty": true,
+        "command": [
+          "python3",
+          "tools/dev.py",
+          "cargo",
+          "test",
+          "--lib",
+          "region::",
+          "--",
+          "--include-ignored",
+          "--nocapture",
+          "--test-threads=1"
+        ],
+        "returncode": 0,
+        "seconds": 17.53010057899519,
+        "solver": {
+          "version": "Z3 version 4.8.12 - 64 bit",
+          "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+          "query_seconds": 5
+        },
+        "rows": [
+          {
+            "case": "identity",
+            "verdict": "equivalent",
+            "script_bytes": 50535,
+            "milliseconds": 42,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "one-lane",
+            "verdict": "equivalent",
+            "script_bytes": 25218,
+            "milliseconds": 17,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "two-lanes",
+            "verdict": "equivalent",
+            "script_bytes": 45522,
+            "milliseconds": 37,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "four-lanes",
+            "verdict": "equivalent",
+            "script_bytes": 88895,
+            "milliseconds": 1988,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "four-lanes-80-registers",
+            "verdict": "equivalent",
+            "script_bytes": 91447,
+            "milliseconds": 1823,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "lazy-dead-load",
+            "verdict": "equivalent",
+            "script_bytes": 33033,
+            "milliseconds": 17,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "post-fault-effects",
+            "verdict": "equivalent",
+            "script_bytes": 7590,
+            "milliseconds": 17,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "reordered-store",
+            "verdict": "counterexample",
+            "script_bytes": 31119,
+            "milliseconds": 275,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "missing-store",
+            "verdict": "counterexample",
+            "script_bytes": 28211,
+            "milliseconds": 164,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "eager-dead-load",
+            "verdict": "counterexample",
+            "script_bytes": 36295,
+            "milliseconds": 97,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "wrong-exit",
+            "verdict": "counterexample",
+            "script_bytes": 26299,
+            "milliseconds": 111,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "wrong-mark",
+            "verdict": "counterexample",
+            "script_bytes": 25306,
+            "milliseconds": 112,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "join-constants",
+            "verdict": "counterexample",
+            "script_bytes": 4422,
+            "milliseconds": 53,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "same-target-preserved",
+            "verdict": "equivalent",
+            "script_bytes": 4372,
+            "milliseconds": 12,
+            "replayed": false,
+            "constrained_replayed": false
+          },
+          {
+            "case": "same-target-dropped",
+            "verdict": "counterexample",
+            "script_bytes": 4373,
+            "milliseconds": 88,
+            "replayed": true,
+            "constrained_replayed": true
+          },
+          {
+            "case": "oversized-witness",
+            "verdict": "replay_limit",
+            "script_bytes": 3017,
+            "milliseconds": 33,
+            "replayed": false,
+            "constrained_replayed": false
+          }
+        ],
+        "equivalent": 8,
+        "counterexamples": 7,
+        "replay_limits": 1,
+        "source_sha256": {
+          "src/verification/block_verify.rs": "46b1c312f00e974fb0de56371a0a4dd06988d6dfe44ff21c3b450b007e04f400",
+          "src/verification/block_verify/paths.rs": "9bbea23df16b9fe5b1f03fa8c0cadf56548d0b5222c3ae2ab802f87ce1e8e414",
+          "src/verification/block_verify/region.rs": "72b2593774ebd5aa1b04b4d985037a042e7dcb47d6fe1edbfc64a4218b7aeba0",
+          "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+          "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+          "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+          "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+          "src/verification/verify.rs": "5dd3f5caf9ff1ba8f25d1cf934d67e1138eda774cf5a1fec44724d9ee7294763",
+          "src/model/ir.rs": "bd7f26950ccf4011db1bf96a6c337da5588817f6e5752fa9c82a8925781cd75d"
+        },
+        "artifacts": {
+          "post-fault-effects.after.ir": {
+            "bytes": 1263,
+            "sha256": "8dbe06bc4afd9b34935726fcfb072f18a99b538b5efec6cef9f88531469026b3"
+          },
+          "same-target-dropped.smt2": {
+            "bytes": 4373,
+            "sha256": "cd36dc3484d8bb938c00feb7ee01e384322cb6084dcd8f378e82150f75539980"
+          },
+          "reordered-store.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "reordered-store.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "2ff7003f6dcd94173231674016e5d89da5183a51eb23778b1c83b8274033e293"
+          },
+          "candidate-wrong-false.smt2": {
+            "bytes": 49434,
+            "sha256": "6cbf398e7453ee171d02b7c93e1ef3d30d9bc161d2fcef04db31b3d7415f68f5"
+          },
+          "same-target-preserved.smt2": {
+            "bytes": 4372,
+            "sha256": "2dcc65373b60657e6b56b321ef8422ab38b8c1ea5754284197413f26c3ed7ea4"
+          },
+          "four-lanes-80-registers.after.ir": {
+            "bytes": 30394,
+            "sha256": "f37aa98efa10931ec95e957fc33a6fe865a4de077a55bb670f1e6560f069683a"
+          },
+          "candidate-wrong-true.smt2": {
+            "bytes": 50043,
+            "sha256": "778ced38ffb69b1e4981e669b7ec94e8b42da678daa7358601a8fb85459c2faa"
+          },
+          "reordered-store.smt2": {
+            "bytes": 31119,
+            "sha256": "80e5853357946779820ce245a4daf14cb760cfe3cb83f9ea20b3d5a801c4f638"
+          },
+          "missing-store.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "ccf0b54ed163256b7f69ebe025687ef818e215aa5712dcc6e100378e29f209f6"
+          },
+          "identity.after.ir": {
+            "bytes": 27077,
+            "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+          },
+          "wrong-mark.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "lazy-dead-load.after.ir": {
+            "bytes": 9619,
+            "sha256": "732c36c287602b064d7c47532cfd145aea4b6ea82e28044c4b73f5cf7f16d480"
+          },
+          "eager-dead-load.after.ir": {
+            "bytes": 9305,
+            "sha256": "0a8a771a6be29a2eb4adcbf45a44d5a63b7d07f23387e2ec5d5d07e8786ab96d"
+          },
+          "eager-dead-load.inputs.txt": {
+            "bytes": 290,
+            "sha256": "0445f2de7dd3decfcfa44faca0a79084203c50f242e8738d9591ba228dc606be"
+          },
+          "lazy-dead-load.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "rounds-1.smt2": {
+            "bytes": 10557,
+            "sha256": "19a5b94eeec4719e9aa819535d42ec154b436e9fc9c142b5d925e4f5d12c6c04"
+          },
+          "eager-dead-load.alias-model.txt": {
+            "bytes": 2021,
+            "sha256": "00a9915d5f01617d4647557660e04ed15ae57014353078b7b3ff2d86f5e650f9"
+          },
+          "post-fault-effects.smt2": {
+            "bytes": 7590,
+            "sha256": "9058602bd3686dde7dade3649077793215458b100cd61b71d33d35eb397cb1b8"
+          },
+          "two-lanes.after.ir": {
+            "bytes": 16095,
+            "sha256": "6320415b089f63c4ecf083c47f5a8249dc5e4aa96a4c775338b7f60f599341c9"
+          },
+          "join-constants.smt2": {
+            "bytes": 4422,
+            "sha256": "38f6d53851cf45c19bc6554e3d6843715ae019ab2ae1ce718082aacc89b5f15f"
+          },
+          "eager-dead-load.smt2": {
+            "bytes": 36295,
+            "sha256": "af572609dad75c60b09e5fd7a0248f1f7d594f619b3594e192d05152f62b6f70"
+          },
+          "eager-dead-load.memory.bin": {
+            "bytes": 65535,
+            "sha256": "981f95a7d7f9f197c7bd66c38ee6cbb754fc7dbc89cd5d9df6838324369e4743"
+          },
+          "reordered-store.inputs.txt": {
+            "bytes": 234,
+            "sha256": "9e4a1455765d29a6744f40be200f4cbe70d8c502a639aa5c4be6f7740a832470"
+          },
+          "wrong-mark.after.ir": {
+            "bytes": 9175,
+            "sha256": "1333fd7d0dc096c48e4040e7636b390023ea64fd307de54f2d4c2a56acd98e5e"
+          },
+          "two-lanes.smt2": {
+            "bytes": 45522,
+            "sha256": "3559430d01c85a2966d1b23cdbbd0845fb2ca6ac14ffc946625cf017c52d4d89"
+          },
+          "same-target-preserved.before.ir": {
+            "bytes": 718,
+            "sha256": "0675f9aab4cda1852fc4b878080a5d07fc3f0ed358c3b6d22714d4807d5031ce"
+          },
+          "four-lanes-80-registers.before.ir": {
+            "bytes": 27078,
+            "sha256": "918c2f68bb520dafd13e4936cf4b5a575fcc80600be2817e8074bbc85b1aa5e7"
+          },
+          "trial.log": {
+            "bytes": 5768,
+            "sha256": "51947802a500bfae4c979a197228cff105cd09fba65ffe26103dd81f39995ca0"
+          },
+          "one-lane.smt2": {
+            "bytes": 25218,
+            "sha256": "33405a6531a297c39f9e2ecdfe9f7ea10ecb0af2ac6e1c205cd9c9254fdda57b"
+          },
+          "same-target-preserved.after.ir": {
+            "bytes": 894,
+            "sha256": "458ba5eb5a16b2047582653e87efb1da511632f6c16e673d01f57835808b6997"
+          },
+          "four-lanes-80-registers.smt2": {
+            "bytes": 91447,
+            "sha256": "03622e630ba74ca9c40e56cdf6202f05a4592d4e6d9ea3faea2f997f75bab4f6"
+          },
+          "missing-store.after.ir": {
+            "bytes": 8351,
+            "sha256": "03b1f58bb43c23ff57200013fef07967d62d7fc9fa5af534b7e90540e9ec8183"
+          },
+          "lazy-dead-load.smt2": {
+            "bytes": 33033,
+            "sha256": "bcf6542f576356eb87da13932ea3c733cfef53c82f15cf970ecdc56f868151a6"
+          },
+          "missing-store.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "post-fault-effects.before.ir": {
+            "bytes": 1263,
+            "sha256": "80c6d38d81f122a37251e72904dfaecedb42a0c70dbc257ced12c08f81f96563"
+          },
+          "identity.before.ir": {
+            "bytes": 27077,
+            "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+          },
+          "wrong-mark.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "3e7b6859dbf445fdb63128dd97f5192dfd2dbd028ce0b2881b305f8da8d57e6c"
+          },
+          "same-target-dropped.before.ir": {
+            "bytes": 718,
+            "sha256": "0675f9aab4cda1852fc4b878080a5d07fc3f0ed358c3b6d22714d4807d5031ce"
+          },
+          "rounds-3.smt2": {
+            "bytes": 24669,
+            "sha256": "9783bffda265639018a4dc4932bc4279a14add4d6333202f8505f14868c0e353"
+          },
+          "reordered-store.memory.bin": {
+            "bytes": 61935,
+            "sha256": "58a4afde94a204d688fceb8da90bfa6e848e5f5abcb7c06493980556a4acdaa0"
+          },
+          "rounds-0.smt2": {
+            "bytes": 1559,
+            "sha256": "0c97b09e55b133606fb2599dd14da6cda82bf447fc37327d94ed76996fcaf5ea"
+          },
+          "four-lanes.after.ir": {
+            "bytes": 30393,
+            "sha256": "e8aed7e39acae3642ceca791f041431e24cfd19830299ae391d6d1cf6b8db0f1"
+          },
+          "join-constants.memory.bin": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "wrong-mark.inputs.txt": {
+            "bytes": 166,
+            "sha256": "98e5405961e0d13fbfaef726b990a057ed48b2d5ff7f02aacae0bfd43dc3a8f6"
+          },
+          "two-lanes.before.ir": {
+            "bytes": 14183,
+            "sha256": "16daa762aedaa90a4ad67640276816e6186a921a62a3e609ac3f57df07251ed0"
+          },
+          "wrong-exit.smt2": {
+            "bytes": 26299,
+            "sha256": "90f03da3ce58432dba0a5544914f87c0100155e900f456eaa485e2315aff751e"
+          },
+          "oversized-witness.smt2": {
+            "bytes": 3017,
+            "sha256": "e88939d3d707b52f22e140b927fcdbdde339b78df20c0da8dc8a5a22746fd61b"
+          },
+          "wrong-exit.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "join-constants.before.ir": {
+            "bytes": 1555,
+            "sha256": "6f66757773ca059b3a7c174019fb06adcbbc595a7e2f328abb546182b5a35ea3"
+          },
+          "join-constants.after.ir": {
+            "bytes": 1555,
+            "sha256": "81ca2c9dcaec36659e84f01c1de133338626607fe1930a5c79314d6082e9ceca"
+          },
+          "missing-store.smt2": {
+            "bytes": 28211,
+            "sha256": "2ab7c89583a98b99e9be7b704e5a580758cc81a61353c06ff010370beb65575a"
+          },
+          "four-lanes.smt2": {
+            "bytes": 88895,
+            "sha256": "ce7fd29332eaf79c4905e52689a405fda3c21d2e27b7c9b5fadaa6ea2deb1610"
+          },
+          "identity.smt2": {
+            "bytes": 50535,
+            "sha256": "7df4a7803cdb29689ff2aff244c3992aa7f42c3027b720a70cbeefab36dcf492"
+          },
+          "wrong-exit.after.ir": {
+            "bytes": 8946,
+            "sha256": "e4082e407cc54021463e6a251a1dc32e210a1f025508d86aafdd1b8997f6d411"
+          },
+          "wrong-mark.smt2": {
+            "bytes": 25306,
+            "sha256": "857e382828361610333ab5c12ad40c55221637e2f78ca4cd09de75bb6e12683a"
+          },
+          "rounds-2.smt2": {
+            "bytes": 27526,
+            "sha256": "d539fd0157b06da314c34b68d0b67413e002a96d1e28ee79b4586f9d2d1f229b"
+          },
+          "wrong-exit.alias-model.txt": {
+            "bytes": 1157,
+            "sha256": "991bbe681915f66fbfe1ee0505e0685e3ba477d6aed851cd70810982b7cc76f8"
+          },
+          "wrong-exit.inputs.txt": {
+            "bytes": 229,
+            "sha256": "f511e90084f84e81f74d342598448c3a7b12b02c87796faa0723dcf7b849aa3c"
+          },
+          "wrong-mark.memory.bin": {
+            "bytes": 31049,
+            "sha256": "cca89e795f8a509cf785b25ac89b313c3667cb7e033637b92c43a4e3c5f73fae"
+          },
+          "missing-store.inputs.txt": {
+            "bytes": 245,
+            "sha256": "8a4a8b4c5cc7c61121a0e657e32328f88ed47767d08a73820ab1f78ee0dd3cc4"
+          },
+          "four-lanes.before.ir": {
+            "bytes": 27077,
+            "sha256": "3698147a9dc99c8960f170be718672c41dc53348257d006dc65990b254687cde"
+          },
+          "one-lane.after.ir": {
+            "bytes": 8946,
+            "sha256": "2a3ce97af9f5198575e3a184c2c225fe2da7bf5afdc2da332eb6a7b11737202e"
+          },
+          "eager-dead-load.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "same-target-dropped.after.ir": {
+            "bytes": 415,
+            "sha256": "27a712e6c67a178431126ddd13ce31f4090432517b77094279345129ee47055b"
+          },
+          "join-constants.inputs.txt": {
+            "bytes": 172,
+            "sha256": "55e0292d7ad664303dd59163176e851154b5f501b2ffee4a3ff2d0f31e2ac171"
+          },
+          "wrong-exit.memory.bin": {
+            "bytes": 65535,
+            "sha256": "03c7775d9507fbd0b3cf746a7fa5962f054171faa33fb6b3dfeac6311d187adb"
+          },
+          "reordered-store.after.ir": {
+            "bytes": 8946,
+            "sha256": "07f96f24c389e245b9c9ef0a792dbbd73b2011b965d2b7d4e8b3e52c0c49d85d"
+          },
+          "join-constants.alias-model.txt": {
+            "bytes": 323,
+            "sha256": "b11deaacdbcf093ecd561a829d76490c3462028d72bf5ddf48de9237ba31948a"
+          },
+          "same-target-dropped.memory.bin": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "rounds-4.smt2": {
+            "bytes": 31813,
+            "sha256": "eacb26a9842c629c299b155069f52ac8301ea95ef29d58d25bce9a2c820cd47f"
+          },
+          "missing-store.memory.bin": {
+            "bytes": 65535,
+            "sha256": "8c7dc4c28689bd1a7d4f580a9e8116183b2f7e237d53bf610418b024ff7511ee"
+          },
+          "same-target-dropped.inputs.txt": {
+            "bytes": 234,
+            "sha256": "698e38c65b76eda8e5cc8618c850160546e9896c9b43a0b2dc59bb70d235ecb3"
+          },
+          "rounds-5.smt2": {
+            "bytes": 38965,
+            "sha256": "e0243373fb8d0605de26525e6ba854b9890bef2453bda55a510aeaa29ae4a734"
+          },
+          "one-lane.before.ir": {
+            "bytes": 7736,
+            "sha256": "433daf8c326c476c75b043d119bfd7a21a10b432f9a9a0f43e2f7f46c5a3ac49"
+          },
+          "same-target-dropped.alias-model.txt": {
+            "bytes": 373,
+            "sha256": "d7090929d6341d06d0756f7c3f830720c9023bb5cd45a35acb71deea16a6c07d"
+          }
+        },
+        "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.62s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 25 tests\ntest verification::block_verify::region::extraction::repeat::prefix::tests::entry_prefix_relations_prove_equal_exit_loops_and_replay_exhaustion ... PREFIX rounds=0 verdict=bound_exceeded bytes=8188 ms=62\nPREFIX rounds=2 verdict=bound_exceeded bytes=27526 ms=97\nPREFIX rounds=3 verdict=complete bytes=36255 ms=23\nPREFIX rounds=4 verdict=complete bytes=44992 ms=27\nPREFIX without_entry_context=bound_exceeded\nok\ntest verification::block_verify::region::extraction::repeat::prefix::tests::prefixed_unfolding_preserves_initializers_lazy_exits_full_effects_and_faults ... ok\ntest verification::block_verify::region::extraction::repeat::prefix::tests::source_tag_domains_input_caps_and_connection_tampering_are_rejected ... ok\ntest verification::block_verify::region::extraction::repeat::tests::certified_cyclic_candidate_matches_unrolled_memory_and_rejects_wrong_increment ... REGION-CANDIDATE wrong=false verdict=equivalent bytes=49434 ms=305\nREGION-CANDIDATE wrong=true verdict=counterexample bytes=50043 ms=161\nok\ntest verification::block_verify::region::extraction::repeat::tests::completion_queries_distinguish_proven_bounds_exhaustion_and_unknown ... REGION-COMPLETE rounds=0 verdict=bound_exceeded bytes=1559 ms=55\nREGION-COMPLETE rounds=1 verdict=bound_exceeded bytes=10557 ms=89\nREGION-COMPLETE rounds=3 verdict=bound_exceeded bytes=24669 ms=123\nREGION-COMPLETE rounds=4 verdict=complete bytes=31813 ms=24\nREGION-COMPLETE rounds=5 verdict=complete bytes=38965 ms=26\nREGION-COMPLETE unbounded_inputs=bound_exceeded\nok\ntest verification::block_verify::region::extraction::repeat::tests::composition_tampering_and_missing_feedback_or_resources_are_rejected ... ok\ntest verification::block_verify::region::extraction::repeat::tests::missing_solver_never_seals_a_complete_region ... ok\ntest verification::block_verify::region::extraction::repeat::tests::repeated_regions_preserve_effects_values_and_faults_including_counter_wrap ... ok\ntest verification::block_verify::region::extraction::tests::boundaries_cycles_and_foreign_entry_facts_are_checked ... ok\ntest verification::block_verify::region::extraction::tests::cuts_preserve_full_effects_faults_and_distinct_function_return_values ... ok\ntest verification::block_verify::region::extraction::tests::independent_projection_checker_rejects_changed_effects_routes_caps_and_tags ... ok\ntest verification::block_verify::region::extraction::tests::same_target_branch_still_evaluates_its_faulting_condition ... ok\ntest verification::block_verify::region::extraction::tests::source_expression_depth_and_extra_capture_register_are_bounded ... ok\ntest verification::block_verify::region::registers::tests::comparison_uses_one_map_for_different_register_uses_and_boundary_only_slots ... ok\ntest verification::block_verify::region::registers::tests::independent_checker_rejects_aliasing_operands_effects_and_dropped_control_loads ... ok\ntest verification::block_verify::region::registers::tests::sparse_projection_preserves_full_reports_at_every_budget_and_fault_boundary ... ok\ntest verification::block_verify::region::registers::tests::unused_slots_restore_inputs_and_query_and_source_bounds_remain_distinct ... ok\ntest verification::block_verify::region::tests::an_unavailable_solver_keeps_an_explicit_unknown_verdict ... ok\ntest verification::block_verify::region::tests::cycles_open_edges_and_foreign_register_mappings_are_rejected_before_solving ... ok\ntest verification::block_verify::region::tests::entry_scope_allows_unreachable_cycles_and_distinct_source_addresses ... ok\ntest verification::block_verify::region::tests::full_source_depth_and_size_are_checked_including_unreachable_expressions ... ok\ntest verification::block_verify::region::tests::normal_liveouts_are_explicit_and_fault_snapshots_keep_their_separate_scope ... ok\ntest verification::block_verify::region::tests::smt::memory_regions_cover_unrolling_aliases_faults_exits_and_join_constants ... DAG-REGION identity verdict=equivalent bytes=50535 ms=42\nDAG-REGION one-lane verdict=equivalent bytes=25218 ms=17\nDAG-REGION two-lanes verdict=equivalent bytes=45522 ms=37\nDAG-REGION four-lanes verdict=equivalent bytes=88895 ms=1988\nDAG-REGION four-lanes-80-registers verdict=equivalent bytes=91447 ms=1823\nDAG-REGION lazy-dead-load verdict=equivalent bytes=33033 ms=17\nDAG-REGION post-fault-effects verdict=equivalent bytes=7590 ms=17\nDAG-REGION reordered-store verdict=counterexample replay=true constrained_replay=true bytes=31119 ms=275\nDAG-REGION missing-store verdict=counterexample replay=true constrained_replay=true bytes=28211 ms=164\nDAG-REGION eager-dead-load verdict=counterexample replay=true constrained_replay=true bytes=36295 ms=97\nDAG-REGION wrong-exit verdict=counterexample replay=true constrained_replay=true bytes=26299 ms=111\nDAG-REGION wrong-mark verdict=counterexample replay=true constrained_replay=true bytes=25306 ms=112\nDAG-REGION join-constants verdict=counterexample replay=true constrained_replay=true bytes=4422 ms=53\nDAG-REGION same-target-preserved verdict=equivalent bytes=4372 ms=12\nDAG-REGION same-target-dropped verdict=counterexample replay=true constrained_replay=true bytes=4373 ms=88\nDAG-REGION oversized-witness verdict=replay_limit bytes=3017 ms=33\nok\ntest verification::block_verify::region::tests::the_machine_register_space_keeps_sparse_region_boundaries ... ok\ntest verification::block_verify::region::tests::witnesses_replay_distinct_unshared_inputs_and_reject_a_forged_equal_result ... ok\n\ntest result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 294 filtered out; finished in 6.38s\n\n",
+        "scope": "Closed entry-reachable DAGs; arbitrary shared/unshared register inputs, all memory/base/size, return, first fault and declared normal live-outs. Candidate loop construction/unfolding completeness is separate; no automatic inverse-unroll pass is installed."
+      },
+      "prefix_cases": [
+        {
+          "rounds": 0,
+          "verdict": "bound_exceeded",
+          "script_bytes": 8188,
+          "milliseconds": 62
+        },
+        {
+          "rounds": 2,
+          "verdict": "bound_exceeded",
+          "script_bytes": 27526,
+          "milliseconds": 97
+        },
+        {
+          "rounds": 3,
+          "verdict": "complete",
+          "script_bytes": 36255,
+          "milliseconds": 23
+        },
+        {
+          "rounds": 4,
+          "verdict": "complete",
+          "script_bytes": 44992,
+          "milliseconds": 27
+        }
+      ]
+    },
+    "storage_unit_cases": 840,
+    "actual_binary": {
+      "schema": "nirvana-checked-region-extraction-trial-v1",
+      "revision": "9433f12abd68869c22915230129fa53c5ddf1bc8",
+      "dirty": true,
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--test",
+        "verification",
+        "region_extraction::",
+        "--",
+        "--ignored",
+        "--nocapture"
+      ],
+      "returncode": 0,
+      "seconds": 11.957545534998644,
+      "source_sha256": {
+        "src/verification/block_verify/region.rs": "72b2593774ebd5aa1b04b4d985037a042e7dcb47d6fe1edbfc64a4218b7aeba0",
+        "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+        "src/verification/block_verify/region/extraction.rs": "212f6d5f8e5981a2d333455c4b39285ae0fc7f554f7928bd8e294114f61f6aec",
+        "src/verification/block_verify/region/extraction/check.rs": "c51c0bc8a2fa0577388f2ded73333e950882f67ae6b147f9bce21e0d4f760926",
+        "src/verification/block_verify/region/extraction/tests.rs": "4c2763a750647c92e7052d74e168b5ae0adc13a56b86247a0ef13ddc83769e75",
+        "tests/verification/region_extraction.rs": "d52ba9bfd2970a77eb989d7f635ac3cec8871d9d8be1dbb2e2444880cb4504a0",
+        "tests/verification.rs": "78c28dbe6e5b7d60b25519821de36d05ccbd2ff477b7696ebd5ffb485d3b3a4e",
+        "src/verification/block_verify/region/registers.rs": "8b587ce36e3acd6dec2e3c441f3b74fef0b3a295c6f300394cc9e99b56d9e14e",
+        "src/verification/block_verify/region/registers/check.rs": "3698affae0509faaa10676afad4d70da65b5e12ad48fd891f19804e7e8c4ac51",
+        "src/verification/block_verify/region/registers/tests.rs": "ab30068caf80dc6b248c8b3cae86e975024a1c926d2e31cdc1b7814ba8480713",
+        "src/model/ir.rs": "bd7f26950ccf4011db1bf96a6c337da5588817f6e5752fa9c82a8925781cd75d",
+        "src/model/ir/renaming.rs": "eb182df8a61534ba14defaecfc7c8bfb2620a8f457b75624881d248ef19d3cfc",
+        "src/transform/allocated_storage.rs": "28a70a277a963328920904542b1f35b8e450ed54c64e6d4bca98a8cc52d5ad11",
+        "src/transform/allocated_storage/tests.rs": "018849bdac8cd7ad247f5b562eebf6feea7c4cc639ee42b18ea90854ea0a3226"
+      },
+      "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+      "inputs_sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "query_seconds": 5
+      },
+      "artifacts": {
+        "dense.ir": {
+          "bytes": 54573,
+          "sha256": "c8623dd26345cddc53d99f932754eeafb0816d03fba80cf39fc2c10c3a7a65e6"
+        },
+        "region.ir": {
+          "bytes": 383394,
+          "sha256": "736291714c284bdd9bc58b7cf98853530244e8e64692c0fd6d65441b08fe5c88"
+        },
+        "selected-source.ir": {
+          "bytes": 54649,
+          "sha256": "56565e4b3a462187b954ae1190b368066df4d3d475c1dc960653e400a2f24742"
+        },
+        "trial.log": {
+          "bytes": 1166,
+          "sha256": "443d074316f87f56dac1b0001a19b19171089f9c1455383baabf4df485ab9a05"
+        },
+        "selected-identity.smt2": {
+          "bytes": 271801,
+          "sha256": "1019d730caa29fdc7c82c252447a87d2afa22108d2f3d03143991526a6ac6563"
+        },
+        "storage.ir": {
+          "bytes": 54080,
+          "sha256": "30e655281368be0cf639e463df7dc17bb1fb8af0766dd76e0c41fd2d27b70e4b"
+        },
+        "identity.smt2": {
+          "bytes": 344749,
+          "sha256": "5445830ac442486764f4b216fdb8484458a0411d2408f70b18b536c8e9e57fb1"
+        },
+        "storage-identity.smt2": {
+          "bytes": 164331,
+          "sha256": "2812c4fcefcec41c66a50a44f45219a4c3f74562247ec9fa38491d11ed29cf93"
+        }
+      },
+      "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.19s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n\nrunning 3 tests\nACTUAL source_steps=115 source_regs=32 header=32 follow=375 region_steps=116 region_regs=33 caps=[64, 64, 3, 64, 64, 64, 2, 64, 64, 64, 64, 64, 64, 64, 64, 64, 1, 1, 1, 1, 1, 32, 64, 0, 64, 64, 64, 64, 64, 64, 64, 64]\nACTUAL concrete_region_comparisons=590\nACTUAL self_verdict=EquivalentUnderModel bytes=344749 ms=447\ntest region_extraction::actual_compiler_region_extraction_probe ... ok\nDISPLAY source_registers=740 dense_registers=38 region_registers=39 prefix_comparisons=5764 region_comparisons=590 identity_bytes=271801 ms=554\ntest region_extraction::actual_selected_display_register_projection_and_region_queries ... ok\nSTORAGE-IR source_registers=740 mapped=35 bank_registers=9 dense_registers=12 region_registers=13 comparisons=5569 identity_bytes=164331\ntest region_extraction::actual_prepared_display_checked_storage_lowering ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 56 filtered out; finished in 1.30s\n\n",
+      "selected_source_identity": true,
+      "scope": "Projection rules checked against exact source Program and optional validated entry bit caps. Concrete original-to-region comparisons retain original registers, RAM, first fault and actual return/continuation. SMT identity is an encoder smoke check, not a source-to-region theorem. PC/trace/budget outside contract."
+    },
+    "actual_source_attestation": "The trial preceded the commit with dirty=true; every recorded source hash equals this clean candidate.",
+    "m0": {
+      "fresh32": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "c0d9e53d43b542f25250079e031ca9703fc149cc74d64e9ec97729c6db096e4b",
+            "report_sha256": "fc011a5ea750ddb8e515cd119fdbdbcb77d85ac8fae797a6b9e66826ceb730c7"
+          },
+          "after": {
+            "evaluation_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "46dd564eede604dde9924dd17e447c32fdd40a00d6257acf924619f078d2ab73",
+            "report_sha256": "696b7bf01dc0f3ebf2cc911965db024e8b3bdb5fd4091b42397664f8bcd91ca4"
+          },
+          "requested": 32,
+          "structure": {
+            "equal": 32
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 32
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "equivalent_under_model": 17,
+            "unsupported": 11,
+            "unknown": 4
+          },
+          "candidate_architecture": {
+            "passed": 32
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 32
+            },
+            "middle_predicates": {
+              "not_applied": 31,
+              "passed": 1
+            },
+            "middle_memory": {
+              "not_applied": 32
+            },
+            "middle_saved": {
+              "not_applied": 32
+            },
+            "selected_semantic": {
+              "not_applied": 32
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 32
+            },
+            "memory_ssa_queries": {
+              "passed": 32
+            },
+            "memory_addresses": {
+              "passed": 32
+            },
+            "unsigned_bounds": {
+              "passed": 32
+            },
+            "storage_widths": {
+              "passed": 32
+            },
+            "selected_storage": {
+              "passed": 32
+            },
+            "selected_signed_storage": {
+              "passed": 32
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 32
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "identity": {
+          "schema": "nirvana-entry-storage-gate-v1",
+          "kind": "fresh32",
+          "profiles": 32,
+          "cohorts": {
+            "development": {
+              "profiles": 24,
+              "structure": {
+                "equal": 24
+              }
+            },
+            "holdout": {
+              "profiles": 8,
+              "structure": {
+                "equal": 8
+              }
+            }
+          },
+          "identical_c": 32,
+          "total_c": 32,
+          "changed_c_by_cohort": {},
+          "identical_ir": 96,
+          "total_ir": 96,
+          "identical_stage_metadata": 32,
+          "total_stage_metadata": 32,
+          "counts": {
+            "native": 544,
+            "generated_O0": 1632,
+            "generated_O2": 1632,
+            "stage_comparisons": 33660
+          },
+          "before_summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/region-feedback-v2-after/report.json",
+              "sha256": "fc011a5ea750ddb8e515cd119fdbdbcb77d85ac8fae797a6b9e66826ceb730c7"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/entry-storage-v2-after/report.json",
+              "sha256": "696b7bf01dc0f3ebf2cc911965db024e8b3bdb5fd4091b42397664f8bcd91ca4"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-initial-v2.json",
+              "sha256": "23ca994232002773fe9fee6c68d52d6eadb6379eabfedcf89ef7df3c2c9fa5a4"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 17,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 32
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-branch-inputs-v1.txt",
+              "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              },
+              "after": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              },
+              "after": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      },
+      "nested2": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "2bec0e36008767c713cb54ec774ad51ec15c5400",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "c0d9e53d43b542f25250079e031ca9703fc149cc74d64e9ec97729c6db096e4b",
+            "report_sha256": "7910f9207c4466c789b6d6b0b1abb8ba50cc029d52c0a7b2778e0ddfd62c6b74"
+          },
+          "after": {
+            "evaluation_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "46dd564eede604dde9924dd17e447c32fdd40a00d6257acf924619f078d2ab73",
+            "report_sha256": "2bcc40af6d6dbe5ee5eb527668a5dfa947fa7f4e7f61744cff043efe8338685f"
+          },
+          "requested": 2,
+          "structure": {
+            "equal": 2
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 2
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "unknown": 1,
+            "unsupported": 1
+          },
+          "candidate_architecture": {
+            "passed": 2
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 2
+            },
+            "middle_predicates": {
+              "not_applied": 2
+            },
+            "middle_memory": {
+              "not_applied": 2
+            },
+            "middle_saved": {
+              "not_applied": 2
+            },
+            "selected_semantic": {
+              "not_applied": 2
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 2
+            },
+            "memory_ssa_queries": {
+              "passed": 2
+            },
+            "memory_addresses": {
+              "passed": 2
+            },
+            "unsigned_bounds": {
+              "passed": 2
+            },
+            "storage_widths": {
+              "passed": 2
+            },
+            "selected_storage": {
+              "passed": 2
+            },
+            "selected_signed_storage": {
+              "passed": 2
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 2
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "identity": {
+          "schema": "nirvana-entry-storage-gate-v1",
+          "kind": "nested2",
+          "profiles": 2,
+          "cohorts": {
+            "development": {
+              "profiles": 2,
+              "structure": {
+                "equal": 2
+              }
+            },
+            "holdout": {
+              "profiles": 0,
+              "structure": {}
+            }
+          },
+          "identical_c": 2,
+          "total_c": 2,
+          "changed_c_by_cohort": {},
+          "identical_ir": 6,
+          "total_ir": 6,
+          "identical_stage_metadata": 2,
+          "total_stage_metadata": 2,
+          "counts": {
+            "native": 130,
+            "generated_O0": 390,
+            "generated_O2": 390,
+            "stage_comparisons": 7800
+          },
+          "before_summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/region-feedback-nested-after/report.json",
+              "sha256": "7910f9207c4466c789b6d6b0b1abb8ba50cc029d52c0a7b2778e0ddfd62c6b74"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/entry-storage-nested-after/report.json",
+              "sha256": "2bcc40af6d6dbe5ee5eb527668a5dfa947fa7f4e7f61744cff043efe8338685f"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.json",
+              "sha256": "1850be124214464ca917a570e42baa951be27cc87062ca27b01b78a894787dc7"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 65,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 2
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.inputs.txt",
+              "sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              },
+              "after": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              },
+              "after": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      }
+    },
+    "tools": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=23df336b1addc27eb3ed64b9f97f7d59eb0a7700 source_dirty=false",
+        "sha256": "46dd564eede604dde9924dd17e447c32fdd40a00d6257acf924619f078d2ab73"
+      },
+      "candidate_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+      "partial_layout_v2": {
+        "version": "nirvana 0.1.0 git=23df336b1addc27eb3ed64b9f97f7d59eb0a7700 source_dirty=false",
+        "sha256": "ff1c0790206179f7db8c925ec7d83c7f0fec65434b7ab24f0841439adbca046b"
+      },
+      "partial_layout_nested": {
+        "version": "nirvana 0.1.0 git=23df336b1addc27eb3ed64b9f97f7d59eb0a7700 source_dirty=false",
+        "sha256": "ff1c0790206179f7db8c925ec7d83c7f0fec65434b7ab24f0841439adbca046b"
+      }
+    },
+    "node_model_identity": {
+      "candidate_revision": "23df336b1addc27eb3ed64b9f97f7d59eb0a7700",
+      "trial_revision": "a68a89fd90b0d132b5df4f84f390948fffaa294b",
+      "fixtures_sha256": "65ea707a4f9500824fd6c71bdeafc8f7f0516418c5efa808fc0214ec848fab52",
+      "model_sha256": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+      "bytes_identical": true,
+      "exported_pairs": 18,
+      "verified_positive_pairs": 12,
+      "meaning": "The clean current Rust exporter yields the exact eighteen raw pairs of the completed twelve-positive-pair TLC run. Event correspondence is bounded by that finite family and budgets0..6."
+    },
+    "clippy": "all targets pass with -D warnings",
+    "rustfmt": "passes"
+  },
+  "limits": {
+    "region_query_registers": 128,
+    "region_source_instructions": 128,
+    "region_expression_nodes": 65536,
+    "region_expression_depth": 128,
+    "smt_bytes": 4194304,
+    "witness_ram_bytes": 65536,
+    "storage_source_and_output_namespace": 65536,
+    "storage_mapped": 4096,
+    "storage_active": 8192,
+    "storage_blocks": 4096,
+    "storage_points": 100000,
+    "storage_items": 250000,
+    "storage_expression_depth": 128,
+    "storage_state_cells": 1000000,
+    "storage_work": 8000000,
+    "storage_block_visits": 100000,
+    "solver_process_seconds": 5,
+    "default_solver_seconds": 2
+  },
+  "review_artifact": {
+    "kind": "13-register named storage variant reconstructed byte-for-byte from saved source and C-local mapping",
+    "local_ir": "target/checkpoints/ir-entry-storage-v1/printed-storage.ir.txt",
+    "sha256": "71934db4641179ce66c61dcd3814f8d830e47f08b2e9b78f94036ef39e0903b0",
+    "identical_to_verified_rust_trial": true,
+    "names": {
+      "dense_to_physical": [
+        3,
+        4,
+        7,
+        732,
+        738,
+        740,
+        741,
+        742,
+        743,
+        744,
+        745,
+        746,
+        747
+      ],
+      "labels": {
+        "0": "arg3",
+        "1": "stack_pointer",
+        "2": "input_address",
+        "3": "arg732",
+        "4": "arg738",
+        "5": "value0",
+        "6": "value1",
+        "7": "value2",
+        "8": "value3",
+        "9": "value4",
+        "10": "value5",
+        "11": "value6",
+        "12": "value7"
+      },
+      "namespace_source": "target/runs/run-a37yw4tm/out/region-feedback-nested-after/nested-transfers-clang18-O2/semantics/selected-storage.json",
+      "source_sha256": "be6d237fd5697bdeef781bc03098da81f2033a8d5767c5f3e9eb2e999bc61162",
+      "ir_sha256": "71934db4641179ce66c61dcd3814f8d830e47f08b2e9b78f94036ef39e0903b0",
+      "identity_with_verified_rust_pilot": true
+    },
+    "ir": "entry=0 registers=13\n[\n    IrInstruction {\n        address: 0,\n        size: 1,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Sub,\n                        Register(\n                            Reg(\n                                1,\n                            ),\n                        ),\n                        Const(\n                            8,\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        0,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 1,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        6,\n                    ),\n                ),\n                value: Load {\n                    address: Register(\n                        Reg(\n                            2,\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 4,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        12,\n                    ),\n                ),\n                value: Binary(\n                    And,\n                    Load {\n                        address: Binary(\n                            Add,\n                            Const(\n                                8,\n                            ),\n                            Register(\n                                Reg(\n                                    2,\n                                ),\n                            ),\n                        ),\n                        width: U64,\n                    },\n                    Const(\n                        3,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 8,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 11,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 14,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Load {\n                    address: Binary(\n                        Add,\n                        Const(\n                            16,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 18,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Load {\n                    address: Binary(\n                        Add,\n                        Const(\n                            24,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 22,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 25,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 28,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        11,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Binary(\n                        And,\n                        Register(\n                            Reg(\n                                6,\n                            ),\n                        ),\n                        Const(\n                            3,\n                        ),\n                    ),\n                    Const(\n                        1,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        4,\n                    ),\n                ),\n                value: Binary(\n                    Sub,\n                    Register(\n                        Reg(\n                            1,\n                        ),\n                    ),\n                    Const(\n                        8,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        12,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        12,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        6,\n                    ),\n                ),\n                value: Const(\n                    0,\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 32,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        7,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Const(\n                        1,\n                    ),\n                    Register(\n                        Reg(\n                            6,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 36,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Load {\n                    address: Binary(\n                        Add,\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                        Binary(\n                            Mul,\n                            Register(\n                                Reg(\n                                    6,\n                                ),\n                            ),\n                            Const(\n                                8,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 40,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 43,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Binary(\n                        Xor,\n                        Register(\n                            Reg(\n                                8,\n                            ),\n                        ),\n                        Register(\n                            Reg(\n                                7,\n                            ),\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 46,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            16,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 50,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 53,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 56,\n        size: 2,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 58,\n        size: 6,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        7,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        7,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Binary(\n                    And,\n                    Register(\n                        Reg(\n                            8,\n                        ),\n                    ),\n                    Const(\n                        7,\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 358,\n        },\n    },\n    IrInstruction {\n        address: 64,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 67,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 70,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 73,\n        size: 2,\n        assignments: [],\n        control: Branch {\n            condition: Binary(\n                Ne,\n                Unary(\n                    Extract {\n                        start: 0,\n                        width: U32,\n                    },\n                    Binary(\n                        Sub,\n                        Binary(\n                            And,\n                            Register(\n                                Reg(\n                                    9,\n                                ),\n                            ),\n                            Const(\n                                3,\n                            ),\n                        ),\n                        Const(\n                            1,\n                        ),\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 96,\n        },\n    },\n    IrInstruction {\n        address: 75,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        6,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 78,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 81,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            10,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Jump(\n            192,\n        ),\n    },\n    IrInstruction {\n        address: 96,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 99,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 102,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 105,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 108,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Binary(\n                        And,\n                        Register(\n                            Reg(\n                                9,\n                            ),\n                        ),\n                        Const(\n                            15,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Register(\n                    Reg(\n                        12,\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 192,\n        },\n    },\n    IrInstruction {\n        address: 110,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 113,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 116,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Load {\n                    address: Binary(\n                        Add,\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                        Binary(\n                            Mul,\n                            Binary(\n                                And,\n                                Register(\n                                    Reg(\n                                        7,\n                                    ),\n                                ),\n                                Const(\n                                    3,\n                                ),\n                            ),\n                            Const(\n                                8,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 120,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 123,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                    Binary(\n                        Xor,\n                        Register(\n                            Reg(\n                                8,\n                            ),\n                        ),\n                        Register(\n                            Reg(\n                                7,\n                            ),\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 126,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            16,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 130,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 133,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 136,\n        size: 2,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 138,\n        size: 6,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Binary(\n                    And,\n                    Register(\n                        Reg(\n                            8,\n                        ),\n                    ),\n                    Const(\n                        7,\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 358,\n        },\n    },\n    IrInstruction {\n        address: 144,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 147,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 150,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 153,\n        size: 2,\n        assignments: [],\n        control: Branch {\n            condition: Binary(\n                Ne,\n                Unary(\n                    Extract {\n                        start: 0,\n                        width: U32,\n                    },\n                    Binary(\n                        Sub,\n                        Binary(\n                            And,\n                            Register(\n                                Reg(\n                                    9,\n                                ),\n                            ),\n                            Const(\n                                3,\n                            ),\n                        ),\n                        Const(\n                            1,\n                        ),\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 163,\n        },\n    },\n    IrInstruction {\n        address: 155,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 158,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 161,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            7,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Jump(\n            192,\n        ),\n    },\n    IrInstruction {\n        address: 163,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 166,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 169,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 172,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 175,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Binary(\n                        And,\n                        Register(\n                            Reg(\n                                9,\n                            ),\n                        ),\n                        Const(\n                            15,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Ne,\n                Unary(\n                    Extract {\n                        start: 0,\n                        width: U32,\n                    },\n                    Binary(\n                        Sub,\n                        Register(\n                            Reg(\n                                12,\n                            ),\n                        ),\n                        Const(\n                            1,\n                        ),\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 226,\n        },\n    },\n    IrInstruction {\n        address: 177,\n        size: 15,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 192,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 195,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 198,\n        size: 4,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 202,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Binary(\n                        Add,\n                        Register(\n                            Reg(\n                                8,\n                            ),\n                        ),\n                        Register(\n                            Reg(\n                                6,\n                            ),\n                        ),\n                    ),\n                    Const(\n                        1,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 205,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            24,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 209,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 212,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 215,\n        size: 6,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        6,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        7,\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Ne,\n                Register(\n                    Reg(\n                        11,\n                    ),\n                ),\n                Register(\n                    Reg(\n                        7,\n                    ),\n                ),\n            ),\n            target: 32,\n        },\n    },\n    IrInstruction {\n        address: 221,\n        size: 5,\n        assignments: [],\n        control: Jump(\n            363,\n        ),\n    },\n    IrInstruction {\n        address: 226,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Const(\n                        2,\n                    ),\n                    Register(\n                        Reg(\n                            6,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 230,\n        size: 2,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 232,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 235,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Load {\n                    address: Binary(\n                        Add,\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                        Binary(\n                            Mul,\n                            Binary(\n                                And,\n                                Register(\n                                    Reg(\n                                        10,\n                                    ),\n                                ),\n                                Const(\n                                    3,\n                                ),\n                            ),\n                            Const(\n                                8,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 239,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 242,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                    Binary(\n                        Xor,\n                        Register(\n                            Reg(\n                                8,\n                            ),\n                        ),\n                        Register(\n                            Reg(\n                                7,\n                            ),\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 245,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            16,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 249,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 252,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 255,\n        size: 2,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 257,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Binary(\n                    And,\n                    Register(\n                        Reg(\n                            8,\n                        ),\n                    ),\n                    Const(\n                        7,\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 358,\n        },\n    },\n    IrInstruction {\n        address: 259,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 262,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 265,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 268,\n        size: 6,\n        assignments: [],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Unary(\n                    Extract {\n                        start: 0,\n                        width: U32,\n                    },\n                    Binary(\n                        Sub,\n                        Binary(\n                            And,\n                            Register(\n                                Reg(\n                                    9,\n                                ),\n                            ),\n                            Const(\n                                3,\n                            ),\n                        ),\n                        Const(\n                            1,\n                        ),\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 78,\n        },\n    },\n    IrInstruction {\n        address: 274,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 277,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 280,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 283,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 286,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Binary(\n                        And,\n                        Register(\n                            Reg(\n                                9,\n                            ),\n                        ),\n                        Const(\n                            15,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Unary(\n                    Extract {\n                        start: 0,\n                        width: U32,\n                    },\n                    Binary(\n                        Sub,\n                        Register(\n                            Reg(\n                                12,\n                            ),\n                        ),\n                        Const(\n                            2,\n                        ),\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 192,\n        },\n    },\n    IrInstruction {\n        address: 288,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Const(\n                        3,\n                    ),\n                    Register(\n                        Reg(\n                            6,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 292,\n        size: 2,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 294,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 297,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Load {\n                    address: Binary(\n                        Add,\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                        Binary(\n                            Mul,\n                            Binary(\n                                And,\n                                Register(\n                                    Reg(\n                                        10,\n                                    ),\n                                ),\n                                Const(\n                                    3,\n                                ),\n                            ),\n                            Const(\n                                8,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 301,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 304,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Binary(\n                        Xor,\n                        Register(\n                            Reg(\n                                8,\n                            ),\n                        ),\n                        Register(\n                            Reg(\n                                7,\n                            ),\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 307,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            16,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 311,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 314,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 317,\n        size: 2,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 319,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        10,\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Branch {\n            condition: Binary(\n                Eq,\n                Binary(\n                    And,\n                    Register(\n                        Reg(\n                            8,\n                        ),\n                    ),\n                    Const(\n                        7,\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 375,\n        },\n    },\n    IrInstruction {\n        address: 321,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 324,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 327,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 330,\n        size: 2,\n        assignments: [],\n        control: Branch {\n            condition: Binary(\n                Ne,\n                Unary(\n                    Extract {\n                        start: 0,\n                        width: U32,\n                    },\n                    Binary(\n                        Sub,\n                        Binary(\n                            And,\n                            Register(\n                                Reg(\n                                    9,\n                                ),\n                            ),\n                            Const(\n                                3,\n                            ),\n                        ),\n                        Const(\n                            1,\n                        ),\n                    ),\n                ),\n                Const(\n                    0,\n                ),\n            ),\n            target: 343,\n        },\n    },\n    IrInstruction {\n        address: 332,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 335,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 338,\n        size: 5,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            10,\n                        ),\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Jump(\n            192,\n        ),\n    },\n    IrInstruction {\n        address: 343,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 346,\n        size: 4,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 350,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 353,\n        size: 5,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Binary(\n                        And,\n                        Register(\n                            Reg(\n                                9,\n                            ),\n                        ),\n                        Const(\n                            15,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Jump(\n            198,\n        ),\n    },\n    IrInstruction {\n        address: 358,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 361,\n        size: 2,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Jump(\n            375,\n        ),\n    },\n    IrInstruction {\n        address: 363,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Binary(\n                    Add,\n                    Register(\n                        Reg(\n                            8,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            7,\n                        ),\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 366,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 369,\n        size: 3,\n        assignments: [],\n        control: Next,\n    },\n    IrInstruction {\n        address: 372,\n        size: 3,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        8,\n                    ),\n                ),\n                value: Binary(\n                    Xor,\n                    Register(\n                        Reg(\n                            5,\n                        ),\n                    ),\n                    Register(\n                        Reg(\n                            9,\n                        ),\n                    ),\n                ),\n            },\n            Assignment {\n                destination: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n                value: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 375,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            16,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        9,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 379,\n        size: 4,\n        assignments: [\n            Assignment {\n                destination: Memory {\n                    address: Binary(\n                        Add,\n                        Const(\n                            24,\n                        ),\n                        Register(\n                            Reg(\n                                2,\n                            ),\n                        ),\n                    ),\n                    width: U64,\n                },\n                value: Register(\n                    Reg(\n                        5,\n                    ),\n                ),\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 383,\n        size: 1,\n        assignments: [\n            Assignment {\n                destination: Register(\n                    Reg(\n                        3,\n                    ),\n                ),\n                value: Load {\n                    address: Register(\n                        Reg(\n                            4,\n                        ),\n                    ),\n                    width: U64,\n                },\n            },\n        ],\n        control: Next,\n    },\n    IrInstruction {\n        address: 384,\n        size: 1,\n        assignments: [],\n        control: Return(\n            Register(\n                Reg(\n                    8,\n                ),\n            ),\n        ),\n    },\n]\n",
+    "scope": "The independently verified printed33-register allocation has13 active slots; the fresh allocator public API uses35 registers/12 active slots. These are separate valid allocations."
+  },
+  "source_sha256": {
+    "src/model/ir.rs": "bd7f26950ccf4011db1bf96a6c337da5588817f6e5752fa9c82a8925781cd75d",
+    "src/model/ir/renaming.rs": "eb182df8a61534ba14defaecfc7c8bfb2620a8f457b75624881d248ef19d3cfc",
+    "src/transform/allocated_storage.rs": "28a70a277a963328920904542b1f35b8e450ed54c64e6d4bca98a8cc52d5ad11",
+    "src/transform/allocated_storage/tests.rs": "018849bdac8cd7ad247f5b562eebf6feea7c4cc639ee42b18ea90854ea0a3226",
+    "src/dataflow/allocation_verify.rs": "f8139d3048a157caa0b85776ba95d651a7ddc20e30a7bdd7aa420451bcaac77f",
+    "tests/verification/region_extraction.rs": "d52ba9bfd2970a77eb989d7f635ac3cec8871d9d8be1dbb2e2444880cb4504a0",
+    "src/verification/block_verify/region/shape.rs": "920334f449c0b3d74813b6db0dc19a099247e6cec7b3402ef8e72420bed0d01f",
+    "src/verification/block_verify/region/tests.rs": "786cf174f0642ad682efe22a2070f65e2dcf4012a700372d2e284c45f645c9e8",
+    "src/verification/block_verify/region/registers.rs": "8b587ce36e3acd6dec2e3c441f3b74fef0b3a295c6f300394cc9e99b56d9e14e",
+    "src/verification/block_verify/region/extraction.rs": "212f6d5f8e5981a2d333455c4b39285ae0fc7f554f7928bd8e294114f61f6aec",
+    "src/verification/block_verify/region/encode.rs": "5caafdca250b47225b3c278d848685fc158ce11b552eb7b86f3b2f541aae54ba",
+    "src/verification/block_verify/region/registers/tests.rs": "ab30068caf80dc6b248c8b3cae86e975024a1c926d2e31cdc1b7814ba8480713",
+    "src/verification/block_verify/region/registers/check.rs": "3698affae0509faaa10676afad4d70da65b5e12ad48fd891f19804e7e8c4ac51",
+    "src/verification/block_verify/region/extraction/repeat.rs": "907d7988af1a41608cd01f3c9445b39fe3d77191fcff4fb698dc00697a1556c9",
+    "src/verification/block_verify/region/extraction/tests.rs": "4c2763a750647c92e7052d74e168b5ae0adc13a56b86247a0ef13ddc83769e75",
+    "src/verification/block_verify/region/extraction/check.rs": "c51c0bc8a2fa0577388f2ded73333e950882f67ae6b147f9bce21e0d4f760926",
+    "src/verification/block_verify/region/tests/smt.rs": "e88346766351620957acad2b36fa74561c67456fef4da536ad618449bf1fd915",
+    "src/verification/block_verify/region/extraction/repeat/tests.rs": "feeb357d0c3f15c0612ac495ae0ce6ce7860089290d1332d1f6a148d164908d5",
+    "src/verification/block_verify/region/extraction/repeat/check.rs": "edac7e267536269c7b57d63861dbdbe046ee4121a876f48c9d54127da2289689",
+    "src/verification/block_verify/region/extraction/repeat/prefix.rs": "15cfb654cb9a3ecc5e275f6038a77bfe45a822e8b052d682dfc43c2c23486660",
+    "src/verification/block_verify/region/extraction/repeat/prefix/tests.rs": "5d7234f7758a5f72fabccedf56114c1b863a602d6c0f13c45b8f69401f458063",
+    "src/verification/block_verify/region/extraction/repeat/prefix/check.rs": "3f5984d97215a3b39a4c7127105dcd5357f4435a8ed3bfc8aff3eff08e75056f"
+  },
+  "reproduce": [
+    "python3 tools/dev.py cargo test --lib allocated_storage",
+    "NIRVANA_Z3=PATH NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test --lib region:: -- --include-ignored --nocapture --test-threads=1",
+    "Set NIRVANA_REGION_REPORT,NIRVANA_REPEAT_REPORT,NIRVANA_PREFIX_REPORT to the managed output directory to retain the solver inputs.",
+    "Set NIRVANA_REGION_OBJECT to the recorded Clang18 O2 development object,NIRVANA_REGION_OUTPUT to managed output,NIRVANA_Z3 to the pinned solver, then python3 tools/dev.py cargo test --test verification region_extraction:: -- --ignored --nocapture --test-threads=1",
+    "python3 tools/dev.py cargo test --all-targets --locked --no-fail-fast"
+  ],
+  "local_evidence": {
+    "references": {
+      "region-feedback-v2-after": {
+        "directory": "target/runs/run-a37yw4tm/out/region-feedback-v2-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/region-feedback-v2-after.tar.gz",
+        "sha256": "ea6c87abf303eae6b8180776edf6ba794b1b9199ddf500d9990fbe9580fd73b2",
+        "uncompressed_bytes": 46856807,
+        "compressed_bytes": 3299015
+      },
+      "region-feedback-nested-after": {
+        "directory": "target/runs/run-a37yw4tm/out/region-feedback-nested-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/region-feedback-nested-after.tar.gz",
+        "sha256": "1caae40742e2712b9ff3339018eb037aa5a7c04495f633df207314f5afe81440",
+        "uncompressed_bytes": 8045127,
+        "compressed_bytes": 449847
+      }
+    },
+    "storage": "Shared Cargo soft2GiB/all-target watchdog4GiB; managed retained512MiB. Transient query/native build outputs cleaned; one small named IR review artifact kept separately. No extra worktree or debug binary copy."
+  },
+  "next_decision": "Generate actual inverse-unroll candidates in the smaller storage IR. Preserve the peeled first direct-index load; distinguish the invariant xor(i+1) from the varying (i+j) index by comparing multiple lanes. Validate context completion and source-bound continuation/live-out interfaces before adoption. Nested structural distances15/30 remain unchanged."
+}
