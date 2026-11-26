@@ -18,6 +18,8 @@ mod follow_candidates;
 mod split;
 
 #[cfg(test)]
+mod audit_tests;
+#[cfg(test)]
 mod model_trial_tests;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
