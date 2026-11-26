@@ -707,6 +707,53 @@ split_component:
     mov 24(%rdi),%rax
     ret
 .size split_component,.-split_component
+.globl split_independent
+.type split_independent,@function
+split_independent:
+    cmpq $0,(%rdi)
+    jne .Lindependent_first_second
+.Lindependent_first_first:
+    addq $1,24(%rdi)
+.Lindependent_first_second:
+    cmpq $0,8(%rdi)
+    jne .Lindependent_first_first
+    cmpq $0,16(%rdi)
+    jne .Lindependent_second_second
+.Lindependent_second_first:
+    addq $2,24(%rdi)
+.Lindependent_second_second:
+    cmpq $0,(%rdi)
+    jne .Lindependent_second_first
+    mov 24(%rdi),%rax
+    ret
+.size split_independent,.-split_independent
+.globl split_three
+.type split_three,@function
+split_three:
+    cmpq $0,(%rdi)
+    jne .Lthree_first_second
+.Lthree_first_first:
+    addq $1,24(%rdi)
+.Lthree_first_second:
+    cmpq $0,8(%rdi)
+    jne .Lthree_first_first
+    cmpq $0,16(%rdi)
+    jne .Lthree_second_second
+.Lthree_second_first:
+    addq $2,24(%rdi)
+.Lthree_second_second:
+    cmpq $0,(%rdi)
+    jne .Lthree_second_first
+    cmpq $0,8(%rdi)
+    jne .Lthree_third_second
+.Lthree_third_first:
+    addq $4,24(%rdi)
+.Lthree_third_second:
+    cmpq $0,16(%rdi)
+    jne .Lthree_third_first
+    mov 24(%rdi),%rax
+    ret
+.size split_three,.-split_three
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -741,6 +788,8 @@ split_component:
         "split_exit",
         "split_cycle",
         "split_component",
+        "split_independent",
+        "split_three",
     ] {
         let function = plan
             .functions
@@ -751,6 +800,16 @@ split_component:
             function.structured.is_some(),
             "{name} must retain a checked structured body"
         );
+        if let Some(count) = match name {
+            "split_independent" => Some(2),
+            "split_three" => Some(3),
+            _ => None,
+        } {
+            assert_eq!(
+                function.structured.as_ref().unwrap().split_sites().len(),
+                count
+            );
+        }
     }
     let initial = module.initial_registers();
     let mut cases = Vec::new();
@@ -767,7 +826,7 @@ split_component:
             [1, 0, 0, 0],
             [1, 1, 0, 0],
         ] {
-            for budget in 0..=10 {
+            for budget in 0..=20 {
                 let case = fixture::Case {
                     input,
                     pc: instruction.address(),

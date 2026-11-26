@@ -822,6 +822,52 @@ fn larger_program(count: usize, mut graph: usize, profile: usize) -> Program {
     Program::new(0, 3, instructions).unwrap()
 }
 
+#[test]
+fn independent_cycles_compose_source_pcs_and_share_the_global_copy_budget() {
+    for profile in 0..3 {
+        let source = larger_program(7, 0xc6d93a, profile);
+        let step = |address: usize| Node::Step {
+            address: address as u64,
+            assignments: source.instructions()[address].assignments.clone(),
+        };
+        let Control::Branch { condition, .. } = &source.instructions()[0].control else {
+            unreachable!()
+        };
+        let branch = |taken, not_taken| Node::If {
+            condition: condition.clone(),
+            taken,
+            not_taken,
+        };
+        let body = vec![
+            step(0),
+            branch(vec![], vec![step(1)]),
+            Node::Loop(vec![step(2), branch(vec![step(1)], vec![Node::Break])]),
+            step(3),
+            branch(vec![], vec![step(4)]),
+            Node::Loop(vec![step(5), branch(vec![step(4)], vec![Node::Break])]),
+            step(6),
+            Node::Return(r(2)),
+        ];
+        structure_verify::validate(&source, &body).unwrap();
+        let recovered = StructuredFunction::recover_with_step_limit(&source, 2, 9).unwrap();
+        assert_eq!(recovered.evidence().compared_copies, 9);
+        assert_eq!(
+            recovered
+                .split_sites()
+                .iter()
+                .map(|site| (site.redirected_from, site.copied_entry, site.copied_steps))
+                .collect::<Vec<_>>(),
+            [(0, 1, 1), (3, 4, 1)]
+        );
+        let summary = recovered.split_evidence().unwrap();
+        assert_eq!(summary.copied_steps, 2);
+        assert!(summary.attempted_candidates <= 16);
+        assert!(StructuredFunction::recover_with_step_limit(&source, 2, 8).is_err());
+        assert!(StructuredFunction::recover_with_step_limit(&source, 1, 9).is_err());
+        compare_split_reports(&source, &body, &recovered);
+    }
+}
+
 fn sampled_larger_graphs(count: usize) -> Vec<usize> {
     let space = (2 * count + 2).pow((count - 1) as u32);
     let mut seen = std::collections::BTreeSet::new();
@@ -845,21 +891,23 @@ fn sampled_larger_graphs(count: usize) -> Vec<usize> {
 #[test]
 #[ignore = "bounded4096-topology six-instruction sample; run explicitly"]
 fn sampled_six_instruction_cfgs_preserve_complete_rust_reports() {
-    audit_cases(
+    let result = audit_cases(
         &sampled_larger_graphs(6),
         |graph, profile| larger_program(6, graph, profile),
         10,
     );
+    assert_eq!(result, (12267, 0));
 }
 
 #[test]
 #[ignore = "bounded4096-topology seven-instruction sample; run explicitly"]
 fn sampled_seven_instruction_cfgs_preserve_complete_rust_reports() {
-    audit_cases(
+    let result = audit_cases(
         &sampled_larger_graphs(7),
         |graph, profile| larger_program(7, graph, profile),
         10,
     );
+    assert_eq!(result, (12198, 3));
 }
 
 fn audit(graphs: usize, make: fn(usize, usize) -> Program) {

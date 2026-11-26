@@ -708,11 +708,15 @@ fn returning_and_divergent_arms_use_the_structured_checked_renderer() {
 }
 
 fn branch_budget_cases() -> Vec<Case> {
+    branch_budget_cases_until(12)
+}
+
+fn branch_budget_cases_until(maximum: usize) -> Vec<Case> {
     let base = cases()[0];
     [0, 1]
         .into_iter()
         .flat_map(|target| {
-            (0..=12).map(move |instructions| Case {
+            (0..=maximum).map(move |instructions| Case {
                 target,
                 limits: Limits {
                     instructions,
@@ -749,29 +753,39 @@ fn split_nested_loop_exits_use_the_structured_checked_renderer() {
     assert_eq!(compare(&program, &inputs, "split-loop-exits"), 52);
 }
 
-#[test]
-fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
-    // Independent multiple-entry cycles need two separate entry redirects;
-    // the bounded one-proposal split search retains the checked fallback.
+fn independent_effect_cycles(count: u64) -> Program {
     let branch = |target| Control::Branch {
         condition: r(3),
         target,
     };
-    let program = Program::new(
-        0,
-        32,
-        vec![
-            core(0, vec![], branch(2)),
-            core(1, vec![], Control::Jump(2)),
-            core(2, vec![], branch(1)),
-            core(3, vec![], branch(5)),
-            core(4, vec![], Control::Jump(5)),
-            core(5, vec![], branch(4)),
-            core(6, vec![], Control::Return(c(1))),
-        ],
-        PUTS,
-    )
-    .unwrap();
+    let mut instructions = Vec::new();
+    for index in 0..count {
+        let base = index * 3;
+        instructions.extend([
+            core(base, vec![], branch(base + 2)),
+            core(base + 1, vec![], Control::Jump(base + 2)),
+            core(base + 2, vec![], branch(base + 1)),
+        ]);
+    }
+    instructions.push(core(count * 3, vec![], Control::Return(c(1))));
+    Program::new(0, 32, instructions, PUTS).unwrap()
+}
+
+#[test]
+fn independent_cycles_use_the_structured_checked_renderer() {
+    for count in [2, 3] {
+        let program = independent_effect_cycles(count);
+        let output = nirvana::effects_readable::emit_c(&program).unwrap();
+        assert!(output.fallback_reason.is_none());
+        let inputs = branch_budget_cases();
+        assert_eq!(compare(&program, &inputs, "independent-cycles"), 52);
+    }
+}
+
+#[test]
+fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
+    // Nine separate redirects exceed the shared eight-original-step budget.
+    let program = independent_effect_cycles(9);
     let output = nirvana::effects_readable::emit_c(&program).unwrap();
     assert!(matches!(
         output.fallback_reason,
@@ -781,8 +795,8 @@ fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
         output.code,
         nirvana::effects_emit::emit_c(&program).unwrap()
     );
-    let inputs = branch_budget_cases();
-    assert_eq!(compare(&program, &inputs, "fallback"), 52);
+    let inputs = branch_budget_cases_until(30);
+    assert_eq!(compare(&program, &inputs, "fallback"), 124);
 }
 
 #[test]

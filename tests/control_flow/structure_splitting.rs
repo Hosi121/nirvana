@@ -281,20 +281,57 @@ fn copied_multistep_block_keeps_internal_fallthroughs_and_partial_fault_state() 
     );
 }
 
+fn consecutive_cycles(count: usize) -> Program {
+    let mut instructions = Vec::new();
+    for index in 0..count {
+        let mut part = cycle((index * 4) as u64, false).instructions().to_vec();
+        if index + 1 < count {
+            part[3].control = Control::Jump(((index + 1) * 4) as u64);
+        }
+        instructions.extend(part);
+    }
+    Program::new(0, 4, instructions).unwrap()
+}
+
 #[test]
-fn two_independent_multiple_entry_cycles_retain_the_original_fallback() {
-    let first = cycle(0, false);
-    let second = cycle(4, false);
-    let mut instructions = first.instructions().to_vec();
-    instructions[3].control = Control::Jump(4);
-    instructions.extend_from_slice(second.instructions());
-    let source = Program::new(0, 4, instructions).unwrap();
-    let before = source.instructions().to_vec();
+fn independent_cycles_keep_source_history_full_state_and_exact_budgets() {
+    for count in [2, 3] {
+        let source = consecutive_cycles(count);
+        let before = source.instructions().to_vec();
+        let recovered = StructuredFunction::recover(&source).unwrap();
+        assert_eq!(source.instructions(), before);
+        assert_eq!(recovered.split_sites().len(), count);
+        let summary = recovered.split_evidence().unwrap();
+        assert_eq!(
+            summary.copied_steps,
+            recovered
+                .split_sites()
+                .iter()
+                .map(|site| site.copied_steps)
+                .sum()
+        );
+        assert!(summary.copied_steps <= 8 && summary.attempted_candidates <= 16);
+        check(
+            &source,
+            &recovered,
+            &[[0, 0, 4096, 0], [1, 0, 4096, 0], [u64::MAX, 0, 4127, 0]],
+        );
+        assert!(
+            nirvana::emit::emit_c(&source)
+                .unwrap()
+                .fallback_reason
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn too_many_independent_cycles_retain_the_checked_fallback() {
+    let source = consecutive_cycles(9);
     assert_eq!(
         StructuredFunction::recover(&source).unwrap_err(),
         StructureError::Irreducible
     );
-    assert_eq!(source.instructions(), before);
     assert!(
         nirvana::emit::emit_c(&source)
             .unwrap()

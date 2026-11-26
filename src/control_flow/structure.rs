@@ -56,16 +56,30 @@ pub struct StructuredFunction {
     stats: StructureStats,
     evidence: StructureEvidence,
     split_evidence: Option<SplitEvidence>,
+    split_sites: Vec<SplitSite>,
 }
 
 /// Provenance for bounded entry-region splitting. The final AST uses original PCs and
 /// is independently checked against the untouched source program.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SplitEvidence {
+    /// Original instruction owning the first redirected edge.
+    pub redirected_from: Address,
+    /// Original instruction owning the first copied entry.
+    pub copied_entry: Address,
+    /// Original steps cloned across all proposals in the accepted path.
+    pub copied_steps: usize,
+    /// Global proposal count, including failed alternatives and earlier stages.
+    pub attempted_candidates: usize,
+}
+
+/// Source-PC anchors for one stage. Synthetic routing keeps its original
+/// instruction owner; it never becomes an observable source Step.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SplitSite {
     pub redirected_from: Address,
     pub copied_entry: Address,
     pub copied_steps: usize,
-    pub attempted_candidates: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -259,6 +273,7 @@ impl StructuredFunction {
             stats,
             evidence,
             split_evidence: None,
+            split_sites: Vec::new(),
         })
     }
 
@@ -278,6 +293,10 @@ impl StructuredFunction {
 
     pub fn split_evidence(&self) -> Option<SplitEvidence> {
         self.split_evidence
+    }
+
+    pub fn split_sites(&self) -> &[SplitSite] {
+        &self.split_sites
     }
 
     pub fn execute(&self, input: &[u64], step_limit: usize) -> Result<Execution, ExecutionError> {

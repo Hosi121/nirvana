@@ -22,72 +22,214 @@ pub(super) fn recover(
     if copy_limit < 2 || !bounded(source) || source.instructions().len() > step_limit {
         return None;
     }
-    for (attempt, plan) in plans(source, analysis).into_iter().enumerate() {
-        let Some((candidate, origins)) = proposal(source, &plan) else {
-            continue;
-        };
-        let candidate_analysis = ControlFlowAnalysis::compute(candidate.cfg()).ok()?;
-        if !candidate_analysis.is_reducible() {
-            continue;
+    let origins = source
+        .instructions()
+        .iter()
+        .map(|i| {
+            (
+                i.address,
+                Origin {
+                    step: Some(i.address),
+                    owner: i.address,
+                },
+            )
+        })
+        .collect();
+    let mut search = Search {
+        source,
+        analysis,
+        copy_limit,
+        step_limit,
+        attempts: 0,
+        pending: std::collections::VecDeque::new(),
+    };
+    if let Some(function) = search.expand(
+        source,
+        analysis,
+        &origins,
+        &Lineage::default(),
+        candidates(source, analysis),
+    ) {
+        return Some(function);
+    }
+    while search.attempts < MAX_ATTEMPTS {
+        let work = search.pending.pop_front()?;
+        if let Some(function) = search.expand(
+            &work.program,
+            &work.analysis,
+            &work.origins,
+            &work.lineage,
+            work.entries,
+        ) {
+            return Some(function);
         }
-        let Ok(mut recovered) = StructuredFunction::recover_with_step_limit(
-            &candidate,
-            copy_limit.min(4),
-            step_limit.saturating_mul(2).min(MAX_AST_STEPS),
-        ) else {
-            continue;
-        };
+    }
+    None
+}
+
+#[derive(Clone, Default)]
+struct Lineage {
+    sites: Vec<SplitSite>,
+    copied_steps: usize,
+}
+
+struct Work {
+    program: Program,
+    analysis: ControlFlowAnalysis,
+    origins: Origins,
+    lineage: Lineage,
+    entries: EntryCandidates,
+}
+
+struct Search<'a> {
+    source: &'a Program,
+    analysis: &'a ControlFlowAnalysis,
+    copy_limit: usize,
+    step_limit: usize,
+    attempts: usize,
+    pending: std::collections::VecDeque<Work>,
+}
+
+impl Search<'_> {
+    fn expand(
+        &mut self,
+        program: &Program,
+        analysis: &ControlFlowAnalysis,
+        origins: &Origins,
+        lineage: &Lineage,
+        entries: EntryCandidates,
+    ) -> Option<StructuredFunction> {
+        let groups = entries.cyclic_groups();
+        for plan in plans(program, analysis, &entries) {
+            if self.attempts == MAX_ATTEMPTS {
+                break;
+            }
+            self.attempts += 1;
+            let copied_steps = plan
+                .blocks
+                .iter()
+                .flat_map(|&id| {
+                    program.instructions()[program.cfg().block(id).instructions.clone()].iter()
+                })
+                .filter(|i| origins[&i.address].step.is_some())
+                .count();
+            let total = lineage.copied_steps.checked_add(copied_steps)?;
+            if total > MAX_COPIED_STEPS {
+                continue;
+            }
+            let from = program.cfg().block(plan.from);
+            let to = program.cfg().block(plan.blocks[0]);
+            let site = SplitSite {
+                redirected_from: origins
+                    [&program.instructions()[from.instructions.end - 1].address]
+                    .owner,
+                copied_entry: origins[&to.start].owner,
+                copied_steps,
+            };
+            let Some((candidate, local)) = proposal(program, &plan) else {
+                continue;
+            };
+            let Some(composed) = compose(&local, origins) else {
+                continue;
+            };
+            let Ok(candidate_analysis) = ControlFlowAnalysis::compute(candidate.cfg()) else {
+                continue;
+            };
+            let mut path = lineage.clone();
+            path.sites.push(site);
+            path.copied_steps = total;
+            if candidate_analysis.is_reducible() {
+                let routes = composed
+                    .values()
+                    .filter(|origin| origin.step.is_none())
+                    .count();
+                // Original instruction budgets exclude transport-only routing.
+                // Preserve the original single-stage policy; later stages add
+                // a bounded allowance for synthetic routes, removed at finish.
+                let candidate_limit = if lineage.sites.is_empty() {
+                    self.step_limit.saturating_mul(2)
+                } else {
+                    self.step_limit
+                        .saturating_add(routes.saturating_mul(self.copy_limit.min(4)))
+                }
+                .min(MAX_AST_STEPS);
+                if let Ok(recovered) = StructuredFunction::recover_with_step_limit(
+                    &candidate,
+                    self.copy_limit.min(4),
+                    candidate_limit,
+                ) && let Some(function) = self.finish(recovered, &composed, &path)
+                {
+                    return Some(function);
+                }
+            } else if bounded(&candidate) {
+                let next = candidates(&candidate, &candidate_analysis);
+                if next.cyclic_groups() < groups {
+                    // Independent cyclic components are resolved in sequence.
+                    // A strict reduction gets priority; all attempts and copied
+                    // original steps still share the same global limits.
+                    if let Some(function) =
+                        self.expand(&candidate, &candidate_analysis, &composed, &path, next)
+                    {
+                        return Some(function);
+                    }
+                } else {
+                    self.pending.push_back(Work {
+                        program: candidate,
+                        analysis: candidate_analysis,
+                        origins: composed,
+                        lineage: path,
+                        entries: next,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    fn finish(
+        &self,
+        mut recovered: StructuredFunction,
+        origins: &Origins,
+        lineage: &Lineage,
+    ) -> Option<StructuredFunction> {
         let mut counts = BTreeMap::new();
-        if restore(&mut recovered.body, &origins, &mut counts, 0).is_none() {
-            continue;
-        }
-        let Some(total) = counts
+        restore(&mut recovered.body, origins, &mut counts, 0)?;
+        let total = counts
             .values()
-            .try_fold(0usize, |sum, &n| sum.checked_add(n))
-        else {
-            continue;
-        };
-        if total > step_limit {
-            continue;
+            .try_fold(0usize, |sum, &n| sum.checked_add(n))?;
+        if total > self.step_limit {
+            return None;
         }
         let mut copies = 0;
-        let mut valid = true;
-        for &id in analysis.reachable() {
-            let block = source.cfg().block(id);
-            // A structured branch can copy a suffix of a block. Charge the
-            // maximum multiplicity of any original instruction in that block.
-            let n = source.instructions()[block.instructions.clone()]
+        for &id in self.analysis.reachable() {
+            let block = self.source.cfg().block(id);
+            let n = self.source.instructions()[block.instructions.clone()]
                 .iter()
                 .map(|i| counts.get(&i.address).copied().unwrap_or(0))
                 .max()
                 .unwrap_or(0);
-            valid &= n > 0 && n <= copy_limit;
+            if n == 0 || n > self.copy_limit {
+                return None;
+            }
             copies += n;
         }
-        if !valid {
-            continue;
-        }
-        let Ok(evidence) = structure_verify::validate(source, &recovered.body) else {
-            continue;
-        };
-        recovered.register_count = source.register_count();
-        recovered.evidence = evidence;
+        recovered.register_count = self.source.register_count();
+        recovered.evidence = structure_verify::validate(self.source, &recovered.body).ok()?;
         recovered.stats = StructureStats {
-            unique_blocks: analysis.reachable().len(),
+            unique_blocks: self.analysis.reachable().len(),
             emitted_block_copies: copies,
-            extra_block_copies: copies - analysis.reachable().len(),
+            extra_block_copies: copies - self.analysis.reachable().len(),
         };
-        let from = source.cfg().block(plan.from);
-        let to = source.cfg().block(plan.blocks[0]);
+        let first = lineage.sites.first()?;
         recovered.split_evidence = Some(SplitEvidence {
-            redirected_from: source.instructions()[from.instructions.end - 1].address,
-            copied_entry: to.start,
-            copied_steps: plan.steps,
-            attempted_candidates: attempt + 1,
+            redirected_from: first.redirected_from,
+            copied_entry: first.copied_entry,
+            copied_steps: lineage.copied_steps,
+            attempted_candidates: self.attempts,
         });
-        return Some(recovered);
+        recovered.split_sites = lineage.sites.clone();
+        Some(recovered)
     }
-    None
 }
 
 fn bounded(source: &Program) -> bool {
@@ -145,6 +287,18 @@ fn bounded(source: &Program) -> bool {
 struct EntryCandidates {
     edges: Vec<(BlockId, BlockId)>,
     component: Vec<usize>,
+}
+
+impl EntryCandidates {
+    fn cyclic_groups(&self) -> usize {
+        let mut sizes = BTreeMap::new();
+        for &group in &self.component {
+            if group != usize::MAX {
+                *sizes.entry(group).or_insert(0usize) += 1;
+            }
+        }
+        sizes.values().filter(|&&size| size > 1).count()
+    }
 }
 
 fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> EntryCandidates {
@@ -219,7 +373,32 @@ fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> EntryCandidat
     }
 }
 
-type Origins = BTreeMap<u64, Option<u64>>;
+#[derive(Clone, Copy)]
+struct Origin {
+    step: Option<u64>,
+    owner: u64,
+}
+
+type Origins = BTreeMap<u64, Origin>;
+
+fn compose(local: &Origins, parent: &Origins) -> Option<Origins> {
+    local
+        .iter()
+        .map(|(&pc, origin)| {
+            let step = match origin.step {
+                Some(previous) => parent.get(&previous)?.step,
+                None => None,
+            };
+            Some((
+                pc,
+                Origin {
+                    step,
+                    owner: parent.get(&origin.owner)?.owner,
+                },
+            ))
+        })
+        .collect()
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum CopyEdges {
@@ -231,13 +410,15 @@ enum CopyEdges {
 struct SplitPlan {
     from: BlockId,
     blocks: Vec<BlockId>,
-    steps: usize,
     edges: CopyEdges,
 }
 
-fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
-    let entries = candidates(source, analysis);
-    let mut plans = peeled_plans(source, analysis, &entries);
+fn plans(
+    source: &Program,
+    analysis: &ControlFlowAnalysis,
+    entries: &EntryCandidates,
+) -> Vec<SplitPlan> {
+    let mut plans = peeled_plans(source, analysis, entries);
     let original_count = plans.len();
     // Preserve the previous candidates and their order. Spend only remaining
     // attempt slots on regions whose terminal edge closes an internal cycle.
@@ -274,7 +455,7 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
                 .map(|block| block.id)
                 .filter(|&id| id != to && entries.component[id.index()] == group),
         );
-        let steps = blocks
+        let steps: usize = blocks
             .iter()
             .map(|&id| source.cfg().block(id).instructions.len())
             .sum();
@@ -286,7 +467,6 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
             plans.push(SplitPlan {
                 from,
                 blocks,
-                steps,
                 edges: CopyEdges::CloneRegion,
             });
         }
@@ -299,7 +479,6 @@ fn peeled_plans(
     analysis: &ControlFlowAnalysis,
     entries: &EntryCandidates,
 ) -> Vec<SplitPlan> {
-    let cfg = source.cfg();
     let EntryCandidates {
         edges: entries,
         component,
@@ -312,7 +491,6 @@ fn peeled_plans(
         .map(|&(from, to)| SplitPlan {
             from,
             blocks: vec![to],
-            steps: cfg.block(to).instructions.len(),
             edges: CopyEdges::PeelPath,
         })
         .collect();
@@ -400,7 +578,6 @@ fn append_paths(
             plans.push(SplitPlan {
                 from,
                 blocks: blocks.clone(),
-                steps,
                 edges: CopyEdges::PeelPath,
             });
         }
@@ -462,7 +639,13 @@ fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
             Control::Next => Control::Jump(resolve(fallthrough)?),
             Control::Jump(target) => Control::Jump(resolve(*target)?),
             Control::Branch { condition, target } => {
-                origins.insert(address + 1, None);
+                origins.insert(
+                    address + 1,
+                    Origin {
+                        step: None,
+                        owner: original.address,
+                    },
+                );
                 output.push(IrInstruction {
                     address: address + 1,
                     size: 1,
@@ -476,7 +659,13 @@ fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
             }
             Control::Return(value) => Control::Return(value.clone()),
         };
-        origins.insert(address, Some(original.address));
+        origins.insert(
+            address,
+            Origin {
+                step: Some(original.address),
+                owner: original.address,
+            },
+        );
         output.push(IrInstruction {
             address,
             size: 1,
@@ -505,10 +694,10 @@ fn restore(
             Node::Step {
                 address,
                 assignments,
-            } => match origins.get(address)? {
+            } => match origins.get(address)?.step {
                 Some(original) => {
-                    *address = *original;
-                    *counts.entry(*original).or_default() += 1;
+                    *address = original;
+                    *counts.entry(original).or_default() += 1;
                 }
                 None => {
                     if !assignments.is_empty() {
