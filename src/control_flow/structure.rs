@@ -17,6 +17,9 @@ use crate::model::ir::{
 mod follow_candidates;
 mod split;
 
+#[cfg(test)]
+mod model_trial_tests;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Node {
     Evaluate(Expr),
