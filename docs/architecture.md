@@ -136,6 +136,8 @@ core・effects・moduleは、分岐ごとの合流点・ループ出口と、複
 
 単一関数のreadableは、実行用の復元方針から独立して候補を選びます。拡張した復元の適用はM0のソース品質ゲートで判断し、現在は従来の候補族を各表示変換で使います。[配置回復の比較](../tools/corpora/structure-placement-v1.m2.json)に採用範囲と見送った出力を記録しています。
 
+単一関数で全体のAST回復が上限に達した場合は、[部分ループ配置](../src/codegen/goto_layout/loops.rs)が、元のブロックを一度ずつ残して自然ループをCのスコープへまとめます。[検査器](../src/codegen/goto_layout/loops/check.rs)は配置列を木へ読み直し、単一入口・循環性と各fallthrough / continue / break / gotoの行き先を照合します。コピーを加えず、goto辺が減る候補を選びます。観測契約は単一関数Cの返り値・RAM・最初のfaultで、命令予算と途中再開は実行用IRの契約で扱います。
+
 ## 値・メモリ・型の解析
 
 [ssa](../src/dataflow/ssa.rs)は逐次read/定義に値IDを付け、φの全先行辺と任意の初期値を持つ仮想入口を表します。

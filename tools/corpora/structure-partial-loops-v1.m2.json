@@ -1,0 +1,2662 @@
+{
+  "schema": "nirvana-partial-loop-layout-checkpoint-v1",
+  "milestone": "M2 partial control regions / M4 C layout, evaluated under M0",
+  "baseline_checkpoint": "tools/corpora/structure-placement-v1.m2.json",
+  "candidate_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+  "implementation_revisions": {
+    "readable_fallback_isolation": "2adf436",
+    "partial_loops": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c"
+  },
+  "status": "adopted after fixed-profile semantic/structure/value gates; source distance unchanged, fewer residual gotos",
+  "contract": {
+    "source": "the selected display Program and its source-bound GotoLayout projection",
+    "representation": "checked immutable Open/Block/Close events with one occurrence per retained block and one explicit transfer decision per projected source edge",
+    "observations": [
+      "return",
+      "all guest RAM",
+      "first fault address/kind/width"
+    ],
+    "routing_scope": "literal assignment-free unconditional routes use the established GotoLayout contract",
+    "executable_scope": "Executable IR, public Node AST recovery, module/PC-resume paths and original-instruction budgets are unchanged",
+    "genuine_loop_checks": [
+      "balanced lexical scopes and header-first body",
+      "every kept block appears exactly once",
+      "single entry at header, including virtual entry",
+      "all members can reach header and are reachable from it inside the region",
+      "at least one actual internal edge to header",
+      "every fallthrough/continue/break/goto resolves to its original projected source target"
+    ],
+    "trusted_components": [
+      "validated Program/source CFG",
+      "established GotoLayout routing projection recomputed for the current source",
+      "unchanged per-block C expressions, assignments, memory checks and sequencing",
+      "C compiler/runtime and the independent lexical edge checker"
+    ]
+  },
+  "limits": {
+    "optional_blocks": 128,
+    "optional_instructions": 1024,
+    "event_bound": 384,
+    "region_family": "laminar projected natural loops; routing-identified headers retain a single larger region",
+    "selection": "fewer static goto edges than the flat layout; rejection/limit retains the original flat view",
+    "remaining_scope": "Residual irreducible edges stay as local gotos. The original full-AST refused set remains48 profiles. No loop unrolling is reversed by this change."
+  },
+  "findings": [
+    {
+      "claim_id": "PARTIAL-LOOP-EDGES-001",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/x86-64-roadmap.md",
+        "src/codegen/goto_layout.rs"
+      ],
+      "spec_delta": "none; standalone readable C observes return, all RAM and first fault; original instruction trace/budget contracts remain on Executable IR/Node AST/module backends",
+      "code_delta": "Schedule single-entry natural loops as nested C scopes around unique projected source blocks; retain local gotos for other edges. Select only if static goto edges decrease.",
+      "model_delta": "Existing Node event model unchanged. The new source checker parses the producer event stream into a tree and derives C continuations in reverse syntax order, independently of producer offset scans.",
+      "check_command": "python3 tools/dev.py cargo test --lib goto_layout::loops; python3 tools/dev.py cargo test --test codegen partial_loops -- --nocapture",
+      "previous_machine_result": "An irreducible inner cycle makes whole-function AST recovery fail; the original C fallback is flat goto layout.",
+      "current_machine_result": "Six checker/control tests and100input×2view×2optimization=400 generated-C comparisons pass. In M0 all34 profiles retain source distance and semantic gates. Fresh held-out8 profiles reduce goto sum28→22; development Clang nested profile16→15.",
+      "drift_class": "coverage-gap",
+      "witness": {
+        "source_cfg": "six-instruction graph366684 with a real outer cycle and irreducible inner entries",
+        "c_case": "tests/codegen/partial_loops.rs; saturated counter plus lazy condition loads, byte stores, adverse addresses and complete64-byte RAM comparison",
+        "nested_transfer": "Breaking the inner loop resumes at the outer header; an outer close must not be skipped."
+      },
+      "domain_wording": "A failure to fully structure a function can still retain its genuine natural loops while preserving all remaining edges.",
+      "domain_question": null,
+      "recommended_fix_target": "standalone fallback C layout and its independent edge checker",
+      "lock_update": "exact projected block membership; genuine-loop reachability/single entry; every edge transfer; altered scopes, transfers and missing/duplicate blocks; C and M0 regression gates",
+      "epistemic_status": "machine-confirmed within the declared source-bound checks, concrete cases and M0 profiles"
+    },
+    {
+      "claim_id": "PARTIAL-SOURCE-BINDING-001",
+      "source_of_truth": [
+        "src/codegen/goto_layout.rs",
+        "src/codegen/goto_layout/loops/check.rs"
+      ],
+      "spec_delta": "none; only assignment-free routing can disappear",
+      "code_delta": "Recompute the established routing view for the supplied Program before accepting its loop plan. Retain a newly effectful block rather than reusing a foreign routing projection.",
+      "model_delta": "none; source-binding control in the actual Rust checker",
+      "check_command": "python3 tools/dev.py cargo test --lib a_foreign_routing_projection_cannot_hide_source_effects",
+      "previous_machine_result": "Design review found that a caller could supply a flat view from another Program that routed through a now-effectful block. No released failure is claimed.",
+      "current_machine_result": "The checker rejects the mismatched view; a fresh view retains the effectful block.",
+      "drift_class": "coverage-gap",
+      "witness": "Add an assignment at the previously empty routePC3, then reuse the older view.",
+      "domain_wording": "A control layout must use the current source effects, even when the block IDs still match.",
+      "domain_question": null,
+      "recommended_fix_target": "source-to-routing binding",
+      "lock_update": "foreign-projection negative control and fresh-projection positive control",
+      "epistemic_status": "diff-inferred review gap and machine-confirmed added controls"
+    }
+  ],
+  "validation": {
+    "rust": {
+      "revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+      "command": [
+        "python3",
+        "tools/dev.py",
+        "cargo",
+        "test",
+        "--all-targets",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "returncode": 0,
+      "seconds": 555.9490441420057,
+      "log_sha256": "31938462dbd48b9cc09c46de897d858ef790b065a29a55886c514ed349dd693c",
+      "targets": 26,
+      "passed": 1632,
+      "failed": 0,
+      "ignored": 67,
+      "target_summaries": [
+        "test result: ok. 282 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 1.70s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 179 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 34.32s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.31s",
+        "test result: ok. 148 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 77.85s",
+        "test result: ok. 112 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s",
+        "test result: ok. 387 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s",
+        "test result: ok. 36 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 161.06s",
+        "test result: ok. 133 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 15.78s",
+        "test result: ok. 58 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 238.28s",
+        "test result: ok. 261 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 8.03s",
+        "test result: ok. 12 passed; 0 failed; 44 ignored; 0 measured; 0 filtered out; finished in 0.37s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "clippy_all_targets": "passed with -D warnings",
+    "rustfmt": "passed",
+    "focused_checker_tests": 6,
+    "generated_c": {
+      "input_vectors": 100,
+      "views": [
+        false,
+        true
+      ],
+      "optimizations": [
+        "O0",
+        "O2"
+      ],
+      "comparisons": 400,
+      "sanitizer": "UBSan",
+      "observations": "return, all64 RAM bytes and first fault address/kind/width; no instruction-budget equivalence is claimed for this standalone C projection"
+    },
+    "m0": {
+      "fresh32": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "47693143caf666c4428a97d7f1a4f744ec331c87",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "47693143caf666c4428a97d7f1a4f744ec331c87",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "186752e270eda753f3e2d7fdc75c016a091560e394f6a4fab3602c51942f686a",
+            "report_sha256": "7040792800edf3d22a6a44c5a5852131e5c89f3577c54629f3a782846f7f60e6"
+          },
+          "after": {
+            "evaluation_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "d0ab5a9b747e8c67e73e7a08bdb3300a79b7ba644742dff910739b0151eb5faf",
+            "report_sha256": "fc9ea14f840641d75eeca22809ac2efdcf4258bea02d7f8a4d2210e5fa92ceb9"
+          },
+          "requested": 32,
+          "structure": {
+            "equal": 32
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 32
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "equivalent_under_model": 17,
+            "unsupported": 11,
+            "unknown": 4
+          },
+          "candidate_architecture": {
+            "passed": 32
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 32
+            },
+            "middle_predicates": {
+              "not_applied": 31,
+              "passed": 1
+            },
+            "middle_memory": {
+              "not_applied": 32
+            },
+            "middle_saved": {
+              "not_applied": 32
+            },
+            "selected_semantic": {
+              "not_applied": 32
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 32
+            },
+            "memory_ssa_queries": {
+              "passed": 32
+            },
+            "memory_addresses": {
+              "passed": 32
+            },
+            "unsigned_bounds": {
+              "passed": 32
+            },
+            "storage_widths": {
+              "passed": 32
+            },
+            "selected_storage": {
+              "passed": 32
+            },
+            "selected_signed_storage": {
+              "passed": 32
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 32
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "identity": {
+          "schema": "nirvana-partial-layout-gate-v1",
+          "kind": "fresh32",
+          "profiles": 32,
+          "cohorts": {
+            "development": {
+              "profiles": 24,
+              "structure": {
+                "equal": 24
+              }
+            },
+            "holdout": {
+              "profiles": 8,
+              "structure": {
+                "equal": 8
+              }
+            }
+          },
+          "identical_c": 30,
+          "total_c": 32,
+          "changed_c_by_cohort": {
+            "holdout": 2
+          },
+          "identical_ir": 96,
+          "total_ir": 96,
+          "identical_stage_metadata": 30,
+          "total_stage_metadata": 32,
+          "counts": {
+            "native": 544,
+            "generated_O0": 1632,
+            "generated_O2": 1632,
+            "stage_comparisons": 33660
+          },
+          "before_summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "summary": {
+            "requested": 32,
+            "status": {
+              "measured": 32
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 32
+            },
+            "cohorts": {
+              "development": 24,
+              "holdout": 8
+            },
+            "architecture": {
+              "passed": 32
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 32
+              },
+              "middle_predicates": {
+                "not_applied": 31,
+                "passed": 1
+              },
+              "middle_memory": {
+                "not_applied": 32
+              },
+              "middle_saved": {
+                "not_applied": 32
+              },
+              "selected_semantic": {
+                "not_applied": 32
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 32
+              },
+              "memory_ssa_queries": {
+                "passed": 32
+              },
+              "memory_addresses": {
+                "passed": 32
+              },
+              "unsigned_bounds": {
+                "passed": 32
+              },
+              "storage_widths": {
+                "passed": 32
+              },
+              "selected_storage": {
+                "passed": 32
+              },
+              "selected_signed_storage": {
+                "passed": 32
+              }
+            },
+            "c_footprint": {
+              "measured": 32
+            },
+            "state_memory_sites": {
+              "measured": 24,
+              "partial": 8
+            },
+            "state_values": {
+              "equivalent_under_model": 17,
+              "unsupported": 11,
+              "unknown": 4
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/placement-v2-after/report.json",
+              "sha256": "7040792800edf3d22a6a44c5a5852131e5c89f3577c54629f3a782846f7f60e6"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/partial-layout-v2-after/report.json",
+              "sha256": "fc9ea14f840641d75eeca22809ac2efdcf4258bea02d7f8a4d2210e5fa92ceb9"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-initial-v2.json",
+              "sha256": "23ca994232002773fe9fee6c68d52d6eadb6379eabfedcf89ef7df3c2c9fa5a4"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 17,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 32
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-branch-inputs-v1.txt",
+              "sha256": "5c1879cc0b554f311e73d36f8cac7b530c7bde02afef2c41bcd01330acad2d94"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              },
+              "after": {
+                "gotos": 72,
+                "expression_nodes": 3366,
+                "condition_expression_nodes": 375,
+                "static_state_writes": 74
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 28,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              },
+              "after": {
+                "gotos": 22,
+                "expression_nodes": 2048,
+                "condition_expression_nodes": 442,
+                "static_state_writes": 32
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      },
+      "nested2": {
+        "comparison": {
+          "schema": "nirvana-structure-comparison-v2",
+          "metric": "nirvana-control-topology-v1",
+          "before": {
+            "evaluation_revision": "47693143caf666c4428a97d7f1a4f744ec331c87",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "47693143caf666c4428a97d7f1a4f744ec331c87",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "186752e270eda753f3e2d7fdc75c016a091560e394f6a4fab3602c51942f686a",
+            "report_sha256": "e398a7a358ff2477d8fd22dfd493475f98fce53c82ecfc981cc6bd24710f1015"
+          },
+          "after": {
+            "evaluation_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+            "evaluation_dirty": false,
+            "binary_build": {
+              "model": "nirvana-rust-target-build-v1",
+              "package_version": "0.1.0",
+              "source_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+              "source_dirty": false
+            },
+            "decompiler_sha256": "d0ab5a9b747e8c67e73e7a08bdb3300a79b7ba644742dff910739b0151eb5faf",
+            "report_sha256": "ce30566f4657c3adb9605af5379237400750589d206f71d2734a4fcbfdb9a4a5"
+          },
+          "requested": 2,
+          "structure": {
+            "equal": 2
+          },
+          "structure_regressions": 0,
+          "structure_distance_regressions": 0,
+          "candidate_semantics": {
+            "passed": 2
+          },
+          "architecture_regressions": 0,
+          "analysis_regressions": 0,
+          "c_footprint_regressions": 0,
+          "state_memory_regressions": 0,
+          "state_value_regressions": 0,
+          "state_value_counterexamples": 0,
+          "candidate_state_values": {
+            "unknown": 1,
+            "unsupported": 1
+          },
+          "candidate_architecture": {
+            "passed": 2
+          },
+          "candidate_execution": {
+            "low_middle": {
+              "passed": 2
+            },
+            "middle_predicates": {
+              "not_applied": 2
+            },
+            "middle_memory": {
+              "not_applied": 2
+            },
+            "middle_saved": {
+              "not_applied": 2
+            },
+            "selected_semantic": {
+              "not_applied": 2
+            }
+          },
+          "candidate_analysis": {
+            "memory_ssa_graph": {
+              "passed": 2
+            },
+            "memory_ssa_queries": {
+              "passed": 2
+            },
+            "memory_addresses": {
+              "passed": 2
+            },
+            "unsigned_bounds": {
+              "passed": 2
+            },
+            "storage_widths": {
+              "passed": 2
+            },
+            "selected_storage": {
+              "passed": 2
+            },
+            "selected_signed_storage": {
+              "passed": 2
+            }
+          },
+          "candidate_semantic_state_pairs": {
+            "not_applied": 2
+          },
+          "semantic_regressions": 0,
+          "resources": "See per-command samples; timing comparisons need controlled repeated runs."
+        },
+        "identity": {
+          "schema": "nirvana-partial-layout-gate-v1",
+          "kind": "nested2",
+          "profiles": 2,
+          "cohorts": {
+            "development": {
+              "profiles": 2,
+              "structure": {
+                "equal": 2
+              }
+            },
+            "holdout": {
+              "profiles": 0,
+              "structure": {}
+            }
+          },
+          "identical_c": 1,
+          "total_c": 2,
+          "changed_c_by_cohort": {
+            "development": 1
+          },
+          "identical_ir": 6,
+          "total_ir": 6,
+          "identical_stage_metadata": 1,
+          "total_stage_metadata": 2,
+          "counts": {
+            "native": 130,
+            "generated_O0": 390,
+            "generated_O2": 390,
+            "stage_comparisons": 7800
+          },
+          "before_summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "summary": {
+            "requested": 2,
+            "status": {
+              "measured": 2
+            },
+            "failures_by_stage": {},
+            "distances": {
+              "exact": 2
+            },
+            "cohorts": {
+              "development": 2
+            },
+            "architecture": {
+              "passed": 2
+            },
+            "architecture_execution": {
+              "low_middle": {
+                "passed": 2
+              },
+              "middle_predicates": {
+                "not_applied": 2
+              },
+              "middle_memory": {
+                "not_applied": 2
+              },
+              "middle_saved": {
+                "not_applied": 2
+              },
+              "selected_semantic": {
+                "not_applied": 2
+              }
+            },
+            "architecture_analysis": {
+              "memory_ssa_graph": {
+                "passed": 2
+              },
+              "memory_ssa_queries": {
+                "passed": 2
+              },
+              "memory_addresses": {
+                "passed": 2
+              },
+              "unsigned_bounds": {
+                "passed": 2
+              },
+              "storage_widths": {
+                "passed": 2
+              },
+              "selected_storage": {
+                "passed": 2
+              },
+              "selected_signed_storage": {
+                "passed": 2
+              }
+            },
+            "c_footprint": {
+              "measured": 2
+            },
+            "state_memory_sites": {
+              "partial": 2
+            },
+            "state_values": {
+              "unknown": 1,
+              "unsupported": 1
+            }
+          },
+          "reports": {
+            "before": {
+              "file": "target/runs/run-a37yw4tm/out/placement-selected-nested-after/report.json",
+              "sha256": "e398a7a358ff2477d8fd22dfd493475f98fce53c82ecfc981cc6bd24710f1015"
+            },
+            "after": {
+              "file": "target/runs/run-a37yw4tm/out/partial-layout-nested-after/report.json",
+              "sha256": "ce30566f4657c3adb9605af5379237400750589d206f71d2734a4fcbfdb9a4a5"
+            }
+          },
+          "environment": {
+            "evaluation": {
+              "runner_sha256": "a16db566f7342614a88f36093ee10787c9d9bba7181aea0e3da7465a56f9870d",
+              "metric_sha256": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
+              "semantics_sha256": "88291f59ea099d50af6fc5b9b27ee4f64d4b44a849cfdc078bc48a8d3213755e",
+              "stages_sha256": "5b839374cccdd1ee432cceaafae0627ce7295a4541e7d73c647698856c2c9e6a",
+              "semantic_pairs_sha256": "940d4ae96cf4d7218fc8bfdfa10c3dfb720784ebca012954ff103af123f6997e",
+              "state_record_codec_sha256": "3c773081ed1d735c351ccde7b7ade683835e5691226c5cae5039b898d71fc196",
+              "middle_pairs_sha256": "72d2372cfe5383c6c6f29e7ab4f57a4207881c10cdf1e49728031d06a38de8e5",
+              "analysis_checks_sha256": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+              "analysis_check_modules": {
+                "analysis_checks.py": "408acd564c3cd028f11579660da3539e6760e3641366dcc90c56fee4305e6dd3",
+                "selected_storage.py": "15d80a437aa6214049c26e00cdb94cd0060e59ff79574f7865c55c2fce403e2e",
+                "selected_signed_storage.py": "56a3d76315f956b299f658f2f4a52ef5e2ab4f7b9997db028cf48eb26eeeab3d"
+              },
+              "build_identity_sha256": "60fde4340598917a216e472e4bda96cc837d854f5f51b5e317d2b98c0b324ed4",
+              "probe_metadata": "hashed-probe-json-v1",
+              "c_footprint_sha256": "28fffdd0e4aecd02b2418f3e159b1f7ec6e2dc2941b765a6d927bd46fadee4d5",
+              "state_memory_sha256": "263fc1b2d300518cf5316d04137e86d02b2e7a759574acfc30993cde5268fdab",
+              "state_values_modules": {
+                "__init__.py": "7bb534b065976f079b67ad72b1e35e86e352777bb06313a537bc60652015dd8d",
+                "ast.py": "cb2e4188742954b3bdd43860845d62519dded5d8cb3a0752f0027fd18d69b1fa",
+                "definedness.py": "e660e2cde5ff281b376214e468fc300e6c8dc255c88c8c9f1c09ca1043777dbd",
+                "division_abstraction.py": "9097fd0431de701d61dfaacf3f5c8243bd50542be31f06ca2ff6e308968ef88f",
+                "helpers.py": "527aa2c743275e7d4d75c6ed77f99420bdbda3b9526ace19833a0c33694326df",
+                "intervals.py": "c8550443838445cd1493bb309daba6d207d7dbc4a42aaf3fe941f7aad060d5c8",
+                "protocol.py": "915e2f43f2f4a1a8a7369ed7de4e30ee5306987a569af0d8f17ef4c49acd5379",
+                "records.py": "b200f43ae3d4de305f86b908d2cc4fdca08cbe1016bbbee4c83aa0c5dfc086c6",
+                "solver.py": "792183ec4a184a6111801c82eb2ab4a33c39e6e87334fead5e09798363f3035c",
+                "terms.py": "80f729e4e90607335dcf9bc3447557222277d5b9e89279750a408e5665290dd5"
+              }
+            },
+            "corpus": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.json",
+              "sha256": "1850be124214464ca917a570e42baa951be27cc87062ca27b01b78a894787dc7"
+            },
+            "compilers": {
+              "gcc": {
+                "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+                "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+                "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+                "returncode": 0,
+                "stderr": ""
+              },
+              "clang18": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+                "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+                "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+                "returncode": 0,
+                "stderr": ""
+              }
+            },
+            "clang": {
+              "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/bin/clang-18",
+              "sha256": "1b20b3c2bc45d116f2a268837831d2b86e1725d34f556055b6e54926edbaf973",
+              "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /home/hosi/nirvana/target/runs/run-a37yw4tm/out/clang18/usr/lib/llvm-18/bin",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "c_compiler": {
+              "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+              "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+              "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+              "returncode": 0,
+              "stderr": ""
+            },
+            "budgets": {
+              "command_seconds": 15,
+              "search_seconds": 1,
+              "search_states": 100000,
+              "value_solver_seconds": 3.0,
+              "semantic_seed": 7956016069493023024,
+              "semantic_vectors": 65,
+              "low_step_limit": 4096
+            },
+            "emission": "readable-c",
+            "semantics": {
+              "status": "reported",
+              "contract": "nirvana-fixture-state4-checked-v1",
+              "counts": {
+                "passed": 2
+              }
+            },
+            "semantic_inputs": {
+              "path": "/home/hosi/nirvana/tools/corpora/structure-nested-v1.inputs.txt",
+              "sha256": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf"
+            },
+            "state_values": {
+              "model": "nirvana-state4-values-v8",
+              "enabled": true,
+              "scope": "C model return/state bytes for valid state[4]; checked helper contracts.",
+              "solver": {
+                "path": "/home/hosi/nirvana/target/runs/run-a37yw4tm/out/z3-toolchain/bin/z3",
+                "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+                "version": "Z3 version 4.8.12 - 64 bit",
+                "returncode": 0,
+                "stderr": ""
+              }
+            }
+          },
+          "development_changes": [
+            {
+              "id": "nested-transfers-clang18-O2",
+              "distance": "equal",
+              "before_interval": [
+                30,
+                30
+              ],
+              "after_interval": [
+                30,
+                30
+              ],
+              "c_syntax_delta": {
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "max_condition_expression_nodes": 0,
+                "repeated_condition_syntax": 0,
+                "operations": {},
+                "unevaluated_syntax": {},
+                "literals": {},
+                "access_syntax": {},
+                "calls": {},
+                "types": {}
+              },
+              "state_value_regression": false,
+              "gotos": {
+                "before": 16,
+                "after": 15
+              },
+              "condition_kinds": {
+                "before": {
+                  "IfStmt": 12
+                },
+                "after": {
+                  "IfStmt": 12
+                }
+              }
+            }
+          ],
+          "cohort_quality": {
+            "development": {
+              "before": {
+                "gotos": 19,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              },
+              "after": {
+                "gotos": 18,
+                "expression_nodes": 713,
+                "condition_expression_nodes": 108,
+                "static_state_writes": 13
+              }
+            },
+            "holdout": {
+              "before": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              },
+              "after": {
+                "gotos": 0,
+                "expression_nodes": 0,
+                "condition_expression_nodes": 0,
+                "static_state_writes": 0
+              }
+            }
+          },
+          "policy": "Frozen source v2; held-out generated contents and individual rows are not inspected. Only aggregate outcomes and artifact identities guide adoption."
+        }
+      }
+    },
+    "tools": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=7779bad50b8eafa1e343f0bee9f3b1e128cd432c source_dirty=false",
+        "sha256": "d0ab5a9b747e8c67e73e7a08bdb3300a79b7ba644742dff910739b0151eb5faf"
+      },
+      "candidate_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+      "partial_layout_v2": {
+        "version": "nirvana 0.1.0 git=7779bad50b8eafa1e343f0bee9f3b1e128cd432c source_dirty=false",
+        "sha256": "50ce47b39e42c6d4d53b1dd06229d25552f1ba647dfe29dc50a80938959b2f42"
+      },
+      "partial_layout_nested": {
+        "version": "nirvana 0.1.0 git=7779bad50b8eafa1e343f0bee9f3b1e128cd432c source_dirty=false",
+        "sha256": "50ce47b39e42c6d4d53b1dd06229d25552f1ba647dfe29dc50a80938959b2f42"
+      }
+    },
+    "existing_finite_model": {
+      "trial": "target/placement-model-trial.json",
+      "trial_sha256": "f4d10213decb738add31014c7ad160eeeca394b580b6127216f0e534a27d7e46",
+      "clean_current_export": {
+        "candidate_revision": "7779bad50b8eafa1e343f0bee9f3b1e128cd432c",
+        "trial_revision": "a68a89fd90b0d132b5df4f84f390948fffaa294b",
+        "fixtures_sha256": "65ea707a4f9500824fd6c71bdeafc8f7f0516418c5efa808fc0214ec848fab52",
+        "model_sha256": "2a70f9019ad692e109dde3a2f688c2c443ff680d1b9c7681fdb936a1d64389f3",
+        "bytes_identical": true,
+        "exported_pairs": 18,
+        "verified_positive_pairs": 12,
+        "meaning": "The clean current Rust exporter yields the exact eighteen raw pairs of the completed twelve-positive-pair TLC run. Event correspondence is bounded by that finite family and budgets0..6."
+      },
+      "scope": "The exact18 raw Node pairs and model bytes match the completed12-positive-pair/2176-state TLC run. That finite model covers the unchanged Node event contract, not this separate C lexical-layout checker."
+    }
+  },
+  "diagnostic": {
+    "question": "Does a two-layer reducible CFG alone satisfy the current two-copy source-AST budget?",
+    "solver_proposals": {
+      "schema": "nirvana-two-layer-reducibility-probe-v1",
+      "producer_revision": "a68a89fd90b0d132b5df4f84f390948fffaa294b",
+      "seconds_per_solver": 1,
+      "source_copy_layers": 2,
+      "solver": {
+        "version": "Z3 version 4.8.12 - 64 bit",
+        "sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef"
+      },
+      "cases": [
+        {
+          "instructions": 6,
+          "graph": 400185,
+          "status": "sat",
+          "seconds": 0.041605556005379185,
+          "smt_sha256": "59047a548447c66f773824852476cf8db01e26086ce16019d6e198d6aa76d013",
+          "adjacency": [
+            [
+              2,
+              7
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              4,
+              9
+            ],
+            [
+              4
+            ],
+            [
+              3,
+              11
+            ],
+            [],
+            [
+              8,
+              7
+            ],
+            [
+              9,
+              2
+            ],
+            [
+              4,
+              9
+            ],
+            [
+              10
+            ],
+            [
+              9,
+              11
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            2,
+            3,
+            4,
+            7,
+            9,
+            10,
+            11
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 4
+        },
+        {
+          "instructions": 6,
+          "graph": 366684,
+          "status": "sat",
+          "seconds": 0.02987783300341107,
+          "smt_sha256": "c79fb76cea7fe932b23f6ace09d9e24f22d7c5b3fc3e242a0923d53bc96109f6",
+          "adjacency": [
+            [
+              3,
+              1
+            ],
+            [
+              10,
+              2
+            ],
+            [
+              7,
+              9
+            ],
+            [
+              6,
+              10
+            ],
+            [
+              2,
+              11
+            ],
+            [],
+            [
+              3,
+              1
+            ],
+            [
+              4,
+              2
+            ],
+            [
+              7,
+              3
+            ],
+            [
+              0,
+              4
+            ],
+            [
+              2,
+              11
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            6,
+            7,
+            9,
+            10,
+            11
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 5
+        },
+        {
+          "instructions": 6,
+          "graph": 348064,
+          "status": "sat",
+          "seconds": 0.02201785699435277,
+          "smt_sha256": "923b6f85639bf0f948f158babad62744e74be1f1d87bf9088d7c4ee457174915",
+          "adjacency": [
+            [
+              3,
+              1
+            ],
+            [
+              10,
+              8
+            ],
+            [
+              4,
+              9
+            ],
+            [
+              4
+            ],
+            [
+              2,
+              11
+            ],
+            [],
+            [
+              9,
+              7
+            ],
+            [
+              10,
+              2
+            ],
+            [
+              4,
+              3
+            ],
+            [
+              4
+            ],
+            [
+              8,
+              11
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            8,
+            9,
+            10,
+            11
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 4
+        },
+        {
+          "instructions": 7,
+          "graph": 4930763,
+          "status": "sat",
+          "seconds": 0.028473879996454343,
+          "smt_sha256": "9b21487c1da2b0c06ce0bf5a48c1aef72338738262b2b6e984f79ec3e7c74539",
+          "adjacency": [
+            [
+              3,
+              1
+            ],
+            [
+              11,
+              2
+            ],
+            [
+              4,
+              10
+            ],
+            [
+              2
+            ],
+            [
+              10,
+              12
+            ],
+            [
+              3
+            ],
+            [],
+            [
+              10,
+              8
+            ],
+            [
+              11,
+              2
+            ],
+            [
+              4,
+              3
+            ],
+            [
+              2
+            ],
+            [
+              3,
+              5
+            ],
+            [
+              10
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            10,
+            11,
+            12
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 3
+        },
+        {
+          "instructions": 7,
+          "graph": 6000828,
+          "status": "sat",
+          "seconds": 0.022805228996730875,
+          "smt_sha256": "f55947cbe804504bedaf01942bad84a9670a802dd395dfa14fdb3bfd0115b4bb",
+          "adjacency": [
+            [
+              11,
+              1
+            ],
+            [
+              10,
+              9
+            ],
+            [
+              3
+            ],
+            [
+              8,
+              11
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              4
+            ],
+            [],
+            [
+              11,
+              8
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              10
+            ],
+            [
+              1,
+              11
+            ],
+            [
+              3,
+              12
+            ],
+            [
+              11
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 5
+        },
+        {
+          "instructions": 7,
+          "graph": 11144156,
+          "status": "sat",
+          "seconds": 0.02684274000057485,
+          "smt_sha256": "d8354da52f4d095521109b5642d8a118a8132885ea3b3a76b3c813d0d0e72776",
+          "adjacency": [
+            [
+              4,
+              1
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              3,
+              3
+            ],
+            [
+              11
+            ],
+            [
+              2,
+              5
+            ],
+            [
+              2,
+              13
+            ],
+            [],
+            [
+              11,
+              8
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              3,
+              10
+            ],
+            [
+              11
+            ],
+            [
+              9,
+              12
+            ],
+            [
+              9,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 5
+        },
+        {
+          "instructions": 7,
+          "graph": 12901869,
+          "status": "sat",
+          "seconds": 0.027520965995790903,
+          "smt_sha256": "8242ab63e44964d96a5d97bc51e786a5f6a75df96e8f0d14fef70efc4c5676e1",
+          "adjacency": [
+            [
+              5,
+              1
+            ],
+            [
+              13,
+              9
+            ],
+            [
+              5,
+              3
+            ],
+            [
+              12,
+              4
+            ],
+            [
+              3
+            ],
+            [
+              4,
+              13
+            ],
+            [],
+            [
+              12,
+              8
+            ],
+            [
+              13,
+              9
+            ],
+            [
+              5,
+              10
+            ],
+            [
+              5,
+              4
+            ],
+            [
+              10
+            ],
+            [
+              4,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            3,
+            4,
+            5,
+            9,
+            10,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 4
+        },
+        {
+          "instructions": 7,
+          "graph": 4906202,
+          "status": "sat",
+          "seconds": 0.026462255998922046,
+          "smt_sha256": "065d1412a84d874c782984d17342ca74651a5ab787eaa892909d68adfc34955a",
+          "adjacency": [
+            [
+              2,
+              8
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              11,
+              10
+            ],
+            [
+              12,
+              4
+            ],
+            [
+              9,
+              12
+            ],
+            [
+              3
+            ],
+            [],
+            [
+              9,
+              8
+            ],
+            [
+              12,
+              2
+            ],
+            [
+              4,
+              3
+            ],
+            [
+              12,
+              11
+            ],
+            [
+              2,
+              12
+            ],
+            [
+              3
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            2,
+            3,
+            4,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 5
+        },
+        {
+          "instructions": 7,
+          "graph": 10775771,
+          "status": "sat",
+          "seconds": 0.027178176002053078,
+          "smt_sha256": "57a027c53167f1428c02efd79be8e40768d72f9c6868f747b18eb642722468d3",
+          "adjacency": [
+            [
+              10,
+              8
+            ],
+            [
+              12,
+              2
+            ],
+            [
+              4,
+              3
+            ],
+            [
+              5
+            ],
+            [
+              10
+            ],
+            [
+              9,
+              13
+            ],
+            [],
+            [
+              3,
+              8
+            ],
+            [
+              12,
+              9
+            ],
+            [
+              11,
+              3
+            ],
+            [
+              12
+            ],
+            [
+              3
+            ],
+            [
+              9,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            3,
+            5,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 6
+        },
+        {
+          "instructions": 7,
+          "graph": 13221132,
+          "status": "sat",
+          "seconds": 0.046604221999587025,
+          "smt_sha256": "ff7f01b1a1219ecf805932311600c5d61a11eaeddab9532c04e52fd5d1eb3578",
+          "adjacency": [
+            [
+              11,
+              8
+            ],
+            [
+              9
+            ],
+            [
+              12,
+              3
+            ],
+            [
+              3,
+              11
+            ],
+            [
+              1,
+              5
+            ],
+            [
+              11,
+              13
+            ],
+            [],
+            [
+              4,
+              1
+            ],
+            [
+              2
+            ],
+            [
+              5,
+              10
+            ],
+            [
+              10,
+              11
+            ],
+            [
+              1,
+              5
+            ],
+            [
+              11,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            5,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 6
+        },
+        {
+          "instructions": 7,
+          "graph": 5951706,
+          "status": "sat",
+          "seconds": 0.03112629100360209,
+          "smt_sha256": "337cfa489701303de13da97b7934afbe293c753425167f36cb386e6c72bf61bc",
+          "adjacency": [
+            [
+              9,
+              1
+            ],
+            [
+              5,
+              9
+            ],
+            [
+              3
+            ],
+            [
+              12,
+              4
+            ],
+            [
+              2,
+              12
+            ],
+            [
+              4
+            ],
+            [],
+            [
+              9,
+              8
+            ],
+            [
+              5,
+              9
+            ],
+            [
+              10
+            ],
+            [
+              5,
+              4
+            ],
+            [
+              2,
+              5
+            ],
+            [
+              4
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            9,
+            10,
+            12
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 3
+        },
+        {
+          "instructions": 7,
+          "graph": 11133627,
+          "status": "sat",
+          "seconds": 0.038118149001093116,
+          "smt_sha256": "9f28d41e9f2be532fba2136896e5d72167864d3db62e5782ece1094ba85d1f4c",
+          "adjacency": [
+            [
+              3,
+              8
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              8
+            ],
+            [
+              6,
+              11
+            ],
+            [
+              8,
+              12
+            ],
+            [
+              2,
+              6
+            ],
+            [],
+            [
+              10,
+              1
+            ],
+            [
+              10,
+              9
+            ],
+            [
+              8
+            ],
+            [
+              6,
+              4
+            ],
+            [
+              8,
+              5
+            ],
+            [
+              9,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            2,
+            3,
+            4,
+            5,
+            6,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 6
+        },
+        {
+          "instructions": 7,
+          "graph": 11263438,
+          "status": "sat",
+          "seconds": 0.05434153699752642,
+          "smt_sha256": "4e79d96471cb9f6162d69ff3299230a3d1293de8f6a9c691f4ada8cead03c57c",
+          "adjacency": [
+            [
+              13,
+              1
+            ],
+            [
+              11,
+              9
+            ],
+            [
+              5,
+              3
+            ],
+            [
+              5,
+              11
+            ],
+            [
+              10,
+              12
+            ],
+            [
+              9,
+              6
+            ],
+            [],
+            [
+              6,
+              8
+            ],
+            [
+              11,
+              2
+            ],
+            [
+              12,
+              10
+            ],
+            [
+              12,
+              4
+            ],
+            [
+              3,
+              5
+            ],
+            [
+              9,
+              6
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            3,
+            4,
+            5,
+            6,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 5
+        },
+        {
+          "instructions": 7,
+          "graph": 6004331,
+          "status": "sat",
+          "seconds": 0.036874361998343375,
+          "smt_sha256": "0df03d9121f774d40fb2fe8a5b5f8d2a9a4ae95b3441ea4cf79517c94f95b0b1",
+          "adjacency": [
+            [
+              10,
+              8
+            ],
+            [
+              12
+            ],
+            [
+              6,
+              3
+            ],
+            [
+              1,
+              4
+            ],
+            [
+              3,
+              12
+            ],
+            [
+              4
+            ],
+            [],
+            [
+              10,
+              8
+            ],
+            [
+              5
+            ],
+            [
+              13,
+              3
+            ],
+            [
+              8,
+              4
+            ],
+            [
+              3,
+              12
+            ],
+            [
+              4
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            3,
+            4,
+            5,
+            8,
+            10,
+            12
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 3
+        },
+        {
+          "instructions": 7,
+          "graph": 11582701,
+          "status": "sat",
+          "seconds": 0.025252173996705096,
+          "smt_sha256": "124b6bd3eaf9b43ea9a1d020bbfba047908c527118baddab43567279ab78a8f9",
+          "adjacency": [
+            [
+              12,
+              1
+            ],
+            [
+              13,
+              9
+            ],
+            [
+              4,
+              10
+            ],
+            [
+              3,
+              4
+            ],
+            [
+              5
+            ],
+            [
+              3,
+              13
+            ],
+            [],
+            [
+              12,
+              8
+            ],
+            [
+              13,
+              9
+            ],
+            [
+              4,
+              10
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              12
+            ],
+            [
+              10,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            3,
+            4,
+            5,
+            9,
+            10,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 4
+        },
+        {
+          "instructions": 7,
+          "graph": 12231756,
+          "status": "sat",
+          "seconds": 0.030553656004485674,
+          "smt_sha256": "53b763db90b21b7bb51a380e9fe09069268ea4642a49a738a7c021e6aeed2c5d",
+          "adjacency": [
+            [
+              11,
+              1
+            ],
+            [
+              10
+            ],
+            [
+              3
+            ],
+            [
+              2,
+              11
+            ],
+            [
+              9,
+              5
+            ],
+            [
+              10,
+              13
+            ],
+            [],
+            [
+              11,
+              1
+            ],
+            [
+              3
+            ],
+            [
+              10
+            ],
+            [
+              9,
+              4
+            ],
+            [
+              2,
+              12
+            ],
+            [
+              10,
+              13
+            ],
+            []
+          ],
+          "reachable": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "independent_python_reducibility": true,
+          "reachable_extra_original_copies": 5
+        }
+      ],
+      "scope": "Existential two-layer instruction-CFG refinements only. SAT candidates pass an independent Python dominance/acyclicity check; no Rust AST acceptance or state replay yet. UNSAT/unknown does not establish impossibility for richer control-event graphs or AST grammars."
+    },
+    "actual_rust_replay": {
+      "schema": "nirvana-two-layer-rust-probe-v1",
+      "revision": "6e1f00f17179818718eb5755a92297d99f339e8b",
+      "returncode": 0,
+      "source_before_sha256": "abb19098c02953bd2076a6c79e632a78f87df80b4e96bacee81d729e43bf9cdd",
+      "probe_sha256": "f1b636c3d4839f0e5ddcaeda99e82c75b0d2b0069f6dc92dc1a22de4802d7e46",
+      "solver_proposals_sha256": "c17d3e8b0f2e2ab82f23e528547f462f61f42261e43393405fa4d09eedb88a41",
+      "source_restored": true,
+      "profiles": 48,
+      "accepted": 9,
+      "cases": [
+        {
+          "instructions": 6,
+          "graph": 400185,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 6,
+          "graph": 400185,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 6,
+          "graph": 400185,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 6,
+          "graph": 366684,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb8 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 6,
+          "graph": 366684,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb8 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 6,
+          "graph": 366684,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb8 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 6,
+          "graph": 348064,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb6 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 6,
+          "graph": 348064,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb6 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 6,
+          "graph": 348064,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb6 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 4930763,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb17 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 4930763,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb17 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 4930763,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb17 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 6000828,
+          "profile": 0,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": ""
+        },
+        {
+          "instructions": 7,
+          "graph": 6000828,
+          "profile": 1,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": ""
+        },
+        {
+          "instructions": 7,
+          "graph": 6000828,
+          "profile": 2,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": ""
+        },
+        {
+          "instructions": 7,
+          "graph": 11144156,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 11144156,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 11144156,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 12901869,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb9 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 12901869,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb9 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 12901869,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb9 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 4906202,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb22 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 4906202,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb22 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 4906202,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb22 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 10775771,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb19 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 10775771,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb19 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 10775771,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb19 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 13221132,
+          "profile": 0,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb19 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 13221132,
+          "profile": 1,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb19 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 13221132,
+          "profile": 2,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb19 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 5951706,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb20 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 5951706,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb20 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 5951706,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 0,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb20 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 11133627,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 11133627,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 11133627,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb16 exceeds the static copy limit of 2"
+        },
+        {
+          "instructions": 7,
+          "graph": 11263438,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 3,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb17 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 11263438,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 3,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb17 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 11263438,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 3,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb17 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 6004331,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb20 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 6004331,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb20 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 6004331,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb20 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 11582701,
+          "profile": 0,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb18 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 11582701,
+          "profile": 1,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb18 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 11582701,
+          "profile": 2,
+          "accepted": false,
+          "max_source_copies_seen": 4,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb18 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 12231756,
+          "profile": 0,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb14 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 12231756,
+          "profile": 1,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb14 exceeds the static copy limit of 1"
+        },
+        {
+          "instructions": 7,
+          "graph": 12231756,
+          "profile": 2,
+          "accepted": true,
+          "max_source_copies_seen": 2,
+          "source_validation_rejections": 0,
+          "last_recovery_error": "bb14 exceeds the static copy limit of 1"
+        }
+      ],
+      "log_sha256": "520311ee2ff6b39f8a4bdb37838a10635d0fa3311ecd3ca08d997784955aa870",
+      "scope": "Pinned solver proposals, checked by actual Rust CFA, source-to-AST validator and complete Rust report replay. This is a diagnostic experiment; no proposal synthesis is added to production."
+    },
+    "accepted_profile_observations": 3744,
+    "interpretation": "All16 pinned proposals pass actual Rust reducibility. Three proposals across three effect profiles satisfy final source-copy bounds and full-report replay. Other selected proposals exceed the AST source-copy limit or fail construction. Different graph proposals or tree placements remain possible; no impossibility or exclusive bottleneck is established. No solver is added to production.",
+    "reproduce_probe_source": "// Temporary independent projection/replay probe, not production recovery.\n#[test]\n#[ignore]\nfn two_layer_candidates_pass_real_rust_source_acceptance() {\n    let cases: &[(usize, usize, &[&[usize]])] = &[\n(6, 400185, &[&[2, 7], &[3, 2], &[4, 9], &[4], &[3, 11], &[], &[8, 7], &[9, 2], &[4, 9], &[10], &[9, 11], &[]]),\n(6, 366684, &[&[3, 1], &[10, 2], &[7, 9], &[6, 10], &[2, 11], &[], &[3, 1], &[4, 2], &[7, 3], &[0, 4], &[2, 11], &[]]),\n(6, 348064, &[&[3, 1], &[10, 8], &[4, 9], &[4], &[2, 11], &[], &[9, 7], &[10, 2], &[4, 3], &[4], &[8, 11], &[]]),\n(7, 4930763, &[&[3, 1], &[11, 2], &[4, 10], &[2], &[10, 12], &[3], &[], &[10, 8], &[11, 2], &[4, 3], &[2], &[3, 5], &[10], &[]]),\n(7, 6000828, &[&[11, 1], &[10, 9], &[3], &[8, 11], &[10, 5], &[4], &[], &[11, 8], &[3, 2], &[10], &[1, 11], &[3, 12], &[11], &[]]),\n(7, 11144156, &[&[4, 1], &[5, 2], &[3, 3], &[11], &[2, 5], &[2, 13], &[], &[11, 8], &[5, 2], &[3, 10], &[11], &[9, 12], &[9, 13], &[]]),\n(7, 12901869, &[&[5, 1], &[13, 9], &[5, 3], &[12, 4], &[3], &[4, 13], &[], &[12, 8], &[13, 9], &[5, 10], &[5, 4], &[10], &[4, 13], &[]]),\n(7, 4906202, &[&[2, 8], &[5, 2], &[11, 10], &[12, 4], &[9, 12], &[3], &[], &[9, 8], &[12, 2], &[4, 3], &[12, 11], &[2, 12], &[3], &[]]),\n(7, 10775771, &[&[10, 8], &[12, 2], &[4, 3], &[5], &[10], &[9, 13], &[], &[3, 8], &[12, 9], &[11, 3], &[12], &[3], &[9, 13], &[]]),\n(7, 13221132, &[&[11, 8], &[9], &[12, 3], &[3, 11], &[1, 5], &[11, 13], &[], &[4, 1], &[2], &[5, 10], &[10, 11], &[1, 5], &[11, 13], &[]]),\n(7, 5951706, &[&[9, 1], &[5, 9], &[3], &[12, 4], &[2, 12], &[4], &[], &[9, 8], &[5, 9], &[10], &[5, 4], &[2, 5], &[4], &[]]),\n(7, 11133627, &[&[3, 8], &[3, 2], &[8], &[6, 11], &[8, 12], &[2, 6], &[], &[10, 1], &[10, 9], &[8], &[6, 4], &[8, 5], &[9, 13], &[]]),\n(7, 11263438, &[&[13, 1], &[11, 9], &[5, 3], &[5, 11], &[10, 12], &[9, 6], &[], &[6, 8], &[11, 2], &[12, 10], &[12, 4], &[3, 5], &[9, 6], &[]]),\n(7, 6004331, &[&[10, 8], &[12], &[6, 3], &[1, 4], &[3, 12], &[4], &[], &[10, 8], &[5], &[13, 3], &[8, 4], &[3, 12], &[4], &[]]),\n(7, 11582701, &[&[12, 1], &[13, 9], &[4, 10], &[3, 4], &[5], &[3, 13], &[], &[12, 8], &[13, 9], &[4, 10], &[10, 4], &[12], &[10, 13], &[]]),\n(7, 12231756, &[&[11, 1], &[10], &[3], &[2, 11], &[9, 5], &[10, 13], &[], &[11, 1], &[3], &[10], &[9, 4], &[2, 12], &[10, 13], &[]]),\n    ];\n    fn restore(nodes: &mut Vec<Node>, count: usize) {\n        nodes.retain_mut(|node| match node {\n            Node::Step { address, assignments } => {\n                if *address % 2 == 1 {\n                    assert!(assignments.is_empty());\n                    false\n                } else {\n                    *address = (*address / 2) % count as u64;\n                    true\n                }\n            }\n            Node::If { taken, not_taken, .. } => {\n                restore(taken, count);\n                restore(not_taken, count);\n                true\n            }\n            Node::Loop(body) => { restore(body, count); true }\n            _ => true,\n        });\n    }\n    fn counts(nodes: &[Node], result: &mut [usize]) {\n        for node in nodes {\n            match node {\n                Node::Step { address, .. } => result[*address as usize] += 1,\n                Node::If { taken, not_taken, .. } => { counts(taken, result); counts(not_taken, result); }\n                Node::Loop(body) => counts(body, result),\n                _ => {}\n            }\n        }\n    }\n    for &(count, graph, adjacency) in cases {\n        assert_eq!(adjacency.len(), 2 * count);\n        for profile in 0..3 {\n            let source = larger_program(count, graph, profile);\n            let mut instructions = Vec::new();\n            for (node, targets) in adjacency.iter().enumerate() {\n                let original = &source.instructions()[node % count];\n                let address = (2 * node) as u64;\n                let control = match &original.control {\n                    Control::Branch { condition, target } => {\n                        assert_eq!(targets.len(), 2);\n                        assert_eq!(targets[0] % count, *target as usize);\n                        assert_eq!(targets[1] % count, node % count + 1);\n                        instructions.push(IrInstruction { address: address + 1, size: 1, assignments: vec![], control: Control::Jump((2 * targets[1]) as u64) });\n                        Control::Branch { condition: condition.clone(), target: (2 * targets[0]) as u64 }\n                    }\n                    Control::Jump(target) => {\n                        assert_eq!(targets.len(), 1);\n                        assert_eq!(targets[0] % count, *target as usize);\n                        Control::Jump((2 * targets[0]) as u64)\n                    }\n                    Control::Next => {\n                        assert_eq!(targets.len(), 1);\n                        assert_eq!(targets[0] % count, node % count + 1);\n                        Control::Jump((2 * targets[0]) as u64)\n                    }\n                    Control::Return(value) => { assert!(targets.is_empty()); Control::Return(value.clone()) }\n                };\n                instructions.push(IrInstruction { address, size: 1, assignments: original.assignments.clone(), control });\n            }\n            instructions.sort_by_key(|i| i.address);\n            let candidate = Program::new(0, 3, instructions).unwrap();\n            let analysis = ControlFlowAnalysis::compute(candidate.cfg()).unwrap();\n            assert!(analysis.is_reducible(), \"{count} {graph}\");\n            let postdom = PostDominators::compute(candidate.cfg()).ok();\n            let mut max_seen = 0;\n            let mut source_rejected = 0;\n            let mut accept = |mut function: StructuredFunction| {\n                restore(&mut function.body, count);\n                let mut copies = vec![0usize; count];\n                counts(&function.body, &mut copies);\n                max_seen = max_seen.max(*copies.iter().max().unwrap());\n                if copies.iter().any(|&n| n > 2) { return None; }\n                match structure_verify::validate(&source, &function.body) {\n                    Ok(evidence) => function.evidence = evidence,\n                    Err(_) => { source_rejected += 1; return None; }\n                }\n                Some(function)\n            };\n            let mut selected = None;\n            let mut last_error = String::new();\n            for limit in 1..=2 {\n                match StructuredFunction::recover_reducible(&candidate, limit, 8192, &analysis, postdom.as_ref()) {\n                    Ok(function) => selected = accept(function),\n                    Err(error) => last_error = error.to_string(),\n                }\n                if selected.is_none() {\n                    selected = StructuredFunction::recover_with_placement_candidates(&candidate, limit, 8192, &analysis, postdom.as_ref(), &mut accept);\n                }\n                if selected.is_some() { break; }\n            }\n            println!(\"PROBE n={count} graph={graph} profile={profile} accepted={} max_copies={max_seen} source_rejected={source_rejected} error={last_error:?}\", selected.is_some());\n            if let Some(function) = selected {\n                compare_split_reports(&source, function.body(), &function);\n            }\n        }\n    }\n}\n",
+    "reproduce_driver": "from pathlib import Path\nimport argparse,hashlib,json,re,subprocess\np=argparse.ArgumentParser();p.add_argument('--out',required=True,type=Path);args=p.parse_args();args.out.mkdir()\nrevision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()\nassert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()\nsource=Path('src/control_flow/structure/audit_tests.rs');original=source.read_bytes()\nprobe=Path('.git/nirvana-two-layer-rust.rs');log=args.out/'probe.log'\ntry:\n source.write_bytes(original+b'\\ninclude!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.git/nirvana-two-layer-rust.rs\"));\\n')\n with log.open('w')as output:\n  result=subprocess.run(['python3','tools/dev.py','cargo','test','--lib','two_layer_candidates_pass_real_rust_source_acceptance','--','--ignored','--nocapture'],stdout=output,stderr=subprocess.STDOUT)\nfinally:source.write_bytes(original)\ntext=log.read_text();rows=[]\nfor match in re.finditer(r'PROBE n=(\\d+) graph=(\\d+) profile=(\\d+) accepted=(true|false) max_copies=(\\d+) source_rejected=(\\d+) error=(.*)',text):\n n,g,profile,accepted,copies,rejected,error=match.groups();rows.append({'instructions':int(n),'graph':int(g),'profile':int(profile),'accepted':accepted=='true','max_source_copies_seen':int(copies),'source_validation_rejections':int(rejected),'last_recovery_error':json.loads(error)})\nrecord={'schema':'nirvana-two-layer-rust-probe-v1','revision':revision,'returncode':result.returncode,'source_before_sha256':hashlib.sha256(original).hexdigest(),'probe_sha256':hashlib.sha256(probe.read_bytes()).hexdigest(),'solver_proposals_sha256':hashlib.sha256(Path('target/two-layer-probe.json').read_bytes()).hexdigest(),'source_restored':source.read_bytes()==original,'profiles':len(rows),'accepted':sum(r['accepted']for r in rows),'cases':rows,'log_sha256':hashlib.sha256(log.read_bytes()).hexdigest(),'scope':'Pinned solver proposals, checked by actual Rust CFA, source-to-AST validator and complete Rust report replay. This is a diagnostic experiment; no proposal synthesis is added to production.'}\nPath('target/two-layer-rust-probe.log').write_bytes(log.read_bytes());Path('target/two-layer-rust-probe.json').write_text(json.dumps(record,indent=2)+'\\n')\nprint(json.dumps(record,indent=2),flush=True)\nassert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()\nif result.returncode:print(text[-8000:]);raise SystemExit(result.returncode)\nassert len(rows)==48\n",
+    "storage": "The temporary audit include was restored byte-for-byte before this production change; the probe is diagnostic evidence only."
+  },
+  "logs": {
+    "partial-layout-unit": {
+      "sha256": "f34905b15f56f8d5a1e3573ca0c2635fee515788da6d60e11ae3028baa213868",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 7.47s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 6 tests\ntest codegen::goto_layout::loops::tests::a_routing_cycle_remains_a_genuine_loop_and_a_return_is_not_one ... ok\ntest codegen::goto_layout::loops::tests::nested_exit_breaks_to_an_outer_header_without_falling_out_of_both_loops ... ok\ntest codegen::goto_layout::loops::tests::altered_transfers_steps_and_loop_scopes_fail_the_source_checker ... ok\ntest codegen::goto_layout::loops::tests::optional_region_limits_keep_the_original_flat_fallback_available ... ok\ntest codegen::goto_layout::loops::tests::an_irreducible_inner_cycle_keeps_its_gotos_inside_a_genuine_outer_loop ... ok\ntest codegen::goto_layout::loops::tests::a_foreign_routing_projection_cannot_hide_source_effects ... ok\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 285 filtered out; finished in 0.00s\n\n"
+    },
+    "partial-layout-c": {
+      "sha256": "3587c6364aea7db4f0b3a315101bcff7f771db126b78002bd999ca874d23de76",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 8.09s\n     Running tests/codegen.rs (target/cargo-cache/debug/deps/codegen-49d3cfe043d6a3fc)\n\nrunning 1 test\ntest partial_loops::irreducible_inner_edges_keep_the_outer_loop_and_exact_fault_memory_behavior ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 148 filtered out; finished in 0.50s\n\n"
+    },
+    "partial-layout-clippy": {
+      "sha256": "4f235e475404eb0c7cc7021befccdfbc4aea480244336cb433e608907ee479f4",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 7.40s\n"
+    }
+  },
+  "source_sha256": {
+    "src/codegen/goto_layout.rs": "348795dd6bf39946077072d625e25512fa7d43437a28448922b9aa90cbe480d7",
+    "src/codegen/goto_layout/loops.rs": "e9f4ba54d2488e824ddc15cd55d59dc6109b6ebb30cf1c3b9152e8db46d1c212",
+    "src/codegen/goto_layout/loops/check.rs": "232866f17d9bc5c4b893ac15eae85f40617dc1a0fc23f1594d17e8a653bba538",
+    "src/codegen/goto_layout/loops/tests.rs": "1dc4468d742614122845ae2c35d193e9ec6df4172d313a95b5ca37b2fe7556d5",
+    "src/codegen/readable.rs": "782e6e911a674fa5674757c07a7692517bec278f0ad206a71c3a817fe7cec77c",
+    "src/codegen/readable/gotos.rs": "6610cfb945f0f414d13c9b5e2d0bef7c52ebd714122a57b6fb2a99ae1f83bc7b",
+    "src/codegen/readable/printer.rs": "8d57f62faec258c5373beb9980c9a84ff4bbfd6d365575680341cc6a0fced835",
+    "tests/codegen/partial_loops.rs": "4eeaefe4decef6861177fd4a5c36dce531e030c797087fa64c38eb0439a0af4c",
+    "tests/codegen.rs": "0cd6768a23181fcb1b94dc980c114edb4eb60c7b7743aacbb24a326454f8963b"
+  },
+  "local_evidence": {
+    "references": {
+      "placement-v2-after": {
+        "directory": "target/runs/run-a37yw4tm/out/placement-v2-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/placement-v2-after.tar.gz",
+        "sha256": "77377eab9fbbd8534b82c02c82680b3323adfbf313f9db47258e6a6711d5447d",
+        "uncompressed_bytes": 46816588,
+        "compressed_bytes": 3291895
+      },
+      "placement-selected-nested-after": {
+        "directory": "target/runs/run-a37yw4tm/out/placement-selected-nested-after",
+        "archive": "target/runs/run-a37yw4tm/out/cold/placement-selected-nested-after.tar.gz",
+        "sha256": "e2ad50183e251b5db1db220dcc638cf10c284ff0544853a1887633c5079fd66f",
+        "uncompressed_bytes": 7843730,
+        "compressed_bytes": 445494
+      }
+    },
+    "archive_contract": "All members verified by SHA-256 and byte length before expanded historical evidence was removed. Managed retention remains512MiB; shared cache2GiB/all targets4GiB. No worktree or binary copy was created for this phase."
+  },
+  "reproduce": [
+    "python3 tools/dev.py cargo test --lib goto_layout::loops",
+    "python3 tools/dev.py cargo test --test codegen partial_loops -- --nocapture",
+    "python3 tools/dev.py cargo test --all-targets --locked --no-fail-fast",
+    "Run the frozen v2 GCC/Clang18 O2/O3 17-input/4096-step M0 profile and nested2 O2 65-input profile with the unchanged manifests and compare their raw reports."
+  ],
+  "next_decision": "The Clang development case still has source distance30 because its inner loop is fully expanded four times. Study checked inverse unrolling with memory and early exits in a bounded experiment before adding a production rewrite; preserve the fresh holdout boundary."
+}
