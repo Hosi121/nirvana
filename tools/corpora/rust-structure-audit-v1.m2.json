@@ -133,7 +133,16 @@
       "recommended_fix_target": "Builder::region branch/follow fallback when post-dominance is unavailable; preserve the finite-exit-path contract of PostDominators.",
       "known_failing_test": "control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm",
       "fix_status": "pending; this change adds audit/reproduction tests only",
-      "model_relation": "The prior six-pair Quint trial did not contain these mixed terminating/divergent shapes. Its finite result remains scoped to those pairs."
+      "model_relation": "The prior six-pair Quint trial did not contain these mixed terminating/divergent shapes. Its finite result remains scoped to those pairs.",
+      "spec_delta": "none; observation contract is unchanged",
+      "code_delta": "audit tests and test-module wiring only; production recovery unchanged",
+      "model_delta": "none; previous six-pair model did not include mixed terminating/divergent regions",
+      "check_command": "python3 tools/dev.py cargo test --lib control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm -- --ignored --exact --nocapture",
+      "previous_machine_result": "Quint/TLC completed473 states for the earlier six pairs; Rust336 exact report comparisons",
+      "current_machine_result": "Two manual structured witnesses accepted with72 exact report comparisons; actual recovery returned MissingJoin/MissingLoopFollow; minimal recovery assertion exits101",
+      "domain_wording": "A finite branch to either Return or a non-returning loop has a valid structured representation but automatic recovery refuses it.",
+      "domain_question": null,
+      "lock_update": "Passing constructive-witness tests plus an explicitly ignored failing recovery regression; finite audit preserves rejected inputs in its denominator."
     }
   ],
   "source_sha256": {
@@ -146,7 +155,11 @@
   "validation": {
     "positive_suite": "3 passed",
     "known_failure": "1 failed with MissingJoin, exit101; explicitly ignored by default",
-    "related_default_suite": "3 passed,2ignored",
+    "related_default_suite": {
+      "passed": 7,
+      "failed": 0,
+      "ignored": 2
+    },
     "clippy": "passed",
     "rustfmt": "passed",
     "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
