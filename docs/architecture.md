@@ -40,7 +40,7 @@ ELF / raw bytes
 
 `ReadableC.semantic_lowering`は、採用した意味IRの段階を`Arc`で共有します。複数の配置候補で同じ入力・計画・下ろしたIRを参照し、表示用DCEの前の状態を保持します。評価器は生成C本文との一致を確認してから、この段階の入力と出力を照合します。入力は前段の表示IRのレジスタ空間で、機械レジスタとの対応・元変数の同定はそれぞれの契約へ結びます。
 
-compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作り、検査後にSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
+compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作ります。[反復の式パターン](../src/dataflow/lane_patterns.rs)は、元SSAの値とload位置を保持し、反復間で変化する位置と不変な演算を候補として示します。[出口別の観測](../src/verification/block_verify/region/extraction/live_out.rs)は、継続先で必要な値を元IRへ結び付けます。制御の変換は領域検証を通し、影響するSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
 
 [経路条件の回復](../src/dataflow/predicates.rs)は、閉じたDAGのSSA値を使い、各block入口のゼロ・非ゼロの事実を求めます。別の検査器が元CFGの全流入辺から主張を確認し、純粋な条件分岐・代入・returnの変更を検査します。Loadは定義ごとに独立な値とし、メモリ効果・命令位置・予算を保ちます。契約は関数入口からの実行とそのprefixです。Middle IRの`recover_predicates()`は変更後のCFGからSSAと値IDを再構築し、readable Cは同じ引数契約で従来の出力と比較して候補を選びます。
 Loadは出現ごとに独立な結果値を持ち、正常に評価を終えた結果へ純粋なbit演算の恒等式を適用します。これにより、`KnownLoad`の戻し変換である`(read & 0) | known`からも条件へ定数性を伝えます。メモリを含む代入・条件・returnの式は元の位置に保持し、読込み順序・lazyな枝・最初のfaultを実行比較とSMTで検査します。
