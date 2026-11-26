@@ -16,6 +16,8 @@ NIRVANA_CLANG=clang-18 python3 -m unittest discover -s tools/tests
 `nirvana --version`とprobeの`--version`は、ビルド時のcommitとRust入力の変更有無を返します。Git情報のないアーカイブはunknownです。報告の`workspace_revision`は評価器のcheckout、`decompiler.build`はbinaryが返した出所で、binaryのSHA256を別に保持します。比較形式v2も`evaluation_revision`と`binary_build`を分け、凍結した旧binaryの版を評価器の版から推測せずに残します。
 compiler・実行ファイル・評価器・入力・グラフのhash、時間、探索予算を報告し、未対応・エラー・timeoutも要求した全構成に含めます。終了コード0は報告の生成を示します。
 
+[v2のcorpus](../tools/corpora/structure-initial-v2.json)は、開発用24構成とfresh hold-out 8構成を固定します。初回hold-outの集計が配置方針の採否に使われたため、その2族を開発用へ移し、GCDとビット列チェックサムの2族を補充しました。元のv1の24構成は過去との比較用に保持します。方針の凍結と集合の移動はmanifestの`lineage`、同じ入力での結果と採用理由は[配置回復のcheckpoint](../tools/corpora/structure-placement-v1.m2.json)に記録します。
+
 ## 観測と指標
 
 指標`nirvana-control-topology-v1`は、入口・出口・return・分岐・残るflowをラベルにした有向多重グラフを使います。式・名前・分岐の極性を捨て、明示的に剪定された辺と入口から届かないblockを除きます。出口は保持し、単一後続のflowを縮約します。自己循環は残します。関数内のdispatcherも同じ規則で比較します。
@@ -121,6 +123,8 @@ NIRVANA_Z3=target/verification-venv/bin/z3 target/debug/examples/evaluation_witn
 [対照テスト](../tools/tests/test_control_graph.py)は名前変更の距離0、goto削減に伴う条件複製の距離悪化、小グラフの全ての部分対応との比較、打切り結果の対応表を検査します。
 
 ## 比較と再解析
+
+構造の比較は、計測段階の脱落を`structure_regressions`、計測を保ったまま距離が悪化した件数を`structure_distance_regressions`に分けます。M2の採用時には、意味・解析・値モデルの回帰と合わせて両方を確認します。
 
 [報告の比較器](../tools/compare_structure_reports.py)は、corpus・binary・compiler・フラグ・観測契約を照合し、保存したdumpからの正規化、対応表の費用、具体実行の全ワードを再検査します。probeの生JSONもhashを保持し、観測profileと段階別の検査結果を再解析して照合します。このhashを持つ報告は`probe_metadata: replayed`、従来の報告は`legacy_unbound`として区別します。探索結果の最適性は記録したソルバの判定を使い、打切り区間が重なる結果は未判定として扱います。同じグラフ同士の比較では、打切り後も距離が等しいことを確認できます。失敗行も分母に保持します。
 
