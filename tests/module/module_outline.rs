@@ -656,6 +656,23 @@ split_header:
     jne .Lheader_loop
     jmp .Lheader_loop
 .size split_header,.-split_header
+.globl split_exit
+.type split_exit,@function
+split_exit:
+    cmpq $0,(%rdi)
+    jne .Lexit_path
+.Lexit_header:
+    addq $1,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lexit_header
+.Lexit_path:
+    cmpq $0,16(%rdi)
+    jne .Lexit_return
+    jmp .Lexit_header
+.Lexit_return:
+    mov 24(%rdi),%rax
+    ret
+.size split_exit,.-split_exit
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -687,6 +704,7 @@ split_header:
         "split_outer",
         "split_forward",
         "split_header",
+        "split_exit",
     ] {
         let function = plan
             .functions

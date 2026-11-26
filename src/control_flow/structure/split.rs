@@ -142,7 +142,12 @@ fn bounded(source: &Program) -> bool {
 
 // SCCs after removing natural backedges also expose irreducible cycles nested
 // inside a single-entry outer loop. Whole-CFG SCCs would hide those cases.
-fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<(BlockId, BlockId)> {
+struct EntryCandidates {
+    edges: Vec<(BlockId, BlockId)>,
+    component: Vec<usize>,
+}
+
+fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> EntryCandidates {
     let cfg = source.cfg();
     let n = cfg.blocks().len();
     let mut edges = vec![Vec::new(); n];
@@ -208,7 +213,10 @@ fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<(BlockId,
         )
     });
     found.dedup();
-    found
+    EntryCandidates {
+        edges: found,
+        component,
+    }
 }
 
 type Origins = BTreeMap<u64, Option<u64>>;
@@ -221,7 +229,10 @@ struct SplitPlan {
 
 fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
     let cfg = source.cfg();
-    let entries = candidates(source, analysis);
+    let EntryCandidates {
+        edges: entries,
+        component,
+    } = candidates(source, analysis);
     // Preserve every old single-block attempt and its order before spending
     // any of the remaining attempt budget on a longer forward entry path.
     let mut plans: Vec<_> = entries
@@ -234,7 +245,7 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
         })
         .collect();
     for &entry in &entries {
-        append_paths(source, analysis, entry, None, &mut plans);
+        append_paths(source, analysis, entry, None, None, &mut plans);
         if plans.len() == MAX_ATTEMPTS {
             return plans;
         }
@@ -244,12 +255,25 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
     // Only an actually reducible proposal and the final source/AST checker
     // can accept this placement; the same attempt budget covers every phase.
     let headers: BTreeSet<_> = entries.iter().map(|&(_, to)| to).collect();
-    for &entry in &entries {
-        for &header in &headers {
-            if header != entry.0 && header != entry.1 {
-                append_paths(source, analysis, entry, Some(header), &mut plans);
-                if plans.len() == MAX_ATTEMPTS {
-                    return plans;
+    for restrict_to_component in [false, true] {
+        for &entry in &entries {
+            let group = component[entry.1.index()];
+            for &header in &headers {
+                if header != entry.0
+                    && header != entry.1
+                    && (!restrict_to_component || component[header.index()] == group)
+                {
+                    append_paths(
+                        source,
+                        analysis,
+                        entry,
+                        Some(header),
+                        restrict_to_component.then_some((component.as_slice(), group)),
+                        &mut plans,
+                    );
+                    if plans.len() == MAX_ATTEMPTS {
+                        return plans;
+                    }
                 }
             }
         }
@@ -262,6 +286,7 @@ fn append_paths(
     analysis: &ControlFlowAnalysis,
     (from, to): (BlockId, BlockId),
     header: Option<BlockId>,
+    component: Option<(&[usize], usize)>,
     plans: &mut Vec<SplitPlan>,
 ) {
     let cfg = source.cfg();
@@ -270,11 +295,14 @@ fn append_paths(
     while plans.len() < MAX_ATTEMPTS {
         let current = *blocks.last().expect("entry path");
         // Exclude only proven backedges and the nominated boundary for path
-        // discovery. All real edges are retained by proposal(), including
-        // natural loops internal to the copy and side exits to the header.
+        // discovery. The last phase also treats exits from the original
+        // cyclic component as boundaries. All real edges are retained by
+        // proposal(), including internal loops and exits to other regions.
         let mut successors = cfg.block(current).successors.iter().filter(|edge| {
             !matches!(edge.target, Target::Block(target)
-                if analysis.dominates(target, current) || Some(target) == header)
+                if analysis.dominates(target, current)
+                    || Some(target) == header
+                    || component.is_some_and(|(groups, group)| groups[target.index()] != group))
         });
         let Some(first) = successors.next() else {
             break;
