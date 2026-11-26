@@ -437,23 +437,7 @@ fn split_nested_loop_shares_its_exit_within_two_copies_and_six_steps() {
         assert_eq!(recovered.evidence().compared_copies, 6);
         assert!(StructuredFunction::recover_with_step_limit(&source, 2, 5).is_err());
         assert!(StructuredFunction::recover_with_step_limit(&source, 1, 6).is_err());
-        for counter in [0, 1, 2, u64::MAX] {
-            for pointer in [0, 1, 3, u64::MAX] {
-                for memory in [&[][..], &[1, 2, 3, 4][..]] {
-                    for budget in 0..=12 {
-                        let input = [counter, pointer, 0x55];
-                        let expected = source.run_with_memory(&input, 0, memory, budget).unwrap();
-                        assert_eq!(expected, run_ast(&body, &input, memory, budget));
-                        assert_eq!(
-                            expected,
-                            recovered
-                                .run_with_memory(&input, 0, memory, budget)
-                                .unwrap()
-                        );
-                    }
-                }
-            }
-        }
+        compare_split_reports(&source, &body, &recovered);
     }
 }
 
@@ -492,20 +476,61 @@ fn split_linear_entry_path_fits_two_copies_and_six_steps() {
         assert_eq!(recovered.evidence().compared_copies, 6);
         assert!(StructuredFunction::recover_with_step_limit(&source, 2, 5).is_err());
         assert!(StructuredFunction::recover_with_step_limit(&source, 1, 6).is_err());
-        for counter in [0, 1, 2, u64::MAX] {
-            for pointer in [0, 1, 3, u64::MAX] {
-                for memory in [&[][..], &[1, 2, 3, 4][..]] {
-                    for budget in 0..=12 {
-                        let input = [counter, pointer, 0x55];
-                        let expected = source.run_with_memory(&input, 0, memory, budget).unwrap();
-                        assert_eq!(expected, run_ast(&body, &input, memory, budget));
-                        assert_eq!(
-                            expected,
-                            recovered
-                                .run_with_memory(&input, 0, memory, budget)
-                                .unwrap()
-                        );
-                    }
+        compare_split_reports(&source, &body, &recovered);
+    }
+}
+
+#[test]
+fn split_loop_exits_share_a_divergent_follow_within_five_steps() {
+    for profile in 0..3 {
+        let source = program5(4376, profile);
+        let step = |address: usize| Node::Step {
+            address: address as u64,
+            assignments: source.instructions()[address].assignments.clone(),
+        };
+        let Control::Branch { condition, .. } = &source.instructions()[0].control else {
+            unreachable!()
+        };
+        let body = vec![
+            Node::Loop(vec![
+                step(0),
+                Node::If {
+                    condition: condition.clone(),
+                    taken: vec![],
+                    not_taken: vec![step(1), Node::Break],
+                },
+                step(2),
+                Node::If {
+                    condition: condition.clone(),
+                    taken: vec![Node::Continue],
+                    not_taken: vec![Node::Break],
+                },
+            ]),
+            Node::Loop(vec![step(3), step(1)]),
+        ];
+        structure_verify::validate(&source, &body).unwrap();
+        let recovered = StructuredFunction::recover_with_step_limit(&source, 2, 5)
+            .expect("distinct exits share the next loop without an enclosing parent loop");
+        assert_eq!(recovered.evidence().compared_copies, 5);
+        assert!(StructuredFunction::recover_with_step_limit(&source, 1, 5).is_err());
+        compare_split_reports(&source, &body, &recovered);
+    }
+}
+
+fn compare_split_reports(source: &Program, body: &[Node], recovered: &StructuredFunction) {
+    for counter in [0, 1, 2, u64::MAX] {
+        for pointer in [0, 1, 3, u64::MAX] {
+            for memory in [&[][..], &[1, 2, 3, 4][..]] {
+                for budget in 0..=12 {
+                    let input = [counter, pointer, 0x55];
+                    let expected = source.run_with_memory(&input, 0, memory, budget).unwrap();
+                    assert_eq!(expected, run_ast(body, &input, memory, budget));
+                    assert_eq!(
+                        expected,
+                        recovered
+                            .run_with_memory(&input, 0, memory, budget)
+                            .unwrap()
+                    );
                 }
             }
         }

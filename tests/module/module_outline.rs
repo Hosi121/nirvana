@@ -585,6 +585,49 @@ latch:
     mov 24(%rdi),%rax
     ret
 .size latch,.-latch
+.globl split_nested
+.type split_nested,@function
+split_nested:
+    cmpq $0,(%rdi)
+    jne .Lsplit_second
+.Lsplit_first:
+    cmpq $0,8(%rdi)
+    jne .Lsplit_latch
+.Lsplit_second:
+    cmpq $0,16(%rdi)
+    jne .Lsplit_first
+.Lsplit_latch:
+    addq $1,24(%rdi)
+    jmp split_nested
+.size split_nested,.-split_nested
+.globl split_linear
+.type split_linear,@function
+split_linear:
+    cmpq $0,(%rdi)
+    jne .Llinear_path
+.Llinear_header:
+    cmpq $0,8(%rdi)
+    jne .Llinear_latch
+.Llinear_path:
+    addq $1,24(%rdi)
+.Llinear_latch:
+    jmp .Llinear_header
+.size split_linear,.-split_linear
+.globl split_outer
+.type split_outer,@function
+split_outer:
+    cmpq $0,(%rdi)
+    jne .Louter_condition
+.Louter_entry:
+    addq $1,24(%rdi)
+    jmp .Louter_tail
+.Louter_condition:
+    cmpq $0,8(%rdi)
+    jne split_outer
+.Louter_tail:
+    addq $2,24(%rdi)
+    jmp .Louter_entry
+.size split_outer,.-split_outer
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -607,7 +650,14 @@ latch:
     .unwrap();
     let plan = module_outline::recover(&module.program).unwrap();
     check_plan(&module, &plan);
-    for name in ["main", "mixed", "latch"] {
+    for name in [
+        "main",
+        "mixed",
+        "latch",
+        "split_nested",
+        "split_linear",
+        "split_outer",
+    ] {
         let function = plan
             .functions
             .iter()

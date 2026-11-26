@@ -426,14 +426,18 @@ impl Builder<'_, '_> {
                     }
                 };
                 let normal_follow = if exits.len() > 1
-                    && let (Some(dag), Some(parent)) = (&mut self.forward_dag, contexts.last())
+                    && let Some(dag) = &mut self.forward_dag
                 {
                     // Exit routes can share a tail before an outer backedge,
                     // even when finite-path post-dominance is unavailable or
                     // selects a later follow. Keep the search outside this
-                    // loop and inside its active parent's lexical scope.
+                    // loop and inside its active parent's lexical scope, if
+                    // present. At top level a shared follow may be a separate
+                    // non-returning loop rather than a real exit.
                     dag.common_join_all(exits.iter().copied(), stop, |id| {
-                        parent.body.contains(&id)
+                        contexts
+                            .last()
+                            .is_none_or(|parent| parent.body.contains(&id))
                             && !natural_loop.body.contains(&id)
                             && Self::boundary(id, contexts).is_none()
                     })
