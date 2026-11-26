@@ -1195,7 +1195,39 @@
       "meaning": "The clean current Rust exporter yields the exact eighteen raw pairs of the completed twelve-positive-pair TLC run. Event correspondence is bounded by that finite family and budgets0..6."
     },
     "clippy": "all-targets -D warnings passed",
-    "rustfmt": "passed"
+    "rustfmt": "passed",
+    "portable_reproduction": {
+      "result": {
+        "solver_version": "Z3 version 4.8.12 - 64 bit",
+        "solver_file_sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+        "completion": "unsat",
+        "partitions": [
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unsat",
+          "unknown"
+        ],
+        "total_partitions": 16,
+        "adopted_under_region_model": false,
+        "scope": "A SAT result here still requires the maintained Rust witness replay. C execution remains a separate concrete comparison.",
+        "rust_returncode": 0,
+        "rust_artifacts_match": true
+      },
+      "expected_launcher_exit": 2,
+      "rust_log": "\nrunning 1 test\ntest region_extraction::lanes::actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior ... AUTOMATIC-GATE unknown reason=SolverUnknown\nAUTOMATIC-ROLL adopted=false envelope=Envelope { header: 32, first_lane: 110, latch: 198, abrupt: [375], lane_entries: [110, 226, 288] } selectors=[(Reg(6), 2), (Reg(7), 2)] instructions=57 proof_ms=15096\nAUTOMATIC-C opt=-O0 cases=325 all_ram=true faults=true ubsan=true\nAUTOMATIC-C opt=-O2 cases=325 all_ram=true faults=true ubsan=true\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 15.97s\n\n   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.36s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n",
+      "rust_log_sha256": "4d1c6b0a52bff870e95214b1f13ca76e71f270aa88a82c088f9c739f4397188d",
+      "meaning": "Standalone persisted obligations retain Unknown; the embedded ELF reproduces the exact six IR/C/SMT artifacts and all650 generated-C comparisons."
+    }
   },
   "quality": {
     "schema": "nirvana-actual-loop-candidate-quality-v1",
