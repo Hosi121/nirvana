@@ -403,10 +403,14 @@
     "src/verification/block_verify/region/extraction/repeat/prefix/tests.rs": "5d7234f7758a5f72fabccedf56114c1b863a602d6c0f13c45b8f69401f458063",
     "src/verification/block_verify/region/extraction/repeat/prefix/check.rs": "3f5984d97215a3b39a4c7127105dcd5357f4435a8ed3bfc8aff3eff08e75056f",
     "tools/evaluation/control_graph.py": "484eb5ecf757db4234cbe20b2a90bf502813f2bc8dc2cde809130625ec50a5b3",
-    "tools/corpora/structure-nested-v1.inputs.txt": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf"
+    "tools/corpora/structure-nested-v1.inputs.txt": "c49dadff0c0b666d5514f408937cb8d6c2fd3866eac73bb213df11e47f44eccf",
+    "src/dataflow/value_liveness.rs": "8bac7642c7df7b7dd395661d62986acc11ed3e0e023fa2bc5a37cc565c1464c7",
+    "src/dataflow/ssa.rs": "963ff8f12aa01c23773e5c0e953fafa4f25697d8b8ecb11f489bdace6cb899a8",
+    "src/dataflow/ssa/build.rs": "7830992295b207c455301865fe7f86109b0a46a3f8925efca8ed54f4c1d4b133",
+    "src/dataflow/ssa/verify.rs": "5ce1395c5986f272d9cf1c234bc40cb07a8846d54f6dcddbc52d357df30506e4"
   },
   "reproduction": {
-    "launcher_python": "\"\"\"Replay the archived development candidate in a managed temporary directory.\"\"\"\nfrom pathlib import Path\nimport argparse\nimport hashlib\nimport json\nimport os\nimport subprocess\nimport sys\n\np = argparse.ArgumentParser()\np.add_argument('--out', required=True, type=Path)\np.add_argument('--checkpoint', default='tools/corpora/loop-unroll-clang18-v1.m2-trial.json', type=Path)\na = p.parse_args()\na.out.mkdir(parents=True, exist_ok=True)\na.out = a.out.resolve()\nroot = Path.cwd()\nrecord = json.loads(a.checkpoint.read_text())\nfiles = record['reproduction']['files']\nsha = lambda data: hashlib.sha256(data).hexdigest()\nfor name, item in files.items():\n    assert sha(item['text'].encode()) == item['sha256'], name\n    (a.out / name).write_text(item['text'])\ntest = root / 'tests/verification/region_extraction.rs'\noriginal = test.read_bytes()\nassert sha(original) == record['source_hashes']['tests/verification/region_extraction.rs']\nsolver = Path(os.environ['NIRVANA_Z3']).resolve()\nassert sha(solver.read_bytes()) == record['toolchain']['z3_sha256']\nreports = []\ntry:\n    for name in ['negative-5.rs', 'positive-c-15.rs']:\n        directory = a.out / name.removesuffix('.rs')\n        directory.mkdir()\n        text = files[name]['text']\n        text = text.replace('/home/hosi/nirvana/tests/support/', str(root / 'tests/support') + '/')\n        text = text.replace('include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.git/nirvana-actual-loop-source.rs\"));', 'include!(r#\"' + str(a.out / 'source-ir.rs') + '\"#);')\n        text = text.replace('\"target/checkpoints/ir-entry-storage-v1/printed-storage.ir.txt\"', 'r#\"' + str(a.out / 'source.ir') + '\"#')\n        pilot = directory / 'pilot.rs'\n        pilot.write_text(text)\n        test.write_bytes(original + ('\\nmod storage_pilot { include!(r#\"' + str(pilot) + '\"#); }\\n').encode())\n        result = subprocess.run(['python3', 'tools/dev.py', 'cargo', 'test', '--test', 'verification', 'actual_expanded_loop_candidate_pilot', '--', '--ignored', '--nocapture', '--test-threads=1'], env=os.environ | {'NIRVANA_Z3': str(solver), 'NIRVANA_LOOP_OUT': str(directory)}, capture_output=True, text=True)\n        log = result.stdout + result.stderr\n        (directory / 'run.log').write_text(log)\n        assert result.returncode == 0, log\n        assert sha((directory / 'compare-false.smt2').read_bytes()) == record['queries']['comparison_sha256']\n        assert sha((directory / 'complete-false.smt2').read_bytes()) == record['queries']['completion_sha256']\n        if name.startswith('negative'):\n            assert 'wrong=true completion=complete' in log and 'compare=counterexample_replayed' in log, log\n            assert sha((directory / 'compare-true.smt2').read_bytes()) == record['queries']['negative_comparison_sha256']\n        else:\n            assert 'compare=equivalent' in log, log\n            for optimization in ['-O0', '-O2']:\n                assert f'opt={optimization} cases=325 full_ram=true faults=true ubsan=true' in log, log\n            assert sha((directory / 'candidate.c').read_bytes()) == record['quality']['candidate']['c_sha256']\n        reports.append({'trial': name, 'returncode': result.returncode, 'log_sha256': sha(log.encode())})\nfinally:\n    test.write_bytes(original)\nassert test.read_bytes() == original\nfor name in ['parse-ir.py', 'audit-exits.py']:\n    script = (a.out / name).read_text().replace('target/checkpoints/ir-entry-storage-v1', str(a.out))\n    (a.out / name).write_text(script)\n    subprocess.run([sys.executable, str(a.out / name)], check=True)\naudit = json.loads((a.out / 'exit-read-audit.json').read_text())\nassert audit == record['exit_read_audit']\nif 'NIRVANA_CLANG18' in os.environ:\n    sys.path.insert(0, str(root / 'tools'))\n    from evaluation import control_graph as cg\n    clang = Path(os.environ['NIRVANA_CLANG18']).resolve()\n    result = subprocess.run([str(clang), '--analyze', '-std=c11', '-Werror', '-Xclang', '-analyzer-checker=debug.DumpCFG', str(a.out / 'positive-c-15/candidate.c'), '-o', os.devnull], capture_output=True, text=True)\n    assert result.returncode == 0, result.stderr\n    raw, stats = cg.parse_dump(result.stderr, 'nirvana_readable')\n    graph, removed = cg.normalize(raw)\n    source = cg.graph_from_json(json.loads(files['source-cfg.json']['text'])['graph'])\n    distance = cg.distance(source, graph, max_states=100000, seconds=1.0)\n    assert distance['status'] == 'exact' and distance['upper_bound'] == 13, distance\n    assert stats['gotos'] == 8, stats\n    (a.out / 'quality.json').write_text(json.dumps({'distance': distance, 'stats': stats | removed}, indent=2) + '\\n')\n(a.out / 'replay.json').write_text(json.dumps({'trials': reports, 'source_restored': True}, indent=2) + '\\n')\nprint(json.dumps(reports, indent=2))\n",
+    "launcher_python": "\"\"\"Replay the archived development candidate in a managed temporary directory.\"\"\"\nfrom pathlib import Path\nimport argparse\nimport hashlib\nimport json\nimport os\nimport subprocess\nimport sys\n\np = argparse.ArgumentParser()\np.add_argument('--out', required=True, type=Path)\np.add_argument('--checkpoint', default='tools/corpora/loop-unroll-clang18-v1.m2-trial.json', type=Path)\np.add_argument('--exit-specific', action='store_true')\na = p.parse_args()\na.out.mkdir(parents=True, exist_ok=True)\na.out = a.out.resolve()\nroot = Path.cwd()\nrecord = json.loads(a.checkpoint.read_text())\nfiles = record['reproduction']['files']\nif a.exit_specific:\n    files = files | record['exit_specific_followup']['files']\nsha = lambda data: hashlib.sha256(data).hexdigest()\nfor name, item in files.items():\n    assert sha(item['text'].encode()) == item['sha256'], name\n    (a.out / name).write_text(item['text'])\ntest = root / 'tests/verification/region_extraction.rs'\noriginal = test.read_bytes()\nassert sha(original) == record['source_hashes']['tests/verification/region_extraction.rs']\nsolver = Path(os.environ['NIRVANA_Z3']).resolve()\nassert sha(solver.read_bytes()) == record['toolchain']['z3_sha256']\nreports = []\ntry:\n    for name in (['exit-all.rs', 'exit-sparse.rs'] if a.exit_specific else ['negative-5.rs', 'positive-c-15.rs']):\n        directory = a.out / name.removesuffix('.rs')\n        directory.mkdir()\n        text = files[name]['text']\n        text = text.replace('/home/hosi/nirvana/tests/support/', str(root / 'tests/support') + '/')\n        text = text.replace('include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.git/nirvana-actual-loop-source.rs\"));', 'include!(r#\"' + str(a.out / 'source-ir.rs') + '\"#);')\n        text = text.replace('\"target/checkpoints/ir-entry-storage-v1/printed-storage.ir.txt\"', 'r#\"' + str(a.out / 'source.ir') + '\"#')\n        pilot = directory / 'pilot.rs'\n        pilot.write_text(text)\n        test.write_bytes(original + ('\\nmod storage_pilot { include!(r#\"' + str(pilot) + '\"#); }\\n').encode())\n        filter_name = 'exit_specific_loop_candidate_pilot' if a.exit_specific else 'actual_expanded_loop_candidate_pilot'\n        result = subprocess.run(['python3', 'tools/dev.py', 'cargo', 'test', '--test', 'verification', filter_name, '--', '--ignored', '--nocapture', '--test-threads=1'], env=os.environ | {'NIRVANA_Z3': str(solver), 'NIRVANA_LOOP_OUT': str(directory)}, capture_output=True, text=True)\n        log = result.stdout + result.stderr\n        (directory / 'run.log').write_text(log)\n        assert result.returncode == 0, log\n        expected = record['exit_specific_followup']['query_hashes'][name] if a.exit_specific else record['queries']\n        assert sha((directory / 'compare-false.smt2').read_bytes()) == expected['comparison_sha256']\n        assert sha((directory / 'complete-false.smt2').read_bytes()) == expected['completion_sha256']\n        if a.exit_specific:\n            assert 'completion=complete' in log, log\n            for optimization in ['-O0', '-O2']:\n                assert f'opt={optimization} cases=325 full_ram=true faults=true ubsan=true' in log, log\n            assert sha((directory / 'candidate.c').read_bytes()) == record['exit_specific_followup']['candidate_c_sha256']\n            # Preserve the actual verdict: the recorded Unknown is no proof.\n            print('\\n'.join(line for line in log.splitlines() if 'ACTUAL-ROLL wrong=' in line))\n        elif name.startswith('negative'):\n            assert 'wrong=true completion=complete' in log and 'compare=counterexample_replayed' in log, log\n            assert sha((directory / 'compare-true.smt2').read_bytes()) == record['queries']['negative_comparison_sha256']\n        else:\n            assert 'compare=equivalent' in log, log\n            for optimization in ['-O0', '-O2']:\n                assert f'opt={optimization} cases=325 full_ram=true faults=true ubsan=true' in log, log\n            assert sha((directory / 'candidate.c').read_bytes()) == record['quality']['candidate']['c_sha256']\n        reports.append({'trial': name, 'returncode': result.returncode, 'log_sha256': sha(log.encode())})\nfinally:\n    test.write_bytes(original)\nassert test.read_bytes() == original\nfor name in ['parse-ir.py', 'audit-exits.py']:\n    script = (a.out / name).read_text().replace('target/checkpoints/ir-entry-storage-v1', str(a.out))\n    (a.out / name).write_text(script)\n    subprocess.run([sys.executable, str(a.out / name)], check=True)\naudit = json.loads((a.out / 'exit-read-audit.json').read_text())\nassert audit == record['exit_read_audit']\nif a.exit_specific:\n    script = (a.out / 'audit-all-exits.py').read_text().replace('target/checkpoints/ir-entry-storage-v1', str(a.out))\n    (a.out / 'audit-all-exits.py').write_text(script)\n    subprocess.run([sys.executable, str(a.out / 'audit-all-exits.py')], check=True)\n    assert json.loads((a.out / 'exit-read-all-audit.json').read_text()) == record['exit_specific_followup']['independent_audit']\nif 'NIRVANA_CLANG18' in os.environ and not a.exit_specific:\n    sys.path.insert(0, str(root / 'tools'))\n    from evaluation import control_graph as cg\n    clang = Path(os.environ['NIRVANA_CLANG18']).resolve()\n    result = subprocess.run([str(clang), '--analyze', '-std=c11', '-Werror', '-Xclang', '-analyzer-checker=debug.DumpCFG', str(a.out / 'positive-c-15/candidate.c'), '-o', os.devnull], capture_output=True, text=True)\n    assert result.returncode == 0, result.stderr\n    raw, stats = cg.parse_dump(result.stderr, 'nirvana_readable')\n    graph, removed = cg.normalize(raw)\n    source = cg.graph_from_json(json.loads(files['source-cfg.json']['text'])['graph'])\n    distance = cg.distance(source, graph, max_states=100000, seconds=1.0)\n    assert distance['status'] == 'exact' and distance['upper_bound'] == 13, distance\n    assert stats['gotos'] == 8, stats\n    (a.out / 'quality.json').write_text(json.dumps({'distance': distance, 'stats': stats | removed}, indent=2) + '\\n')\n(a.out / 'replay.json').write_text(json.dumps({'trials': reports, 'source_restored': True}, indent=2) + '\\n')\nprint(json.dumps(reports, indent=2))\n",
     "launcher_scope": "Materializes archived sources under the managed output directory, temporarily includes the trial in the existing integration target, restores the tracked file in finally, checks identical query hashes and required solver/C verdicts, then reruns the independent finite exit-read audit. NIRVANA_CLANG18 optionally reruns the same topology measurement.",
     "files": {
       "source-ir.rs": {
@@ -468,7 +472,525 @@
         "negative-5.rs": "93e3c111448b208938785f8f9b48f71f2f057d9a6a138020944f80c8ab986b6c",
         "positive-c-15.rs": "145841bd40c638b6c250791b9da424abf2fafb1020102fcaa406c98e6165ce57"
       }
+    },
+    "machine_replay_after_followup_archive": {
+      "returncode": 0,
+      "source_restored": true,
+      "correct_equivalence": true,
+      "negative_counterexample_replayed": true,
+      "c_cases": 650,
+      "quality_distance": 13,
+      "quality_gotos": 8,
+      "trial_log_sha256": {
+        "negative-5.rs": "a52d43d65d3c5d84364cd03b13d27c042df496f60f61b3cf89e046b7247a1638",
+        "positive-c-15.rs": "5c0ab34fae2f6a8354875d0e75b88a32c0ec77b7a979c22117f64572dfb52d04"
+      }
     }
   },
-  "decision": "Keep this development result and both timeout outcomes. Next implement a bounded, source-bound multi-lane matcher, derive live-out interfaces automatically and measure matcher/solver costs before default selection. Preserve existing32+2 M0 contracts and fresh holdout separation."
+  "decision": "Keep this development result and both timeout outcomes. Next implement a bounded, source-bound multi-lane matcher, derive live-out interfaces automatically and measure matcher/solver costs before default selection. Preserve existing32+2 M0 contracts and fresh holdout separation.",
+  "exit_specific_followup": {
+    "question": "Can source-bound SSA live sets derive continuation-specific interfaces and remove the extra mark update needed only by the stronger uniform-register contract?",
+    "status": "Live sets confirmed; simplified candidate remains unproved and unselected because both observation projections were Unknown under the same15second budget.",
+    "ssa_liveness_trial": {
+      "returncode": 0,
+      "source_restored": true,
+      "source_sha256": "d52ba9bfd2970a77eb989d7f635ac3cec8871d9d8be1dbb2e2444880cb4504a0",
+      "log": "\nrunning 1 test\ntest region_extraction::liveout_pilot::continuation_live_values_pilot ... LIVEOUT identity_removed=false continuation=32 registers={2, 4, 5, 6, 9, 11, 12}\nLIVEOUT identity_removed=false continuation=198 registers={2, 4, 6, 7, 8, 9, 11, 12}\nLIVEOUT identity_removed=false continuation=375 registers={2, 4, 5, 8, 9}\nLIVEOUT identity_removed=true continuation=32 registers={2, 4, 5, 6, 9, 11, 12}\nLIVEOUT identity_removed=true continuation=198 registers={2, 4, 6, 7, 8, 9, 11, 12}\nLIVEOUT identity_removed=true continuation=375 registers={2, 4, 5, 8, 9}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.00s\n\n   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.10s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n"
+    },
+    "independent_audit": {
+      "schema": "nirvana-explicit-exit-register-read-audit-v1",
+      "ir_sha256": "71934db4641179ce66c61dcd3814f8d830e47f08b2e9b78f94036ef39e0903b0",
+      "scope": "Exhaustive finite traversal of direct source control paths with a per-register initialized bit; all syntactic reads checked conservatively, identity register copies skipped. Source is the exact verified13-register IR; faults can only stop earlier. Does not authorize arbitrary new transforms.",
+      "rows": [
+        {
+          "entry": 32,
+          "register": 0,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 32,
+          "register": 1,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 32,
+          "register": 2,
+          "read_before_write": true,
+          "pc": 36,
+          "states": 2
+        },
+        {
+          "entry": 32,
+          "register": 3,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 32,
+          "register": 4,
+          "read_before_write": true,
+          "pc": 383,
+          "states": 32
+        },
+        {
+          "entry": 32,
+          "register": 5,
+          "read_before_write": true,
+          "pc": 53,
+          "states": 7
+        },
+        {
+          "entry": 32,
+          "register": 6,
+          "read_before_write": true,
+          "pc": 32,
+          "states": 1
+        },
+        {
+          "entry": 32,
+          "register": 7,
+          "read_before_write": false,
+          "states": 106
+        },
+        {
+          "entry": 32,
+          "register": 8,
+          "read_before_write": false,
+          "states": 107
+        },
+        {
+          "entry": 32,
+          "register": 9,
+          "read_before_write": true,
+          "pc": 43,
+          "states": 4
+        },
+        {
+          "entry": 32,
+          "register": 10,
+          "read_before_write": false,
+          "states": 167
+        },
+        {
+          "entry": 32,
+          "register": 11,
+          "read_before_write": true,
+          "pc": 215,
+          "states": 24
+        },
+        {
+          "entry": 32,
+          "register": 12,
+          "read_before_write": true,
+          "pc": 108,
+          "states": 38
+        },
+        {
+          "entry": 32,
+          "register": 13,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 198,
+          "register": 0,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 198,
+          "register": 1,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 198,
+          "register": 2,
+          "read_before_write": true,
+          "pc": 205,
+          "states": 3
+        },
+        {
+          "entry": 198,
+          "register": 3,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 198,
+          "register": 4,
+          "read_before_write": true,
+          "pc": 383,
+          "states": 14
+        },
+        {
+          "entry": 198,
+          "register": 5,
+          "read_before_write": false,
+          "states": 107
+        },
+        {
+          "entry": 198,
+          "register": 6,
+          "read_before_write": true,
+          "pc": 202,
+          "states": 2
+        },
+        {
+          "entry": 198,
+          "register": 7,
+          "read_before_write": true,
+          "pc": 215,
+          "states": 6
+        },
+        {
+          "entry": 198,
+          "register": 8,
+          "read_before_write": true,
+          "pc": 202,
+          "states": 2
+        },
+        {
+          "entry": 198,
+          "register": 9,
+          "read_before_write": true,
+          "pc": 372,
+          "states": 11
+        },
+        {
+          "entry": 198,
+          "register": 10,
+          "read_before_write": false,
+          "states": 167
+        },
+        {
+          "entry": 198,
+          "register": 11,
+          "read_before_write": true,
+          "pc": 215,
+          "states": 6
+        },
+        {
+          "entry": 198,
+          "register": 12,
+          "read_before_write": true,
+          "pc": 108,
+          "states": 38
+        },
+        {
+          "entry": 198,
+          "register": 13,
+          "read_before_write": false,
+          "states": 105
+        },
+        {
+          "entry": 375,
+          "register": 0,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 1,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 2,
+          "read_before_write": true,
+          "pc": 375,
+          "states": 1
+        },
+        {
+          "entry": 375,
+          "register": 3,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 4,
+          "read_before_write": true,
+          "pc": 383,
+          "states": 3
+        },
+        {
+          "entry": 375,
+          "register": 5,
+          "read_before_write": true,
+          "pc": 379,
+          "states": 2
+        },
+        {
+          "entry": 375,
+          "register": 6,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 7,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 8,
+          "read_before_write": true,
+          "pc": 384,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 9,
+          "read_before_write": true,
+          "pc": 375,
+          "states": 1
+        },
+        {
+          "entry": 375,
+          "register": 10,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 11,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 12,
+          "read_before_write": false,
+          "states": 4
+        },
+        {
+          "entry": 375,
+          "register": 13,
+          "read_before_write": false,
+          "states": 4
+        }
+      ]
+    },
+    "comparison": {
+      "source_ir_sha256": "71934db4641179ce66c61dcd3814f8d830e47f08b2e9b78f94036ef39e0903b0",
+      "rows": [
+        {
+          "continuation": 32,
+          "ssa_live": [
+            2,
+            4,
+            5,
+            6,
+            9,
+            11,
+            12
+          ],
+          "independent_read_before_write": [
+            2,
+            4,
+            5,
+            6,
+            9,
+            11,
+            12
+          ],
+          "extra_conservative_values": []
+        },
+        {
+          "continuation": 198,
+          "ssa_live": [
+            2,
+            4,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12
+          ],
+          "independent_read_before_write": [
+            2,
+            4,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12
+          ],
+          "extra_conservative_values": []
+        },
+        {
+          "continuation": 375,
+          "ssa_live": [
+            2,
+            4,
+            5,
+            8,
+            9
+          ],
+          "independent_read_before_write": [
+            2,
+            4,
+            5,
+            8,
+            9
+          ],
+          "extra_conservative_values": []
+        }
+      ]
+    },
+    "source_binding": "SsaFunction::build followed by value_liveness::analyze revalidates the exact padded original Program. Union of incoming edge SSA registers at each continuation equals a separate finite register read-before-write traversal for all14 slots; identity-copy removal leaves those sets unchanged.",
+    "candidate_delta": "At the shared update exit198, mark register5 is redefined before read. Route the last rolled lane directly to198, removing the j<3 split. The full projection zeroes all source-dead slots by terminal tag for comparison; the sparse variant zeroes only register5 at exit198, retaining the stronger contract elsewhere. These are different queries from the preceding proven candidate.",
+    "trials": {
+      "exit-all.rs": {
+        "schema": "nirvana-actual-inverse-unroll-diagnostic15-v1",
+        "revision": "474e7c1b97c4ad7cff3928a64eca4ecbb01b0db4",
+        "returncode": 0,
+        "seconds": 25.065901481000765,
+        "source_restored": true,
+        "source_sha256": "d52ba9bfd2970a77eb989d7f635ac3cec8871d9d8be1dbb2e2444880cb4504a0",
+        "pilot_sha256": "4c2ab9c7c70ac8a066eec0975344c1cb4aea672cd6737cf5734d135d9d9f90f4",
+        "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+        "artifacts": {
+          "compare-false.smt2": {
+            "bytes": 298930,
+            "sha256": "e7a534f54bb9f442d8709c2f8e94df9ff8e0dbb7a07d74459bab22a832ed73dc"
+          },
+          "complete-false.smt2": {
+            "bytes": 136120,
+            "sha256": "e93ee06899e9ab7a9a0239df71482f78c8372b6129220c461fb5659bd185c9f6"
+          },
+          "candidate-O0": {
+            "bytes": 26808,
+            "sha256": "3e301e7e2fc2e01c845c5a43dd31b1b2fa9712193fc809ebd2118518edbc92e6"
+          },
+          "candidate.c": {
+            "bytes": 5756,
+            "sha256": "79943385ba076064c697f7ec255b3df73db16a918f7012ebd2b40a9e8e06c6df"
+          },
+          "candidate-O2": {
+            "bytes": 26720,
+            "sha256": "58565baff964529d497dff6f848f95db4a9be981f421ba49b71cfbf8ff9aa4f6"
+          },
+          "candidate-harness.c": {
+            "bytes": 8101,
+            "sha256": "81679c9b529aca62e27fd82c9f2c4d6dfd41ca8468f8bad3bb04de68e47c2813"
+          },
+          "pilot.log": {
+            "bytes": 2562,
+            "sha256": "5772da6a4094cf45cfb75c50887427ede8e5475efaeaeab5dea4268b45b4640b"
+          },
+          "candidate.ir": {
+            "bytes": 64253,
+            "sha256": "e40ea68c84ef97aa4df1fc29d4df63392b9f5c242c5afaa980c04e6d7e626cba"
+          },
+          "candidate-params.txt": {
+            "bytes": 92,
+            "sha256": "7b4e31a47e0ab2d7bf47566354ed391e2ccfe57aa8db4c5cb5ed5e6a46e9ca77"
+          }
+        },
+        "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\nwarning: function `fixture_root` is never used\n --> /home/hosi/nirvana/tests/support/native.rs:7:8\n  |\n7 | pub fn fixture_root() -> PathBuf {\n  |        ^^^^^^^^^^^^\n  |\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: struct `Scratch` is never constructed\n  --> /home/hosi/nirvana/tests/support/native.rs:11:12\n   |\n11 | pub struct Scratch(pub PathBuf);\n   |            ^^^^^^^\n\nwarning: associated function `new` is never used\n  --> /home/hosi/nirvana/tests/support/native.rs:14:12\n   |\n13 | impl Scratch {\n   | ------------ associated function in this implementation\n14 |     pub fn new() -> Self {\n   |            ^^^\n\nwarning: function `object` is never used\n  --> /home/hosi/nirvana/tests/support/native.rs:32:8\n   |\n32 | pub fn object(source: &Path, output: &Path, optimization: &str, entry: &str) {\n   |        ^^^^^^\n\nwarning: function `link` is never used\n  --> /home/hosi/nirvana/tests/support/native.rs:95:8\n   |\n95 | pub fn link(objects: &[&Path], output: &Path) {\n   |        ^^^^\n\nwarning: function `run` is never used\n   --> /home/hosi/nirvana/tests/support/native.rs:105:8\n    |\n105 | pub fn run(binary: &Path, input: &str) -> Vec<Vec<u64>> {\n    |        ^^^\n\nwarning: function `source` is never used\n  --> /home/hosi/nirvana/tests/support/checked_c.rs:39:8\n   |\n39 | pub fn source(output: &ReadableC, register_count: usize, initialized_words: usize) -> String {\n   |        ^^^^^^\n\nwarning: function `source_with_size` is never used\n  --> /home/hosi/nirvana/tests/support/checked_c.rs:43:8\n   |\n43 | pub fn source_with_size(\n   |        ^^^^^^^^^^^^^^^^\n\nwarning: `nirvana` (test \"verification\") generated 8 warnings\n    Finished `test` profile [unoptimized] target(s) in 9.17s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n\nrunning 1 test\nACTUAL-ROLL-C opt=-O0 cases=325 full_ram=true faults=true ubsan=true\nACTUAL-ROLL-C opt=-O2 cases=325 full_ram=true faults=true ubsan=true\nEXIT-INTERFACE pc=32 live={2, 4, 5, 6, 9, 11, 12}\nEXIT-INTERFACE pc=198 live={2, 4, 6, 7, 8, 9, 11, 12}\nEXIT-INTERFACE pc=375 live={2, 4, 5, 8, 9}\nACTUAL-ROLL wrong=false completion=complete before_steps=105 candidate_steps=124 unfolded_steps=76 compare=unknown detail=SolverUnknown bytes=298930 ms=15049\nACTUAL-ROLL wrong=false full_function_cases=65\ntest region_extraction::storage_pilot::exit_specific_loop_candidate_pilot ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 15.50s\n\n",
+        "scope": "Fixture-specific exploratory inverse-unroll candidate built from verified13-register display storageIR. Compare explicit entry/exit contract after certified prefix completion; declared outputs exclude unused index temp10 and freshcounter13. Original firstlane retained. No default C transform or general pattern matcher installed."
+      },
+      "exit-sparse.rs": {
+        "schema": "nirvana-actual-inverse-unroll-diagnostic15-v1",
+        "revision": "474e7c1b97c4ad7cff3928a64eca4ecbb01b0db4",
+        "returncode": 0,
+        "seconds": 24.724571446000482,
+        "source_restored": true,
+        "source_sha256": "d52ba9bfd2970a77eb989d7f635ac3cec8871d9d8be1dbb2e2444880cb4504a0",
+        "pilot_sha256": "ae156dbc2ac0ffd144d385d7211669e39d36e900c06a4d232e0a8a6fcb9d2a3d",
+        "object_sha256": "4f7748afe3909c60c5e7e4ba50f6ceb22747571799e43c2fa9c1e2a8efb65ecd",
+        "artifacts": {
+          "compare-false.smt2": {
+            "bytes": 280306,
+            "sha256": "9cd8f6b9d96a85e0138560571c86f416112cd7dffb0dfa73894601832529ab49"
+          },
+          "complete-false.smt2": {
+            "bytes": 136120,
+            "sha256": "e93ee06899e9ab7a9a0239df71482f78c8372b6129220c461fb5659bd185c9f6"
+          },
+          "candidate-O0": {
+            "bytes": 26808,
+            "sha256": "61cbc6c97363b5d485bf70aa9fc651fb8a7c9f9faf34d84cc6d0adb34bbed406"
+          },
+          "candidate.c": {
+            "bytes": 5756,
+            "sha256": "79943385ba076064c697f7ec255b3df73db16a918f7012ebd2b40a9e8e06c6df"
+          },
+          "candidate-O2": {
+            "bytes": 26720,
+            "sha256": "5c921aa703b87b68d97b9057dfb08ea00d10ee3f7ee130eb64c0d6037482cea5"
+          },
+          "candidate-harness.c": {
+            "bytes": 8101,
+            "sha256": "81679c9b529aca62e27fd82c9f2c4d6dfd41ca8468f8bad3bb04de68e47c2813"
+          },
+          "pilot.log": {
+            "bytes": 2562,
+            "sha256": "d94ba4a8937fbea5741d9dc5c319a4a7c425da4d3132971cfa7fe9a3cf0ccf0f"
+          },
+          "candidate.ir": {
+            "bytes": 64253,
+            "sha256": "e40ea68c84ef97aa4df1fc29d4df63392b9f5c242c5afaa980c04e6d7e626cba"
+          },
+          "candidate-params.txt": {
+            "bytes": 92,
+            "sha256": "7b4e31a47e0ab2d7bf47566354ed391e2ccfe57aa8db4c5cb5ed5e6a46e9ca77"
+          }
+        },
+        "log": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\nwarning: function `fixture_root` is never used\n --> /home/hosi/nirvana/tests/support/native.rs:7:8\n  |\n7 | pub fn fixture_root() -> PathBuf {\n  |        ^^^^^^^^^^^^\n  |\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: struct `Scratch` is never constructed\n  --> /home/hosi/nirvana/tests/support/native.rs:11:12\n   |\n11 | pub struct Scratch(pub PathBuf);\n   |            ^^^^^^^\n\nwarning: associated function `new` is never used\n  --> /home/hosi/nirvana/tests/support/native.rs:14:12\n   |\n13 | impl Scratch {\n   | ------------ associated function in this implementation\n14 |     pub fn new() -> Self {\n   |            ^^^\n\nwarning: function `object` is never used\n  --> /home/hosi/nirvana/tests/support/native.rs:32:8\n   |\n32 | pub fn object(source: &Path, output: &Path, optimization: &str, entry: &str) {\n   |        ^^^^^^\n\nwarning: function `link` is never used\n  --> /home/hosi/nirvana/tests/support/native.rs:95:8\n   |\n95 | pub fn link(objects: &[&Path], output: &Path) {\n   |        ^^^^\n\nwarning: function `run` is never used\n   --> /home/hosi/nirvana/tests/support/native.rs:105:8\n    |\n105 | pub fn run(binary: &Path, input: &str) -> Vec<Vec<u64>> {\n    |        ^^^\n\nwarning: function `source` is never used\n  --> /home/hosi/nirvana/tests/support/checked_c.rs:39:8\n   |\n39 | pub fn source(output: &ReadableC, register_count: usize, initialized_words: usize) -> String {\n   |        ^^^^^^\n\nwarning: function `source_with_size` is never used\n  --> /home/hosi/nirvana/tests/support/checked_c.rs:43:8\n   |\n43 | pub fn source_with_size(\n   |        ^^^^^^^^^^^^^^^^\n\nwarning: `nirvana` (test \"verification\") generated 8 warnings\n    Finished `test` profile [unoptimized] target(s) in 8.76s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n\nrunning 1 test\nACTUAL-ROLL-C opt=-O0 cases=325 full_ram=true faults=true ubsan=true\nACTUAL-ROLL-C opt=-O2 cases=325 full_ram=true faults=true ubsan=true\nEXIT-INTERFACE pc=32 live={2, 4, 5, 6, 9, 11, 12}\nEXIT-INTERFACE pc=198 live={2, 4, 6, 7, 8, 9, 11, 12}\nEXIT-INTERFACE pc=375 live={2, 4, 5, 8, 9}\nACTUAL-ROLL wrong=false completion=complete before_steps=105 candidate_steps=124 unfolded_steps=76 compare=unknown detail=SolverUnknown bytes=280306 ms=15057\nACTUAL-ROLL wrong=false full_function_cases=65\ntest region_extraction::storage_pilot::exit_specific_loop_candidate_pilot ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 15.55s\n\n",
+        "scope": "Fixture-specific exploratory inverse-unroll candidate built from verified13-register display storageIR. Compare explicit entry/exit contract after certified prefix completion; declared outputs exclude unused index temp10 and freshcounter13. Original firstlane retained. No default C transform or general pattern matcher installed."
+      }
+    },
+    "query_hashes": {
+      "exit-all.rs": {
+        "comparison_sha256": "e7a534f54bb9f442d8709c2f8e94df9ff8e0dbb7a07d74459bab22a832ed73dc",
+        "completion_sha256": "e93ee06899e9ab7a9a0239df71482f78c8372b6129220c461fb5659bd185c9f6"
+      },
+      "exit-sparse.rs": {
+        "comparison_sha256": "9cd8f6b9d96a85e0138560571c86f416112cd7dffb0dfa73894601832529ab49",
+        "completion_sha256": "e93ee06899e9ab7a9a0239df71482f78c8372b6129220c461fb5659bd185c9f6"
+      }
+    },
+    "candidate_c_sha256": "79943385ba076064c697f7ec255b3df73db16a918f7012ebd2b40a9e8e06c6df",
+    "concrete_validation": "Each variant:65 full-function IR vectors plus325 generated-C cases at each of O0/O2; return/all RAM/firstfault and UBSan. Candidate C5756bytes versus5810 for the proved stronger-interface candidate. Concrete success does not discharge the Unknown.",
+    "files": {
+      "exit-all.rs": {
+        "text": "use super::*;\nuse nirvana::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Place, UnaryOp, Width};\nuse nirvana::block_verify::region::extraction::repeat::{unfold, Prefixed, Completion};\n#[path = \"/home/hosi/nirvana/tests/support/native.rs\"]\nmod native;\n#[path = \"/home/hosi/nirvana/tests/support/checked_c.rs\"]\nmod checked_c;\ninclude!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.git/nirvana-actual-loop-source.rs\"));\n#[test]\n#[ignore]\nfn exit_specific_loop_candidate_pilot() {\n    let r = |n| Expr::Register(Reg(n)); let k = Expr::Const; let op = Expr::binary;\n    let set = |n, value| Assignment { destination: Reg(n).into(), value };\n    let step = |address, assignments, control| IrInstruction { address, size: 1, assignments, control };\n    let source = Program::new(0, 14, source_instructions()).unwrap();\n    let dump = format!(\"entry=0 registers=13\\n{:#?}\\n\", source.instructions());\n    assert_eq!(dump, std::fs::read_to_string(\"target/checkpoints/ir-entry-storage-v1/printed-storage.ir.txt\").unwrap());\n    let widths = ValueWidths::analyze(&source);\n    let before = extract(&source, 32, &[32, 198, 375], Some(&widths)).unwrap();\n    let directory = std::path::PathBuf::from(std::env::var(\"NIRVANA_LOOP_OUT\").unwrap());\n    for wrong in [false] {\n        let mut instructions = source.instructions().to_vec();\n        let first = instructions.iter_mut().find(|i| i.address == 32).unwrap();\n        let mut masks: Vec<_> = before.input_bit_caps().iter().enumerate().filter(|(_, bits)| **bits < 64).map(|(reg, bits)| set(reg, op(BinaryOp::And, r(reg), k((1u64 << bits) - 1)))).collect();\n        masks.append(&mut first.assignments); first.assignments = masks;\n        let route = instructions.iter_mut().find(|i| i.address == 110).unwrap(); route.control = Control::Jump(500);\n        let index = op(BinaryOp::Add, r(6), r(13));\n        let load = Expr::load(op(BinaryOp::Add, r(2), op(BinaryOp::Mul, op(BinaryOp::And, index.clone(), k(3)), k(8))), Width::U64);\n        instructions.extend([\n            step(500, vec![set(13, k(1))], Control::Jump(501)),\n            step(501, vec![set(8, load), set(9, op(BinaryOp::Add, r(9), op(BinaryOp::Xor, r(8), if wrong { index.clone() } else { r(7) }))), Assignment { destination: Place::Memory { address: op(BinaryOp::Add, k(16), r(2)), width: Width::U64 }, value: r(9) }, set(8, op(BinaryOp::Xor, r(9), r(5)))], Control::Branch { condition: op(BinaryOp::Eq, op(BinaryOp::And, r(8), k(7)), k(0)), target: 375 }),\n            step(502, vec![], Control::Branch { condition: op(BinaryOp::Eq, op(BinaryOp::And, r(9), k(3)), k(1)), target: 509 }),\n            step(503, vec![set(8, op(BinaryOp::Add, r(5), op(BinaryOp::And, r(9), k(15))))], Control::Branch { condition: op(BinaryOp::Eq, r(13), r(12)), target: 507 }),\n            step(504, vec![set(5, r(8)), set(13, op(BinaryOp::Add, r(13), k(1)))], Control::Jump(501)),\n            step(506, vec![], Control::Branch { condition: op(BinaryOp::Ult, r(13), k(3)), target: 508 }),\n            step(507, vec![], Control::Jump(198)),\n            step(508, vec![set(5, r(8))], Control::Jump(198)),\n            step(509, vec![set(5, op(BinaryOp::Xor, r(5), index)), set(8, r(5))], Control::Jump(198)),\n        ]);\n        let candidate = Program::new(0, 14, instructions).unwrap();\n        if !wrong {\n            let out = nirvana::readable::emit_readable_c_with_options(&candidate, nirvana::readable::ReadableOptions { stack_register: Some(Reg(1)), recover_objects: true, coalesce_locals: true, compact_memory: true }).unwrap();\n            std::fs::write(directory.join(\"candidate.c\"), &out.code).unwrap();\n            std::fs::write(directory.join(\"candidate-params.txt\"), format!(\"{:?} locals={} fallback={:?}\\n\", out.parameters, out.locals.len(), out.fallback_reason)).unwrap();\n            let harness = checked_c::source_with_stack(&out, 14, 4, 512, 4600);\n            assert!(harness.contains(\"registers[7]=address;\") && harness.contains(\"registers[4]=UINT64_C(4600);\"));\n            let harness = harness.replace(\"registers[7]=address;\", \"registers[2]=address;\").replace(\"registers[4]=UINT64_C(4600);\", \"registers[1]=UINT64_C(4600);\");\n            let path = directory.join(\"candidate-harness.c\"); std::fs::write(&path, harness).unwrap();\n            let vectors = std::fs::read_to_string(\"tools/corpora/structure-nested-v1.inputs.txt\").unwrap();\n            let mut rows = Vec::new(); let mut expected = Vec::new();\n            for line in vectors.lines().filter(|l| !l.trim().is_empty()) {\n                let words: Vec<u64> = line.split_whitespace().map(|x| x.parse().unwrap()).collect();\n                for address in [4224u64,4576,4095,4608,u64::MAX] {\n                    let mut memory: Vec<u8> = (0..512usize).map(|i| (i*29+7)as u8).collect();\n                    for (n,value) in words.iter().enumerate() { if let Some(location) = address.checked_add(n as u64*8).and_then(|v| v.checked_sub(4096)).filter(|&v| v<=504) { memory[location as usize..location as usize+8].copy_from_slice(&value.to_le_bytes()); } }\n                    let mut input = vec![0;14]; input[1]=4600;input[2]=address;\n                    let report = source.run_with_memory(&input,4096,&memory,4096).unwrap();\n                    let mut values = match report.status {\n                        RunStatus::Returned(value) => vec![0,0,0,0,value],\n                        RunStatus::Fault(f) => vec![1,f.address, match f.access { nirvana::ir::AccessKind::Read=>1,nirvana::ir::AccessKind::Write=>2 }, f.width.bytes() as u64,0],\n                        RunStatus::Suspended => panic!(\"source suspended\"),\n                    };\n                    values.extend(report.state.memory.chunks_exact(8).map(|b|u64::from_le_bytes(b.try_into().unwrap())));\n                    expected.push(values);rows.push(format!(\"{address} {} {} {} {}\",words[0],words[1],words[2],words[3]));\n                }\n            }\n            for optimization in [\"-O0\",\"-O2\"] {\n                let binary = directory.join(format!(\"candidate{optimization}\"));\n                native::compile_c(&path,&binary,&[optimization,\"-fsanitize=undefined\",\"-fno-sanitize-recover=all\"]);\n                let actual = native::run_fields(&binary,&(rows.join(\"\\n\")+\"\\n\"),69);\n                assert_eq!(actual,expected);\n                println!(\"ACTUAL-ROLL-C opt={optimization} cases={} full_ram=true faults=true ubsan=true\", rows.len());\n            }\n        }\n        let prefix = extract(&candidate, 32, &[32, 198, 375, 501], None).unwrap();\n        let iteration = extract(&candidate, 501, &[32, 198, 375, 501], None).unwrap();\n        let unrolled = unfold(&iteration, 3).unwrap();\n        let composed = Prefixed::new(&prefix, &unrolled).unwrap();\n        let complete_query = composed.completion_query().unwrap();\n        std::fs::write(directory.join(format!(\"complete-{wrong}.smt2\")), complete_query.smt2()).unwrap();\n        let solver = Solver::new(std::env::var(\"NIRVANA_Z3\").unwrap()).with_timeout(std::time::Duration::from_secs(5));\n        let completion = composed.check_complete(&solver);\n        let complete = match completion { Completion::Complete(c) => c, other => { println!(\"ACTUAL-ROLL wrong={wrong} completion={other:?}\"); continue; } };\n        let shared: Vec<_> = (0..14).map(Reg).collect();\n        let outputs: Vec<_> = (0..15).filter(|&n| n != 10 && n != 13).map(Reg).collect();\n        let graph = nirvana::ssa::SsaFunction::build(&source).unwrap();\n        let live = nirvana::value_liveness::analyze(&source, &graph).unwrap();\n        let continuations = [32,198,375];\n        let mut required = Vec::new();\n        for pc in continuations {\n            let mut registers = BTreeSet::new();\n            for edge in live.edges.iter().filter(|e| e.to == pc) {\n                for value in &edge.live {\n                    let register = match graph.values[value.0] {\n                        nirvana::ssa::Definition::Initial { register } | nirvana::ssa::Definition::Assignment { register, .. } | nirvana::ssa::Definition::Phi { register, .. } => register,\n                    };\n                    registers.insert(register.0);\n                }\n            }\n            println!(\"EXIT-INTERFACE pc={pc} live={registers:?}\");\n            required.push(registers);\n        }\n        let project = |program: &Program| {\n            let mut instructions = program.instructions().to_vec();\n            for instruction in &mut instructions {\n                if let Control::Return(Expr::Const(tag)) = instruction.control {\n                    if let Some(registers) = required.get(tag as usize) {\n                        for register in 0..14 {\n                            if !registers.contains(&register) { instruction.assignments.push(set(register, k(0))); }\n                        }\n                    }\n                }\n            }\n            Program::new(program.cfg().block(program.cfg().entry()).start, program.register_count(), instructions).unwrap()\n        };\n        let q = query(&project(before.program()), &project(complete.program()), &shared, &outputs).unwrap();\n        std::fs::write(directory.join(format!(\"compare-{wrong}.smt2\")), q.smt2()).unwrap();\n        let now = std::time::Instant::now(); let diagnostic = solver.clone().with_timeout(std::time::Duration::from_secs(15)); let verdict = q.check(&diagnostic);\n        let status = match verdict { Verdict::EquivalentUnderModel => \"equivalent\", Verdict::Counterexample(_) => \"counterexample_replayed\", Verdict::Unknown(_) => \"unknown\" };\n        println!(\"ACTUAL-ROLL wrong={wrong} completion=complete before_steps={} candidate_steps={} unfolded_steps={} compare={status} detail={} bytes={} ms={}\", before.program().instructions().len(), candidate.instructions().len(), complete.program().instructions().len(), match verdict { Verdict::Unknown(ref why) => format!(\"{why:?}\"), _ => String::from(\"checked\") }, q.smt2().len(), now.elapsed().as_millis());\n        let mut cases = 0;\n        for (mut input, memory) in fixture_states(14) {\n            input[1] = 4600; input[2] = 4224; input[4] = 0;\n            let left = source.run_with_memory(&input, 4096, &memory, 4096).unwrap();\n            let right = candidate.run_with_memory(&input, 4096, &memory, 4096).unwrap();\n            if !wrong { assert_eq!(left.status, right.status); assert_eq!(left.state.memory, right.state.memory); }\n            cases += 1;\n        }\n        println!(\"ACTUAL-ROLL wrong={wrong} full_function_cases={cases}\");\n        if !wrong { std::fs::write(directory.join(\"candidate.ir\"), format!(\"{:#?}\", candidate.instructions())).unwrap(); }\n    }\n}\n",
+        "sha256": "4c2ab9c7c70ac8a066eec0975344c1cb4aea672cd6737cf5734d135d9d9f90f4"
+      },
+      "exit-sparse.rs": {
+        "text": "use super::*;\nuse nirvana::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Place, UnaryOp, Width};\nuse nirvana::block_verify::region::extraction::repeat::{unfold, Prefixed, Completion};\n#[path = \"/home/hosi/nirvana/tests/support/native.rs\"]\nmod native;\n#[path = \"/home/hosi/nirvana/tests/support/checked_c.rs\"]\nmod checked_c;\ninclude!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.git/nirvana-actual-loop-source.rs\"));\n#[test]\n#[ignore]\nfn exit_specific_loop_candidate_pilot() {\n    let r = |n| Expr::Register(Reg(n)); let k = Expr::Const; let op = Expr::binary;\n    let set = |n, value| Assignment { destination: Reg(n).into(), value };\n    let step = |address, assignments, control| IrInstruction { address, size: 1, assignments, control };\n    let source = Program::new(0, 14, source_instructions()).unwrap();\n    let dump = format!(\"entry=0 registers=13\\n{:#?}\\n\", source.instructions());\n    assert_eq!(dump, std::fs::read_to_string(\"target/checkpoints/ir-entry-storage-v1/printed-storage.ir.txt\").unwrap());\n    let widths = ValueWidths::analyze(&source);\n    let before = extract(&source, 32, &[32, 198, 375], Some(&widths)).unwrap();\n    let directory = std::path::PathBuf::from(std::env::var(\"NIRVANA_LOOP_OUT\").unwrap());\n    for wrong in [false] {\n        let mut instructions = source.instructions().to_vec();\n        let first = instructions.iter_mut().find(|i| i.address == 32).unwrap();\n        let mut masks: Vec<_> = before.input_bit_caps().iter().enumerate().filter(|(_, bits)| **bits < 64).map(|(reg, bits)| set(reg, op(BinaryOp::And, r(reg), k((1u64 << bits) - 1)))).collect();\n        masks.append(&mut first.assignments); first.assignments = masks;\n        let route = instructions.iter_mut().find(|i| i.address == 110).unwrap(); route.control = Control::Jump(500);\n        let index = op(BinaryOp::Add, r(6), r(13));\n        let load = Expr::load(op(BinaryOp::Add, r(2), op(BinaryOp::Mul, op(BinaryOp::And, index.clone(), k(3)), k(8))), Width::U64);\n        instructions.extend([\n            step(500, vec![set(13, k(1))], Control::Jump(501)),\n            step(501, vec![set(8, load), set(9, op(BinaryOp::Add, r(9), op(BinaryOp::Xor, r(8), if wrong { index.clone() } else { r(7) }))), Assignment { destination: Place::Memory { address: op(BinaryOp::Add, k(16), r(2)), width: Width::U64 }, value: r(9) }, set(8, op(BinaryOp::Xor, r(9), r(5)))], Control::Branch { condition: op(BinaryOp::Eq, op(BinaryOp::And, r(8), k(7)), k(0)), target: 375 }),\n            step(502, vec![], Control::Branch { condition: op(BinaryOp::Eq, op(BinaryOp::And, r(9), k(3)), k(1)), target: 509 }),\n            step(503, vec![set(8, op(BinaryOp::Add, r(5), op(BinaryOp::And, r(9), k(15))))], Control::Branch { condition: op(BinaryOp::Eq, r(13), r(12)), target: 507 }),\n            step(504, vec![set(5, r(8)), set(13, op(BinaryOp::Add, r(13), k(1)))], Control::Jump(501)),\n            step(506, vec![], Control::Branch { condition: op(BinaryOp::Ult, r(13), k(3)), target: 508 }),\n            step(507, vec![], Control::Jump(198)),\n            step(508, vec![set(5, r(8))], Control::Jump(198)),\n            step(509, vec![set(5, op(BinaryOp::Xor, r(5), index)), set(8, r(5))], Control::Jump(198)),\n        ]);\n        let candidate = Program::new(0, 14, instructions).unwrap();\n        if !wrong {\n            let out = nirvana::readable::emit_readable_c_with_options(&candidate, nirvana::readable::ReadableOptions { stack_register: Some(Reg(1)), recover_objects: true, coalesce_locals: true, compact_memory: true }).unwrap();\n            std::fs::write(directory.join(\"candidate.c\"), &out.code).unwrap();\n            std::fs::write(directory.join(\"candidate-params.txt\"), format!(\"{:?} locals={} fallback={:?}\\n\", out.parameters, out.locals.len(), out.fallback_reason)).unwrap();\n            let harness = checked_c::source_with_stack(&out, 14, 4, 512, 4600);\n            assert!(harness.contains(\"registers[7]=address;\") && harness.contains(\"registers[4]=UINT64_C(4600);\"));\n            let harness = harness.replace(\"registers[7]=address;\", \"registers[2]=address;\").replace(\"registers[4]=UINT64_C(4600);\", \"registers[1]=UINT64_C(4600);\");\n            let path = directory.join(\"candidate-harness.c\"); std::fs::write(&path, harness).unwrap();\n            let vectors = std::fs::read_to_string(\"tools/corpora/structure-nested-v1.inputs.txt\").unwrap();\n            let mut rows = Vec::new(); let mut expected = Vec::new();\n            for line in vectors.lines().filter(|l| !l.trim().is_empty()) {\n                let words: Vec<u64> = line.split_whitespace().map(|x| x.parse().unwrap()).collect();\n                for address in [4224u64,4576,4095,4608,u64::MAX] {\n                    let mut memory: Vec<u8> = (0..512usize).map(|i| (i*29+7)as u8).collect();\n                    for (n,value) in words.iter().enumerate() { if let Some(location) = address.checked_add(n as u64*8).and_then(|v| v.checked_sub(4096)).filter(|&v| v<=504) { memory[location as usize..location as usize+8].copy_from_slice(&value.to_le_bytes()); } }\n                    let mut input = vec![0;14]; input[1]=4600;input[2]=address;\n                    let report = source.run_with_memory(&input,4096,&memory,4096).unwrap();\n                    let mut values = match report.status {\n                        RunStatus::Returned(value) => vec![0,0,0,0,value],\n                        RunStatus::Fault(f) => vec![1,f.address, match f.access { nirvana::ir::AccessKind::Read=>1,nirvana::ir::AccessKind::Write=>2 }, f.width.bytes() as u64,0],\n                        RunStatus::Suspended => panic!(\"source suspended\"),\n                    };\n                    values.extend(report.state.memory.chunks_exact(8).map(|b|u64::from_le_bytes(b.try_into().unwrap())));\n                    expected.push(values);rows.push(format!(\"{address} {} {} {} {}\",words[0],words[1],words[2],words[3]));\n                }\n            }\n            for optimization in [\"-O0\",\"-O2\"] {\n                let binary = directory.join(format!(\"candidate{optimization}\"));\n                native::compile_c(&path,&binary,&[optimization,\"-fsanitize=undefined\",\"-fno-sanitize-recover=all\"]);\n                let actual = native::run_fields(&binary,&(rows.join(\"\\n\")+\"\\n\"),69);\n                assert_eq!(actual,expected);\n                println!(\"ACTUAL-ROLL-C opt={optimization} cases={} full_ram=true faults=true ubsan=true\", rows.len());\n            }\n        }\n        let prefix = extract(&candidate, 32, &[32, 198, 375, 501], None).unwrap();\n        let iteration = extract(&candidate, 501, &[32, 198, 375, 501], None).unwrap();\n        let unrolled = unfold(&iteration, 3).unwrap();\n        let composed = Prefixed::new(&prefix, &unrolled).unwrap();\n        let complete_query = composed.completion_query().unwrap();\n        std::fs::write(directory.join(format!(\"complete-{wrong}.smt2\")), complete_query.smt2()).unwrap();\n        let solver = Solver::new(std::env::var(\"NIRVANA_Z3\").unwrap()).with_timeout(std::time::Duration::from_secs(5));\n        let completion = composed.check_complete(&solver);\n        let complete = match completion { Completion::Complete(c) => c, other => { println!(\"ACTUAL-ROLL wrong={wrong} completion={other:?}\"); continue; } };\n        let shared: Vec<_> = (0..14).map(Reg).collect();\n        let outputs: Vec<_> = (0..15).filter(|&n| n != 10 && n != 13).map(Reg).collect();\n        let graph = nirvana::ssa::SsaFunction::build(&source).unwrap();\n        let live = nirvana::value_liveness::analyze(&source, &graph).unwrap();\n        let continuations = [32,198,375];\n        let mut required = Vec::new();\n        for pc in continuations {\n            let mut registers = BTreeSet::new();\n            for edge in live.edges.iter().filter(|e| e.to == pc) {\n                for value in &edge.live {\n                    let register = match graph.values[value.0] {\n                        nirvana::ssa::Definition::Initial { register } | nirvana::ssa::Definition::Assignment { register, .. } | nirvana::ssa::Definition::Phi { register, .. } => register,\n                    };\n                    registers.insert(register.0);\n                }\n            }\n            println!(\"EXIT-INTERFACE pc={pc} live={registers:?}\");\n            required.push(registers);\n        }\n        let project = |program: &Program| {\n            let mut instructions = program.instructions().to_vec();\n            for instruction in &mut instructions {\n                if let Control::Return(Expr::Const(tag)) = instruction.control {\n                    if let Some(registers) = required.get(tag as usize) {\n                        for register in [5] {\n                            if !registers.contains(&register) { instruction.assignments.push(set(register, k(0))); }\n                        }\n                    }\n                }\n            }\n            Program::new(program.cfg().block(program.cfg().entry()).start, program.register_count(), instructions).unwrap()\n        };\n        let q = query(&project(before.program()), &project(complete.program()), &shared, &outputs).unwrap();\n        std::fs::write(directory.join(format!(\"compare-{wrong}.smt2\")), q.smt2()).unwrap();\n        let now = std::time::Instant::now(); let diagnostic = solver.clone().with_timeout(std::time::Duration::from_secs(15)); let verdict = q.check(&diagnostic);\n        let status = match verdict { Verdict::EquivalentUnderModel => \"equivalent\", Verdict::Counterexample(_) => \"counterexample_replayed\", Verdict::Unknown(_) => \"unknown\" };\n        println!(\"ACTUAL-ROLL wrong={wrong} completion=complete before_steps={} candidate_steps={} unfolded_steps={} compare={status} detail={} bytes={} ms={}\", before.program().instructions().len(), candidate.instructions().len(), complete.program().instructions().len(), match verdict { Verdict::Unknown(ref why) => format!(\"{why:?}\"), _ => String::from(\"checked\") }, q.smt2().len(), now.elapsed().as_millis());\n        let mut cases = 0;\n        for (mut input, memory) in fixture_states(14) {\n            input[1] = 4600; input[2] = 4224; input[4] = 0;\n            let left = source.run_with_memory(&input, 4096, &memory, 4096).unwrap();\n            let right = candidate.run_with_memory(&input, 4096, &memory, 4096).unwrap();\n            if !wrong { assert_eq!(left.status, right.status); assert_eq!(left.state.memory, right.state.memory); }\n            cases += 1;\n        }\n        println!(\"ACTUAL-ROLL wrong={wrong} full_function_cases={cases}\");\n        if !wrong { std::fs::write(directory.join(\"candidate.ir\"), format!(\"{:#?}\", candidate.instructions())).unwrap(); }\n    }\n}\n",
+        "sha256": "ae156dbc2ac0ffd144d385d7211669e39d36e900c06a4d232e0a8a6fcb9d2a3d"
+      },
+      "audit-all-exits.py": {
+        "text": "from pathlib import Path\nimport json,hashlib\nroot=Path('target/checkpoints/ir-entry-storage-v1');program=json.loads((root/'program.json').read_text());is_by_pc={x['fields']['address']:x['fields']for x in program}\ndef regs(e):\n if isinstance(e,list):\n  for x in e:yield from regs(x)\n elif isinstance(e,dict):\n  if e.get('node')=='Register':yield e['args'][0]['args'][0]\n  else:\n   for x in e.values():yield from regs(x)\ndef register(place):return place['args'][0]['args'][0]if place['node']=='Register'else None\ndef inspect(entry,target):\n pending=[(entry,False)];seen=set()\n while pending:\n  pc,defined=pending.pop()\n  if(pc,defined)in seen:continue\n  seen.add((pc,defined));i=is_by_pc[pc]\n  for a in i['assignments']:\n   a=a['fields'];dest=register(a['destination'])\n   if dest==target and a['value'].get('node')=='Register' and register(a['value'])==target:continue\n   reads=set(regs(a['value']))\n   if a['destination']['node']=='Memory':reads.update(regs(a['destination']['fields']['address']))\n   if target in reads and not defined:return {'read_before_write':True,'pc':pc,'states':len(seen)}\n   if dest==target:defined=True\n  c=i['control'];fall=pc+i['size']\n  if isinstance(c,str):successors=[fall]\n  elif c['node']=='Jump':successors=c['args']\n  elif c['node']=='Return':\n   if target in regs(c['args'][0])and not defined:return {'read_before_write':True,'pc':pc,'states':len(seen)}\n   successors=[]\n  else:\n   if target in regs(c['fields']['condition'])and not defined:return {'read_before_write':True,'pc':pc,'states':len(seen)}\n   successors=[c['fields']['target'],fall]\n  pending.extend((next_pc,defined)for next_pc in successors)\n return {'read_before_write':False,'states':len(seen)}\nreport={'schema':'nirvana-explicit-exit-register-read-audit-v1','ir_sha256':hashlib.sha256((root/'source.ir').read_bytes()).hexdigest(),'scope':'Exhaustive finite traversal of direct source control paths with a per-register initialized bit; all syntactic reads checked conservatively, identity register copies skipped. Source is the exact verified13-register IR; faults can only stop earlier. Does not authorize arbitrary new transforms.','rows':[{'entry':entry,'register':reg,**inspect(entry,reg)}for entry in [32,198,375]for reg in range(14)]}\n(root/'exit-read-all-audit.json').write_text(json.dumps(report,indent=2)+'\\n');print(json.dumps(report,indent=2))\nassert all(not r['read_before_write']for r in report['rows']if r['register']in[10,13])\n",
+        "sha256": "7e409096154bf331d962d65049ce9add5e307bdeb0db5ff2a92d54b2bea4c370"
+      }
+    },
+    "reproduce": "Use the archived main reproduction launcher with --exit-specific. Actual solver verdicts are printed and retained; an Unknown is never asserted to be equivalent.",
+    "decision": "Retain the proven stronger-interface candidate as baseline. Next expose per-continuation observations directly at the query boundary, validate their source/SSA correspondence and measure solver cost before adoption.",
+    "machine_replay": {
+      "returncode": 0,
+      "source_restored": true,
+      "queries_reconstructed_byte_for_byte": true,
+      "generated_c_cases_per_variant": 650,
+      "independent_audit_exact_match": true,
+      "verdicts": {
+        "exit-all.rs": "Unknown(SolverUnknown)",
+        "exit-sparse.rs": "Unknown(SolverUnknown)"
+      },
+      "trial_log_sha256": {
+        "exit-all.rs": "7c6e3a94aecb05a433881bf979873603dac7ae8abecd8ea6267d22f1fcf189fc",
+        "exit-sparse.rs": "2d6335784f169f3bbf9177178c28bc2271be6e659d81082a3a8488060084d58b"
+      }
+    }
+  }
 }
