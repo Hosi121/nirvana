@@ -53,3 +53,6 @@ mod signed_width;
 mod word_correction;
 #[path = "verification/word_signed.rs"]
 mod word_signed;
+
+#[path = "verification/region_extraction.rs"]
+mod region_extraction;

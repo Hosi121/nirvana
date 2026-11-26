@@ -2,6 +2,45 @@
 use super::*;
 
 pub(super) fn inspect(program: &Program) -> Result<Vec<u64>, Error> {
+    let successors = bounded_successors(program)?;
+    let entry = program.cfg().block(program.cfg().entry()).start;
+    let mut reachable = BTreeSet::new();
+    let mut pending = vec![entry];
+    while let Some(pc) = pending.pop() {
+        if reachable.insert(pc) {
+            pending.extend(successors[&pc].iter().copied());
+        }
+    }
+    let mut degree: BTreeMap<_, usize> = reachable.iter().map(|&pc| (pc, 0)).collect();
+    for &pc in &reachable {
+        for to in &successors[&pc] {
+            *degree.get_mut(to).ok_or(Error::OpenEdge)? += 1;
+        }
+    }
+    let mut ready: BTreeSet<_> = degree
+        .iter()
+        .filter_map(|(&pc, &n)| (n == 0).then_some(pc))
+        .collect();
+    let mut order = Vec::new();
+    while let Some(pc) = ready.pop_first() {
+        order.push(pc);
+        for to in &successors[&pc] {
+            let count = degree.get_mut(to).ok_or(Error::OpenEdge)?;
+            *count -= 1;
+            if *count == 0 {
+                ready.insert(*to);
+            }
+        }
+    }
+    if order.len() != reachable.len() {
+        return Err(Error::Cycle);
+    }
+    Ok(order)
+}
+
+/// The same source/expression preflight also permits a cyclic source before
+/// extraction. No recursive source clone happens until this check succeeds.
+pub(super) fn bounded_successors(program: &Program) -> Result<BTreeMap<u64, Vec<u64>>, Error> {
     if program.register_count() > MAX_REGISTERS || program.instructions().len() > MAX_INSTRUCTIONS {
         return Err(Error::Limit);
     }
@@ -75,37 +114,5 @@ pub(super) fn inspect(program: &Program) -> Result<Vec<u64>, Error> {
             }
         }
     }
-    let entry = program.cfg().block(program.cfg().entry()).start;
-    let mut reachable = BTreeSet::new();
-    let mut pending = vec![entry];
-    while let Some(pc) = pending.pop() {
-        if reachable.insert(pc) {
-            pending.extend(successors[&pc].iter().copied());
-        }
-    }
-    let mut degree: BTreeMap<_, usize> = reachable.iter().map(|&pc| (pc, 0)).collect();
-    for &pc in &reachable {
-        for to in &successors[&pc] {
-            *degree.get_mut(to).ok_or(Error::OpenEdge)? += 1;
-        }
-    }
-    let mut ready: BTreeSet<_> = degree
-        .iter()
-        .filter_map(|(&pc, &n)| (n == 0).then_some(pc))
-        .collect();
-    let mut order = Vec::new();
-    while let Some(pc) = ready.pop_first() {
-        order.push(pc);
-        for to in &successors[&pc] {
-            let count = degree.get_mut(to).ok_or(Error::OpenEdge)?;
-            *count -= 1;
-            if *count == 0 {
-                ready.insert(*to);
-            }
-        }
-    }
-    if order.len() != reachable.len() {
-        return Err(Error::Cycle);
-    }
-    Ok(order)
+    Ok(successors)
 }

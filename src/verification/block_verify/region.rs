@@ -8,6 +8,7 @@ use super::*;
 use crate::model::ir::{RunReport, RunStatus};
 
 mod encode;
+pub mod extraction;
 mod shape;
 #[cfg(test)]
 mod tests;
