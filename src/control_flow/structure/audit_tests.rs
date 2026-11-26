@@ -629,6 +629,7 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
     let mut recovered = 0;
     let mut comparisons = 0;
     let mut rejected = BTreeMap::<String, (usize, usize, usize)>::new();
+    let mut refused_cases = Vec::new();
     let mut mutants = 0;
     let mut accepted_mutants = 0;
     for profile in 0..3 {
@@ -637,6 +638,7 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
             let function = match StructuredFunction::recover(&source) {
                 Ok(f) => f,
                 Err(error) => {
+                    refused_cases.push([profile, graph]);
                     rejected
                         .entry(format!("{error:?}"))
                         .or_insert((0, graph, profile))
@@ -693,7 +695,7 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
         write!(errors,"{{\"error\":{error:?},\"count\":{count},\"example_graph\":{graph},\"example_profile\":{profile}}}").unwrap();
     }
     let report = format!(
-        "{{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":{requested},\"recovered\":{recovered},\"comparisons\":{comparisons},\"mutants\":{mutants},\"accepted_mutants\":{accepted_mutants},\"rejected\":[{errors}]}}\n"
+        "{{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":{requested},\"recovered\":{recovered},\"comparisons\":{comparisons},\"mutants\":{mutants},\"accepted_mutants\":{accepted_mutants},\"rejected\":[{errors}],\"refused_cases\":{refused_cases:?}}}\n"
     );
     if let Some(path) = std::env::var_os("NIRVANA_STRUCTURE_AUDIT_REPORT") {
         std::fs::write(path, &report).unwrap();
@@ -704,4 +706,5 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
         requested
     );
     assert!(recovered > 0 && comparisons > 0 && mutants > 0);
+    assert_eq!(accepted_mutants, 0, "negative controls must be rejected");
 }
