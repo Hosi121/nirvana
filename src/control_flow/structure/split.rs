@@ -221,13 +221,45 @@ fn candidates(source: &Program, analysis: &ControlFlowAnalysis) -> EntryCandidat
 
 type Origins = BTreeMap<u64, Option<u64>>;
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum CopyEdges {
+    PeelPath,
+    CloneRegion,
+}
+
+#[derive(Clone)]
 struct SplitPlan {
     from: BlockId,
     blocks: Vec<BlockId>,
     steps: usize,
+    edges: CopyEdges,
 }
 
 fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
+    let mut plans = peeled_plans(source, analysis);
+    let original_count = plans.len();
+    // Preserve the previous candidates and their order. Spend only remaining
+    // attempt slots on regions whose terminal edge closes an internal cycle.
+    for index in 0..original_count {
+        if plans.len() == MAX_ATTEMPTS {
+            break;
+        }
+        let plan = &plans[index];
+        let terminal = source
+            .cfg()
+            .block(*plan.blocks.last().expect("entry region"));
+        if terminal.successors.iter().any(
+            |edge| matches!(edge.target, Target::Block(target) if plan.blocks.contains(&target)),
+        ) {
+            let mut region = plan.clone();
+            region.edges = CopyEdges::CloneRegion;
+            plans.push(region);
+        }
+    }
+    plans
+}
+
+fn peeled_plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
     let cfg = source.cfg();
     let EntryCandidates {
         edges: entries,
@@ -242,6 +274,7 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
             from,
             blocks: vec![to],
             steps: cfg.block(to).instructions.len(),
+            edges: CopyEdges::PeelPath,
         })
         .collect();
     for &entry in &entries {
@@ -329,6 +362,7 @@ fn append_paths(
                 from,
                 blocks: blocks.clone(),
                 steps,
+                edges: CopyEdges::PeelPath,
             });
         }
     }
@@ -372,10 +406,12 @@ fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
             if !duplicate && original.address == from.address && target == copied_entry {
                 return duplicates.get(&target).copied();
             }
-            // A copied forward path keeps internal fallthroughs and jumps
-            // together. Its final outgoing edges return to the source CFG,
-            // including a backedge to an earlier block in the copied path.
-            if duplicate && original.address != copied_last {
+            // A peeled path returns its final edges to the original graph.
+            // A cloned region retains every internal edge, including that
+            // last backedge. Both keep side exits in the original graph.
+            if duplicate
+                && (plan.edges == CopyEdges::CloneRegion || original.address != copied_last)
+            {
                 return duplicates
                     .get(&target)
                     .copied()

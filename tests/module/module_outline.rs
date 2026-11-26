@@ -673,6 +673,20 @@ split_exit:
     mov 24(%rdi),%rax
     ret
 .size split_exit,.-split_exit
+.globl split_cycle
+.type split_cycle,@function
+split_cycle:
+    cmpq $0,(%rdi)
+    jne .Lcycle_third
+.Lcycle_first:
+    addq $1,24(%rdi)
+.Lcycle_second:
+    cmpq $0,8(%rdi)
+    jne .Lcycle_first
+.Lcycle_third:
+    addq $2,24(%rdi)
+    jmp .Lcycle_second
+.size split_cycle,.-split_cycle
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -705,6 +719,7 @@ split_exit:
         "split_forward",
         "split_header",
         "split_exit",
+        "split_cycle",
     ] {
         let function = plan
             .functions
