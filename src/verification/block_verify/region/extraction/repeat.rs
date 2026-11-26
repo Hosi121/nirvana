@@ -7,6 +7,8 @@ use crate::verification::verify::{Solver, UnknownReason};
 pub const MODEL_ID: &str = "checked-region-feedback-completion-v1";
 
 mod check;
+mod prefix;
+pub use prefix::Prefixed;
 #[cfg(test)]
 mod tests;
 
@@ -27,17 +29,32 @@ pub struct Unfolding {
 /// the first fault. It certifies this region boundary, not the whole function.
 #[derive(Clone, Debug)]
 pub struct Complete {
-    unfolding: Box<Unfolding>,
+    data: Box<CompleteData>,
+}
+#[derive(Clone, Debug)]
+struct CompleteData {
+    program: Program,
+    source: Region,
+    rounds: usize,
 }
 impl Complete {
+    fn new(program: &Program, source: &Region, rounds: usize) -> Self {
+        Self {
+            data: Box::new(CompleteData {
+                program: program.clone(),
+                source: source.clone(),
+                rounds,
+            }),
+        }
+    }
     pub fn program(&self) -> &Program {
-        self.unfolding.program()
+        &self.data.program
     }
     pub fn source_region(&self) -> &Region {
-        &self.unfolding.region
+        &self.data.source
     }
     pub fn rounds(&self) -> usize {
-        self.unfolding.rounds
+        self.data.rounds
     }
 }
 
@@ -82,26 +99,9 @@ impl Unfolding {
     /// the same effects and first fault. Unknown never creates a Complete.
     pub fn completion_query(&self) -> Result<Query, ExtractionError> {
         self.validate()?;
-        let mut cleared = self.program.instructions().to_vec();
-        let marker = cleared
-            .iter_mut()
-            .find(|i| i.address == self.exhaustion)
-            .and_then(|i| i.assignments.last_mut())
-            .ok_or(ExtractionError::Projection)?;
-        if marker.destination != self.flag.into() || marker.value != Expr::Const(1) {
-            return Err(ExtractionError::Projection);
-        }
-        marker.value = Expr::Const(0);
-        let cleared = Program::new(0, self.program.register_count(), cleared)
-            .map_err(|_| ExtractionError::Projection)?;
-        let shared: Vec<_> = (0..self.program.register_count()).map(Reg).collect();
-        Ok(region::query(
-            &self.program,
-            &cleared,
-            &shared,
-            &[self.flag],
-        )?)
+        flagged_query(&self.program, self.flag, self.exhaustion)
     }
+
     pub fn check_complete(&self, solver: &Solver) -> Completion {
         let query = match self.completion_query() {
             Ok(query) => query,
@@ -111,9 +111,9 @@ impl Unfolding {
             Err(_) => return Completion::Unknown(UnknownReason::BoundaryMapping),
         };
         match query.check(solver) {
-            Verdict::EquivalentUnderModel => Completion::Complete(Complete {
-                unfolding: Box::new(self.clone()),
-            }),
+            Verdict::EquivalentUnderModel => {
+                Completion::Complete(Complete::new(&self.program, &self.region, self.rounds))
+            }
             Verdict::Unknown(reason) => Completion::Unknown(reason),
             Verdict::Counterexample(witness) => match self.replay_source(&witness) {
                 Ok(source) => Completion::BoundExceeded(Box::new(Exhaustion {
@@ -290,4 +290,23 @@ pub fn unfold(region: &Region, rounds: usize) -> Result<Unfolding, ExtractionErr
     };
     result.validate()?;
     Ok(result)
+}
+
+/// Both callers check their source correspondence before this bounded clone.
+fn flagged_query(program: &Program, flag: Reg, exhaustion: u64) -> Result<Query, ExtractionError> {
+    shape::inspect(program)?;
+    let mut cleared = program.instructions().to_vec();
+    let marker = cleared
+        .iter_mut()
+        .find(|i| i.address == exhaustion)
+        .and_then(|i| i.assignments.last_mut())
+        .ok_or(ExtractionError::Projection)?;
+    if marker.destination != flag.into() || marker.value != Expr::Const(1) {
+        return Err(ExtractionError::Projection);
+    }
+    marker.value = Expr::Const(0);
+    let cleared = Program::new(0, program.register_count(), cleared)
+        .map_err(|_| ExtractionError::Projection)?;
+    let shared: Vec<_> = (0..program.register_count()).map(Reg).collect();
+    Ok(region::query(program, &cleared, &shared, &[flag])?)
 }
