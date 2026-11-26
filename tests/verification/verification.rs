@@ -4,9 +4,9 @@ use nirvana::verify::{Solver, UnknownReason, Verdict, pure_query};
 
 use crate::support::rewrite_cases;
 
-// Executable fixture files can return ETXTBSY when written while another test
-// spawns a child. Keep file creation and solver spawns in one test at a time so
-// these tests exercise the intended solver protocol and timeout paths.
+// Keep protocol examples serial, and run freshly written fixtures as Python
+// data. The stable interpreter avoids executing an inode whose writable handle
+// may briefly survive in another concurrently spawned child's descriptor table.
 static SOLVER_FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
@@ -60,7 +60,6 @@ fn missing_solver_and_unmodeled_operations_never_accept_a_candidate() {
 mod protocol {
     use super::*;
     use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -88,10 +87,11 @@ mod protocol {
                 "#!/usr/bin/env python3\nimport sys\nscript = sys.stdin.read()\n{body}"
             )
             .unwrap();
-            file.set_permissions(std::fs::Permissions::from_mode(0o700))
-                .unwrap();
             drop(file);
             Self(path)
+        }
+        fn solver(&self) -> Solver {
+            Solver::new("python3").with_args([self.0.as_os_str()])
         }
     }
     impl Drop for Script {
@@ -111,7 +111,7 @@ mod protocol {
         ] {
             let script = Script::new(body);
             assert!(matches!(
-                Solver::new(&script.0).check(&Expr::Const(0), &Expr::Const(0)),
+                script.solver().check(&Expr::Const(0), &Expr::Const(0)),
                 Verdict::Unknown(_)
             ));
         }
@@ -123,7 +123,7 @@ mod protocol {
         let zero_model = Script::new(
             "print('sat')\nif '(get-value' in script: print('((r0 #x0000000000000000))')",
         );
-        let solver = Solver::new(&zero_model.0);
+        let solver = zero_model.solver();
         let r0 = Expr::Register(Reg(0));
         assert_eq!(
             solver.check(&r0, &r0),
@@ -144,7 +144,7 @@ mod protocol {
     fn a_stalled_solver_is_killed_and_reported_as_unknown() {
         let _guard = SOLVER_FIXTURE_LOCK.lock().unwrap();
         let script = Script::new("import time\ntime.sleep(10)");
-        let solver = Solver::new(&script.0).with_timeout(Duration::from_millis(5));
+        let solver = script.solver().with_timeout(Duration::from_millis(5));
         assert_eq!(
             solver.check(&Expr::Const(0), &Expr::Const(0)),
             Verdict::Unknown(UnknownReason::SolverTimeout)

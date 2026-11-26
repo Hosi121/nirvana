@@ -282,6 +282,7 @@ pub fn pure_query(before: &Expr, after: &Expr) -> Result<PureQuery, UnknownReaso
 #[derive(Clone, Debug)]
 pub struct Solver {
     executable: PathBuf,
+    arguments: Vec<std::ffi::OsString>,
     timeout: Duration,
 }
 
@@ -289,11 +290,22 @@ impl Solver {
     pub fn new(executable: impl Into<PathBuf>) -> Self {
         Self {
             executable: executable.into(),
+            arguments: Vec::new(),
             timeout: Duration::from_secs(2),
         }
     }
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout.clamp(Duration::from_millis(1), Duration::from_secs(30));
+        self
+    }
+    /// Arguments placed before the SMT-LIB transport flags, for an interpreter
+    /// or solver profile. Each argument is passed directly to Command.
+    pub fn with_args<I, S>(mut self, arguments: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<std::ffi::OsString>,
+    {
+        self.arguments = arguments.into_iter().map(Into::into).collect();
         self
     }
     pub(crate) fn limited_to(&self, timeout: Duration) -> Self {
@@ -361,6 +373,7 @@ impl Solver {
             script.push_str(&format!("(get-value ({names}))\n"));
         }
         let mut child = Command::new(&self.executable)
+            .args(&self.arguments)
             .args(["-in", "-smt2"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
