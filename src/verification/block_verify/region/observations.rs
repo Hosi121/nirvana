@@ -68,6 +68,28 @@ impl Observations {
             Self::AtReturns { .. } => RETURN_OUTPUTS_MODEL_ID,
         }
     }
+    pub(super) fn partitions(&self, left: &State, right: &State) -> Vec<String> {
+        self.partition_guards(
+            &format!("(and {} {})", left.alive, right.alive),
+            &left.exit_value,
+        )
+    }
+    pub(super) fn partition_guards(&self, normal: &str, returned: &str) -> Vec<String> {
+        let Self::AtReturns { rows, .. } = self else {
+            return vec![String::from("true")];
+        };
+        let cases: Vec<_> = rows
+            .iter()
+            .map(|row| format!("(= {} {})", returned, word(row.value)))
+            .collect();
+        let mut partitions = vec![format!("(not {normal})")];
+        partitions.extend(cases.iter().map(|case| format!("(and {normal} {case})")));
+        partitions.push(format!(
+            "(and {normal} (not (or false {})))",
+            cases.join(" ")
+        ));
+        partitions
+    }
     pub(super) fn differences(&self, left: &State, right: &State) -> Vec<String> {
         let differences = |registers: &[Reg]| {
             registers

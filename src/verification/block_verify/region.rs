@@ -10,6 +10,7 @@ use crate::model::ir::{RunReport, RunStatus};
 mod encode;
 pub mod extraction;
 mod observations;
+mod partition;
 pub mod registers;
 mod shape;
 #[cfg(test)]
@@ -17,9 +18,11 @@ mod tests;
 
 use observations::Observations;
 pub use observations::ReturnOutputs;
+pub use partition::{InputPartitions, PartitionedVerdict};
 
 pub const MODEL_ID: &str = "checked-memory-dag-region-v1";
 pub const RETURN_OUTPUTS_MODEL_ID: &str = "checked-memory-dag-return-outputs-v1";
+pub const PARTITION_MODEL_ID: &str = "checked-return-partitions-v1";
 pub const MAX_REGISTERS: usize = 128;
 pub const MAX_INSTRUCTIONS: usize = 128;
 const MAX_EXPRESSIONS: usize = 65_536;
@@ -77,6 +80,7 @@ pub struct Query {
     outputs: Observations,
     input_names: Vec<String>,
     candidate_names: Vec<String>,
+    partitions: Vec<String>,
 }
 
 /// Check both entry-reachable DAGs under the declared shared/live-out mapping.
@@ -141,6 +145,7 @@ fn build_query(
         format!("(distinct {} {})", left.exit_value, right.exit_value),
     ];
     normal.extend(outputs.differences(&left, &right));
+    let partitions = outputs.partitions(&left, &right);
     let different = format!(
         "(or (not {left_complete}) (not {right_complete}) (xor {} {}) (and (not {}) (not {}) (or (distinct {} {}) (distinct {} {}) (distinct {} {}))) (distinct (select {} memory_witness) (select {} memory_witness)) (and {} {} (or {})))",
         left.alive,
@@ -170,7 +175,11 @@ fn build_query(
         script.push_str(&definition);
     }
     script.push_str(&format!("(assert {different})\n"));
-    if script.len() > MAX_SCRIPT {
+    if script.len() > MAX_SCRIPT
+        || partitions
+            .iter()
+            .any(|guard| script.len().saturating_add(guard.len()).saturating_add(96) > MAX_SCRIPT)
+    {
         return Err(Error::Limit);
     }
     let mut names: BTreeSet<_> = builder
@@ -191,6 +200,7 @@ fn build_query(
         outputs,
         input_names,
         candidate_names,
+        partitions,
     })
 }
 
@@ -257,8 +267,28 @@ impl Query {
     }
 
     pub fn check(&self, solver: &Solver) -> Verdict {
+        self.check_script(solver, &self.script, None)
+    }
+
+    fn check_script(
+        &self,
+        solver: &Solver,
+        script: &str,
+        deadline: Option<std::time::Instant>,
+    ) -> Verdict {
+        let run = |script: &str, names: &[String]| {
+            if let Some(deadline) = deadline {
+                let remaining = deadline
+                    .checked_duration_since(std::time::Instant::now())
+                    .filter(|duration| !duration.is_zero())
+                    .ok_or(UnknownReason::SolverTimeout)?;
+                solver.limited_to(remaining).run_smt(script, names)
+            } else {
+                solver.run_smt(script, names)
+            }
+        };
         let result = (|| -> Result<Verdict, UnknownReason> {
-            match solver.run_smt(&self.script, &[])?.trim() {
+            match run(script, &[])?.trim() {
                 "unsat" => Ok(Verdict::EquivalentUnderModel),
                 "unknown" => Ok(Verdict::Unknown(UnknownReason::SolverUnknown)),
                 "sat" => {
@@ -266,11 +296,11 @@ impl Query {
                     // never supply an equivalence verdict for the original model.
                     let replay = format!(
                         "{}(assert (bvule size {}))\n(assert (bvule base (bvsub {} size)))\n",
-                        self.script,
+                        script,
                         word(REPLAY_BYTES),
                         word(u64::MAX)
                     );
-                    match solver.run_smt(&replay, &[])?.trim() {
+                    match run(&replay, &[])?.trim() {
                         "sat" => {}
                         "unsat" => return Err(UnknownReason::ReplayLimit),
                         "unknown" => return Err(UnknownReason::SolverUnknown),
@@ -280,7 +310,7 @@ impl Query {
                             ));
                         }
                     }
-                    let response = solver.run_smt(&replay, &self.names)?;
+                    let response = run(&replay, &self.names)?;
                     let model = parse_named_values(&response, &self.names)?;
                     Ok(Verdict::Counterexample(Box::new(self.replay(&model)?)))
                 }
