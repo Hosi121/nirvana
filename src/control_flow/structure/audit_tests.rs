@@ -832,4 +832,8 @@ fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
     );
     assert!(recovered > 0 && comparisons > 0 && mutants > 0);
     assert_eq!(accepted_mutants, 0, "negative controls must be rejected");
+    assert_eq!(
+        recovered, requested,
+        "fixed CFG recovery coverage regressed"
+    );
 }
