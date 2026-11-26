@@ -642,6 +642,20 @@ split_forward:
     jne split_forward
     jmp .Lforward_self
 .size split_forward,.-split_forward
+.globl split_header
+.type split_header,@function
+split_header:
+    cmpq $0,(%rdi)
+    jne .Lheader_path
+.Lheader_loop:
+    addq $1,24(%rdi)
+    cmpq $0,8(%rdi)
+    jne .Lheader_loop
+.Lheader_path:
+    cmpq $0,16(%rdi)
+    jne .Lheader_loop
+    jmp .Lheader_loop
+.size split_header,.-split_header
 .section .note.GNU-stack,"",@progbits
 "#,
     )
@@ -672,6 +686,7 @@ split_forward:
         "split_linear",
         "split_outer",
         "split_forward",
+        "split_header",
     ] {
         let function = plan
             .functions

@@ -233,45 +233,77 @@ fn plans(source: &Program, analysis: &ControlFlowAnalysis) -> Vec<SplitPlan> {
             steps: cfg.block(to).instructions.len(),
         })
         .collect();
-    for (from, to) in entries {
-        let mut blocks = vec![to];
-        let mut steps = cfg.block(to).instructions.len();
-        while plans.len() < MAX_ATTEMPTS {
-            let current = *blocks.last().expect("entry path");
-            // Drop only dominance-proven natural backedges when choosing the
-            // next forward block. The proposal retains those real edges,
-            // including natural loops internal to the copied region.
-            let mut successors = cfg.block(current).successors.iter().filter(|edge| {
-                !matches!(edge.target, Target::Block(target) if analysis.dominates(target, current))
-            });
-            let Some(first) = successors.next() else {
-                break;
-            };
-            let Target::Block(next) = first.target else {
-                break;
-            };
-            if successors.any(|edge| edge.target != first.target)
-                || next == from
-                || blocks.contains(&next)
-            {
-                break;
+    for &entry in &entries {
+        append_paths(source, analysis, entry, None, &mut plans);
+        if plans.len() == MAX_ATTEMPTS {
+            return plans;
+        }
+    }
+    // A second entry is a candidate header, not a fact about the source CFG.
+    // Side exits can keep targeting it while the copied forward path grows.
+    // Only an actually reducible proposal and the final source/AST checker
+    // can accept this placement; the same attempt budget covers every phase.
+    let headers: BTreeSet<_> = entries.iter().map(|&(_, to)| to).collect();
+    for &entry in &entries {
+        for &header in &headers {
+            if header != entry.0 && header != entry.1 {
+                append_paths(source, analysis, entry, Some(header), &mut plans);
+                if plans.len() == MAX_ATTEMPTS {
+                    return plans;
+                }
             }
-            steps += cfg.block(next).instructions.len();
-            if steps > MAX_COPIED_STEPS {
-                break;
-            }
-            blocks.push(next);
+        }
+    }
+    plans
+}
+
+fn append_paths(
+    source: &Program,
+    analysis: &ControlFlowAnalysis,
+    (from, to): (BlockId, BlockId),
+    header: Option<BlockId>,
+    plans: &mut Vec<SplitPlan>,
+) {
+    let cfg = source.cfg();
+    let mut blocks = vec![to];
+    let mut steps = cfg.block(to).instructions.len();
+    while plans.len() < MAX_ATTEMPTS {
+        let current = *blocks.last().expect("entry path");
+        // Exclude only proven backedges and the nominated boundary for path
+        // discovery. All real edges are retained by proposal(), including
+        // natural loops internal to the copy and side exits to the header.
+        let mut successors = cfg.block(current).successors.iter().filter(|edge| {
+            !matches!(edge.target, Target::Block(target)
+                if analysis.dominates(target, current) || Some(target) == header)
+        });
+        let Some(first) = successors.next() else {
+            break;
+        };
+        let Target::Block(next) = first.target else {
+            break;
+        };
+        if successors.any(|edge| edge.target != first.target)
+            || next == from
+            || blocks.contains(&next)
+        {
+            break;
+        }
+        steps += cfg.block(next).instructions.len();
+        if steps > MAX_COPIED_STEPS {
+            break;
+        }
+        blocks.push(next);
+        if !plans
+            .iter()
+            .any(|plan| plan.from == from && plan.blocks == blocks)
+        {
             plans.push(SplitPlan {
                 from,
                 blocks: blocks.clone(),
                 steps,
             });
         }
-        if plans.len() == MAX_ATTEMPTS {
-            break;
-        }
     }
-    plans
 }
 
 fn proposal(source: &Program, plan: &SplitPlan) -> Option<(Program, Origins)> {
