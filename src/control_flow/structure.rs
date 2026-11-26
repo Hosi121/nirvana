@@ -417,6 +417,10 @@ impl Builder<'_, '_> {
                                 Ok(Some(follow))
                             }
                             Some(PostDomNode::Exit) => Ok(None),
+                            // Keep distinct divergent/returning exits inside
+                            // the loop as separately validated tails. No
+                            // synthetic exit edge or shared follow is needed.
+                            None if self.postdom.is_none() => Ok(None),
                             _ => Err(StructureError::MissingLoopFollow(current)),
                         }
                     }

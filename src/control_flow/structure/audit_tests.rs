@@ -269,6 +269,17 @@ fn mixed_return_and_divergent_loop_exits_have_a_structured_witness() {
         "mixed-exit witness: {evidence:?}; recovery={:?}",
         StructuredFunction::recover(&source).map(|f| f.stats())
     );
+    let function =
+        StructuredFunction::recover(&source).expect("mixed loop exits have a structured witness");
+    for counter in [0, 1, 2, u64::MAX] {
+        for budget in 0..=8 {
+            let input = [counter, 0, 0x55];
+            assert_eq!(
+                source.run_with_memory(&input, 0, &[], budget).unwrap(),
+                function.run_with_memory(&input, 0, &[], budget).unwrap()
+            );
+        }
+    }
 }
 
 #[test]
@@ -291,14 +302,115 @@ fn recovery_should_accept_a_return_or_divergent_arm() {
 #[test]
 #[ignore = "bounded 3000-CFG implementation audit; run explicitly with --ignored --exact"]
 fn generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports() {
+    audit(1000, program);
+}
+
+fn program5(mut graph: usize, profile: usize) -> Program {
+    let template = program(0, profile);
+    let mut instructions = Vec::new();
+    for pc in 0..5u64 {
+        let assignments = template
+            .instructions()
+            .get(pc as usize)
+            .map(|i| i.assignments.clone())
+            .unwrap_or_default();
+        let choice = if pc == 4 {
+            11
+        } else {
+            let x = graph % 12;
+            graph /= 12;
+            x
+        };
+        let control = match choice {
+            0 => Control::Next,
+            1..=5 => Control::Jump(choice as u64 - 1),
+            6..=10 => Control::Branch {
+                condition: if profile == 2 {
+                    Expr::select(r(0), Expr::load(r(1), Width::U8), k(0))
+                } else {
+                    r(0)
+                },
+                target: choice as u64 - 6,
+            },
+            _ => Control::Return(r(2)),
+        };
+        instructions.push(IrInstruction {
+            address: pc,
+            size: 1,
+            assignments,
+            control,
+        });
+    }
+    Program::new(0, 3, instructions).unwrap()
+}
+
+#[test]
+#[ignore = "known bounded-recovery gap: a shared loop latch is duplicated"]
+fn forward_latch_join_fits_one_copy_and_five_steps() {
+    let source = program5(3285, 0);
+    let step = |address| Node::Step {
+        address,
+        assignments: vec![],
+    };
+    let body = vec![
+        Node::Loop(vec![
+            step(0),
+            Node::If {
+                condition: r(0),
+                taken: vec![],
+                not_taken: vec![
+                    step(1),
+                    Node::If {
+                        condition: r(0),
+                        taken: vec![],
+                        not_taken: vec![
+                            step(2),
+                            Node::If {
+                                condition: r(0),
+                                taken: vec![Node::Break],
+                                not_taken: vec![],
+                            },
+                        ],
+                    },
+                ],
+            },
+            step(3),
+        ]),
+        step(4),
+        Node::Return(r(2)),
+    ];
+    structure_verify::validate(&source, &body).unwrap();
+    let function = StructuredFunction::recover_with_step_limit(&source, 1, 5)
+        .expect("the shared latch has a validated one-copy, five-step tree");
+    assert_eq!(function.stats().extra_block_copies, 0);
+    assert_eq!(function.stats().emitted_block_copies, 5);
+    for counter in [0, 1, 2, u64::MAX] {
+        for budget in 0..=12 {
+            let input = [counter, 0, 0x55];
+            assert_eq!(
+                source.run_with_memory(&input, 0, &[], budget).unwrap(),
+                function.run_with_memory(&input, 0, &[], budget).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "bounded 62208-program follow-up audit; run explicitly"]
+fn generated_five_instruction_cfgs_preserve_complete_rust_reports() {
+    audit(12usize.pow(4), program5);
+}
+
+fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
+    let requested = graphs * 3;
     let mut recovered = 0;
     let mut comparisons = 0;
     let mut rejected = BTreeMap::<String, (usize, usize, usize)>::new();
     let mut mutants = 0;
     let mut accepted_mutants = 0;
     for profile in 0..3 {
-        for graph in 0..1000 {
-            let source = program(graph, profile);
+        for graph in 0..graphs {
+            let source = make(graph, profile);
             let function = match StructuredFunction::recover(&source) {
                 Ok(f) => f,
                 Err(error) => {
@@ -358,7 +470,7 @@ fn generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports() {
         write!(errors,"{{\"error\":{error:?},\"count\":{count},\"example_graph\":{graph},\"example_profile\":{profile}}}").unwrap();
     }
     let report = format!(
-        "{{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":3000,\"recovered\":{recovered},\"comparisons\":{comparisons},\"mutants\":{mutants},\"accepted_mutants\":{accepted_mutants},\"rejected\":[{errors}]}}\n"
+        "{{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":{requested},\"recovered\":{recovered},\"comparisons\":{comparisons},\"mutants\":{mutants},\"accepted_mutants\":{accepted_mutants},\"rejected\":[{errors}]}}\n"
     );
     if let Some(path) = std::env::var_os("NIRVANA_STRUCTURE_AUDIT_REPORT") {
         std::fs::write(path, &report).unwrap();
@@ -366,7 +478,7 @@ fn generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports() {
     println!("{report}");
     assert_eq!(
         recovered + rejected.values().map(|(count, _, _)| count).sum::<usize>(),
-        3000
+        requested
     );
     assert!(recovered > 0 && comparisons > 0 && mutants > 0);
 }

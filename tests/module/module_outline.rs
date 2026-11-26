@@ -536,6 +536,122 @@ fn reentry_proof_distinguishes_real_infinite_loops_from_silent_routing_cycles() 
 }
 
 #[test]
+fn divergent_regions_keep_every_resume_budget_and_full_generated_c_state() {
+    use crate::support::module_fixture as fixture;
+    use nirvana::module_ir::{Limits, RejectImports};
+    let scratch = native::Scratch::new();
+    let source = scratch.0.join("divergent.S");
+    let executable = scratch.0.join("divergent");
+    std::fs::write(
+        &source,
+        r#"
+.text
+.globl main
+.type main,@function
+main:
+    cmpq $0,(%rdi)
+    jne .Lreturn
+.Lspin:
+    jmp .Lspin
+.Lreturn:
+    mov 16(%rdi),%rax
+    ret
+.size main,.-main
+.globl mixed
+.type mixed,@function
+mixed:
+    cmpq $0,(%rdi)
+    jne .Lmixed_return
+    cmpq $0,8(%rdi)
+    jne mixed
+.Lmixed_spin:
+    jmp .Lmixed_spin
+.Lmixed_return:
+    mov 16(%rdi),%rax
+    ret
+.size mixed,.-mixed
+.section .note.GNU-stack,"",@progbits
+"#,
+    )
+    .unwrap();
+    native::compile(
+        Command::new("cc")
+            .args(["-nostdlib", "-no-pie", "-Wl,-e,main"])
+            .arg(source)
+            .arg("-o")
+            .arg(&executable),
+    );
+    let module = module_ir::lift_elf(
+        &std::fs::read(executable).unwrap(),
+        "main",
+        LinkedOptions {
+            load_bias: 0,
+            stack_size: 4096,
+        },
+    )
+    .unwrap();
+    let plan = module_outline::recover(&module.program).unwrap();
+    check_plan(&module, &plan);
+    for name in ["main", "mixed"] {
+        let function = plan
+            .functions
+            .iter()
+            .find(|f| f.function.name == name)
+            .unwrap();
+        assert!(
+            function.structured.is_some(),
+            "{name} must retain a checked structured body"
+        );
+    }
+    let initial = module.initial_registers();
+    let mut cases = Vec::new();
+    let mut rows = Vec::new();
+    let mut memories = Vec::new();
+    for instruction in module.program.instructions() {
+        for input in [[0, 0, 85, 0], [0, 1, 85, 0], [1, 0, 85, 0], [1, 1, 85, 0]] {
+            for budget in 0..=10 {
+                let case = fixture::Case {
+                    input,
+                    pc: instruction.address(),
+                    budget,
+                    patch: None,
+                };
+                rows.push(fixture::expected_with_state(&module, &case, Some(&initial)).0);
+                let (registers, memory) =
+                    fixture::prepare_with_state(&module, &case, Some(&initial));
+                let report = module
+                    .program
+                    .run_from(
+                        case.pc,
+                        &registers,
+                        module.image.memory_base,
+                        &memory,
+                        Limits {
+                            instructions: budget,
+                            imports: 0,
+                        },
+                        &mut RejectImports,
+                    )
+                    .unwrap();
+                memories.push(report.state.memory);
+                cases.push(case);
+            }
+        }
+    }
+    assert_eq!(
+        fixture::check_generated_with_memory(
+            &module, &cases, &rows, &memories, &scratch.0, &initial
+        ),
+        cases.len() * 6
+    );
+    println!(
+        "{} resume/input/budget cases, {} complete C-state comparisons",
+        cases.len(),
+        cases.len() * 6
+    );
+}
+
+#[test]
 fn whole_http_server_modules_have_checked_function_bodies() {
     let scratch = native::Scratch::new();
     let fixtures = native::fixture_root().join("http-server");
