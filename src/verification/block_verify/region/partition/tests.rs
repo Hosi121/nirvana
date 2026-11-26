@@ -45,6 +45,31 @@ fn partitions_keep_the_original_query_and_zero_budget_starts_no_solver() {
     assert!(q.input_partitions(Reg(1), 2).is_err());
     assert!(q.input_partitions(Reg(0), 0).is_err());
     assert!(q.input_partitions(Reg(0), 5).is_err());
+    assert!(
+        q.input_partitions(Reg(0), 2)
+            .unwrap()
+            .with_input(Reg(1), 2)
+            .is_err()
+    );
+    assert!(
+        q.input_partitions(Reg(0), 4)
+            .unwrap()
+            .with_input(Reg(0), 4)
+            .unwrap()
+            .with_input(Reg(0), 1)
+            .is_err()
+    );
+    let product = q
+        .input_partitions(Reg(0), 2)
+        .unwrap()
+        .with_input(Reg(0), 2)
+        .unwrap();
+    assert_eq!(product.smt2().count(), 16);
+    assert!(product.smt2().all(|script| script.starts_with(q.smt2())));
+    let result = product.check(&Solver::new("/nirvana-no-solver"), Duration::ZERO);
+    assert_eq!(result.checked, 0);
+    assert_eq!(result.total, 16);
+
     assert_eq!(q.input_partitions(Reg(0), 4).unwrap().smt2().count(), 16);
     let refined = q
         .input_partitions(Reg(0), 2)
@@ -93,6 +118,17 @@ fn generated_guards_cover_all_words_and_omitting_a_case_is_detected() {
     let input = input_guards("input", 2);
     let output = observations.partition_guards("normal", "tag");
     families.push((String::from("(declare-fun normal () Bool)\n(declare-fun tag () (_ BitVec 64))\n(declare-fun input () (_ BitVec 64))\n"),input.iter().flat_map(|i|output.iter().map(move|o|format!("(and {i} {o})"))).collect()));
+
+    let other = input_guards("other", 2);
+    families.push((
+        String::from(
+            "(declare-fun input () (_ BitVec 64))\n(declare-fun other () (_ BitVec 64))\n",
+        ),
+        input
+            .iter()
+            .flat_map(|i| other.iter().map(move |o| format!("(and {i} {o})")))
+            .collect(),
+    ));
     for (declarations, guards) in families {
         let formula = |guards: &[String]| {
             format!(
@@ -129,7 +165,16 @@ fn generated_guards_cover_all_words_and_omitting_a_case_is_detected() {
         .unwrap()
         .check(&solver, Duration::from_secs(5));
     assert!(matches!(refined.verdict, Verdict::Counterexample(_)));
-    println!("PARTITION-COVERAGE all_words=true omission_controls=50");
+    assert!(matches!(
+        q.input_partitions(Reg(0), 2)
+            .unwrap()
+            .with_input(Reg(0), 2)
+            .unwrap()
+            .check(&solver, Duration::from_secs(5))
+            .verdict,
+        Verdict::Counterexample(_)
+    ));
+    println!("PARTITION-COVERAGE all_words=true omission_controls=66");
 }
 
 #[test]

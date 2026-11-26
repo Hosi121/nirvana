@@ -18,20 +18,25 @@ pub struct InputPartitions<'a> {
     model: &'static str,
 }
 impl InputPartitions<'_> {
-    /// Refine every input case by the exhaustive fault/return/default cases.
-    /// The original disequality and every observation remain in each script.
-    pub fn with_return_partitions(mut self) -> Result<Self, Error> {
+    /// Cross another exhaustive input family with the existing cases.
+    pub fn with_input(mut self, register: Reg, bits: u8) -> Result<Self, Error> {
+        let other = self.query.input_partitions(register, bits)?;
+        self.refine(&other.guards)?;
+        self.model = "checked-input-product-partitions-v1";
+        Ok(self)
+    }
+    fn refine(&mut self, other: &[String]) -> Result<(), Error> {
         let count = self
             .guards
             .len()
-            .checked_mul(self.query.partitions.len())
+            .checked_mul(other.len())
             .ok_or(Error::Limit)?;
         if count > 256 {
             return Err(Error::Limit);
         }
         let mut guards = Vec::with_capacity(count);
         for input in &self.guards {
-            for output in &self.query.partitions {
+            for output in other {
                 let guard = format!("(and {input} {output})");
                 if self
                     .query
@@ -47,6 +52,12 @@ impl InputPartitions<'_> {
             }
         }
         self.guards = guards;
+        Ok(())
+    }
+    /// Refine every input case by the exhaustive fault/return/default cases.
+    /// The original disequality and every observation remain in each script.
+    pub fn with_return_partitions(mut self) -> Result<Self, Error> {
+        self.refine(&self.query.partitions)?;
         self.model = "checked-input-return-partitions-v1";
         Ok(self)
     }
