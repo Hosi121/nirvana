@@ -1728,5 +1728,44 @@
       "temporary_outputs_cleaned": true
     }
   },
-  "next_decision": "Automate the surrounding control correspondence: early exits, per-lane limit guards, and the final-lane update. Feed matched expression families into candidate construction, require completed unfolding and a source-bound exit interface, and measure source quality with the same32+2 M0 gate before default adoption. Normal GCC/Clang nested distances remain15/30."
+  "next_decision": "Automate the surrounding control correspondence: early exits, per-lane limit guards, and the final-lane update. Feed matched expression families into candidate construction, require completed unfolding and a source-bound exit interface, and measure source quality with the same32+2 M0 gate before default adoption. Normal GCC/Clang nested distances remain15/30.",
+  "automatic_boundary_pilot": {
+    "status": "Exploratory source-bound CFG envelope selection; not yet a maintained candidate-construction API.",
+    "algorithm": "Select the smallest natural loop containing every discovered lane; use its header and latches, plus non-latch exits. Follow outside jump trampolines containing only empty statements or pure identity register copies. Construct and validate the source region and continuation interface.",
+    "source": "Same archived13-slot source (padded with one unused counter input); no hardcoded PC/register-role hints enter selection. Fixture assertions compare the resulting addresses against the retained baseline.",
+    "result": {
+      "returncode": 0,
+      "source_restored": true,
+      "source_sha256": "e11f139ad473ae145d3fade1b594c5e8febc8df19290792889d23323d363551f",
+      "log": "\nrunning 1 test\ntest region_extraction::liveout_pilot::automatic_lane_boundary_pilot ... AUTO-BOUNDARY header=32 first_lane=110 latches=[198] abrupt={375} stops=[32, 198, 375] region_steps=105 interface_rows=4\nAUTO-BOUNDARY baseline_projection_identical=true hints=false\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.02s\n\n   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 10.76s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n"
+    },
+    "initial_attempt": {
+      "returncode": 101,
+      "source_restored": true,
+      "source_sha256": "e11f139ad473ae145d3fade1b594c5e8febc8df19290792889d23323d363551f",
+      "log": "\nrunning 1 test\ntest region_extraction::liveout_pilot::automatic_lane_boundary_pilot ... AUTO-BOUNDARY header=32 first_lane=110 latches=[198] abrupt={358, 375} stops=[32, 198, 358, 375] region_steps=104 interface_rows=5\nFAILED\n\nfailures:\n\nfailures:\n    region_extraction::liveout_pilot::automatic_lane_boundary_pilot\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.01s\n\n   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 11.02s\n     Running tests/verification.rs (target/cargo-cache/debug/deps/verification-e5c05e45e6f3d01a)\n\nthread 'region_extraction::liveout_pilot::automatic_lane_boundary_pilot' (1801856) panicked at /home/hosi/nirvana/.git/nirvana-boundary-pilot.rs:40:94:\nassertion `left == right` failed\n  left: {358, 375}\n right: {375}\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nerror: test failed, to rerun pass `--test verification`\n"
+    },
+    "initial_attempt_interpretation": "The empty-only trampoline filter kept an extra boundary358 because its block contains r9=r9. Treating an exact identity copy as a no-op for boundary selection canonicalizes that exit to375. Source instructions and their effects remain in the extracted region.",
+    "selected": {
+      "header": 32,
+      "first_lane": 110,
+      "latches": [
+        198
+      ],
+      "abrupt_exits": [
+        375
+      ],
+      "stops": [
+        32,
+        198,
+        375
+      ],
+      "region_instructions": 105,
+      "interface_rows": 4
+    },
+    "baseline_projection_identical": true,
+    "source_text": "use super::*;\nuse nirvana::ir::{Assignment,BinaryOp,Control,Expr,IrInstruction,Place,UnaryOp,Width};\ninclude!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.git/nirvana-actual-loop-source.rs\"));\n#[test]\n#[ignore]\nfn automatic_lane_boundary_pilot() {\n let source=Program::new(0,14,source_instructions()).unwrap();\n let found=nirvana::lane_patterns::discover(&source).unwrap();\n let group=&found.groups()[0];let cfg=source.cfg();\n let block_for=|pc| {let index=source.instructions().iter().position(|i|i.address==pc).unwrap();cfg.blocks().iter().find(|block|block.instructions.contains(&index)).unwrap().id};\n let members:Vec<_>=group.kernels.iter().map(|kernel|block_for(kernel.load.instruction)).collect();\n let analysis=ControlFlowAnalysis::compute(cfg).unwrap();\n let natural=analysis.natural_loops().iter().filter(|natural|members.iter().all(|block|natural.body.contains(block))).min_by_key(|natural|natural.body.len()).unwrap();\n let mut abrupt=BTreeSet::new();\n for &id in &natural.body {\n  if natural.latches.contains(&id){continue;}\n  for edge in &cfg.block(id).successors {\n   let Target::Block(mut target)=edge.target else{panic!(\"closed source\")};\n   if natural.body.contains(&target){continue;}\n   let mut seen=BTreeSet::new();\n   while seen.insert(target) {\n    let block=cfg.block(target);let instructions=&source.instructions()[block.instructions.clone()];\n    if instructions.iter().flat_map(|instruction|&instruction.assignments).any(|assignment|!matches!((&assignment.destination,&assignment.value),(Place::Register(d),Expr::Register(s))if d==s)){break;}\n    let Control::Jump(pc)=instructions.last().unwrap().control else{break;};\n    let next=cfg.block_at(pc).unwrap();if natural.body.contains(&next){break;}\n    target=next;\n   }\n   abrupt.insert(cfg.block(target).start);\n  }\n }\n let header=cfg.block(natural.header).start;\n let latches:Vec<_>=natural.latches.iter().map(|&id|cfg.block(id).start).collect();\n let mut stops=BTreeSet::from([header]);stops.extend(latches.iter().copied());stops.extend(abrupt.iter().copied());\n let stops:Vec<_>=stops.into_iter().collect();\n let widths=ValueWidths::analyze(&source);\n let region=extract(&source,header,&stops,Some(&widths)).unwrap();\n let interface=nirvana::block_verify::region::extraction::live_out::derive(&region).unwrap();\n assert!(interface.matches(&region));\n println!(\"AUTO-BOUNDARY header={header} first_lane={} latches={latches:?} abrupt={abrupt:?} stops={stops:?} region_steps={} interface_rows={}\",cfg.block(members[0]).start,region.program().instructions().len(),interface.returns().len());\n assert_eq!(header,32);assert_eq!(cfg.block(members[0]).start,110);assert_eq!(latches,[198]);assert_eq!(abrupt,BTreeSet::from([375]));\n let baseline=extract(&source,32,&[32,198,375],Some(&widths)).unwrap();\n assert_eq!(region.program().instructions(),baseline.program().instructions());\n println!(\"AUTO-BOUNDARY baseline_projection_identical=true hints=false\");\n}\n",
+    "source_sha256": "6abf1538b28437abf02a090639a1d7b87d55c8665aa74244c2676701b2fecc86",
+    "reproduce": "Materialize the archived source-ir.rs from the baseline checkpoint, include this pilot in the existing region_extraction test module using the same temporary/restored-source pattern as reproduction.launcher_python, and run automatic_lane_boundary_pilot. No solver is needed for this boundary-selection trial."
+  }
 }
