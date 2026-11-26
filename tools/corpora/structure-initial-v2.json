@@ -1,0 +1,105 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-initial-v2",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "gcc-O3",
+    "clang18-O2",
+    "clang18-O3"
+  ],
+  "cohort_policy": "six development source families (including both consumed v1 holdout families) and two fresh holdout families; freeze the decompiler and sources before evaluating the new holdout",
+  "cases": [
+    {
+      "id": "shared-return",
+      "family": "fixture-shared-tail",
+      "cohort": "development",
+      "source": "tests/fixtures/cases/shared-tail.c",
+      "source_sha256": "b9008e6fd6ec64fb6072b9166cea6b60f01aa9478bdc91dbdff9e710e3085556",
+      "function": "fixture",
+      "shape": "shared return",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "shared-cleanup",
+      "family": "evaluation-shared-cleanup",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/shared-cleanup.c",
+      "source_sha256": "e07a34379ffa6f866ca0c1443b86c6ee49c9d0b38532ecc067aa29c34993ec70",
+      "function": "fixture",
+      "shape": "common cleanup after conditional effects",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "loop-shared-exit",
+      "family": "fixture-multi-exit-prefix",
+      "cohort": "development",
+      "source": "tests/fixtures/cases/multi-exit-prefix.c",
+      "source_sha256": "454f18a22c3a77b1d126c50a0190047e50d5e2aa79c38113e475ddaad30c43c5",
+      "function": "fixture",
+      "shape": "shared loop exit",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "goto-cleanup",
+      "family": "evaluation-goto-cleanup",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/goto-cleanup.c",
+      "source_sha256": "b48bfeb324d227a27f18c20a67bbebf5e1ae2b7ed0d4f11464d1c35d0f9bc15e",
+      "function": "fixture",
+      "shape": "source goto cleanup",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "search-accumulate",
+      "family": "evaluation-search-accumulate",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/search-accumulate.c",
+      "source_sha256": "883feb0cdc10844c16e1c4774932218262ac128acdc10687a6f4ec9dfa728517",
+      "function": "fixture",
+      "shape": "bounded search and conditional output",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "nested-guard",
+      "family": "evaluation-nested-guard",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/nested-guard.c",
+      "source_sha256": "a6c7865d8c656f787ef17cbc83b735dee0f745c852a93972e27a5c492955c552",
+      "function": "fixture",
+      "shape": "nested bounded loops and early cleanup",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "bounded-binary-gcd",
+      "family": "evaluation-bounded-binary-gcd",
+      "cohort": "holdout",
+      "source": "tests/fixtures/evaluation/bounded-binary-gcd.c",
+      "source_sha256": "a9dbef3f85e489b733f051ab9ffc896b0faac525fa83618fde2760635e606be2",
+      "function": "fixture",
+      "shape": "bounded binary GCD with progress state",
+      "origin": "repository-authored fixture"
+    },
+    {
+      "id": "bitstream-checksum",
+      "family": "evaluation-bitstream-checksum",
+      "cohort": "holdout",
+      "source": "tests/fixtures/evaluation/bitstream-checksum.c",
+      "source_sha256": "29dfc0db3c6ea7b18142b00a6cadcad07d6e93cc5625d2a52ff24ff0b3cd52c2",
+      "function": "fixture",
+      "shape": "nested bitstream checksum with conditional shift and xor",
+      "origin": "repository-authored fixture"
+    }
+  ],
+  "lineage": {
+    "previous_corpus": "tools/corpora/structure-initial-v1.json",
+    "previous_sha256": "6b5ece7ac0c9b15fe8081f519cff0c1d7ee48475a6f894d5775ba9de28df8184",
+    "consumed_holdout_families": [
+      "evaluation-search-accumulate",
+      "evaluation-nested-guard"
+    ],
+    "reason": "Aggregate v1 holdout structure-distance regressions rejected expanded single-function readable recovery. No individual holdout source or generated contents were inspected. The aggregate outcome affected global policy selection, so those families now belong to development.",
+    "freeze_rule": "The fresh families are committed after recovery policy selection and before their first decompiler evaluation. Results remain aggregate-only for adoption; tuning consumes the affected family and requires replacement.",
+    "recovery_policy_revision": "344339bfe88eeb9dda74a94279a6342e8ae6814b"
+  }
+}
