@@ -725,9 +725,7 @@ fn branch_budget_cases() -> Vec<Case> {
 }
 
 #[test]
-fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
-    // Two entries into the inner cycle: the bounded split search still
-    // duplicates its shared outer latch beyond the default copy limit.
+fn split_nested_loop_exits_use_the_structured_checked_renderer() {
     let branch = |target| Control::Branch {
         condition: r(3),
         target,
@@ -741,6 +739,35 @@ fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
             core(2, vec![], branch(1)),
             core(3, vec![], Control::Jump(0)),
             core(4, vec![], Control::Return(c(1))),
+        ],
+        PUTS,
+    )
+    .unwrap();
+    let output = nirvana::effects_readable::emit_c(&program).unwrap();
+    assert!(output.fallback_reason.is_none());
+    let inputs = branch_budget_cases();
+    assert_eq!(compare(&program, &inputs, "split-loop-exits"), 52);
+}
+
+#[test]
+fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
+    // Independent multiple-entry cycles need two separate entry redirects;
+    // the bounded one-proposal split search retains the checked fallback.
+    let branch = |target| Control::Branch {
+        condition: r(3),
+        target,
+    };
+    let program = Program::new(
+        0,
+        32,
+        vec![
+            core(0, vec![], branch(2)),
+            core(1, vec![], Control::Jump(2)),
+            core(2, vec![], branch(1)),
+            core(3, vec![], branch(5)),
+            core(4, vec![], Control::Jump(5)),
+            core(5, vec![], branch(4)),
+            core(6, vec![], Control::Return(c(1))),
         ],
         PUTS,
     )

@@ -425,6 +425,23 @@ impl Builder<'_, '_> {
                         }
                     }
                 };
+                let normal_follow = if exits.len() > 1
+                    && let (Some(dag), Some(parent)) = (&mut self.forward_dag, contexts.last())
+                {
+                    // Exit routes can share a tail before an outer backedge,
+                    // even when finite-path post-dominance is unavailable or
+                    // selects a later follow. Keep the search outside this
+                    // loop and inside its active parent's lexical scope.
+                    dag.common_join_all(exits.iter().copied(), stop, |id| {
+                        parent.body.contains(&id)
+                            && !natural_loop.body.contains(&id)
+                            && Self::boundary(id, contexts).is_none()
+                    })
+                    .map(|follow| Ok(Some(follow)))
+                    .unwrap_or(normal_follow)
+                } else {
+                    normal_follow
+                };
                 let follow = if let Some(plan) = &mut self.follow_plan {
                     plan.select(current, &exits, contexts, normal_follow)?
                 } else {

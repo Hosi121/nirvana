@@ -400,6 +400,63 @@ fn generated_five_instruction_cfgs_preserve_complete_rust_reports() {
     audit(12usize.pow(4), program5);
 }
 
+#[test]
+fn split_nested_loop_shares_its_exit_within_two_copies_and_six_steps() {
+    for profile in 0..3 {
+        let source = program5(2852, profile);
+        let step = |address: usize| Node::Step {
+            address: address as u64,
+            assignments: source.instructions()[address].assignments.clone(),
+        };
+        let Control::Branch { condition, .. } = &source.instructions()[0].control else {
+            unreachable!()
+        };
+        let branch = |taken, not_taken| Node::If {
+            condition: condition.clone(),
+            taken,
+            not_taken,
+        };
+        let body = vec![Node::Loop(vec![
+            step(0),
+            branch(
+                vec![step(2), branch(vec![], vec![step(3), Node::Continue])],
+                vec![],
+            ),
+            Node::Loop(vec![
+                step(1),
+                branch(vec![Node::Break], vec![]),
+                step(2),
+                branch(vec![Node::Continue], vec![Node::Break]),
+            ]),
+            step(3),
+        ])];
+        structure_verify::validate(&source, &body).unwrap();
+        let recovered = StructuredFunction::recover_with_step_limit(&source, 2, 6)
+            .expect("the split inner loop has a validated two-copy, six-step tree");
+        assert!(recovered.split_evidence().is_some());
+        assert_eq!(recovered.evidence().compared_copies, 6);
+        assert!(StructuredFunction::recover_with_step_limit(&source, 2, 5).is_err());
+        assert!(StructuredFunction::recover_with_step_limit(&source, 1, 6).is_err());
+        for counter in [0, 1, 2, u64::MAX] {
+            for pointer in [0, 1, 3, u64::MAX] {
+                for memory in [&[][..], &[1, 2, 3, 4][..]] {
+                    for budget in 0..=12 {
+                        let input = [counter, pointer, 0x55];
+                        let expected = source.run_with_memory(&input, 0, memory, budget).unwrap();
+                        assert_eq!(expected, run_ast(&body, &input, memory, budget));
+                        assert_eq!(
+                            expected,
+                            recovered
+                                .run_with_memory(&input, 0, memory, budget)
+                                .unwrap()
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn audit(graphs: usize, make: fn(usize, usize) -> Program) {
     let requested = graphs * 3;
     let mut recovered = 0;
