@@ -319,15 +319,9 @@ fn actual_selected_display_register_projection_and_region_queries() {
     );
 }
 
-#[test]
-#[ignore = "requires the Clang18 development fixture and Z3; validates real prepared storage lowering"]
-fn actual_prepared_display_checked_storage_lowering() {
-    use nirvana::block_verify::region::registers::compact;
+fn prepared_storage(bytes: &[u8]) -> (std::sync::Arc<Program>, Vec<Reg>) {
     use nirvana::readable::{self, ReadableOptions, SignedStorageProvenance};
-    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
-    std::fs::create_dir_all(&directory).unwrap();
-    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
-    let raw = nirvana::frontend::lift_elf_auto(&bytes, "fixture")
+    let raw = nirvana::frontend::lift_elf_auto(bytes, "fixture")
         .unwrap()
         .program;
     let output = readable::emit_middle_c_with_storage_provenance(
@@ -343,12 +337,23 @@ fn actual_prepared_display_checked_storage_lowering() {
     let SignedStorageProvenance::Captured(snapshot) = output.signed_storage_provenance else {
         panic!("no prepared source");
     };
-    let source = &snapshot.source;
+    (snapshot.source.clone(), output.parameters)
+}
+
+#[test]
+#[ignore = "requires the Clang18 development fixture and Z3; validates real prepared storage lowering"]
+fn actual_prepared_display_checked_storage_lowering() {
+    use nirvana::block_verify::region::registers::compact;
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let (source, parameters) = prepared_storage(&bytes);
+    let source = &source;
     let dense = compact(source).unwrap();
     let eligible: Vec<_> = dense
         .registers()
         .iter()
-        .filter(|r| !output.parameters.contains(r))
+        .filter(|r| !parameters.contains(r))
         .copied()
         .collect();
     let allocation = nirvana::allocation::allocate_locals(source, &eligible).unwrap();
@@ -424,3 +429,6 @@ fn actual_prepared_display_checked_storage_lowering() {
         query.smt2().len()
     );
 }
+
+#[path = "region_extraction/lanes.rs"]
+mod lanes;

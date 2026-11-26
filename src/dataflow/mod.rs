@@ -5,6 +5,7 @@ pub mod allocation;
 pub mod allocation_verify;
 pub mod call_footprint;
 pub mod known_bits;
+pub mod lane_patterns;
 pub mod local_identity;
 pub mod memory_ssa;
 pub mod memory_values;
