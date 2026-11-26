@@ -1,0 +1,182 @@
+{
+  "schema": "nirvana-rust-structure-audit-checkpoint-v1",
+  "milestone": "M2 implementation correspondence and recovery coverage",
+  "status": "audit complete; one recovery coverage-gap class confirmed; implementation fix pending",
+  "baseline_revision": "4367447cbc6313959d5e28037bcc278573ed9582",
+  "audit_revision": "4b98de7a82b78e0e657c9653d37a4cdeaeb57e6a",
+  "corpus": {
+    "id": "rust-cfg4-effects3-v1",
+    "cfg_topologies": 1000,
+    "effect_profiles": 3,
+    "source_instructions": 4,
+    "entry": 0,
+    "last_instruction": "Return(r2)",
+    "first_three_controls": "For each independent digit0..9: Next; Jump(0..3); Branch(condition,0..3); Return(r2)",
+    "effects": [
+      "none",
+      "register dependency chain and byte Store",
+      "partial Store prefix, faulting Load and lazy Select"
+    ],
+    "register_count": 3,
+    "counter_hex": [
+      "0x0",
+      "0x1",
+      "0x2",
+      "0xffffffffffffffff"
+    ],
+    "pointer_hex": [
+      "0x0",
+      "0x1",
+      "0x3",
+      "0xffffffffffffffff"
+    ],
+    "accumulator_hex": "0x55",
+    "memory_base": 0,
+    "memories": [
+      [],
+      [
+        1,
+        2,
+        3,
+        4
+      ]
+    ],
+    "budgets": [
+      0,
+      6
+    ],
+    "default_copy_limit": 2
+  },
+  "observation": "Exact RunReport: status/return/fault, every IR register, RAM/base/layout, trace and attempted instruction. Real Program::run_with_memory versus StructuredFunction::run_with_memory; shared primitive Machine semantics.",
+  "results": {
+    "schema": "nirvana-rust-structure-audit-v1",
+    "requested": 3000,
+    "recovered": 2841,
+    "comparisons": 636384,
+    "mutants": 9799,
+    "accepted_mutants": 0,
+    "rejected": [
+      {
+        "error": "Irreducible",
+        "count": 15,
+        "example_graph": 207,
+        "example_profile": 0
+      },
+      {
+        "error": "MissingJoin(BlockId(0))",
+        "count": 126,
+        "example_graph": 27,
+        "example_profile": 0
+      },
+      {
+        "error": "MissingJoin(BlockId(1))",
+        "count": 9,
+        "example_graph": 382,
+        "example_profile": 0
+      },
+      {
+        "error": "MissingJoin(BlockId(2))",
+        "count": 3,
+        "example_graph": 623,
+        "example_profile": 0
+      },
+      {
+        "error": "MissingLoopFollow(BlockId(0))",
+        "count": 6,
+        "example_graph": 358,
+        "example_profile": 0
+      }
+    ]
+  },
+  "findings": [
+    {
+      "claim_id": "STRUCT-DIVERGENT-001",
+      "drift_class": "coverage-gap",
+      "epistemic_status": "machine-confirmed recovery refusal and accepted constructive AST; source-inspected root cause",
+      "source_of_truth": [
+        "docs/equivalence.md",
+        "docs/x86-64-roadmap.md"
+      ],
+      "symptoms": [
+        {
+          "shape": "If one successor returns and the other is a self-loop",
+          "minimal_source_ir": [
+            "0: Branch(r0,target2,fallthrough1)",
+            "1: Jump1",
+            "2: Return(r2)"
+          ],
+          "manual_ast": "Step0; If(r0, [Step2,Return(r2)], [Loop([Step1])])",
+          "validation": {
+            "original_steps": 3,
+            "compared_copies": 3,
+            "flow_nodes": 7
+          },
+          "full_report_comparisons": 36,
+          "recovery_error": "MissingJoin(BlockId(0))"
+        },
+        {
+          "shape": "A loop exits to either Return or a divergent loop",
+          "generator_example": {
+            "graph": 358,
+            "profile": 0
+          },
+          "validation": {
+            "original_steps": 4,
+            "compared_copies": 4,
+            "flow_nodes": 10
+          },
+          "full_report_comparisons": 36,
+          "recovery_error": "MissingLoopFollow(BlockId(0))"
+        }
+      ],
+      "cause": "PostDominators deliberately rejects reachable blocks without a real exit path. Recovery drops that result to None, then requires post-dominance for branch joins and multi-exit loop follows. Divergent arms lack an alternative region-recovery route.",
+      "recommended_fix_target": "Builder::region branch/follow fallback when post-dominance is unavailable; preserve the finite-exit-path contract of PostDominators.",
+      "known_failing_test": "control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm",
+      "fix_status": "pending; this change adds audit/reproduction tests only",
+      "model_relation": "The prior six-pair Quint trial did not contain these mixed terminating/divergent shapes. Its finite result remains scoped to those pairs."
+    }
+  ],
+  "source_sha256": {
+    "src/control_flow/structure/audit_tests.rs": "f162a14ee8e93f026d55db9c9f828ed071d7c543fdb97415fbb985db10b35ab9",
+    "src/control_flow/structure.rs": "fad407a606379bc234a023f7063402a1d745c77f0d4cb52815863a71882a8c20",
+    "src/control_flow/structure_verify.rs": "f614de7c3a5603bcab5d0e73a3243be793c05b4fdaf9daf2f64dd0e7190c1268",
+    "src/control_flow/postdom.rs": "7f8c03b8c6e75e25f1092b51d4c6aca0e674268f656dcc481c89538688c7d52d",
+    "src/model/ir.rs": "756d191384c96fc75d56c5c724bcfdfa29b8caf2f89011967d271978c671ac2a"
+  },
+  "validation": {
+    "positive_suite": "3 passed",
+    "known_failure": "1 failed with MissingJoin, exit101; explicitly ignored by default",
+    "related_default_suite": "3 passed,2ignored",
+    "clippy": "passed",
+    "rustfmt": "passed",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  },
+  "logs": {
+    "rust-structure-audit-final": {
+      "sha256": "a0799f46858f1b08c384cc4c178b15854ab88f626f394d7a998b452cdad7fb24",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.54s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 3 tests\nmixed-exit witness: StructureEvidence { original_steps: 4, compared_copies: 4, flow_nodes: 10 }; recovery=Err(MissingLoopFollow(BlockId(0)))\nconstructive structured witness: StructureEvidence { original_steps: 3, compared_copies: 3, flow_nodes: 7 }; recovery=Err(MissingJoin(BlockId(0)))\ntest control_flow::structure::audit_tests::mixed_return_and_divergent_loop_exits_have_a_structured_witness ... ok\ntest control_flow::structure::audit_tests::divergent_arm_has_a_valid_structured_witness_with_exact_rust_reports ... ok\n{\"schema\":\"nirvana-rust-structure-audit-v1\",\"requested\":3000,\"recovered\":2841,\"comparisons\":636384,\"mutants\":9799,\"accepted_mutants\":0,\"rejected\":[{\"error\":\"Irreducible\",\"count\":15,\"example_graph\":207,\"example_profile\":0},{\"error\":\"MissingJoin(BlockId(0))\",\"count\":126,\"example_graph\":27,\"example_profile\":0},{\"error\":\"MissingJoin(BlockId(1))\",\"count\":9,\"example_graph\":382,\"example_profile\":0},{\"error\":\"MissingJoin(BlockId(2))\",\"count\":3,\"example_graph\":623,\"example_profile\":0},{\"error\":\"MissingLoopFollow(BlockId(0))\",\"count\":6,\"example_graph\":358,\"example_profile\":0}]}\n\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 258 filtered out; finished in 0.59s\n\n"
+    },
+    "rust-divergent-repro-final": {
+      "sha256": "918b68308dd1d634dacb6337494ea79a9b50ce90d70a076e563bd99a72e3c206",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 9.34s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 1 test\n\nthread 'control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm' (736641) panicked at src/control_flow/structure/audit_tests.rs:279:42:\na validated structured witness exists: MissingJoin(BlockId(0))\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm ... FAILED\n\nfailures:\n\nfailures:\n    control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 260 filtered out; finished in 0.00s\n\nerror: test failed, to rerun pass `--lib`\n"
+    },
+    "rust-structure-audit-clippy": {
+      "sha256": "605f7689f74a03a083acbd65e59c6ce2bee8ee6bd845d0da0b9899f968d80421",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `dev` profile [unoptimized] target(s) in 8.03s\n"
+    },
+    "rust-structure-related": {
+      "sha256": "6b765e7b64342e5268dd0cadc0f2947c489c972313a2c21b5833bc337dcc829b",
+      "text": "   Compiling nirvana v0.1.0 (/home/hosi/nirvana)\n    Finished `test` profile [unoptimized] target(s) in 8.05s\n     Running unittests src/lib.rs (target/cargo-cache/debug/deps/nirvana-0cc789009d67d5a8)\n\nrunning 9 tests\ntest control_flow::structure::audit_tests::generated_cfgs_and_accepted_mutants_preserve_complete_rust_reports ... ignored, bounded 3000-CFG implementation audit; run explicitly with --ignored --exact\ntest control_flow::structure::audit_tests::recovery_should_accept_a_return_or_divergent_arm ... ignored, known recovery coverage gap: valid if/return versus divergent arm\nconstructive structured witness: StructureEvidence { original_steps: 3, compared_copies: 3, flow_nodes: 7 }; recovery=Err(MissingJoin(BlockId(0)))\nmixed-exit witness: StructureEvidence { original_steps: 4, compared_copies: 4, flow_nodes: 10 }; recovery=Err(MissingLoopFollow(BlockId(0)))\ntest control_flow::structure::audit_tests::divergent_arm_has_a_valid_structured_witness_with_exact_rust_reports ... ok\ntest control_flow::structure::audit_tests::mixed_return_and_divergent_loop_exits_have_a_structured_witness ... ok\ntest control_flow::structure::model_trial_tests::exported_trial_candidates_replay_through_real_validator_and_executor ... ok\ntest control_flow::structure::follow_candidates::tests::discovery_excludes_ancestor_boundaries_and_caps_single_overrides ... ok\ntest control_flow::structure::follow_candidates::tests::alternative_follow_recovers_copy_failure_without_changing_public_policy ... ok\ntest control_flow::structure::follow_candidates::tests::successful_primary_is_replaced_only_with_fewer_steps_and_copies ... ok\ntest control_flow::structure::follow_candidates::tests::optional_syntax_budget_counts_reachable_assignments_and_expression_depth ... ok\n\ntest result: ok. 7 passed; 0 failed; 2 ignored; 0 measured; 252 filtered out; finished in 0.01s\n\n"
+    },
+    "rust-structure-fmt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text": ""
+    }
+  },
+  "limits": [
+    "Finite CFG topology enumeration with concrete values and budgets, not a source-level proof of all Rust executions.",
+    "Common primitive Machine evaluation can hide bugs shared by both execution paths; native ISA/C/independent evaluators are separate oracles.",
+    "No semantic mismatch found among recovered candidates in this corpus. The159 rejected inputs remain in the denominator.",
+    "Mutations cover six specific first-site edits, not arbitrary ASTs or all source programs."
+  ]
+}
