@@ -272,11 +272,20 @@ fn mixed_return_and_divergent_loop_exits_have_a_structured_witness() {
 }
 
 #[test]
-#[ignore = "known recovery coverage gap: valid if/return versus divergent arm"]
 fn recovery_should_accept_a_return_or_divergent_arm() {
     let (source, body) = divergent_arm();
     structure_verify::validate(&source, &body).unwrap();
-    StructuredFunction::recover(&source).expect("a validated structured witness exists");
+    let function =
+        StructuredFunction::recover(&source).expect("a validated structured witness exists");
+    for counter in [0, 1, 2, u64::MAX] {
+        for budget in 0..=8 {
+            let input = [counter, 0, 0x55];
+            assert_eq!(
+                source.run_with_memory(&input, 0, &[], budget).unwrap(),
+                function.run_with_memory(&input, 0, &[], budget).unwrap()
+            );
+        }
+    }
 }
 
 #[test]

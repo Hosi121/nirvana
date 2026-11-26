@@ -502,6 +502,11 @@ impl Builder<'_, '_> {
                     {
                         Some(PostDomNode::Block(join)) => Some(join),
                         Some(PostDomNode::Exit) => None,
+                        // A divergent arm makes finite-exit post-dominance
+                        // unavailable. Recover each arm to its own terminal
+                        // or loop boundary within the existing copy budget;
+                        // the finished tree still needs exact validation.
+                        None if self.postdom.is_none() => None,
                         None => return Err(StructureError::MissingJoin(current)),
                     };
                     let join = if let Some(dag) = &mut self.forward_dag {
