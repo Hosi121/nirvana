@@ -21,6 +21,7 @@ mod reciprocal_bounds;
 pub mod reduce;
 pub mod remainder_expr;
 pub mod remainder_graph;
+pub mod rolled_loop;
 pub mod self_update;
 pub mod sequence;
 pub mod signed_division_expr;
