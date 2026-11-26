@@ -51,19 +51,25 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 
 `query_at_returns`は、正常な終了タグごとに比較するレジスタを指定します。未指定のタグでは共通する全レジスタを比較し、返り値・全RAM・最初のfaultは全経路で観測します。反例のRust再生も実際の終了タグから同じ観測を選びます。既存の一律比較と分け、`checked-memory-dag-return-outputs-v1`として記録します。
 
-問い合わせは出口別、または任意の入力ワードの下位1〜4bitで分割できます。各式は元の反例条件へguardだけを追加し、全分割のUNSATから同じ契約の等価性を判定します。正常・fault・未指定タグの被覆と全64-bit入力の被覆を、Rustが生成したguardのSMT照合で確認します。ケースを一つ欠いた対照はSATになります。合計30秒までの共通予算をsolverと反例抽出へ配分し、途中の未判定は全体の未判定として保持します。
+問い合わせは出口別、または任意の入力ワードの下位1〜4bitで分割できます。各式は元の反例条件へguardだけを追加し、全分割のUNSATから同じ契約の等価性を判定します。正常・fault・未指定タグの被覆と全64-bit入力の被覆を、Rustが生成したguardのSMT照合で確認します。ケースを一つ欠いた対照はSATになります。合計30秒までの共通予算をsolverと反例抽出へ配分し、途中の未判定は全体の未判定として保持します。入力の分割を`with_input`で直積にし、`with_return_partitions`で終了状態と組み合わせられます。上限は256ケースです。
 
 [継続先の生存値](../src/verification/block_verify/region/extraction/live_out.rs)は、各継続先を任意入力の入口としてSSAと生存解析を作り直します。元の入口から未到達のblockも対象に含め、元Programと終了タグの対応を保持します。独立した命令・式の走査が、除外した値の書換え前のreadを全経路で検査します。実際の関数返り値を捕捉するスロットも各行に残します。上限は16継続先と検査work 800万で、超過時は候補全体を保留します。
 
 [反復の式パターン](../src/dataflow/lane_patterns.rs)は、元SSAのcopyと自明なφをたどり、load・accumulator更新・storeの組を自動で照合します。3組以上で同じ間隔に変わるリテラル位置をパラメータとし、他の位置で同じ値を取るリテラルを保持します。loadは元の捕捉位置を持つ値として扱います。この段階の成果物は式の復元候補であり、制御フロー・効果順序・aliasを含む採用判断には領域の検証を使います。探索には1,024命令・64組・65,536式node・work 200万の上限を設けています。
 
-[固定checkpoint](../tools/corpora/ir-dag-regions-v1.m1.json)は、任意のRAMと整数入力を持つ8組の同値判定、7組の反例再生、再生上限の対照1組を記録しています。検証プロファイルはsolver呼出しごとに5秒です。APIは渡されたsolver予算を使い、2秒で未判定となった結果もcheckpointへ残しています。 複数のSMT検査をまとめる固定profileは`--test-threads=1`で実行し、並列実行で5秒の未判定となった記録も保持します。展開を戻す候補の生成は、この検査を使う次の段階です。
+[自動反復候補](../src/transform/rolled_loop.rs)は、単一ラッチ、3〜8個の等間隔lane、反復に対して不変の更新式・Store先を持つ領域から構築します。分岐と更新の実行順序を元の1反復から引き継ぎ、添字・脱出時の更新・反復上限を候補へ写します。関数のReturnは切出しの継続先として扱います。sourceは125レジスタ・128命令まで、比較DAGは従来の128レジスタ・128命令までを対象にします。
+
+`Proposal::verification_problem()`は、solver実行前に完了式・比較式・分割条件を取り出せます。`VerificationProblem::check()`は、完了検査に1呼出し5秒まで、比較の全分割と反例抽出に合計15秒を使います。全ケースのUNSATだけが`VerifiedRoll`を作り、SATの証拠は両方の実際の循環CFGへ再生して出口・必要値・全RAM・faultを照合します。`Unknown`と反復数不足は個別に記録し、既存出力を使います。
+
+[固定checkpoint](../tools/corpora/automatic-roll-v1.m2.json)では、合成例の正負対照と実Clangの候補を分けて記録します。実例の候補は325入力で元の機械語IRと一致し、O0/O2の生成Cを合計650回比較しました。15秒の等価性ゲートは`Unknown`で、通常CLIは従来の出力を維持しています。
+
+[固定checkpoint](../tools/corpora/ir-dag-regions-v1.m1.json)は、任意のRAMと整数入力を持つ8組の同値判定、7組の反例再生、再生上限の対照1組を記録しています。検証プロファイルはsolver呼出しごとに5秒です。APIは渡されたsolver予算を使い、2秒で未判定となった結果もcheckpointへ残しています。 複数のSMT検査をまとめる固定profileは`--test-threads=1`で実行し、並列実行で5秒の未判定となった記録も保持します。自動候補の受理では、この領域検査と反復の完了検査を使います。
 
 [領域の切り出し](../src/verification/block_verify/region/extraction.rs)は、指定した入口から継続先へ達するまでをDAGに写します。元のレジスタ空間と逐次効果を保持し、実際の関数返り値と継続先を別に記録します。検査器は元CFGをblock単位で歩き直し、命令の被覆、分岐の両腕、Return式、追加prefixと終了タグを照合します。任意の入口値を使う形式と、同じ元Programで検査した`ValueWidths`のbit上限をprefixへ反映する形式を選べます。後者の契約は、その入口上限を満たす元の状態です。
 
 [実コンパイラ入力の任意実行テスト](../tests/verification/region_extraction.rs)は、開発用の入れ子ループobjectを読み、元IRの到達状態と不正アドレスについて、全元レジスタ・全RAM・最初のfault・継続先または実際の返り値を比較します。`NIRVANA_REGION_OBJECT`にobject、`NIRVANA_REGION_OUTPUT`に短期出力先、`NIRVANA_Z3`にsolverを指定し、`python3 tools/dev.py cargo test --test verification actual_compiler_region_extraction_probe -- --ignored --nocapture`で実行します。SMT自己比較はエンコーダの確認として記録します。切り出しの意味保存は投影検査と具体比較で確認し、循環候補の[完了検査](../src/verification/block_verify/region/extraction/repeat.rs)は、この投影の入口へ戻る継続先だけを有限回接続します。最後の戻り辺に専用の打切り印を置き、そこへ到達できないとSMTで判定された場合に`Complete`を作ります。回数不足の反例は元の循環IRでも再生し、solverや再生の上限は未判定へ戻します。契約の終点は、戻り辺以外の継続先・実際のReturn・最初のfaultです。
 
-[完了検査の対照](../src/verification/block_verify/region/extraction/repeat/tests.rs)は、任意の64bit counterと検査済み2bit上限で、0・1・3回の不足、4・5回の完了を確認します。入口上限を外すと4回でも不足します。別に作った4段の展開IRと証明済み循環候補を全RAM・正常時の必要値まで比較し、増分を壊した候補の差を両方の循環IRで再生します。自動的な復元候補の生成は、この検査の上へ構築する次の段階です。
+[完了検査の対照](../src/verification/block_verify/region/extraction/repeat/tests.rs)は、任意の64bit counterと検査済み2bit上限で、0・1・3回の不足、4・5回の完了を確認します。入口上限を外すと4回でも不足します。別に作った4段の展開IRと証明済み循環候補を全RAM・正常時の必要値まで比較し、増分を壊した候補の差を両方の循環IRで再生します。自動的な復元候補は、この完了検査を受理条件に持ちます。
 
 `Prefixed`は実際の入口prefixと反復領域を接続し、初期化・分岐・メモリ効果も完了検査へ含めます。両者を同じ元Programと終了タグへ結び、反復側は任意の入口値を受け入れます。これにより、反復途中の値域へ初期状態を丸めずに`j = 1`・`limit > 0`などの入口の関係を利用できます。等値比較で抜ける対照では、検査済み2bit上限だけの場合の回数不足と、prefixから3反復で完了する場合を区別し、不足時は元のprefixから再生します。
 
