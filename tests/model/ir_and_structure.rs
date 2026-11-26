@@ -50,7 +50,7 @@ fn recovers_a_simple_infinite_loop_without_inventing_a_return() {
 }
 
 #[test]
-fn falls_back_when_one_arm_has_no_exit_path() {
+fn recovers_returning_and_divergent_arms_with_exact_stop_boundaries() {
     let program = Program::new(
         0,
         1,
@@ -68,11 +68,22 @@ fn falls_back_when_one_arm_has_no_exit_path() {
         ],
     )
     .unwrap();
-    assert!(matches!(
-        StructuredFunction::recover(&program),
-        Err(StructureError::MissingJoin(_))
-    ));
-    assert!(emit_c(&program).unwrap().fallback_reason.is_some());
+    let recovered = StructuredFunction::recover(&program).unwrap();
+    for condition in [0, 1, u64::MAX] {
+        for budget in 0..=12 {
+            assert_eq!(
+                program
+                    .run_with_memory(&[condition], 0, &[], budget)
+                    .unwrap(),
+                recovered
+                    .run_with_memory(&[condition], 0, &[], budget)
+                    .unwrap()
+            );
+        }
+    }
+    let output = emit_c(&program).unwrap();
+    assert!(output.fallback_reason.is_none());
+    assert!(output.code.contains("while (1)"));
 }
 
 #[test]

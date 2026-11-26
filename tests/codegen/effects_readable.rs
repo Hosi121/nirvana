@@ -682,7 +682,7 @@ fn nested_outer_transfers_preserve_instruction_budget_and_registers() {
 }
 
 #[test]
-fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
+fn returning_and_divergent_arms_use_the_structured_checked_renderer() {
     let program = Program::new(
         0,
         32,
@@ -702,16 +702,60 @@ fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
     )
     .unwrap();
     let output = nirvana::effects_readable::emit_c(&program).unwrap();
+    assert!(output.fallback_reason.is_none());
+    let inputs = branch_budget_cases();
+    assert_eq!(compare(&program, &inputs, "divergent"), 52);
+}
+
+fn branch_budget_cases() -> Vec<Case> {
+    let base = cases()[0];
+    [0, 1]
+        .into_iter()
+        .flat_map(|target| {
+            (0..=12).map(move |instructions| Case {
+                target,
+                limits: Limits {
+                    instructions,
+                    ..base.limits
+                },
+                ..base
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn unavailable_structure_falls_back_atomically_to_the_checked_renderer() {
+    // Two entries into the inner cycle: the bounded split search still
+    // duplicates its shared outer latch beyond the default copy limit.
+    let branch = |target| Control::Branch {
+        condition: r(3),
+        target,
+    };
+    let program = Program::new(
+        0,
+        32,
+        vec![
+            core(0, vec![], branch(2)),
+            core(1, vec![], branch(3)),
+            core(2, vec![], branch(1)),
+            core(3, vec![], Control::Jump(0)),
+            core(4, vec![], Control::Return(c(1))),
+        ],
+        PUTS,
+    )
+    .unwrap();
+    let output = nirvana::effects_readable::emit_c(&program).unwrap();
     assert!(matches!(
         output.fallback_reason,
-        Some(nirvana::structure::StructureError::MissingJoin(_))
+        Some(nirvana::structure::StructureError::Irreducible)
     ));
     assert_eq!(
         output.code,
         nirvana::effects_emit::emit_c(&program).unwrap()
     );
-    let inputs = cases();
-    compare(&program, &inputs[..100], "fallback");
+    let inputs = branch_budget_cases();
+    assert_eq!(compare(&program, &inputs, "fallback"), 52);
 }
 
 #[test]
