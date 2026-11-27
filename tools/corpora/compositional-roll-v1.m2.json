@@ -788,6 +788,95 @@
       "last_log_marker": "PASS same-input M0 evaluations",
       "child_checks": "All recorded commands and comparison assertions completed successfully.",
       "independent_completion_audit": "Passed: full-suite and differential-audit return codes, M0 comparison outcomes, current CLI hash and clean revision were checked again."
+    },
+    "checkpoint_replay": {
+      "solver_version": "Z3 version 4.8.12 - 64 bit",
+      "solver_file_sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+      "completion": "unsat",
+      "obligations": [
+        {
+          "cut": 0,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 0,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 0,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "correspondence",
+          "status": "unsat"
+        }
+      ],
+      "total_obligations": 12,
+      "all_checkpoint_obligations_unsat": true,
+      "seconds": 0.8779808580002282,
+      "scope": "Saved source-bound decomposition under the original region contract. Rust regeneration also checks the constructor, proof seals and C behavior. SAT requires Rust replay and supplies no accepted certificate.",
+      "flat_partitions": [
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unknown"
+      ],
+      "flat_total": 16,
+      "rust_returncode": 0,
+      "rust_artifacts_match": true,
+      "command": "NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- python3 tools/replay_loop_checkpoint.py --out '{out}' --rust --flat",
+      "tool_sha256": "4bf467860a5d743f32cd548cc75ee9da60e8485427f8b94f21453719a9d48064",
+      "rust_log_sha256": "c8a3ecbe292b403a59222abdc13b7c09dbac871ab2e677e49374277071ded011",
+      "replay_revision": "55184b6"
     }
   },
   "quality": {
@@ -1744,7 +1833,7 @@
     "tool_sha256": "4bf467860a5d743f32cd548cc75ee9da60e8485427f8b94f21453719a9d48064",
     "command": "NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- python3 tools/replay_loop_checkpoint.py --out '{out}' --rust --flat",
     "expected": "Completion and all 12 local obligations UNSAT; Rust regeneration reproduces the exact artifacts and 650 sanitized C executions. The flat comparison is recorded separately.",
-    "status": "Pending final clean Rust regeneration; full Rust, M0, generated-program audit and clean object validation have passed."
+    "status": "Validated: completion and all 12 local obligations UNSAT; strict Rust regeneration reproduces all 19 text artifacts and passes 650 sanitized C executions. The separate flat gate remains Unknown."
   },
   "open_coverage": [
     "The local proof constructor and symbolic encoder remain trusted Rust; the3072-case all-word audit is a generated-program-family audit, not a universal proof of the constructor.",
