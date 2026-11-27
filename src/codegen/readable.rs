@@ -29,6 +29,7 @@ pub use continuations::{
 mod gotos;
 mod idioms;
 mod locals;
+pub mod loop_recovery;
 mod loops;
 mod pipeline;
 mod prepare;

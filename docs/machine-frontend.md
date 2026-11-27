@@ -99,6 +99,7 @@ cargo run -- STRIPPED_ELF --entry 0x401200 --emit module-readable-c
 | `--steps N` | runの元命令数の上限。既定は100000 |
 | `--no-coalesce-locals` | readable-c/middle-cで局所値ごとに保存場所を確保 |
 | `--verify-reduction PATH` | readable-cのIR還元を指定のZ3で検査 |
+| `--recover-loops PATH` | readable-c/middle-cで指定のZ3によるループ復元を試す |
 
 `module-c`はstandalone C11です。`cc -std=c11 -O2 server.c -o server`でコンパイルし、POSIX importをLinux x86-64 libcへ接続できます。
 入口はRSP以外をゼロ初期化し、独自の入力には`Module::initial_registers`と`Program::run`を使います。
@@ -115,8 +116,13 @@ extended長、追加のCIE形式、`.eh_frame`内の動的再配置、section ta
 関数名や型、プロセス起動時の`main`の発見は、それぞれ独立した解析として扱います。
 
 アドレスとrunの入力値は10進数または`0x`付き16進数です。
-`--no-coalesce-locals`と`--verify-reduction`はreadable-c出力時の設定で、`--run`は実行用の別モードです。
+`--no-coalesce-locals`はreadable-c/middle-c、`--verify-reduction`はreadable-cの設定で、`--run`は実行用の別モードです。
 本体は標準出力へ、還元の検査結果と入力エラーは標準エラーへ出力します。
+
+`--recover-loops /path/to/z3`は選択済みの表示IRから一つのlane群を復元します。
+反復完了・領域同値・関数への適用条件・元の引数番号との対応を検査し、構造化の成功、局所変数数、本文長の順で候補を比較します。
+未判定や品質での不採用は理由を標準エラーへ出し、従来のCを保持します。比較のsolver予算は15秒で、反復完了には別途最大5秒を使います。
+`readable::loop_recovery`のAPIは基準C・候補C・採否と復元の証跡を保持します。生成Cの意味は再コンパイル比較で別に評価します。
 
 `--run`は`0x1000`から64 KiBをゼロ初期化し、`0x2000`に入力状態を置きます。
 RDI=`0x2000`、RSP=`0x10000`、その他のレジスタはゼロです。

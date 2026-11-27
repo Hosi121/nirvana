@@ -787,6 +787,51 @@ fn unavailable_verifier_keeps_original_ir_and_emits_executable_c() {
 }
 
 #[test]
+fn opt_in_loop_recovery_keeps_the_baseline_and_checks_its_cli_scope() {
+    let scratch = Scratch::new();
+    let object_path = scratch.0.join("diamond.o");
+    object(
+        &fixture_root().join("cases/diamond.c"),
+        &object_path,
+        "-O2",
+        "fixture",
+    );
+    for mode in ["readable-c", "middle-c"] {
+        let command = || {
+            let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"));
+            command.arg(&object_path).args(["--emit", mode]);
+            command
+        };
+        let baseline = command().output().unwrap();
+        let recovered = command()
+            .args(["--recover-loops", "/nirvana-no-such-solver"])
+            .output()
+            .unwrap();
+        assert!(baseline.status.success());
+        assert!(
+            recovered.status.success(),
+            "{}",
+            String::from_utf8_lossy(&recovered.stderr)
+        );
+        assert_eq!(baseline.stdout, recovered.stdout);
+        assert!(String::from_utf8_lossy(&recovered.stderr).contains("loop recovery:"));
+    }
+    for extra in [
+        vec![],
+        vec!["--emit", "readable-c", "--run", "0,0,0,0"],
+        vec!["--emit", "readable-c", "--verify-reduction", "z3"],
+    ] {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_nirvana"))
+            .args(["unused.o", "--recover-loops", "z3"])
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("--recover-loops requires"));
+    }
+}
+
+#[test]
 #[ignore = "requires Z3; set NIRVANA_Z3 and run with --include-ignored"]
 fn accepted_reductions_feed_native_c_and_the_cli_reports_only_the_ir_scope() {
     let path = std::env::var_os("NIRVANA_Z3").unwrap_or_else(|| "z3".into());

@@ -221,7 +221,7 @@ fn emit_reduced_c(
     }
     best
 }
-fn render_cost(output: &ReadableC) -> (usize, usize, usize) {
+pub(super) fn render_cost(output: &ReadableC) -> (usize, usize, usize) {
     (
         output.locals.len(),
         output

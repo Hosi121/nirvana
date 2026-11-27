@@ -381,33 +381,33 @@ fn actual_compiler_loop_composition_checks_source_derived_lane_relations() {
 #[test]
 #[ignore = "requires NIRVANA_REGION_OBJECT, NIRVANA_REGION_OUTPUT and NIRVANA_Z3"]
 fn actual_compiler_loop_recovery_chain_keeps_original_parameter_ids() {
-    use nirvana::transform::loop_recovery;
     let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
     std::fs::create_dir_all(&directory).unwrap();
     let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
     let machine = nirvana::frontend::lift_elf_auto(&bytes, "fixture")
         .unwrap()
         .program;
-    let (source, parameters) = prepared_storage(&bytes);
     let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
         .with_timeout(std::time::Duration::from_secs(15));
-    let loop_recovery::Outcome::Recovered(recovered) =
-        loop_recovery::recover(&source, &parameters, &solver)
-    else {
-        panic!("the source-bound compiler-loop chain must be recoverable")
-    };
-    recovered.validate().unwrap();
-    assert_eq!(recovered.parameters(), parameters);
-    let output = nirvana::readable::emit_readable_c_with_options(
-        recovered.program(),
+    let middle = nirvana::middle_ir::Function::from_low(&machine).unwrap();
+    let emission = nirvana::readable::loop_recovery::emit_middle_c(
+        &middle,
         nirvana::readable::ReadableOptions {
             stack_register: Some(Reg(4)),
             recover_objects: true,
             coalesce_locals: true,
             compact_memory: true,
         },
+        &solver,
     )
     .unwrap();
+    assert!(emission.accepted(), "{:?}", emission.retention());
+    let recovered = emission.candidate().unwrap().recovery();
+    let source = recovered.source();
+    let parameters = emission.baseline().parameters.clone();
+    recovered.validate().unwrap();
+    assert_eq!(recovered.parameters(), parameters);
+    let output = emission.selected();
     assert_eq!(output.parameters, parameters);
     assert!(output.code.contains("input machine register 4"));
     assert!(output.code.contains("input machine register 7"));
@@ -425,7 +425,7 @@ fn actual_compiler_loop_recovery_chain_keeps_original_parameter_ids() {
         "recovered",
         &machine,
         recovered.program(),
-        &output,
+        output,
         |input| {
             let mut values = vec![u64::MAX; source.register_count()];
             values[..input.len()].copy_from_slice(input);
