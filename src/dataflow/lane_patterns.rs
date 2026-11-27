@@ -135,6 +135,10 @@ impl Discovery {
             .iter()
             .find(|read| read.register == register)?
             .value;
+        self.value_identity(value)
+    }
+    /// Normalize a value within this discovery's own SSA namespace.
+    pub fn value_identity(&self, value: ValueId) -> Option<ValueId> {
         self.aliases.get(value.0).copied()
     }
     /// Bounded pure comparison for constructing a candidate index expression.

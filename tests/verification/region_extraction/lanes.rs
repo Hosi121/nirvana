@@ -449,8 +449,7 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
     let prepared =
         nirvana::transform::loop_recovery::PreparedStorage::new(&display, &parameters).unwrap();
     let source = prepared.compact().program().clone();
-    // This fixed-input diagnostic supplies proposals explicitly. The verifier
-    // proves their truth from the actual binary-derived Program, including RAM.
+    // Fixed expected equations independently check the generic SSA proposal.
     let r = |n| Expr::Register(Reg(n));
     let c = Expr::Const;
     let b = Expr::binary;
@@ -473,7 +472,13 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
             value: b(BinaryOp::And, r(7), c(3)),
         },
     ];
-    let problem = invariants::Problem::new(&source, 32, &normalizers).unwrap();
+    let discovery = discover(&source).unwrap();
+    let base = nirvana::transform::rolled_loop::propose(&source, &discovery, 0).unwrap();
+    let problem = nirvana::transform::loop_entry_facts::propose(&base)
+        .unwrap()
+        .expect("source SSA proposes the trip bound");
+    assert_eq!(problem.header(), 32);
+    assert_eq!(problem.normalizers(), normalizers);
     problem.validate().unwrap();
     for (name, phase) in [
         ("entry-facts-base.smt2", Phase::Base),
