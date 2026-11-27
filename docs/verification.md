@@ -215,6 +215,14 @@ C値モデルの除算抽象化は、[SMT-LIBのsigned演算の定義](https://s
 [word値グラフの検査](../tests/model/semantic_ir/word.rs)は、上位bitを失った分子、レジスタの上書き、符号境界を跨ぐループについて、元レジスタ・RAM・履歴・fault・予算を比較します。[GCC入力](../tests/fixtures/recovery/word-signed-memory.c)もnative・IR・生成Cで比較します。
 [既知bitの検査](../tests/verification/known_bits.rs)は転送規則をSMTで、[dataflow検査](../tests/dataflow/known_bits.rs)は小領域の全列挙・64-bit境界・φとループの不変条件で確認します。設計の参考は[LLVM KnownBits](https://llvm.org/doxygen/structllvm_1_1KnownBits.html)で、Nirvanaの規則は全域の64-bit演算とmaskしたシフト数に対して検査します。
 [部分bitによる恒等変換](../src/dataflow/known_bits/check/smt_identities.rs)は、実際の数値検査規則について64-bit全域の44問でUNSATを確認し、欠けたbit・未知の符号など22問で反例をIR再生します。[対応検査の対照](../tests/dataflow/known_bits/identities.rs)は、コピー前の値、入れ子の同じ演算、非定数mask、lazyなLoad、最初のfaultを扱い、関数入口からの全レジスタ・RAM・PC・trace・命令予算を比較します。
+[固定比較](../tools/corpora/ir-partial-bits-v1.m3.json)では、復元したClang例のマスク2個・式8nodeを除去し、構造距離4・局所変数9個を保ちました。通常32+2構成のC本文は同じで、意味・解析・値モデルの回帰は0件です。数値規則は次の管理された一時領域で再検査できます。
+
+```sh
+NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- \
+  env 'NIRVANA_BITS_CHECK_OUT={out}' python3 tools/dev.py cargo test --lib \
+  actual_partial_bit_identity_rules -- --ignored --nocapture --test-threads=1
+```
+
 [数値検査のcheckpoint](../tools/corpora/ir-known-bits-v1.m1.json)には、加減算prefixの128式とbit演算・射影・合流などの101式を、全maskと64-bit値に対してSMTで確認した結果も保存します。式と実Rust演算核の対応は有限のbridgeテストで確認し、数式の保証と実装の検証範囲を分けて記録します。
 
 | bit・保存値の検査 | 対象と照合方法 |
