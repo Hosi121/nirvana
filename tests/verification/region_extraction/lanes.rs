@@ -489,4 +489,27 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
         source.register_count(),
         start.elapsed().as_millis()
     );
+    let certificate: std::sync::Arc<_> = certificate.into();
+    let discovery = discover(&source).unwrap();
+    let proposal = nirvana::transform::rolled_loop::propose_with_invariants(
+        &source,
+        &discovery,
+        0,
+        &certificate,
+    )
+    .unwrap();
+    assert_eq!(proposal.source_region().input_bit_caps()[7], 2);
+    assert!(
+        proposal
+            .source_region()
+            .entry_invariants()
+            .unwrap()
+            .matches(&source, 32)
+    );
+    let nirvana::transform::rolled_loop::Outcome::Verified(verified) = proposal.verify(&solver)
+    else {
+        panic!("sealed entry facts must survive loop verification")
+    };
+    verified.in_context().unwrap().validate().unwrap();
+    println!("ENTRY-FACTS-CONTEXT verified=true source_bound=true index_bits=2");
 }

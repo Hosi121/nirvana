@@ -8,6 +8,7 @@ use super::{Error, MAX_REGISTERS, shape};
 use crate::dataflow::value_width::{self, ValueWidths};
 use crate::model::ir::{Assignment, BinaryOp, Control, Expr, IrInstruction, Program, Reg};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 mod check;
 pub mod live_out;
@@ -52,6 +53,7 @@ pub struct Region {
     stops: Vec<u64>,
     caps: Vec<u8>,
     widths: Option<ValueWidths>,
+    invariants: Option<Arc<super::invariants::Certificate>>,
     body: BTreeMap<u64, u64>,
     terminals: BTreeMap<u64, u64>,
 }
@@ -70,6 +72,9 @@ impl Region {
     }
     pub fn input_bit_caps(&self) -> &[u8] {
         &self.caps
+    }
+    pub fn entry_invariants(&self) -> Option<&super::invariants::Certificate> {
+        self.invariants.as_deref()
     }
     pub fn return_register(&self) -> Reg {
         Reg(self.source.register_count())
@@ -108,6 +113,28 @@ pub fn extract(
     stops: &[u64],
     widths: Option<&ValueWidths>,
 ) -> Result<Region, ExtractionError> {
+    extract_inner(source, entry, stops, widths, None)
+}
+
+/// Intersect checked global width facts with a source-bound induction seal.
+/// The seal must identify this exact entry and source (or its unused extension).
+pub fn extract_with_invariants(
+    source: &Program,
+    entry: u64,
+    stops: &[u64],
+    widths: Option<&ValueWidths>,
+    invariants: &Arc<super::invariants::Certificate>,
+) -> Result<Region, ExtractionError> {
+    extract_inner(source, entry, stops, widths, Some(invariants))
+}
+
+fn extract_inner(
+    source: &Program,
+    entry: u64,
+    stops: &[u64],
+    widths: Option<&ValueWidths>,
+    invariants: Option<&Arc<super::invariants::Certificate>>,
+) -> Result<Region, ExtractionError> {
     let successors = shape::bounded_successors(source)?;
     if source.register_count() >= MAX_REGISTERS {
         return Err(Error::Limit.into());
@@ -125,7 +152,7 @@ pub fn extract(
     if stops.iter().any(|&pc| source.cfg().block_at(pc).is_none()) {
         return Err(ExtractionError::Boundary);
     }
-    let caps = match widths {
+    let mut caps = match widths {
         None => vec![64; source.register_count()],
         Some(facts) => {
             let storage = facts.widths().ok_or(ExtractionError::EntryFacts)?;
@@ -137,6 +164,14 @@ pub fn extract(
                 .ok_or(ExtractionError::EntryFacts)?
         }
     };
+    if let Some(invariants) = invariants {
+        let proved = invariants
+            .bit_caps(source, entry)
+            .map_err(|_| ExtractionError::EntryFacts)?;
+        for (cap, proved) in caps.iter_mut().zip(proved) {
+            *cap = (*cap).min(proved);
+        }
+    }
     let mut selected = BTreeSet::new();
     let mut pending = vec![entry];
     while let Some(pc) = pending.pop() {
@@ -243,6 +278,7 @@ pub fn extract(
         stops,
         caps,
         widths: widths.cloned(),
+        invariants: invariants.cloned(),
         body,
         terminals,
     };

@@ -21,6 +21,7 @@ use crate::verification::{
     verify::{Solver, UnknownReason},
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 mod composition;
 mod context;
@@ -128,6 +129,26 @@ pub fn propose(
     discovery: &Discovery,
     group_index: usize,
 ) -> Result<Proposal, Error> {
+    propose_inner(source, discovery, group_index, None)
+}
+
+/// Source induction may supply additional entry caps. Their source and header
+/// binding is checked by region extraction, before candidate construction.
+pub fn propose_with_invariants(
+    source: &Program,
+    discovery: &Discovery,
+    group_index: usize,
+    invariants: &Arc<region::invariants::Certificate>,
+) -> Result<Proposal, Error> {
+    propose_inner(source, discovery, group_index, Some(invariants))
+}
+
+fn propose_inner(
+    source: &Program,
+    discovery: &Discovery,
+    group_index: usize,
+    invariants: Option<&Arc<region::invariants::Certificate>>,
+) -> Result<Proposal, Error> {
     if source.instructions().len() > region::MAX_INSTRUCTIONS
         || source.register_count() > region::MAX_REGISTERS - 3
     {
@@ -155,7 +176,16 @@ pub fn propose(
     .map_err(|_| Error::Source)?;
     let widths = ValueWidths::analyze(&padded);
     let stops = envelope.stops();
-    let before = extraction::extract(&padded, envelope.header, &stops, Some(&widths))?;
+    let before = match invariants {
+        Some(invariants) => extraction::extract_with_invariants(
+            &padded,
+            envelope.header,
+            &stops,
+            Some(&widths),
+            invariants,
+        )?,
+        None => extraction::extract(&padded, envelope.header, &stops, Some(&widths))?,
+    };
     // The feedback stop adds one candidate tag. Keep actual function Returns
     // outside this cut until their explicit tag correspondence is supported.
     if padded.instructions().iter().any(|i| {

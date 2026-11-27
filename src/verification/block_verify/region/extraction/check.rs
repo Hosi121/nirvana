@@ -20,7 +20,7 @@ pub(super) fn validate(region: &Region) -> Result<(), ExtractionError> {
     {
         return Err(bad());
     }
-    let caps = match &region.widths {
+    let mut caps = match &region.widths {
         None => vec![64; region.source.register_count()],
         Some(facts) => {
             let widths = facts.widths().ok_or(ExtractionError::EntryFacts)?;
@@ -32,6 +32,14 @@ pub(super) fn validate(region: &Region) -> Result<(), ExtractionError> {
                 .ok_or(ExtractionError::EntryFacts)?
         }
     };
+    if let Some(invariants) = &region.invariants {
+        let proved = invariants
+            .bit_caps(&region.source, region.entry)
+            .map_err(|_| ExtractionError::EntryFacts)?;
+        for (cap, proved) in caps.iter_mut().zip(proved) {
+            *cap = (*cap).min(proved);
+        }
+    }
     if region.caps != caps || caps.iter().any(|&bits| bits > 64) {
         return Err(ExtractionError::EntryFacts);
     }

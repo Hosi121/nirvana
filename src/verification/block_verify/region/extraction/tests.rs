@@ -192,6 +192,89 @@ fn alter(region: &Region, change: impl FnOnce(&mut Vec<IrInstruction>)) -> Regio
 }
 
 #[test]
+#[ignore = "requires Z3; set NIRVANA_Z3"]
+fn induction_seals_bound_entry_masks_to_source_header_and_unused_extensions() {
+    use super::super::invariants;
+    use crate::verification::verify::Solver;
+    use std::{sync::Arc, time::Duration};
+    let source = Program::new(
+        0,
+        3,
+        vec![
+            IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: Expr::Const(0),
+                }],
+                control: Control::Jump(10),
+            },
+            IrInstruction {
+                address: 10,
+                size: 1,
+                assignments: vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: Expr::binary(
+                        BinaryOp::And,
+                        Expr::binary(BinaryOp::Add, Expr::Register(Reg(0)), Expr::Const(1)),
+                        Expr::Const(3),
+                    ),
+                }],
+                control: Control::Jump(10),
+            },
+        ],
+    )
+    .unwrap();
+    let normalizer = Assignment {
+        destination: Reg(0).into(),
+        value: Expr::binary(BinaryOp::And, Expr::Register(Reg(0)), Expr::Const(3)),
+    };
+    let solver = Solver::new(std::env::var_os("NIRVANA_Z3").unwrap_or_else(|| "z3".into()))
+        .with_timeout(Duration::from_secs(5));
+    let problem = invariants::Problem::new(&source, 10, &[normalizer]).unwrap();
+    let invariants::Outcome::Verified(certificate) =
+        problem.check(&solver, Duration::from_secs(10))
+    else {
+        panic!("modular counter invariant")
+    };
+    let certificate: Arc<_> = certificate.into();
+    let plain = extract(&source, 10, &[10], None).unwrap();
+    assert_eq!(plain.input_bit_caps()[0], 64);
+    let checked = extract_with_invariants(&source, 10, &[10], None, &certificate).unwrap();
+    assert_eq!(checked.input_bit_caps()[0], 2);
+    assert!(checked.entry_invariants().unwrap().matches(&source, 10));
+    checked.validate().unwrap();
+    let mut stronger = checked.clone();
+    stronger.caps[0] = 1;
+    assert_eq!(
+        stronger.validate().unwrap_err(),
+        ExtractionError::EntryFacts
+    );
+    let changed = alter(&checked, |code| {
+        code[0].assignments[1].value =
+            Expr::binary(BinaryOp::And, Expr::Register(Reg(0)), Expr::Const(1))
+    });
+    assert_eq!(changed.validate().unwrap_err(), ExtractionError::Projection);
+    let extended = Program::new(0, 4, source.instructions().to_vec()).unwrap();
+    let extended = extract_with_invariants(&extended, 10, &[10], None, &certificate).unwrap();
+    assert_eq!(extended.input_bit_caps(), [2, 64, 64, 64]);
+    extended.validate().unwrap();
+    let reentered = Program::new(10, 3, source.instructions().to_vec()).unwrap();
+    assert_eq!(
+        extract_with_invariants(&reentered, 10, &[10], None, &certificate).unwrap_err(),
+        ExtractionError::EntryFacts
+    );
+    let mut code = source.instructions().to_vec();
+    code[1].control = Control::Return(Expr::Const(0));
+    let foreign = Program::new(0, 3, code).unwrap();
+    assert_eq!(
+        extract_with_invariants(&foreign, 10, &[10], None, &certificate).unwrap_err(),
+        ExtractionError::EntryFacts
+    );
+}
+
+#[test]
 fn independent_projection_checker_rejects_changed_effects_routes_caps_and_tags() {
     let source = fixture();
     let region = extract(&source, 10, &[10], Some(&ValueWidths::analyze(&source))).unwrap();
