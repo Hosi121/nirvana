@@ -2158,7 +2158,94 @@
   "reproduction": {
     "command": "NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- python3 tools/replay_loop_checkpoint.py --out '{out}' --checkpoint tools/corpora/contextual-loop-v1.m2.json --rust --flat",
     "expected": "Completion and all12 local obligations UNSAT; Rust regeneration rechecks the full chain,325inputs and650Cexecutions per route and all21review artifact hashes. The separate flat15second query can remain Unknown.",
-    "status": "Source-bound clean object tests and fresh M0 passed; checkpoint artifact replay is recorded by a following documentation commit."
+    "status": "Completed clean checkpoint replay: completion and all12local queries UNSAT, Rust reconstructed all21artifacts byte-identically and both650-execution C routes passed.",
+    "actual": {
+      "solver_version": "Z3 version 4.8.12 - 64 bit",
+      "solver_file_sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+      "completion": "unsat",
+      "obligations": [
+        {
+          "cut": 0,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 0,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 0,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "correspondence",
+          "status": "unsat"
+        }
+      ],
+      "total_obligations": 12,
+      "all_checkpoint_obligations_unsat": true,
+      "seconds": 0.3306542609934695,
+      "scope": "Saved source-bound decomposition under the original region contract. Rust regeneration also checks the constructor, proof seals and C behavior. SAT requires Rust replay and supplies no accepted certificate.",
+      "flat_partitions": [
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unsat",
+        "unknown"
+      ],
+      "flat_total": 16,
+      "rust_returncode": 0,
+      "rust_artifacts_match": true,
+      "revision": "f10dba0433403a31060cbf6a012caac0451518bb",
+      "rust_log_sha256": "281bd8f37da7773ab7238f1f8a20f332186afb7bcd308e818ba9eb59d4962b43"
+    }
   },
   "open_coverage": [
     "The SMT encoders, solver and independent Rust checkers remain trusted. Concrete C comparisons cover the recorded inputs; complete C-backend equivalence is a separate boundary.",
