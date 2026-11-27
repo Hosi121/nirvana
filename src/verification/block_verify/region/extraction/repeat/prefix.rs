@@ -107,6 +107,15 @@ impl Prefixed {
     pub fn rounds(&self) -> usize {
         self.repeated.rounds
     }
+    /// Entry of each checked feedback copy in this exact bounded Program.
+    pub fn round_entries(&self) -> Vec<u64> {
+        let root = self.repeated.region.body[&self.repeated.region.entry];
+        self.repeated
+            .copies
+            .iter()
+            .map(|copy| self.loop_offset + copy[&root])
+            .collect()
+    }
     pub fn completion_query(&self) -> Result<Query, ExtractionError> {
         self.validate()?;
         flagged_query(

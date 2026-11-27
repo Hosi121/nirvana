@@ -228,6 +228,10 @@ fn build_query_encoded(
 }
 
 impl Query {
+    pub fn shared_inputs(&self) -> &[Reg] {
+        &self.shared
+    }
+
     pub fn smt2(&self) -> &str {
         &self.script
     }

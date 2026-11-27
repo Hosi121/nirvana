@@ -285,3 +285,78 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires NIRVANA_REGION_OBJECT, NIRVANA_REGION_OUTPUT and NIRVANA_Z3"]
+fn actual_compiler_loop_composition_checks_source_derived_lane_relations() {
+    use nirvana::block_verify::region::composition;
+    use nirvana::transform::rolled_loop;
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let (_, source, _) = checked_storage(&bytes);
+    let discovery = discover(&source).unwrap();
+    let proposal = rolled_loop::propose(&source, &discovery, 0).unwrap();
+    let problem = proposal.verification_problem().unwrap();
+    let local = problem.composition_problem().unwrap();
+    assert_eq!(local.cuts().len(), proposal.rounds() + 1);
+    std::fs::write(
+        directory.join("composition-cuts.txt"),
+        format!("{:#?}\n", local.cuts()),
+    )
+    .unwrap();
+    for (n, obligation) in local.obligations().iter().enumerate() {
+        std::fs::write(
+            directory.join(format!("composition-{n}.smt2")),
+            obligation.query().smt2(),
+        )
+        .unwrap();
+        println!(
+            "COMPOSITION-OBLIGATION index={n} cut={} kind={:?} bytes={}",
+            obligation.cut(),
+            obligation.kind(),
+            obligation.query().smt2().len()
+        );
+    }
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
+        .with_timeout(std::time::Duration::from_secs(15));
+    let start = std::time::Instant::now();
+    match local.check(&solver, std::time::Duration::from_secs(15)) {
+        composition::Outcome::Verified(seal) => {
+            assert!(seal.matches(problem.query()));
+            println!(
+                "COMPOSITION-GATE equivalent obligations={} ms={}",
+                seal.checked(),
+                start.elapsed().as_millis()
+            );
+        }
+        composition::Outcome::Unproved(failure) => {
+            let status = match &failure.verdict {
+                Verdict::Counterexample(witness) => format!(
+                    "local_counterexample before={:?} after={:?} ram_equal={} registers={:?}",
+                    witness.before.status,
+                    witness.after.status,
+                    witness.before.state.memory == witness.after.state.memory,
+                    witness
+                        .before
+                        .state
+                        .registers
+                        .iter()
+                        .zip(&witness.after.state.registers)
+                        .enumerate()
+                        .filter_map(|(n, (a, b))| (a != b).then_some((n, a, b)))
+                        .collect::<Vec<_>>()
+                ),
+                other => format!("{other:?}"),
+            };
+            panic!(
+                "local obligation {} cut={} kind={:?} status={status}",
+                failure.checked, failure.cut, failure.kind
+            );
+        }
+    }
+    assert_eq!(
+        problem.completion_query().check(&solver),
+        Verdict::EquivalentUnderModel
+    );
+}

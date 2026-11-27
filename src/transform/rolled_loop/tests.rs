@@ -215,6 +215,36 @@ fn a_lane_at_the_cut_entry_keeps_its_checked_input_normalization() {
 }
 
 #[test]
+fn lane_cuts_infer_entry_values_and_leave_later_definitions_inside_the_chunk() {
+    let source = fixture();
+    let found = lane_patterns::discover(&source).unwrap();
+    let proposal = propose(&source, &found, 0).unwrap();
+    let problem = proposal.verification_problem().unwrap();
+    let local = problem.composition_problem().unwrap();
+    assert_eq!(local.cuts().len(), 4);
+    assert!(local.cuts()[0].before_invariants.is_empty());
+    assert!(local.cuts()[0].after_invariants.is_empty());
+    for (phase, cut) in local.cuts().iter().skip(1).enumerate() {
+        assert!(cut.before_invariants.iter().any(|equation| {
+            equation.destination == Place::Register(Reg(4))
+                && equation.value
+                    == Expr::binary(BinaryOp::Add, Expr::Register(Reg(0)), Expr::Const(1))
+        }));
+        assert!(
+            cut.before_invariants
+                .iter()
+                .all(|equation| { equation.destination != Place::Register(Reg(5)) }),
+            "the lane index is assigned after the cut"
+        );
+        assert!(cut.after_invariants.iter().any(|equation| {
+            equation.destination == Place::Register(proposal.counter())
+                && equation.value == Expr::Const(phase as u64 + 1)
+        }));
+        assert!(!cut.shared.contains(&proposal.counter()));
+    }
+}
+
+#[test]
 #[ignore = "requires NIRVANA_Z3"]
 fn accepts_only_completed_equivalent_proposals() {
     let source = fixture();

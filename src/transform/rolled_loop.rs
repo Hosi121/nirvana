@@ -22,6 +22,7 @@ use crate::verification::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+mod composition;
 mod controls;
 mod emit;
 mod envelope;

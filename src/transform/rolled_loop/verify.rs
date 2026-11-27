@@ -113,6 +113,11 @@ impl VerificationProblem {
     pub fn outputs(&self) -> &ContinuationOutputs {
         &self.outputs
     }
+    /// Propose local lane relations and source-bound obligations. Incoming
+    /// equations are proved at every cut before they can supply a certificate.
+    pub fn composition_problem(&self) -> Result<region::composition::Problem, Error> {
+        super::composition::problem(&self.proposal, &self.prefixed, &self.query)
+    }
     /// The case family covers full64-bit input words and retains all RAM/fault
     /// observations. It is available for replay regardless of solver outcome.
     pub fn input_partitions(&self) -> Result<Option<region::InputPartitions<'_>>, region::Error> {
