@@ -14,6 +14,7 @@ pub mod for_loop;
 pub mod guarded_loop;
 pub mod indexed;
 pub mod load_mask;
+pub mod loop_recovery;
 pub mod narrow_division_expr;
 pub mod narrow_rotate;
 mod pure_expression;

@@ -282,6 +282,60 @@ fn function_frame_checks_original_entries_instructions_and_future_reads() {
 }
 
 #[test]
+fn prepared_storage_preserves_parameter_names_and_declines_missing_inputs() {
+    use crate::transform::loop_recovery::PreparedStorage;
+    let source = fixture();
+    let parameters = [Reg(1), Reg(2), Reg(6), Reg(7)];
+    let prepared = PreparedStorage::new(&source, &parameters).unwrap();
+    prepared.validate().unwrap();
+    assert_eq!(prepared.parameters(), parameters);
+    for register in parameters {
+        assert_eq!(
+            prepared.storage().renamed_register(register),
+            Some(register)
+        );
+    }
+    assert!(PreparedStorage::new(&source, &[Reg(1), Reg(1)]).is_err());
+    assert!(PreparedStorage::new(&source, &[Reg(9)]).is_err());
+    assert!(PreparedStorage::new(&source, &[]).is_err());
+}
+
+#[test]
+#[ignore = "requires NIRVANA_Z3"]
+fn recovered_chain_preserves_source_endpoints_with_arbitrary_private_storage() {
+    use crate::transform::loop_recovery::{self, Outcome as RecoveryOutcome};
+    let source = fixture();
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
+        .with_timeout(std::time::Duration::from_secs(15));
+    let RecoveryOutcome::Recovered(recovered) =
+        loop_recovery::recover(&source, &[Reg(1), Reg(2), Reg(6), Reg(7)], &solver)
+    else {
+        panic!("the checked toy chain should recover")
+    };
+    recovered.validate().unwrap();
+    for bound in [0, 1, 2, 3, u64::MAX] {
+        for pointer in [4096, 4095, u64::MAX] {
+            for poison in [0, 0xdead_beef, u64::MAX] {
+                let mut input = vec![poison; source.register_count()];
+                input[1] = pointer;
+                input[2] = 19;
+                input[6] = 7;
+                input[7] = bound;
+                let memory: Vec<_> = (0..32).map(|i| (i * 29 + 7) as u8).collect();
+                let a = source.run_with_memory(&input, 4096, &memory, 1024).unwrap();
+                let extended = recovered.extend_input(&input, poison).unwrap();
+                let b = recovered
+                    .program()
+                    .run_with_memory(&extended, 4096, &memory, 1024)
+                    .unwrap();
+                assert_eq!(a.status, b.status);
+                assert_eq!(a.state.memory, b.state.memory);
+            }
+        }
+    }
+}
+
+#[test]
 #[ignore = "requires NIRVANA_Z3"]
 fn accepts_only_completed_equivalent_proposals() {
     let source = fixture();

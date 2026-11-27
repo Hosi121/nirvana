@@ -1,6 +1,5 @@
 //! Actual object -> prepared display -> checked storage -> automatic lane groups.
 use super::*;
-use nirvana::block_verify::region::registers::compact;
 use nirvana::lane_patterns::{PatternExpr, discover};
 
 fn parameterized(expression: &PatternExpr) -> bool {
@@ -15,26 +14,12 @@ fn parameterized(expression: &PatternExpr) -> bool {
 
 fn checked_storage(bytes: &[u8]) -> (usize, Program, Vec<Reg>) {
     let (source, parameters) = prepared_storage(bytes);
-    let dense = compact(&source).unwrap();
-    let eligible: Vec<_> = dense
-        .registers()
-        .iter()
-        .filter(|r| !parameters.contains(r))
-        .copied()
-        .collect();
-    let allocation = nirvana::allocation::allocate_locals(&source, &eligible).unwrap();
-    let colors: Vec<_> = eligible
-        .iter()
-        .map(|&reg| (reg, allocation.color(reg).unwrap()))
-        .collect();
-    let storage = nirvana::transform::allocated_storage::lower(&source, &colors).unwrap();
-    storage.validate().unwrap();
-    let compacted = compact(storage.program()).unwrap();
-    let registers = compacted.registers().to_vec();
+    let prepared =
+        nirvana::transform::loop_recovery::PreparedStorage::new(&source, &parameters).unwrap();
     (
         source.register_count(),
-        compacted.program().clone(),
-        registers,
+        prepared.compact().program().clone(),
+        prepared.compact().registers().to_vec(),
     )
 }
 
@@ -208,8 +193,33 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
         *reg = registers[reg.0];
         assert!(reg.0 < machine.register_count());
     }
-    let harness = checked_c::source_with_stack(&emitted, machine.register_count(), 4, 512, 4600);
-    let path = directory.join("automatic-harness.c");
+    check_candidate_c(
+        &directory,
+        "automatic",
+        &machine,
+        candidate,
+        &emitted,
+        |input| {
+            let mut values: Vec<_> = registers
+                .iter()
+                .map(|reg| input.get(reg.0).copied().unwrap_or(u64::MAX))
+                .collect();
+            values.push(0);
+            values
+        },
+    );
+}
+
+fn check_candidate_c(
+    directory: &std::path::Path,
+    prefix: &str,
+    machine: &Program,
+    candidate: &Program,
+    emitted: &nirvana::readable::ReadableC,
+    candidate_input: impl Fn(&[u64]) -> Vec<u64>,
+) {
+    let harness = checked_c::source_with_stack(emitted, machine.register_count(), 4, 512, 4600);
+    let path = directory.join(format!("{prefix}-harness.c"));
     std::fs::write(&path, harness).unwrap();
     let vectors = std::fs::read_to_string("tools/corpora/structure-nested-v1.inputs.txt").unwrap();
     let mut rows = Vec::new();
@@ -237,11 +247,7 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
             let left = machine
                 .run_with_memory(&input, 4096, &memory, 8192)
                 .unwrap();
-            let mut compact_input: Vec<_> = registers
-                .iter()
-                .map(|reg| input.get(reg.0).copied().unwrap_or(u64::MAX))
-                .collect();
-            compact_input.push(0);
+            let compact_input = candidate_input(&input);
             let right = candidate
                 .run_with_memory(&compact_input, 4096, &memory, 8192)
                 .unwrap();
@@ -275,7 +281,7 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
         }
     }
     for optimization in ["-O0", "-O2"] {
-        let binary = directory.join(format!("automatic{optimization}"));
+        let binary = directory.join(format!("{prefix}{optimization}"));
         native::compile_c(
             &path,
             &binary,
@@ -290,7 +296,8 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
             expected
         );
         println!(
-            "AUTOMATIC-C opt={optimization} cases={} all_ram=true faults=true ubsan=true",
+            "{}-C opt={optimization} cases={} all_ram=true faults=true ubsan=true",
+            prefix.to_ascii_uppercase(),
             rows.len()
         );
     }
@@ -368,5 +375,61 @@ fn actual_compiler_loop_composition_checks_source_derived_lane_relations() {
     assert_eq!(
         problem.completion_query().check(&solver),
         Verdict::EquivalentUnderModel
+    );
+}
+
+#[test]
+#[ignore = "requires NIRVANA_REGION_OBJECT, NIRVANA_REGION_OUTPUT and NIRVANA_Z3"]
+fn actual_compiler_loop_recovery_chain_keeps_original_parameter_ids() {
+    use nirvana::transform::loop_recovery;
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let machine = nirvana::frontend::lift_elf_auto(&bytes, "fixture")
+        .unwrap()
+        .program;
+    let (source, parameters) = prepared_storage(&bytes);
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
+        .with_timeout(std::time::Duration::from_secs(15));
+    let loop_recovery::Outcome::Recovered(recovered) =
+        loop_recovery::recover(&source, &parameters, &solver)
+    else {
+        panic!("the source-bound compiler-loop chain must be recoverable")
+    };
+    recovered.validate().unwrap();
+    assert_eq!(recovered.parameters(), parameters);
+    let output = nirvana::readable::emit_readable_c_with_options(
+        recovered.program(),
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(4)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(output.parameters, parameters);
+    assert!(output.code.contains("input machine register 4"));
+    assert!(output.code.contains("input machine register 7"));
+    std::fs::write(directory.join("recovered.c"), &output.code).unwrap();
+    println!(
+        "RECOVERED-CHAIN source_registers={} compact_registers={} restored_registers={} parameters={:?} structured={}",
+        source.register_count(),
+        recovered.prepared().compact().program().register_count(),
+        recovered.program().register_count(),
+        output.parameters,
+        output.fallback_reason.is_none()
+    );
+    check_candidate_c(
+        &directory,
+        "recovered",
+        &machine,
+        recovered.program(),
+        &output,
+        |input| {
+            let mut values = vec![u64::MAX; source.register_count()];
+            values[..input.len()].copy_from_slice(input);
+            recovered.extend_input(&values, u64::MAX).unwrap()
+        },
     );
 }
