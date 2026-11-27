@@ -108,6 +108,8 @@ CLIとprobeへ同じ設定を渡し、選んだCの本文一致、実際に使�
 命令数の異なるIRの終端比較と、既存の予算ごとの機械状態比較は独立した観測です。
 未判定で基準Cを保持した場合も、採否と未適用の件数が分母に残ります。保存記録の再検査は具体実行の確認で、SMT証明の再構築はRustとsolverの境界です。
 
+`nirvana-loop-recovery-evaluation-v2`は、入口条件の提案・帰納検査・lane拡張の段階と所要時間も記録します。採用した入口条件には、コンパクトな元IR、条件式、初回到達と一巡後のSMTを対応付けます。`loop_entry_invariants`は未試行・予算切れ・未判定も含む全構成の集計です。従来のv1記録も同じ終端契約で再検査できます。
+
 ## 追加入力
 
 [追加入力の探索](../examples/evaluation_witnesses.rs)は、元の非debug objectと入力集合から未観測のCFG遷移を求めます。`checked-memory-path-inputs-v1`は512-byteのRAM、RDI/RSP、他レジスタを固定し、4状態ワードだけを任意値とします。生成Cのprobeと[同じ初期化](../examples/evaluation/fixture.rs)を使います。SAT入力は元IRで命令prefixと次のPCを再現し、正常returnまで実行できたものを`inputs.txt`へ加えます。途中停止やfaultへ至った候補も根拠を残します。

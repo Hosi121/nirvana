@@ -157,10 +157,11 @@ impl<'a> Stage<'a> {
                     ("cut_composition", certificate.checked())
                 }
             };
+            let entry = entry_invariants_json(recovery, out)?;
             let context = recovery.contextual().evidence();
             let parameters: Vec<_> = recovery.parameters().iter().map(|r| r.0).collect();
             format!(
-                "{{\"source_registers\":{},\"program_registers\":{},\"parameters\":{parameters:?},\"group\":{},\"structured\":{},\"locals\":{},\"completion\":\"unsat\",\"proof_method\":\"{method}\",\"checked\":{checked},\"context_model\":\"{}\",\"outside_instructions\":{},\"original_region_instructions\":{},\"candidate_region_instructions\":{},\"future_reads_checked\":{},\"source_ir\":\"loop-source.ir.txt\",\"program_ir\":\"loop-recovered.ir.txt\",\"baseline_c\":\"loop-baseline.c\",\"candidate_c\":\"loop-candidate.c\",\"states\":\"loop-endpoints.jsonl\"}}",
+                "{{\"entry_invariants\":{entry},\"source_registers\":{},\"program_registers\":{},\"parameters\":{parameters:?},\"group\":{},\"structured\":{},\"locals\":{},\"completion\":\"unsat\",\"proof_method\":\"{method}\",\"checked\":{checked},\"context_model\":\"{}\",\"outside_instructions\":{},\"original_region_instructions\":{},\"candidate_region_instructions\":{},\"future_reads_checked\":{},\"source_ir\":\"loop-source.ir.txt\",\"program_ir\":\"loop-recovered.ir.txt\",\"baseline_c\":\"loop-baseline.c\",\"candidate_c\":\"loop-candidate.c\",\"states\":\"loop-endpoints.jsonl\"}}",
                 recovery.source().register_count(),
                 recovery.program().register_count(),
                 recovery.group(),
@@ -181,8 +182,9 @@ impl<'a> Stage<'a> {
         } else {
             "null"
         };
+        let attempt = entry_attempt_json(emission);
         Ok(format!(
-            "{{\"schema\":\"nirvana-loop-recovery-evaluation-v1\",\"model\":\"{}\",\"contract\":\"return-all-ram-first-fault-v1\",\"selected\":{},\"retention\":{retained},\"attempt_seconds\":{},\"baseline\":{{\"structured\":{},\"locals\":{}}},\"candidate\":{candidate},\"endpoint\":{{\"status\":\"{}\",\"cases\":{},\"observations\":{},\"step_limit\":{},\"private_initializers\":[0,{}],\"comparisons\":[\"display_zero\",\"recovered_zero\",\"display_ones\",\"recovered_ones\"],\"witness\":{witness}}}}}",
+            "{{\"schema\":\"nirvana-loop-recovery-evaluation-v2\",\"model\":\"{}\",\"contract\":\"return-all-ram-first-fault-v1\",\"selected\":{},\"retention\":{retained},\"attempt_seconds\":{},\"entry_attempt\":{attempt},\"baseline\":{{\"structured\":{},\"locals\":{}}},\"candidate\":{candidate},\"endpoint\":{{\"status\":\"{}\",\"cases\":{},\"observations\":{},\"step_limit\":{},\"private_initializers\":[0,{}],\"comparisons\":[\"display_zero\",\"recovered_zero\",\"display_ones\",\"recovered_ones\"],\"witness\":{witness}}}}}",
             nirvana::readable::loop_recovery::MODEL_ID,
             emission.accepted(),
             emission.elapsed().as_secs_f64(),
@@ -195,6 +197,62 @@ impl<'a> Stage<'a> {
             u64::MAX
         ))
     }
+}
+fn entry_attempt_json(emission: &Emission) -> String {
+    let Some(attempt) = emission.entry_attempt() else {
+        return "null".into();
+    };
+    let phase = match attempt.phase {
+        Some(nirvana::block_verify::region::invariants::Phase::Base) => "\"base\"",
+        Some(nirvana::block_verify::region::invariants::Phase::Feedback) => "\"feedback\"",
+        None => "null",
+    };
+    let header = attempt
+        .header
+        .map_or("null".into(), |header| header.to_string());
+    format!(
+        "{{\"status\":\"{}\",\"phase\":{phase},\"header\":{header},\"normalizers\":{},\"before_lanes\":{},\"after_lanes\":{},\"seconds\":{}}}",
+        attempt.status.kind(),
+        attempt.normalizers,
+        attempt.before_lanes,
+        attempt.after_lanes,
+        attempt.elapsed.as_secs_f64()
+    )
+}
+fn entry_invariants_json(
+    recovery: &nirvana::transform::loop_recovery::Recovered,
+    out: &Path,
+) -> std::io::Result<String> {
+    use nirvana::block_verify::region::invariants::{MODEL_ID, Phase};
+    let region = recovery
+        .contextual()
+        .verified_region()
+        .proposal()
+        .source_region();
+    let Some(certificate) = region.entry_invariants() else {
+        return Ok("null".into());
+    };
+    let problem = certificate.problem();
+    std::fs::write(
+        out.join("loop-entry-source.ir.txt"),
+        program_text(problem.source()),
+    )?;
+    std::fs::write(
+        out.join("loop-entry-normalizers.ir.txt"),
+        format!("{:#?}\n", problem.normalizers()),
+    )?;
+    for (phase, name) in [(Phase::Base, "base"), (Phase::Feedback, "feedback")] {
+        std::fs::write(
+            out.join(format!("loop-entry-{name}.smt2")),
+            problem.query(phase).smt2(),
+        )?;
+    }
+    Ok(format!(
+        "{{\"model\":\"{MODEL_ID}\",\"header\":{},\"source_registers\":{},\"normalizers\":{},\"base\":\"unsat\",\"feedback\":\"unsat\",\"source_ir\":\"loop-entry-source.ir.txt\",\"normalizers_ir\":\"loop-entry-normalizers.ir.txt\",\"base_smt\":\"loop-entry-base.smt2\",\"feedback_smt\":\"loop-entry-feedback.smt2\"}}",
+        problem.header(),
+        problem.source().register_count(),
+        problem.normalizers().len()
+    ))
 }
 fn hex(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len() * 2);

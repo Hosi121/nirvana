@@ -427,6 +427,7 @@ def run(args):
     report['summary']['architecture_analysis'] = analysis_checks.summary(report['rows'])
     if args.loop_solver:
         report['summary']['loop_recovery'] = loop_recovery.summary(report['rows'])
+        report['summary']['loop_entry_invariants'] = loop_recovery.entry_summary(report['rows'])
     report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
     report['summary']['state_memory_sites'] = dict(Counter(r['state_memory_sites']['status'] for r in report['rows']))
     report['summary']['state_values'] = dict(Counter(r['state_values']['status'] for r in report['rows']))

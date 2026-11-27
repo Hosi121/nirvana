@@ -52,6 +52,72 @@ class LoopRecoveryTests(unittest.TestCase):
     def write_rows(self, directory, rows):
         (directory / 'loop-endpoints.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in rows))
 
+    def inductive(self, directory, value):
+        value['schema'] = 'nirvana-loop-recovery-evaluation-v2'
+        value['entry_attempt'] = dict(status='used_in_ir', phase=None, header=32,
+            normalizers=3, before_lanes=3, after_lanes=4, seconds=0.25)
+        value['candidate']['entry_invariants'] = dict(
+            model='checked-loop-entry-induction-v1', header=32, source_registers=12, normalizers=3,
+            base='unsat', feedback='unsat', source_ir='loop-entry-source.ir.txt',
+            normalizers_ir='loop-entry-normalizers.ir.txt', base_smt='loop-entry-base.smt2',
+            feedback_smt='loop-entry-feedback.smt2')
+        for name in lr.entry_artifacts(value['candidate']['entry_invariants'], value['entry_attempt']):
+            (directory / name).write_text('metadata fixture: ' + name)
+        return value
+
+    def test_source_induction_artifacts_and_attempt_denominator_are_bound(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, _ = self.fixture(Path(temporary))
+            self.inductive(directory, value)
+            result = self.validate(value, directory)
+            self.assertEqual(self.validate(result, directory, retained=True), result)
+            self.assertEqual(lr.entry_summary([{'loop_recovery': result}, {}]),
+                             {'used_in_ir': 1, 'not_run': 1})
+            for name in lr.entry_artifacts(value['candidate']['entry_invariants'], value['entry_attempt']):
+                path = directory / name
+                data = path.read_bytes()
+                path.write_bytes(data + b' altered')
+                with self.subTest(name=name), self.assertRaises(ProtocolError):
+                    self.validate(result, directory, retained=True)
+                path.write_bytes(data)
+
+    def test_entry_proof_scope_and_failure_status_cannot_be_forged(self):
+        for mutation in ['phase', 'header', 'normalizers', 'source', 'model', 'base', 'feedback',
+                         'path', 'time', 'lanes', 'status', 'missing_trace', 'missing_proof']:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                directory, value, _ = self.fixture(Path(temporary))
+                self.inductive(directory, value)
+                attempt, proof = value['entry_attempt'], value['candidate']['entry_invariants']
+                if mutation == 'phase': attempt['phase'] = 'base'
+                elif mutation == 'header': proof['header'] += 1
+                elif mutation == 'normalizers': proof['normalizers'] -= 1
+                elif mutation == 'source': proof['source_registers'] = 740
+                elif mutation == 'model': proof['model'] = 'unchecked'
+                elif mutation in ['base', 'feedback']: proof[mutation] = 'unknown'
+                elif mutation == 'path': proof['source_ir'] = '../outside'
+                elif mutation == 'time': attempt['seconds'] = float('nan')
+                elif mutation == 'lanes': attempt['after_lanes'] = 3
+                elif mutation == 'status': attempt.update(status='fact_counterexample', phase='feedback')
+                elif mutation == 'missing_trace': value['entry_attempt'] = None
+                else: value['candidate']['entry_invariants'] = None
+                with self.assertRaises(ProtocolError): self.validate(value, directory)
+
+    def test_failed_and_unused_entry_proposals_keep_the_checked_base_candidate(self):
+        for status in ['not_applicable', 'skipped_budget', 'build_unavailable', 'fact_unknown',
+                       'fact_counterexample', 'proved_unused', 'proposal_unavailable',
+                       'candidate_unproved', 'context_unavailable']:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                directory, value, _ = self.fixture(Path(temporary))
+                self.inductive(directory, value)
+                attempt = value['entry_attempt']
+                attempt.update(status=status, after_lanes=3)
+                if status in ['not_applicable', 'skipped_budget', 'build_unavailable']:
+                    attempt.update(header=None, normalizers=0)
+                if status in ['fact_unknown', 'fact_counterexample']: attempt['phase'] = 'feedback'
+                value['candidate']['entry_invariants'] = None
+                self.assertEqual(self.validate(value, directory)['status'], 'passed')
+                self.assertEqual(lr.entry_summary([{'loop_recovery': value}]), {status: 1})
+
     def test_replays_full_endpoint_records_and_every_retained_artifact(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory, value, _ = self.fixture(Path(temporary))

@@ -113,6 +113,10 @@ def index(report):
                 'loop recovery profile or denominator')
         require(all('loop_recovery' in row for row in rows if 'profile' in row['semantics']),
                 'missing loop recovery observations')
+        if any(row.get('loop_recovery', {}).get('schema') == 'nirvana-loop-recovery-evaluation-v2'
+               for row in rows):
+            require(report['summary'].get('loop_entry_invariants') == loop_recovery.entry_summary(rows),
+                    'entry invariant attempt denominator')
     return result
 
 
@@ -463,6 +467,7 @@ def compare(before_path, after_path):
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
             'loop_recovery_regressions': sum(row['loop_recovery_regression'] for row in rows),
             'candidate_loop_recovery': loop_recovery.summary(after['rows']),
+            'candidate_loop_entry_invariants': loop_recovery.entry_summary(after['rows']),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',
             'rows': rows}
 
