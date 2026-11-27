@@ -114,7 +114,26 @@ fn build_query(
     before: &Program,
     after: &Program,
     shared: &[Reg],
+    outputs: Observations,
+) -> Result<Query, Error> {
+    build_query_encoded(before, after, shared, outputs, encode::dag, encode::dag)
+}
+
+type Encoder = fn(
+    &mut Builder,
+    &Program,
+    &[u64],
+    &Registers,
+    &str,
+) -> Result<(State, String, Vec<String>), Error>;
+
+fn build_query_encoded(
+    before: &Program,
+    after: &Program,
+    shared: &[Reg],
     mut outputs: Observations,
+    before_encoder: Encoder,
+    after_encoder: Encoder,
 ) -> Result<Query, Error> {
     let left_order = shape::inspect(before)?;
     let right_order = shape::inspect(after)?;
@@ -136,9 +155,9 @@ fn build_query(
     builder.declare("size", WORD);
     builder.declare("memory_witness", WORD);
     let (left, left_complete, input_names) =
-        encode::dag(&mut builder, before, &left_order, &shared, "left")?;
+        before_encoder(&mut builder, before, &left_order, &shared, "left")?;
     let (right, right_complete, candidate_names) =
-        encode::dag(&mut builder, after, &right_order, &shared, "right")?;
+        after_encoder(&mut builder, after, &right_order, &shared, "right")?;
     builder.sample("memory_witness".into())?;
     let mut normal = vec![
         format!("(distinct {} {})", left.exit_kind, right.exit_kind),

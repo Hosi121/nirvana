@@ -227,4 +227,5 @@ fn the_machine_register_space_keeps_sparse_region_boundaries() {
     assert!(query(&source, &other, &[Reg(79)], &[Reg(79)]).is_ok());
 }
 
+mod encoding;
 mod smt;

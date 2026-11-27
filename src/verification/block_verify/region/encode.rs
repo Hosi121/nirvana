@@ -7,32 +7,51 @@ struct Path {
     constants: Vec<Option<u64>>,
 }
 
-fn merge(builder: &mut Builder, paths: &[Path], initial: &State) -> State {
+#[derive(Clone, Copy)]
+enum Merge {
+    All,
+    Effects,
+    NormalValues,
+}
+
+fn merge(builder: &mut Builder, paths: &[Path], initial: &State, fields: Merge) -> State {
     // At a reachable join one of these guards holds. The first incoming state
     // supplies a harmless default, avoiding arbitrary inputs on every linear edge.
     let mut out = paths.first().map_or(initial, |p| &p.state).clone();
     for path in paths.iter().skip(1) {
         let guard = &path.guard;
         let state = &path.state;
-        for (value, next) in out.registers.iter_mut().zip(&state.registers) {
-            if value != next {
-                *value = builder.value(format!("(ite {guard} {next} {value})"));
+        if !matches!(fields, Merge::Effects) {
+            for (value, next) in out.registers.iter_mut().zip(&state.registers) {
+                if value != next {
+                    *value = builder.value(format!("(ite {guard} {next} {value})"));
+                }
             }
         }
-        out.memory = builder.define(
-            ARRAY,
-            format!("(ite {guard} {} {})", state.memory, out.memory),
-        );
-        out.alive = builder.bool(format!("(ite {guard} {} {})", state.alive, out.alive));
-        for (value, next) in [
-            (&mut out.fault_access, &state.fault_access),
-            (&mut out.fault_address, &state.fault_address),
-            (&mut out.fault_width, &state.fault_width),
-            (&mut out.exit_kind, &state.exit_kind),
-            (&mut out.exit_value, &state.exit_value),
-        ] {
-            if value != next {
-                *value = builder.value(format!("(ite {guard} {next} {value})"));
+        if !matches!(fields, Merge::NormalValues) {
+            out.memory = builder.define(
+                ARRAY,
+                format!("(ite {guard} {} {})", state.memory, out.memory),
+            );
+            out.alive = builder.bool(format!("(ite {guard} {} {})", state.alive, out.alive));
+            for (value, next) in [
+                (&mut out.fault_access, &state.fault_access),
+                (&mut out.fault_address, &state.fault_address),
+                (&mut out.fault_width, &state.fault_width),
+            ] {
+                if value != next {
+                    *value = builder.value(format!("(ite {guard} {next} {value})"));
+                }
+            }
+        }
+        if !matches!(fields, Merge::Effects) {
+            for (value, next) in [
+                (&mut out.exit_kind, &state.exit_kind),
+                (&mut out.exit_value, &state.exit_value),
+            ] {
+                if value != next {
+                    *value = builder.value(format!("(ite {guard} {next} {value})"));
+                }
             }
         }
     }
@@ -75,6 +94,28 @@ pub(super) fn dag(
     shared: &Registers,
     prefix: &str,
 ) -> Result<(State, String, Vec<String>), Error> {
+    dag_impl(builder, program, order, shared, prefix, true)
+}
+
+#[cfg(test)]
+pub(super) fn reference_dag(
+    builder: &mut Builder,
+    program: &Program,
+    order: &[u64],
+    shared: &Registers,
+    prefix: &str,
+) -> Result<(State, String, Vec<String>), Error> {
+    dag_impl(builder, program, order, shared, prefix, false)
+}
+
+fn dag_impl(
+    builder: &mut Builder,
+    program: &Program,
+    order: &[u64],
+    shared: &Registers,
+    prefix: &str,
+    project_normal_values: bool,
+) -> Result<(State, String, Vec<String>), Error> {
     let instructions: BTreeMap<_, _> = program
         .instructions()
         .iter()
@@ -92,6 +133,7 @@ pub(super) fn dag(
         }],
     );
     let mut exits = Vec::new();
+    let mut returns = Vec::new();
     for &pc in order {
         let paths = incoming.remove(&pc).ok_or(Error::OpenEdge)?;
         let reach = builder.bool(format!(
@@ -110,7 +152,7 @@ pub(super) fn dag(
                 *constant = Some(first);
             }
         }
-        let mut state = merge(builder, &paths, &initial);
+        let mut state = merge(builder, &paths, &initial, Merge::All);
         state.alive = reach.clone();
         let instruction = instructions[&pc];
         builder.instruction(instruction, &mut state)?;
@@ -133,6 +175,13 @@ pub(super) fn dag(
             constants: vec![],
         });
         if matches!(instruction.control, Control::Return(_)) {
+            if project_normal_values {
+                returns.push(Path {
+                    guard: state.alive.clone(),
+                    state: state.clone(),
+                    constants: vec![],
+                });
+            }
             exits.push(Path {
                 guard: state.alive.clone(),
                 state,
@@ -175,5 +224,17 @@ pub(super) fn dag(
             .collect::<Vec<_>>()
             .join(" ")
     ));
-    Ok((merge(builder, &exits, &initial), complete, names))
+    let state = if project_normal_values {
+        // Registers and returned values are observed only after normal Return.
+        // Fault paths retain all RAM, status and first-fault fields separately.
+        let mut effects = merge(builder, &exits, &initial, Merge::Effects);
+        let normal = merge(builder, &returns, &initial, Merge::NormalValues);
+        effects.registers = normal.registers;
+        effects.exit_kind = normal.exit_kind;
+        effects.exit_value = normal.exit_value;
+        effects
+    } else {
+        merge(builder, &exits, &initial, Merge::All)
+    };
+    Ok((state, complete, names))
 }
