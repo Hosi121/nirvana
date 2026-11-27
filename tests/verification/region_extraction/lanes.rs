@@ -147,6 +147,15 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
     let start = std::time::Instant::now();
     let accepted = match problem.check(&solver) {
         RollOutcome::Verified(value) => {
+            let contextual = value.in_context().unwrap();
+            contextual.validate().unwrap();
+            println!(
+                "AUTOMATIC-CONTEXT outside={} original_region={} candidate_region={} future_reads_checked={}",
+                contextual.evidence().outside_instructions,
+                contextual.evidence().original_region_instructions,
+                contextual.evidence().candidate_region_instructions,
+                contextual.evidence().excluded_continuation_reads_checked,
+            );
             let (method, checked) = match value.equivalence_proof() {
                 EquivalenceProof::ExhaustivePartitions { checked } => ("partitions", *checked),
                 EquivalenceProof::CutComposition(seal) => ("composition", seal.checked()),

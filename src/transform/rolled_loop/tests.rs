@@ -245,6 +245,43 @@ fn lane_cuts_infer_entry_values_and_leave_later_definitions_inside_the_chunk() {
 }
 
 #[test]
+fn function_frame_checks_original_entries_instructions_and_future_reads() {
+    let source = fixture();
+    let discovery = lane_patterns::discover(&source).unwrap();
+    let proposal = propose(&source, &discovery, 0).unwrap();
+    let evidence = context::frame(&proposal).unwrap();
+    assert!(evidence.outside_instructions > 0);
+    assert!(evidence.excluded_continuation_reads_checked > 0);
+    let mut wrong = proposal.clone();
+    let mut instructions = wrong.program.instructions().to_vec();
+    instructions
+        .iter_mut()
+        .find(|i| i.address == 0)
+        .unwrap()
+        .assignments
+        .push(Assignment {
+            destination: Place::Memory {
+                address: Expr::Register(Reg(1)),
+                width: crate::model::ir::Width::U64,
+            },
+            value: Expr::Const(42),
+        });
+    wrong.program = Program::new(0, wrong.program.register_count(), instructions).unwrap();
+    assert_eq!(context::frame(&wrong).unwrap_err(), ContextError::Frame);
+    let mut reentered = proposal.clone();
+    reentered.program = Program::new(
+        proposal.envelope.header,
+        proposal.program.register_count(),
+        proposal.program.instructions().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        context::frame(&reentered).unwrap_err(),
+        ContextError::Boundary
+    );
+}
+
+#[test]
 #[ignore = "requires NIRVANA_Z3"]
 fn accepts_only_completed_equivalent_proposals() {
     let source = fixture();
@@ -267,6 +304,8 @@ fn accepts_only_completed_equivalent_proposals() {
     assert!(seal.matches(problem.query()));
     assert_eq!(seal.checked(), 12);
     assert_eq!(accepted.checked_partitions(), 0);
+    let contextual = accepted.in_context().unwrap();
+    contextual.validate().unwrap();
     assert!(
         accepted
             .outputs()
@@ -305,6 +344,28 @@ fn accepts_only_completed_equivalent_proposals() {
     let found = lane_patterns::discover(&staged).unwrap();
     let staged = propose(&staged, &found, 0).unwrap();
     assert!(matches!(staged.verify(&solver), Outcome::Verified(_)));
+
+    // A local region proof says nothing about an edited entry prefix. The
+    // whole-function frame check must reject that independently of the solver.
+    let mut outside = proposal.clone();
+    let mut instructions = outside.program.instructions().to_vec();
+    instructions
+        .iter_mut()
+        .find(|i| i.address == 0)
+        .unwrap()
+        .assignments
+        .push(Assignment {
+            destination: Place::Memory {
+                address: Expr::Register(Reg(1)),
+                width: crate::model::ir::Width::U64,
+            },
+            value: Expr::Const(42),
+        });
+    outside.program = Program::new(0, outside.program.register_count(), instructions).unwrap();
+    let Outcome::Verified(local) = outside.verify(&solver) else {
+        panic!("the unchanged local region should retain its original proof")
+    };
+    assert_eq!(local.in_context().unwrap_err(), ContextError::Frame);
 
     let mut short = proposal.clone();
     short.rounds = 1;

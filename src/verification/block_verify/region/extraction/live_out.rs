@@ -62,6 +62,37 @@ impl ContinuationOutputs {
         }
         Ok(())
     }
+
+    /// Check that the retained source interface also covers the candidate's
+    /// future reads. This conservative context boundary includes syntactic
+    /// reads even when their calculated value will later be discarded.
+    pub(crate) fn check_candidate_continuations(
+        &self,
+        region: &Region,
+        candidate: &Program,
+    ) -> Result<usize, ExtractionError> {
+        self.validate()?;
+        if !self.matches(region) || candidate.register_count() != self.source.register_count() {
+            return Err(ExtractionError::LiveOut);
+        }
+        let successors = shape::bounded_successors(candidate)?;
+        let mut work = MAX_CHECK_WORK;
+        let mut checked = 0;
+        for (tag, &pc) in self.stops.iter().enumerate() {
+            if candidate.cfg().block_at(pc).is_none() {
+                return Err(ExtractionError::LiveOut);
+            }
+            for register in 0..candidate.register_count() {
+                if !self.returns[tag].registers.contains(&Reg(register)) {
+                    if reads_before_write(candidate, &successors, pc, Reg(register), &mut work)? {
+                        return Err(ExtractionError::LiveOut);
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        Ok(checked)
+    }
 }
 
 /// Build a fresh SSA entry at each continuation, so even source blocks that are

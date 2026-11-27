@@ -1,4 +1,70 @@
 use super::*;
+
+#[test]
+fn candidate_continuations_cover_old_inputs_but_allow_definitions_before_reads() {
+    let step = |address, assignments, control| IrInstruction {
+        address,
+        size: 1,
+        assignments,
+        control,
+    };
+    let define = || Assignment {
+        destination: Reg(0).into(),
+        value: Expr::Const(0),
+    };
+    let source = Program::new(
+        0,
+        2,
+        vec![
+            step(0, vec![], Control::Jump(10)),
+            step(10, vec![define()], Control::Return(Expr::Register(Reg(1)))),
+        ],
+    )
+    .unwrap();
+    let region = extract(&source, 0, &[10], None).unwrap();
+    let outputs = derive(&region).unwrap();
+    assert!(!outputs.returns()[0].registers.contains(&Reg(0)));
+    assert!(
+        outputs
+            .check_candidate_continuations(&region, &source)
+            .is_ok()
+    );
+    for read_first in [true, false] {
+        let read = Assignment {
+            destination: Place::Memory {
+                address: Expr::Register(Reg(0)),
+                width: crate::model::ir::Width::U8,
+            },
+            value: Expr::Const(42),
+        };
+        let assignments = if read_first {
+            vec![read, define()]
+        } else {
+            vec![define(), read]
+        };
+        let candidate = Program::new(
+            0,
+            2,
+            vec![
+                step(0, vec![], Control::Jump(10)),
+                step(10, assignments, Control::Return(Expr::Register(Reg(1)))),
+            ],
+        )
+        .unwrap();
+        if read_first {
+            assert_eq!(
+                outputs.check_candidate_continuations(&region, &candidate),
+                Err(ExtractionError::LiveOut)
+            );
+        } else {
+            assert!(
+                outputs
+                    .check_candidate_continuations(&region, &candidate)
+                    .is_ok()
+            );
+        }
+    }
+}
 use crate::model::ir::Width;
 
 fn fixture() -> Program {

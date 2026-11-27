@@ -23,6 +23,7 @@ use crate::verification::{
 use std::collections::{BTreeMap, BTreeSet};
 
 mod composition;
+mod context;
 mod controls;
 mod emit;
 mod envelope;
@@ -32,6 +33,7 @@ mod replay;
 mod storage;
 mod verify;
 
+pub use context::{CONTEXT_MODEL_ID, ContextError, ContextEvidence, ContextualRoll};
 pub use envelope::Envelope;
 pub use replay::{Counterexample, Replay, ReplayExit};
 pub use verify::{EquivalenceProof, Outcome, VerificationProblem, VerifiedRoll};
