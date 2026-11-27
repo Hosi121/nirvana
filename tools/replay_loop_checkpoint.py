@@ -85,6 +85,67 @@ def rust_regeneration(args, checkpoint, texts, solver):
     return record
 
 
+def replay_obligations(checkpoint, texts, solver):
+    layout = checkpoint.get('proof_artifacts', {})
+    if not isinstance(layout, dict):
+        raise ValueError('checkpoint proof layout must be an object')
+    completion_name = layout.get('completion', 'automatic-complete.smt2')
+    comparison_name = layout.get('comparison', 'automatic-compare.smt2')
+    entry = layout.get('entry_invariants')
+    if checkpoint['schema'] == 'nirvana-inductive-loop-m2-v1':
+        if set(layout) != {'completion', 'comparison', 'entry_invariants'} or not isinstance(entry, dict) or set(entry) != {'base', 'feedback'}:
+            raise ValueError('inductive checkpoint must retain both entry obligations')
+    elif checkpoint['schema'] not in ['nirvana-compositional-roll-m2-v1', 'nirvana-contextual-loop-m2-v1'] or layout:
+        raise ValueError('unsupported checkpoint proof layout')
+    names = [completion_name, comparison_name] + (list(entry.values()) if entry else [])
+    obligations = checkpoint['cut_obligations']
+    if not 1 <= len(obligations) <= 48:
+        raise ValueError('checkpoint cut obligation budget')
+    names += [obligation['artifact'] for obligation in obligations]
+    if any(not isinstance(name, str) or name not in texts for name in names) or len(set(names)) != len(names):
+        raise ValueError('checkpoint proof artifacts must be distinct and present')
+    if digest(texts[comparison_name].encode()) != checkpoint['comparison_partitions']['property_sha256']:
+        raise ValueError('flat comparison must use the retained property')
+    start = time.monotonic()
+    entry_results = []
+    if entry is not None:
+        deadline = time.monotonic() + 3
+        for phase in ['base', 'feedback']:
+            status = solve(solver, texts[entry[phase]], deadline - time.monotonic())
+            entry_results.append({'phase': phase, 'status': status})
+            if status != 'unsat':
+                break
+    entry_verified = entry is None or len(entry_results) == 2 and all(row['status'] == 'unsat' for row in entry_results)
+    extension_deadline = time.monotonic() + 5
+    completion = solve(solver, texts[completion_name], 5) if entry_verified else 'not-run'
+
+    results = []
+    if completion == 'unsat':
+        deadline = extension_deadline if entry is not None else time.monotonic() + 15
+        for obligation in checkpoint['cut_obligations']:
+            status = solve(solver, texts[obligation['artifact']],
+                           deadline - time.monotonic())
+            results.append({'cut': obligation['cut'], 'kind': obligation['kind'],
+                            'status': status})
+            if status != 'unsat':
+                break
+    verified = (entry_verified and completion == 'unsat'
+                and len(results) == len(checkpoint['cut_obligations'])
+                and all(row['status'] == 'unsat' for row in results))
+    return {
+        'completion': completion,
+        'entry_invariants': entry_results,
+        'entry_invariants_all_unsat': entry_verified if entry is not None else None,
+        'obligations': results,
+        'total_obligations': len(checkpoint['cut_obligations']),
+        'all_checkpoint_obligations_unsat': verified,
+        'seconds': time.monotonic() - start,
+        'scope': ('Saved source-bound decomposition under the original region contract. '
+                  'Rust regeneration also checks the constructor, proof seals and C behavior. '
+                  'SAT requires Rust replay and supplies no accepted certificate.'),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', required=True, type=Path)
@@ -115,38 +176,14 @@ def main():
     solver_name = os.environ.get('NIRVANA_Z3', 'z3')
     solver = Path(shutil.which(solver_name) or solver_name).resolve()
     version = subprocess.check_output([str(solver), '-version'], text=True).strip()
-    start = time.monotonic()
-    completion = solve(solver, texts['automatic-complete.smt2'], 5)
-    results = []
-    if completion == 'unsat':
-        deadline = time.monotonic() + 15
-        for obligation in checkpoint['cut_obligations']:
-            status = solve(solver, texts[obligation['artifact']],
-                           deadline - time.monotonic())
-            results.append({'cut': obligation['cut'], 'kind': obligation['kind'],
-                            'status': status})
-            if status != 'unsat':
-                break
-    verified = (completion == 'unsat'
-                and len(results) == len(checkpoint['cut_obligations'])
-                and all(row['status'] == 'unsat' for row in results))
-    record = {
-        'solver_version': version,
-        'solver_file_sha256': digest(solver.read_bytes()),
-        'completion': completion,
-        'obligations': results,
-        'total_obligations': len(checkpoint['cut_obligations']),
-        'all_checkpoint_obligations_unsat': verified,
-        'seconds': time.monotonic() - start,
-        'scope': ('Saved source-bound decomposition under the original region contract. '
-                  'Rust regeneration also checks the constructor, proof seals and C behavior. '
-                  'SAT requires Rust replay and supplies no accepted certificate.'),
-    }
+    record = replay_obligations(checkpoint, texts, solver)
+    record.update(solver_version=version, solver_file_sha256=digest(solver.read_bytes()))
+    comparison_name = checkpoint.get('proof_artifacts', {}).get('comparison', 'automatic-compare.smt2')
     if args.flat:
         deadline = time.monotonic() + 15
         statuses = []
         for suffix in checkpoint['comparison_partitions']['suffixes']:
-            status = solve(solver, texts['automatic-compare.smt2'] + suffix,
+            status = solve(solver, texts[comparison_name] + suffix,
                            deadline - time.monotonic())
             statuses.append(status)
             if status != 'unsat':
@@ -159,7 +196,7 @@ def main():
         args.report.write_text(json.dumps(record, indent=2) + '\n')
     (args.out / 'replay.json').write_text(json.dumps(record, indent=2) + '\n')
     print(json.dumps(record, indent=2))
-    return 0 if verified and record.get('rust_returncode', 0) == 0 else 2
+    return 0 if record['all_checkpoint_obligations_unsat'] and record.get('rust_returncode', 0) == 0 else 2
 
 
 if __name__ == '__main__':
