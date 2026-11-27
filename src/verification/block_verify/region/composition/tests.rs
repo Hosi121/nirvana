@@ -339,3 +339,5 @@ fn private_cut_constants_do_not_alias_capture_registers_or_drop_effects() {
         "DAG-COMPOSITION private_constant=1 false_constant=1 ram_replay=1 fault_replay=1 global_oracles=2"
     );
 }
+
+mod audit;
