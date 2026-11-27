@@ -154,6 +154,10 @@ pub(super) fn candidate(
     };
     let mut instructions = source.instructions().to_vec();
     for i in &mut instructions {
+        if i.address == envelope.first_lane {
+            i.assignments.clear();
+            i.control = Control::Jump(init);
+        }
         if i.address == envelope.header {
             let mut masks: Vec<_> = before
                 .input_bit_caps()
@@ -171,10 +175,6 @@ pub(super) fn candidate(
                 .collect();
             masks.append(&mut i.assignments);
             i.assignments = masks;
-        }
-        if i.address == envelope.first_lane {
-            i.assignments.clear();
-            i.control = Control::Jump(init);
         }
     }
     for block in blocks {

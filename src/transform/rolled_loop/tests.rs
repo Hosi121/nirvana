@@ -182,6 +182,39 @@ fn builds_a_source_bound_loop_and_preserves_aliases_and_first_faults() {
 }
 
 #[test]
+fn a_lane_at_the_cut_entry_keeps_its_checked_input_normalization() {
+    let source = fixture();
+    let discovery = lane_patterns::discover(&source).unwrap();
+    let mut envelope = propose(&source, &discovery, 0).unwrap().envelope;
+    envelope.header = envelope.first_lane;
+    let counter = Reg(source.register_count());
+    let padded = Program::new(
+        0,
+        source.register_count() + 1,
+        source.instructions().to_vec(),
+    )
+    .unwrap();
+    let widths = ValueWidths::analyze(&padded);
+    let before =
+        extraction::extract(&padded, envelope.header, &envelope.stops(), Some(&widths)).unwrap();
+    assert_eq!(before.input_bit_caps()[7], 2);
+    let group = &discovery.groups()[0];
+    let controls = controls::analyze(&padded, &discovery, group, &envelope, counter).unwrap();
+    let (candidate, _) =
+        emit::candidate(&padded, group, &envelope, &before, &controls, counter).unwrap();
+    for value in [0, 3, 4, 5, u64::MAX] {
+        let mut input = vec![0; padded.register_count()];
+        input[7] = value;
+        let memory = vec![0x5a; 32];
+        let state = candidate
+            .run_block_with_memory(envelope.header, &input, 1024, &memory)
+            .unwrap();
+        assert_eq!(state.state.registers[7], value & 3);
+        assert_eq!(state.state.memory, memory);
+    }
+}
+
+#[test]
 #[ignore = "requires NIRVANA_Z3"]
 fn accepts_only_completed_equivalent_proposals() {
     let source = fixture();
