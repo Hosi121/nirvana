@@ -10,6 +10,7 @@ use crate::model::ir::{RunReport, RunStatus};
 pub mod composition;
 mod encode;
 pub mod extraction;
+pub mod invariants;
 mod observations;
 mod partition;
 pub mod registers;

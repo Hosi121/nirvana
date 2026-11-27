@@ -433,3 +433,60 @@ fn actual_compiler_loop_recovery_chain_keeps_original_parameter_ids() {
         },
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Clang18 NIRVANA_REGION_OBJECT and NIRVANA_Z3"]
+fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
+    use nirvana::block_verify::region::invariants::{self, Phase};
+    use nirvana::ir::{Assignment, BinaryOp, Expr};
+    let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
+    let (_, source, _) = checked_storage(&bytes);
+    // This fixed-input diagnostic supplies proposals explicitly. The verifier
+    // proves their truth from the actual binary-derived Program, including RAM.
+    let r = |n| Expr::Register(Reg(n));
+    let c = Expr::Const;
+    let b = Expr::binary;
+    let low = Expr::select(b(BinaryOp::Ult, r(5), c(1)), c(1), r(5));
+    let normalizers = vec![
+        Assignment {
+            destination: Reg(5).into(),
+            value: Expr::select(b(BinaryOp::Ult, c(4), low.clone()), c(4), low),
+        },
+        Assignment {
+            destination: Reg(7).into(),
+            value: Expr::select(
+                b(BinaryOp::Ult, r(7), r(5)),
+                r(7),
+                b(BinaryOp::Sub, r(5), c(1)),
+            ),
+        },
+        Assignment {
+            destination: Reg(7).into(),
+            value: b(BinaryOp::And, r(7), c(3)),
+        },
+    ];
+    let problem = invariants::Problem::new(&source, 32, &normalizers).unwrap();
+    problem.validate().unwrap();
+    for (name, phase) in [
+        ("entry-facts-base.smt2", Phase::Base),
+        ("entry-facts-feedback.smt2", Phase::Feedback),
+    ] {
+        std::fs::write(directory.join(name), problem.query(phase).smt2()).unwrap();
+    }
+    let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
+        .with_timeout(std::time::Duration::from_secs(5));
+    let start = std::time::Instant::now();
+    let outcome = problem.check(&solver, std::time::Duration::from_secs(10));
+    let invariants::Outcome::Verified(certificate) = outcome else {
+        panic!("entry induction: {outcome:?}")
+    };
+    let caps = certificate.bit_caps(&source, 32).unwrap();
+    assert_eq!(caps[7], 2);
+    println!(
+        "ENTRY-FACTS source_registers={} header=32 index=7 bits=2 queries=2 all_words=true all_ram=true ms={}",
+        source.register_count(),
+        start.elapsed().as_millis()
+    );
+}
