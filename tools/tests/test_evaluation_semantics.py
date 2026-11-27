@@ -33,7 +33,8 @@ class SemanticTests(unittest.TestCase):
             with self.assertRaises(semantics.ProtocolError):
                 semantics.compare(expected, actual, 'first\nsecond\n', 6)
 
-    def protocol(self, root, *, wrong=False, suspended=0, stage_checks=None, input_file=False):
+    def protocol(self, root, *, wrong=False, suspended=0, stage_checks=None, input_file=False,
+                 loop_enabled=False, loop_record=None):
         destination = root / 'semantics'
         destination.mkdir()
         count = 8
@@ -51,6 +52,7 @@ class SemanticTests(unittest.TestCase):
                     if entry['status'] == 'counterexample':
                         (destination / entry['witness']).write_text('actual original-state counterexample')
         if input_file: profile['generator'] = 'fixture-state4-input-file-v1'
+        if loop_record is not None: profile['loop_recovery'] = loop_record
         native = ('0 1 2 3 4\n' * count)
         checked = (' '.join(['0'] * 69) + '\n') * profile['checked_cases']
         files = {'native-inputs.txt': '1 2 3 4\n' * count, 'native-expected.txt': native,
@@ -78,6 +80,7 @@ class SemanticTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, output, '')
         args = argparse.Namespace(semantic_probe='probe', emit='readable-c', semantic_seed=17,
                                   semantic_cases=count, semantic_steps=4096, c_compiler='cc')
+        if loop_enabled: args.loop_solver = 'z3'
         if input_file:
             args.semantic_inputs = root / 'fixed-inputs.txt'
             args.semantic_inputs.write_text('1 2 3 4\n' * count)
@@ -92,6 +95,16 @@ class SemanticTests(unittest.TestCase):
             row, _ = self.protocol(Path(directory), input_file=True)
             self.assertEqual(row['semantics']['profile']['generator'], 'fixture-state4-input-file-v1')
             self.assertEqual(row['semantics']['status'], 'passed')
+
+    def test_loop_evidence_requires_its_explicit_profile_and_keeps_c_checks_on_failure(self):
+        for enabled, record in [(True, None), (False, {'status': 'passed'})]:
+            with tempfile.TemporaryDirectory() as directory:
+                row, calls = self.protocol(Path(directory), loop_enabled=enabled, loop_record=record)
+                self.assertEqual(row['loop_recovery']['status'], 'evaluator_error')
+                self.assertEqual(row['semantics']['status'], 'passed')
+                self.assertEqual(row['failures'][0]['stage'], 'loop_recovery')
+                self.assertIn('generated_O2_run', calls)
+                self.assertNotIn('loop_recovery', row['semantics']['profile'])
 
     def test_all_three_comparisons_have_independent_coverage_and_witnesses(self):
         for wrong in [False, True]:

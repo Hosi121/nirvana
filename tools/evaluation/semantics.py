@@ -49,6 +49,8 @@ def run(args, row, directory, invoke, flags):
     input_file = getattr(args, 'semantic_inputs', None)
     if input_file:
         argv.append(input_file)
+    if getattr(args, 'loop_solver', None):
+        argv.extend(['--recover-loops', args.loop_solver])
     result = invoke(argv, 'semantic_prepare')
     try:
         profile = json.loads(result.stdout)
@@ -75,6 +77,10 @@ def run(args, row, directory, invoke, flags):
     from . import stages
     stages.attach(profile.pop('stage_checks', None), row, destination, args.semantic_steps,
                   profile['requested_cases'], profile.get('register_count'))
+    from . import loop_recovery
+    loop_recovery.attach(profile.pop('loop_recovery', None), row, destination,
+                         profile['requested_cases'], args.semantic_steps,
+                         required=bool(getattr(args, 'loop_solver', None)))
     row['semantics'] = {'status': 'running', 'contract': CONTRACT, 'profile': profile,
                         'prepare_stdout_sha256': hashlib.sha256(result.stdout.encode()).hexdigest(),
                         'native_observations': 'return and state[4], valid pointer',

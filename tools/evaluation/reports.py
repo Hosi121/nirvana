@@ -12,6 +12,7 @@ from . import control_graph as cg, semantics, stages, c_footprint as cf
 from . import state_memory as sm
 from .state_values import protocol as sv
 from . import build_identity, analysis_checks
+from . import loop_recovery
 from .semantic_pairs import unique_object
 
 
@@ -106,6 +107,12 @@ def index(report):
         require(isinstance(counts, dict) and all(type(n) is int for n in counts.values())
                 and dict(Counter(row.get('state_values', {}).get('status', 'not_run') for row in rows)) == counts,
                 'state value summary denominator')
+    if 'loop_recovery' in report:
+        require(report['loop_recovery'].get('model') == loop_recovery.MODEL
+                and report['summary'].get('loop_recovery') == loop_recovery.summary(rows),
+                'loop recovery profile or denominator')
+        require(all('loop_recovery' in row for row in rows if 'profile' in row['semantics']),
+                'missing loop recovery observations')
     return result
 
 
@@ -116,7 +123,8 @@ def replay(root, row):
                         ('readable_sha256', 'readable.c')]:
         if field in row:
             hashed(directory / name, row[field])
-    result = {'structure': row['structure_status'], 'semantics': row['semantics']['status']}
+    result = {'structure': row['structure_status'], 'semantics': row['semantics']['status'],
+              'loop_recovery': row.get('loop_recovery', {}).get('status', 'not_run')}
     require((row['structure_status'] == 'measured') == ('distance' in row),
             'missing or unexpected measured distance')
     if 'distance' in row:
@@ -203,11 +211,18 @@ def replay(root, row):
             prepared = json.loads(raw.read_text(), object_pairs_hook=unique_object)
             require(isinstance(prepared, dict), 'semantic prepare JSON shape')
             recorded_stages = prepared.pop('stage_checks', None)
+            recorded_loop = prepared.pop('loop_recovery', None)
             require(prepared == profile, 'semantic profile differs from retained probe JSON')
             restored = {}
             stages.attach(recorded_stages, restored, destination, profile['step_limit'],
                           profile['requested_cases'], profile.get('register_count'))
             require(restored['stage_checks'] == architecture, 'stage checks differ from retained probe JSON')
+            if recorded_loop is not None or 'loop_recovery' in row:
+                loop_recovery.attach(recorded_loop, restored, destination, profile['requested_cases'],
+                                     profile['step_limit'], required=True)
+                require(restored.get('loop_recovery') == row.get('loop_recovery'),
+                        'loop recovery differs from retained probe JSON')
+                result['loop_recovery'] = row['loop_recovery']['status']
             result['probe_metadata'] = 'replayed'
         for name in semantics.FILES:
             hashed(destination / name, semantic['inputs'][name])
@@ -393,6 +408,8 @@ def compare(before_path, after_path):
         lost_analysis.sort()
         added_analysis.sort()
         lost_checks.extend(lost_analysis)
+        loop_regression = (br['loop_recovery'] in ['counterexample', 'rejected', 'evaluator_error']
+                           or ar['loop_recovery'] == 'passed' and br['loop_recovery'] != 'passed')
         if ar['semantic_state_pairs'] == 'replayed' and br['semantic_state_pairs'] != 'replayed':
             lost_checks.append('selected_semantic.state_pairs')
         rows.append({'id': key, 'cohort': a['cohort'],
@@ -413,6 +430,7 @@ def compare(before_path, after_path):
                      'analysis_checks_lost': lost_analysis,
                      'analysis_checks_added': added_analysis,
                      'analysis_regression': bool(lost_analysis),
+                     'loop_recovery_regression': loop_regression,
                      'architecture_regression': bool(lost_checks) or ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
                      'before_replay': ar, 'after_replay': br})
@@ -443,6 +461,8 @@ def compare(before_path, after_path):
                 names=analysis_checks.names_for_rows(before['rows'] + after['rows'])),
             'candidate_semantic_state_pairs': dict(Counter(row['after_replay']['semantic_state_pairs'] for row in rows)),
             'semantic_regressions': sum(row['semantic_regression'] for row in rows),
+            'loop_recovery_regressions': sum(row['loop_recovery_regression'] for row in rows),
+            'candidate_loop_recovery': loop_recovery.summary(after['rows']),
             'resources': 'See per-command samples; timing comparisons need controlled repeated runs.',
             'rows': rows}
 

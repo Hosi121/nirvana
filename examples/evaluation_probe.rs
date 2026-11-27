@@ -6,6 +6,8 @@
 mod checked_c;
 #[path = "evaluation/fixture.rs"]
 mod fixture;
+#[path = "evaluation_probe/loop_recovery.rs"]
+mod loop_recovery;
 #[path = "evaluation_probe/module.rs"]
 mod module;
 #[path = "evaluation_probe/stages.rs"]
@@ -77,9 +79,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seed: u64 = args.next().ok_or("seed required")?.parse()?;
     let count: usize = args.next().ok_or("case count required")?.parse()?;
     let limit: usize = args.next().ok_or("step limit required")?.parse()?;
-    let input_file = args.next();
-    if args.next().is_some()
-        || !(8..=256).contains(&count)
+    let mut input_file = None;
+    let mut loop_solver = None;
+    while let Some(argument) = args.next() {
+        match argument.as_str() {
+            "--recover-loops" if loop_solver.is_none() => {
+                loop_solver = Some(
+                    nirvana::verify::Solver::new(args.next().ok_or("loop solver path required")?)
+                        .with_timeout(std::time::Duration::from_secs(15)),
+                );
+            }
+            _ if input_file.is_none() && !argument.starts_with('-') => input_file = Some(argument),
+            _ => return Err("invalid evaluation arguments".into()),
+        }
+    }
+    if !(8..=256).contains(&count)
         || !(1..=1_000_000).contains(&limit)
         || symbol.is_empty()
         || !symbol
@@ -97,14 +111,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         coalesce_locals: true,
         compact_memory: true,
     };
-    let output = match mode.as_str() {
-        "readable-c" => readable::emit_readable_c_with_storage_provenance(&source, options)?,
-        "middle-c" => readable::emit_middle_c_with_storage_provenance(
-            &nirvana::middle_ir::Function::from_low(&source)?,
-            options,
-        )?,
-        _ => return Err("unsupported evaluation emission mode".into()),
+    let recovery = loop_solver
+        .as_ref()
+        .map(|solver| match mode.as_str() {
+            "readable-c" => readable::loop_recovery::emit_readable_c(&source, options, solver),
+            "middle-c" => readable::loop_recovery::emit_middle_c(
+                &nirvana::middle_ir::Function::from_low(&source)
+                    .map_err(readable::ReadableError::Middle)?,
+                options,
+                solver,
+            ),
+            _ => Err(readable::ReadableError::LoopLabelsUnavailable),
+        })
+        .transpose()?;
+    let ordinary = if recovery.is_some() {
+        None
+    } else {
+        Some(match mode.as_str() {
+            "readable-c" => readable::emit_readable_c_with_storage_provenance(&source, options)?,
+            "middle-c" => readable::emit_middle_c_with_storage_provenance(
+                &nirvana::middle_ir::Function::from_low(&source)?,
+                options,
+            )?,
+            _ => return Err("unsupported evaluation emission mode".into()),
+        })
     };
+    let output = recovery
+        .as_ref()
+        .map(readable::loop_recovery::Emission::selected)
+        .or(ordinary.as_ref())
+        .ok_or("missing output")?;
     if output.code != std::fs::read_to_string(generated)? {
         return Err("generated C does not match object/mode/ABI descriptor".into());
     }
@@ -113,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     std::fs::write(
         out.join("generated-probe.c"),
-        checked_c::source_with_stack(&output, source.register_count(), 4, SIZE, STACK),
+        checked_c::source_with_stack(output, source.register_count(), 4, SIZE, STACK),
     )?;
     let native = format!(
         r#"#include <stdint.h>
@@ -136,7 +172,10 @@ int main(void) {{
     let mut native_expected = String::new();
     let mut statuses = [0usize; 4];
     let mut native_cases = 0;
-    let mut stages = stages::Stages::new(&source, &output, limit);
+    let mut stages = stages::Stages::new(&source, output, limit);
+    let mut loop_stage = recovery
+        .as_ref()
+        .map(|emission| loop_recovery::Stage::new(emission, limit));
     let (generator, vectors) = if let Some(path) = input_file {
         let mut vectors = Vec::new();
         for line in std::fs::read_to_string(path)?.lines() {
@@ -159,6 +198,9 @@ int main(void) {{
             let regs = fixture::registers(source.register_count(), pointer);
             let report = source.run_with_memory(&regs, BASE, &ram, limit)?;
             stages.observe(&source, &regs, &ram, &report);
+            if let Some(stage) = &mut loop_stage {
+                stage.observe(&regs, &ram, &report);
+            }
             let mut row = match report.status {
                 RunStatus::Returned(value) => {
                     statuses[0] += 1;
@@ -206,8 +248,17 @@ int main(void) {{
     ] {
         std::fs::write(out.join(name), text)?;
     }
+    let loop_field = loop_stage
+        .as_ref()
+        .map(|stage| {
+            stage
+                .json(&out)
+                .map(|json| format!(",\"loop_recovery\":{json}"))
+        })
+        .transpose()?
+        .unwrap_or_default();
     println!(
-        "{{\"schema\":\"nirvana-evaluation-probe-v1\",\"generator\":\"{generator}\",\"seed\":{seed},\"vectors\":{count},\"requested_cases\":{},\"checked_cases\":{},\"native_cases\":{native_cases},\"returned\":{},\"read_faults\":{},\"write_faults\":{},\"suspended\":{},\"step_limit\":{limit},\"memory_base\":{BASE},\"memory_size\":{SIZE},\"stack_pointer\":{STACK},\"state_pointer\":{POINTER},\"register_count\":{},\"row_words\":{},\"stage_checks\":{}}}",
+        "{{\"schema\":\"nirvana-evaluation-probe-v1\",\"generator\":\"{generator}\",\"seed\":{seed},\"vectors\":{count},\"requested_cases\":{},\"checked_cases\":{},\"native_cases\":{native_cases},\"returned\":{},\"read_faults\":{},\"write_faults\":{},\"suspended\":{},\"step_limit\":{limit},\"memory_base\":{BASE},\"memory_size\":{SIZE},\"stack_pointer\":{STACK},\"state_pointer\":{POINTER},\"register_count\":{},\"row_words\":{},\"stage_checks\":{}{loop_field}}}",
         count * 3,
         statuses[0] + statuses[1] + statuses[2],
         statuses[0],
@@ -216,7 +267,7 @@ int main(void) {{
         statuses[3],
         source.register_count(),
         5 + SIZE / 8,
-        stages.json(&output, &out)?
+        stages.json(output, &out)?
     );
     Ok(())
 }

@@ -97,6 +97,17 @@ v8の`selected_signed_storage`は、signed局所変数を選んだ最終display 
 
 `continuations`はC保存先の確定後に検査した終了処理の共有を、モデルID・条件nodeの減少数・照合グラフ規模で示します。v2の`shared_fragments`は、非空のStep/Evaluate/Return断片の減少数です。条件の複製を一箇所へまとめる場合も、各経路での評価を保持します。v3は`store_order`に保持するprefix node数・成功読込みの範囲数・Store交換数を加えます。これらは静的な変換根拠で、C文数や動的な実行回数と分けて扱います。v4の`effect_order`はStore同士と独立な局所更新との交換数を分けます。比較器はv1〜v4を読み、[設計](architecture.md#c保存先確定後の継続処理)に記したCの観測境界とMIRの全状態検査を別々に集計します。対応検査と具体入力での一致は、それぞれの対象範囲を持つ検証結果です。
 
+## 検査付きループ復元
+
+検査付きループ復元を比較する場合は、同じコマンドへ`--loop-solver /path/to/z3`を加えます。
+CLIとprobeへ同じ設定を渡し、選んだCの本文一致、実際に使った保存幅・Semantic IRの検査を維持します。
+基準C、候補C、採否、復元にかかった時間、領域の証明経路とSMT式を`loop_recovery`へ結びます。
+
+候補がある構成では、元IR・復元元の表示IR・復元後IRの返り値、512-byte RAM、最初のfaultを終端で比較します。
+私有保存先を0/`UINT64_MAX`で初期化した記録を保存し、再検査器が元のABI入力、生成C用の期待値、件数、各byteの一致を照合します。
+命令数の異なるIRの終端比較と、既存の予算ごとの機械状態比較は独立した観測です。
+未判定で基準Cを保持した場合も、採否と未適用の件数が分母に残ります。保存記録の再検査は具体実行の確認で、SMT証明の再構築はRustとsolverの境界です。
+
 ## 追加入力
 
 [追加入力の探索](../examples/evaluation_witnesses.rs)は、元の非debug objectと入力集合から未観測のCFG遷移を求めます。`checked-memory-path-inputs-v1`は512-byteのRAM、RDI/RSP、他レジスタを固定し、4状態ワードだけを任意値とします。生成Cのprobeと[同じ初期化](../examples/evaluation/fixture.rs)を使います。SAT入力は元IRで命令prefixと次のPCを再現し、正常returnまで実行できたものを`inputs.txt`へ加えます。途中停止やfaultへ至った候補も根拠を残します。

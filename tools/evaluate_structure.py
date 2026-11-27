@@ -30,6 +30,7 @@ from evaluation import c_footprint as cf
 from evaluation import state_memory as sm
 from evaluation.state_values import protocol as sv
 from evaluation import build_identity
+from evaluation import loop_recovery
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-fno-lto']
@@ -184,7 +185,10 @@ def measure(case, tag, compiler, opt, args, out):
         invoke([compiler, *flags, '-c', preprocessed, '-o', obj], stage, directory, row, args.timeout)
         row['object_sha256'] = digest(obj)
         stage = 'decompile'
-        result = invoke([args.decompiler, obj, '--symbol', case['function'], '--emit', args.emit],
+        command = [args.decompiler, obj, '--symbol', case['function'], '--emit', args.emit]
+        if args.loop_solver:
+            command.extend(['--recover-loops', args.loop_solver])
+        result = invoke(command,
                         stage, directory, row, args.timeout)
         generated.write_text(result.stdout)
         row['readable_sha256'] = digest(generated)
@@ -304,7 +308,8 @@ def run(args):
                           ('semantic_seed', 0x6e697276616e6130), ('semantic_cases', 16),
                           ('semantic_steps', 4096), ('toolchain_manifest', None), ('semantic_inputs', None),
                           ('c_footprint', False), ('state_memory_sites', False), ('state_values', False),
-                          ('value_solver', os.environ.get('NIRVANA_Z3', 'z3')), ('value_seconds', 2.0)]:
+                          ('value_solver', os.environ.get('NIRVANA_Z3', 'z3')), ('value_seconds', 2.0),
+                          ('loop_solver', None)]:
         if not hasattr(args, name):
             setattr(args, name, default)
     if args.state_memory_sites and (not args.c_footprint or not args.semantic_probe):
@@ -352,7 +357,14 @@ def run(args):
     report['evaluation']['analysis_checks_sha256'] = digest(analysis_checks.__file__)
     report['evaluation']['analysis_check_modules'] = analysis_checks.implementation()
     report['evaluation']['build_identity_sha256'] = digest(build_identity.__file__)
+    report['evaluation']['loop_recovery_sha256'] = digest(loop_recovery.__file__)
     report['emission'] = args.emit
+    if args.loop_solver:
+        report['loop_recovery'] = {
+            'model': 'checked-readable-loop-selection-v1',
+            'solver': provenance(args.loop_solver, args.timeout),
+            'scope': 'opt-in source-bound loop recovery; endpoint observations are separate from machine prefixes',
+        }
     if args.semantic_probe:
         report['evaluation']['probe_metadata'] = 'hashed-probe-json-v1'
     report['c_footprint'] = {'metric': cf.METRIC, 'enabled': args.c_footprint,
@@ -413,6 +425,8 @@ def run(args):
     report['summary']['architecture'] = dict(Counter(r.get('stage_checks', {}).get('status', 'not_run') for r in report['rows']))
     report['summary']['architecture_execution'] = stages.execution_summary(report['rows'])
     report['summary']['architecture_analysis'] = analysis_checks.summary(report['rows'])
+    if args.loop_solver:
+        report['summary']['loop_recovery'] = loop_recovery.summary(report['rows'])
     report['summary']['c_footprint'] = dict(Counter(r['c_footprint']['status'] for r in report['rows']))
     report['summary']['state_memory_sites'] = dict(Counter(r['state_memory_sites']['status'] for r in report['rows']))
     report['summary']['state_values'] = dict(Counter(r['state_values']['status'] for r in report['rows']))
@@ -428,6 +442,7 @@ def main():
     parser.add_argument('--compiler', action='append', help='TAG=EXECUTABLE; repeat for each binary-producing compiler')
     parser.add_argument('--c-compiler', default='cc', help='fixed compiler for all generated C profiles')
     parser.add_argument('--emit', choices=['readable-c', 'middle-c'], default='readable-c')
+    parser.add_argument('--loop-solver', help='enable checked loop recovery with this Z3 executable')
     parser.add_argument('--semantic-probe', type=Path, help='built examples/evaluation_probe executable')
     parser.add_argument('--c-footprint', action='store_true', help='observe C operators, literals and condition syntax using Clang AST JSON')
     parser.add_argument('--state-memory-sites', action='store_true', help='align static memory sites through the fixed state[4] ABI; requires C AST and semantic probe')

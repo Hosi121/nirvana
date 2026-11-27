@@ -76,9 +76,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                 ))
             }
             "--recover-loops" => {
-                loop_solver = Some(Solver::new(
-                    args.next().ok_or("--recover-loops requires a Z3 path")?,
-                ));
+                loop_solver = Some(
+                    Solver::new(args.next().ok_or("--recover-loops requires a Z3 path")?)
+                        .with_timeout(std::time::Duration::from_secs(15)),
+                );
             }
             "--base" => base = Some(number(&args.next().ok_or("--base requires an address")?)?),
             "--entry" => entry = Some(number(&args.next().ok_or("--entry requires an address")?)?),
