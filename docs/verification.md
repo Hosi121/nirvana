@@ -74,12 +74,12 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 [区間合成のcheckpoint](../tools/corpora/compositional-roll-v1.m2.json)では、保存済みClang objectの12証明義務と完了検査が通り、元の領域契約で候補を受理しました。同じ候補Cについて325入力・O0/O2計650実行の全RAM・返り値・fault比較も一致します。3,072構成の生成Program監査は、受理512件、誤った入口条件による保留512件、意味改変の反例再生2,048件を、旧エンコーダの全体比較と照合しています。通常CLIは現行の描画方針を使います。
 
 保存したSMTは[再現ツール](../tools/replay_loop_checkpoint.py)で検査できます。objectをcheckpointから復元するため、Clangは不要です。`--rust`はソースhashを確認し、証明の再構築・生成C比較・全artifactの一致まで検査します。`--flat`は従来の全体比較を別の結果として記録します。
-関数への適用と元の引数番号まで含む[checkpoint](../tools/corpora/contextual-loop-v1.m2.json)は、同じ領域証明をCLIの明示オプションへ接続しています。Rustの再構築にはcheckpointの`source_sha256`に一致するソースを使います。
+関数への適用と元の引数番号を含む[checkpoint](../tools/corpora/contextual-loop-v1.m2.json)から、[入口条件を証明するcheckpoint](../tools/corpora/inductive-loop-v1.m2.json)へ進みました。実Clang入力で先頭を含む4laneを復元し、入口2問・完了検査・15個の局所証明を通しています。同じM0入力で構造距離は前回の16から4へ下がり、局所変数9個を維持しました。Rustの再構築にはcheckpointの`source_sha256`に一致するソースを使います。
 
 ```sh
 NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- \
   python3 tools/replay_loop_checkpoint.py --out '{out}' \
-  --checkpoint tools/corpora/contextual-loop-v1.m2.json --rust --flat
+  --checkpoint tools/corpora/inductive-loop-v1.m2.json --rust --flat
 ```
 
 [固定checkpoint](../tools/corpora/ir-dag-regions-v1.m1.json)は、任意のRAMと整数入力を持つ8組の同値判定、7組の反例再生、再生上限の対照1組を記録しています。検証プロファイルはsolver呼出しごとに5秒です。APIは渡されたsolver予算を使い、2秒で未判定となった結果もcheckpointへ残しています。 複数のSMT検査をまとめる固定profileは`--test-threads=1`で実行し、並列実行で5秒の未判定となった記録も保持します。自動候補の受理では、この領域検査と反復の完了検査を使います。
