@@ -227,6 +227,8 @@ Cの保存先は、共有する全値が範囲内に収まり、アドレス用�
 語幅内の式の整理は、意味演算・rotate・文脈付き剰余を認識した後に行います。[word_arithmetic](../src/transform/simplify.rs)はこれらとLoadを境界にし、外側のmask・抽出・符号拡張が観測する下位bitを保って、加減乗算・bit演算の内側の射影を整理します。C型による切詰めへ移す前に係数をまとめるため、たとえば32-bitの`(x * 8 - x)`を`x * 7`へ戻せます。早いreductionに同じ規則を適用すると除算・rotateの認識形を失ったため、元の解析入力を保つ描画段階へ配置しています。
 ループ更新・共有末尾・有限/affine領域の表示も、元の制御と値の対応を検査して採用します。
 
+[読込み後の計算の集約](../src/transform/load_consumer.rs)は、単一使用の私有値について`T = load(A); D = f(T)`を元のLoad位置で`T = f(load(A)); D = T`へ写します。`f`は定数と一個の捕捉値に対する厳密評価の整数演算です。`Lowering`が元IR・変換後IR・引数・対応検査を保持し、制御復元は元IR、Cの割当ては変換後IRを使います。最終表示へのDCEも照合し、返り値・全RAM・最初のfaultを保ちます。中間状態の比較では、内容が変わる私有値を証跡へ明示します。
+
 複数関数では[module_outline](../src/codegen/module_outline.rs)が全Stepからの再入を検査し、[module_readable](../src/codegen/module_readable.rs)が名前付き関数を描画します。
 間接移転の局所化は[module_tail_dispatch](../src/codegen/module_tail_dispatch.rs)・[module_switch_keys](../src/codegen/module_switch_keys.rs)が計画し、保存したkeyと実targetを照合して局所ラベルを選びます。
 残るtargetはdispatcherへ渡します。通常CALLはCの呼出しを使い、深い再帰や想定外の戻り先ではゲストPCから再開します。

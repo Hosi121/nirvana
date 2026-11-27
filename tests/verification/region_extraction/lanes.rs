@@ -403,6 +403,16 @@ fn actual_compiler_loop_recovery_chain_keeps_original_parameter_ids() {
     .unwrap();
     assert!(emission.accepted(), "{:?}", emission.retention());
     let recovered = emission.candidate().unwrap().recovery();
+    let lowering = emission
+        .baseline()
+        .load_consumer_lowering
+        .as_ref()
+        .expect("strict seed load context");
+    lowering.validate().unwrap();
+    assert_eq!(
+        recovered.source().instructions(),
+        lowering.source().instructions()
+    );
     assert_eq!(
         emission.entry_attempt().unwrap().status,
         nirvana::transform::loop_recovery::EntryStatus::UsedInIr

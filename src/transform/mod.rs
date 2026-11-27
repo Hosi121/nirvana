@@ -13,6 +13,7 @@ pub mod finite_region;
 pub mod for_loop;
 pub mod guarded_loop;
 pub mod indexed;
+pub mod load_consumer;
 pub mod load_mask;
 mod load_order;
 pub mod loop_entry_facts;

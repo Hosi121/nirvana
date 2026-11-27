@@ -320,7 +320,7 @@ fn actual_selected_display_register_projection_and_region_queries() {
 }
 
 fn prepared_storage(bytes: &[u8]) -> (std::sync::Arc<Program>, Vec<Reg>) {
-    use nirvana::readable::{self, ReadableOptions, SignedStorageProvenance};
+    use nirvana::readable::{self, ReadableOptions};
     let raw = nirvana::frontend::lift_elf_auto(bytes, "fixture")
         .unwrap()
         .program;
@@ -334,10 +334,8 @@ fn prepared_storage(bytes: &[u8]) -> (std::sync::Arc<Program>, Vec<Reg>) {
         },
     )
     .unwrap();
-    let SignedStorageProvenance::Captured(snapshot) = output.signed_storage_provenance else {
-        panic!("no prepared source");
-    };
-    (snapshot.source.clone(), output.parameters)
+    let source = readable::loop_recovery::source(&output).expect("prepared control source");
+    (source, output.parameters)
 }
 
 #[test]

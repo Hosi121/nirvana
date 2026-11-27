@@ -123,6 +123,9 @@ pub struct ReadableC {
     /// Validated paired display rewrites with unchanged load sites and effects.
     /// The unique-use intermediate receives its mask at the original load site.
     pub load_mask_evidence: Option<crate::transform::load_mask::LoadMaskEvidence>,
+    /// Strict single-input computation fused at the original load site. Only
+    /// its uniquely private temporary may change intermediate/final contents.
+    pub load_consumer_lowering: Option<std::sync::Arc<crate::transform::load_consumer::Lowering>>,
     /// Source-bound arithmetic selected before reads, widths and C allocation.
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
     /// Certified semantic values, captured and substituted before allocation.
@@ -132,7 +135,7 @@ pub struct ReadableC {
     pub semantic_lowering: Option<std::sync::Arc<crate::model::semantic_ir::Lowering>>,
     /// Source-bound constants proved across SSA predecessor and loop phi edges.
     pub ssa_constants: Option<crate::dataflow::ssa_constants::ConstantEvidence>,
-    /// Checked partial-bit SSA invariants used for load-free constant fragments.
+    /// Checked partial-bit SSA facts used for constants and identity operations.
     pub known_bits: Option<crate::dataflow::known_bits::BitEvidence>,
     /// First adopted saved-word stage. Each round has its own source SSA.
     pub memory_values: Option<crate::dataflow::memory_values::MemoryValueEvidence>,

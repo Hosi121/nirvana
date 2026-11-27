@@ -36,6 +36,8 @@ mod for_loop;
 mod guarded_loop;
 #[path = "transform/indexed.rs"]
 mod indexed;
+#[path = "transform/load_consumer.rs"]
+mod load_consumer;
 #[path = "transform/load_mask.rs"]
 mod load_mask;
 #[path = "transform/narrow_division_expr.rs"]

@@ -99,6 +99,27 @@ fn cost(output: &ReadableC) -> (bool, usize, usize, usize) {
     (output.fallback_reason.is_some(), locals, body, all)
 }
 
+/// Checked control source before presentation folds, in the original
+/// parameter namespace. Final signed-storage evidence keeps its own source.
+pub fn source(output: &ReadableC) -> Result<std::sync::Arc<Program>, &'static str> {
+    let snapshot = match &output.signed_storage_provenance {
+        SignedStorageProvenance::Captured(snapshot) => snapshot,
+        SignedStorageProvenance::NotCaptured => return Err("display source not captured"),
+        SignedStorageProvenance::Unavailable(reason)
+        | SignedStorageProvenance::Rejected(reason) => return Err(reason),
+    };
+    if let Some(lowering) = &output.load_consumer_lowering {
+        if lowering.parameters() != output.parameters
+            || lowering.validate().is_err()
+            || !crate::transform::display_dce::validate(lowering.program(), &snapshot.source)
+        {
+            return Err("load-consumer source correspondence");
+        }
+        return Ok(lowering.shared_source());
+    }
+    Ok(snapshot.source.clone())
+}
+
 fn recover(
     baseline: ReadableC,
     options: ReadableOptions,
@@ -116,18 +137,9 @@ fn recover(
         emission.retention = Some(reason);
         emission.elapsed = start.elapsed();
     };
-    let source = match &emission.baseline.signed_storage_provenance {
-        SignedStorageProvenance::Captured(snapshot) => snapshot.source.clone(),
-        SignedStorageProvenance::NotCaptured => {
-            retain(
-                &mut emission,
-                Retention::Provenance("display source not captured"),
-            );
-            return emission;
-        }
-        SignedStorageProvenance::Unavailable(reason)
-        | SignedStorageProvenance::Rejected(reason) => {
-            let reason = *reason;
+    let source = match source(&emission.baseline) {
+        Ok(source) => source,
+        Err(reason) => {
             retain(&mut emission, Retention::Provenance(reason));
             return emission;
         }
@@ -219,5 +231,73 @@ mod tests {
         assert!(matches!(output.retention(), Some(Retention::Recovery(_))));
         assert_eq!(output.selected().code, baseline.code);
         assert_eq!(output.selected().parameters, baseline.parameters);
+    }
+
+    #[test]
+    fn control_source_checks_the_load_lowering_and_its_actual_display_successor() {
+        use crate::model::ir::{Assignment, BinaryOp as B, Reg, Width};
+        let render = |constant| {
+            let program = Program::new(
+                0,
+                4,
+                vec![
+                    IrInstruction {
+                        address: 0,
+                        size: 1,
+                        assignments: vec![Assignment {
+                            destination: Reg(1).into(),
+                            value: Expr::load(Expr::Register(Reg(0)), Width::U64),
+                        }],
+                        control: Control::Next,
+                    },
+                    IrInstruction {
+                        address: 1,
+                        size: 1,
+                        assignments: vec![Assignment {
+                            destination: Reg(3).into(),
+                            value: Expr::load(
+                                Expr::binary(B::Add, Expr::Register(Reg(0)), Expr::Const(8)),
+                                Width::U64,
+                            ),
+                        }],
+                        control: Control::Next,
+                    },
+                    IrInstruction {
+                        address: 2,
+                        size: 1,
+                        assignments: vec![Assignment {
+                            destination: Reg(2).into(),
+                            value: Expr::binary(
+                                B::Add,
+                                Expr::binary(B::And, Expr::Register(Reg(1)), Expr::Const(3)),
+                                Expr::Const(constant),
+                            ),
+                        }],
+                        control: Control::Return(Expr::binary(
+                            B::Xor,
+                            Expr::Register(Reg(2)),
+                            Expr::Register(Reg(3)),
+                        )),
+                    },
+                ],
+            )
+            .unwrap();
+            let output = super::super::emit_readable_c_with_storage_provenance(
+                &program,
+                ReadableOptions::default(),
+            )
+            .unwrap();
+            (output, program)
+        };
+        let (mut output, _) = render(1);
+        source(&output).unwrap();
+        let (_, foreign) = render(7);
+        let lowering =
+            crate::transform::load_consumer::lower(&foreign, &output.parameters).unwrap();
+        output.load_consumer_lowering = Some(std::sync::Arc::new(lowering));
+        assert_eq!(
+            source(&output).unwrap_err(),
+            "load-consumer source correspondence"
+        );
     }
 }

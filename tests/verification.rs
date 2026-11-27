@@ -28,6 +28,8 @@ mod exhaustive;
 mod integer_ops;
 #[path = "verification/known_bits.rs"]
 mod known_bits;
+#[path = "verification/load_consumer.rs"]
+mod load_consumer;
 #[path = "verification/memory_bits.rs"]
 mod memory_bits;
 #[path = "verification/memory_values.rs"]

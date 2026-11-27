@@ -43,6 +43,7 @@ pub(super) struct PreparedFunction {
     pub source_stats: Option<StructureStats>,
     pub web_recovery: WebRecovery,
     pub load_mask_evidence: Option<crate::transform::load_mask::LoadMaskEvidence>,
+    pub load_consumer_lowering: Option<std::sync::Arc<crate::transform::load_consumer::Lowering>>,
     pub expression_evidence: Option<crate::model::expression_ir::ExpressionEvidence>,
     pub semantic_evidence: Option<crate::model::semantic_ir::SemanticEvidence>,
     pub semantic_lowering: Option<std::sync::Arc<crate::model::semantic_ir::Lowering>>,
@@ -230,12 +231,24 @@ fn prepare_selected(
         Some((p, w, s, e, lowering)) => (p, w, s, Some(e), Some(lowering)),
         None => (program, widths, structure, None, None),
     };
+    // Preserve the semantic/control source; presentation folding has its own
+    // checked pair and private-temporary contract, before final allocation.
+    let consumers =
+        crate::transform::load_consumer::lower(&program, parameters).and_then(|lowering| {
+            let lowering = Arc::new(lowering);
+            checked_display(lowering.program().clone(), structure.is_ok(), lowering)
+        });
+    let (program, widths, structure, load_consumer_lowering) = match consumers {
+        Some((p, w, s, e)) => (p, w, s, Some(e)),
+        None => (program, widths, structure, None),
+    };
     let candidates = structure.as_ref().ok().map(|function| {
         let nodes = if expression_evidence.is_some()
             || semantic_evidence.is_some()
             || ssa_constants.is_some()
             || known_bits.is_some()
             || memory_values.is_some()
+            || load_consumer_lowering.is_some()
         {
             function.body().to_vec()
         } else {
@@ -271,6 +284,7 @@ fn prepare_selected(
         source_stats: selected.source_stats,
         web_recovery: selected.recovery,
         load_mask_evidence: masked.map(|(_, evidence)| evidence),
+        load_consumer_lowering,
         expression_evidence,
         semantic_evidence,
         semantic_lowering,
