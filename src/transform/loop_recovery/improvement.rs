@@ -111,9 +111,12 @@ impl Recovered {
         };
         trace.header = Some(problem.header());
         trace.normalizers = problem.normalizers().len();
-        let budget = deadline
-            .saturating_duration_since(Instant::now())
-            .min(Duration::from_secs(3));
+        // Share the extension deadline, reserving a small tail for local proofs.
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let reserve = (remaining / 3).min(Duration::from_secs(2));
+        let budget = remaining
+            .saturating_sub(reserve)
+            .min(Duration::from_secs(5));
         let certificate: Arc<invariants::Certificate> = match problem.check(solver, budget) {
             invariants::Outcome::Verified(certificate) => certificate.into(),
             invariants::Outcome::Unproved(failure) => {
