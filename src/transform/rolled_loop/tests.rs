@@ -19,6 +19,17 @@ fn rejects_a_discovery_from_another_source() {
     let discovery = lane_patterns::discover(&source).unwrap();
     assert_eq!(propose(&make(2), &discovery, 0).unwrap_err(), Error::Source);
     assert_eq!(propose(&source, &discovery, 0).unwrap_err(), Error::Pattern);
+    let source = fixture();
+    let discovery = lane_patterns::discover(&source).unwrap();
+    let proposal = propose(&source, &discovery, 0).unwrap();
+    assert!(proposal.discovery().belongs_to(&source));
+    assert_eq!(proposal.lane_group(), &discovery.groups()[0]);
+    let mut foreign = proposal.clone();
+    foreign.discovery = lane_patterns::discover(&make(2)).unwrap();
+    assert_eq!(foreign.verification_problem().unwrap_err(), Error::Source);
+    let mut missing = proposal;
+    missing.group = usize::MAX;
+    assert_eq!(missing.verification_problem().unwrap_err(), Error::Source);
 }
 
 fn fixture() -> Program {

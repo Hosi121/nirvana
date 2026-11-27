@@ -119,14 +119,13 @@ pub(super) fn problem(
     prefixed: &extraction::repeat::Prefixed,
     query: &region::Query,
 ) -> Result<Problem, Error> {
-    let discovery = lane_patterns::discover(&proposal.source).map_err(|_| Error::Pattern)?;
-    let group = discovery
-        .groups()
-        .iter()
-        .find(|group| {
-            envelope::locate(&proposal.source, group).is_ok_and(|e| e == proposal.envelope)
-        })
-        .ok_or(Error::Pattern)?;
+    let discovery = proposal.discovery();
+    let group = proposal.lane_group();
+    if !discovery.belongs_to(&proposal.source)
+        || envelope::locate(&proposal.source, group)? != proposal.envelope
+    {
+        return Err(Error::Source);
+    }
     // Consecutive counter values let the source equality exits establish the
     // lower bound at the next lane. Broader shapes retain the whole-query gate.
     if group.step != 1 || group.offsets.first() != Some(&1) {
@@ -167,7 +166,7 @@ pub(super) fn problem(
         shared.extend(live_inputs(&proposal.program, proposal.feedback)?);
         shared.remove(&proposal.counter.0);
         shared.insert(proposal.before.return_register().0);
-        let mut before_invariants = equations(&discovery, pc, proposal.counter);
+        let mut before_invariants = equations(discovery, pc, proposal.counter);
         before_invariants.push(range(bound, bits, offset));
         let mut after_invariants = before_invariants.clone();
         after_invariants.push(Assignment {

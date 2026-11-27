@@ -76,7 +76,10 @@ fn query_error(error: region::Error) -> Error {
 }
 impl Proposal {
     pub fn verification_problem(&self) -> Result<VerificationProblem, Error> {
-        if !self.before.belongs_to(&self.padded) {
+        if !self.before.belongs_to(&self.padded)
+            || !self.discovery.belongs_to(&self.source)
+            || self.discovery.groups().get(self.group).is_none()
+        {
             return Err(Error::Source);
         }
         let mut stops = self.envelope.stops();

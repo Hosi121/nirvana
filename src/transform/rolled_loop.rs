@@ -69,6 +69,8 @@ impl From<extraction::ExtractionError> for Error {
 #[derive(Clone, Debug)]
 pub struct Proposal {
     source: Program,
+    discovery: Discovery,
+    group: usize,
     padded: Program,
     before: Region,
     program: Program,
@@ -81,6 +83,13 @@ pub struct Proposal {
 impl Proposal {
     pub fn source(&self) -> &Program {
         &self.source
+    }
+    /// Exact source SSA and lane selection used to build this proposal.
+    pub fn discovery(&self) -> &Discovery {
+        &self.discovery
+    }
+    pub fn lane_group(&self) -> &LaneGroup {
+        &self.discovery.groups()[self.group]
     }
     pub fn program(&self) -> &Program {
         &self.program
@@ -179,6 +188,8 @@ pub fn propose(
         emit::candidate(&padded, group, &envelope, &before, &control, counter)?;
     Ok(Proposal {
         source: source.clone(),
+        discovery: discovery.clone(),
+        group: group_index,
         padded,
         before,
         program,
