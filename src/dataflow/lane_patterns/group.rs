@@ -5,9 +5,24 @@ fn unify(
     terms: &[&PatternExpr],
     offsets: &mut Option<Vec<u64>>,
     budget: &mut Budget,
+    caps: &BTreeMap<ValueId, u8>,
 ) -> Option<PatternExpr> {
     budget.spend(terms.len() + 1)?;
     budget.node()?;
+    let aligned = if caps.is_empty() {
+        None
+    } else {
+        normalize::align(terms, caps, budget)
+    };
+    let references: Vec<_> = aligned
+        .as_ref()
+        .map(|values| values.iter().map(|value| value.as_ref()).collect())
+        .unwrap_or_default();
+    let terms = if aligned.is_some() {
+        references.as_slice()
+    } else {
+        terms
+    };
     Some(match *terms.first()? {
         PatternExpr::Constant(value) => {
             let values: Vec<_> = terms
@@ -71,7 +86,7 @@ fn unify(
                     }
                 })
                 .collect::<Option<_>>()?;
-            PatternExpr::Unary(*op, Box::new(unify(&values, offsets, budget)?))
+            PatternExpr::Unary(*op, Box::new(unify(&values, offsets, budget, caps)?))
         }
         PatternExpr::Binary(op, _, _) => {
             let pairs: Vec<_> = terms
@@ -88,8 +103,8 @@ fn unify(
             let right: Vec<_> = pairs.iter().map(|pair| pair.1).collect();
             PatternExpr::Binary(
                 *op,
-                Box::new(unify(&left, offsets, budget)?),
-                Box::new(unify(&right, offsets, budget)?),
+                Box::new(unify(&left, offsets, budget, caps)?),
+                Box::new(unify(&right, offsets, budget, caps)?),
             )
         }
         PatternExpr::Select(_, _, _) => {
@@ -108,16 +123,19 @@ fn unify(
                     &triples.iter().map(|v| v.0).collect::<Vec<_>>(),
                     offsets,
                     budget,
+                    caps,
                 )?),
                 Box::new(unify(
                     &triples.iter().map(|v| v.1).collect::<Vec<_>>(),
                     offsets,
                     budget,
+                    caps,
                 )?),
                 Box::new(unify(
                     &triples.iter().map(|v| v.2).collect::<Vec<_>>(),
                     offsets,
                     budget,
+                    caps,
                 )?),
             )
         }
@@ -125,7 +143,11 @@ fn unify(
     })
 }
 
-fn propose(kernels: &[&Kernel], budget: &mut Budget) -> Option<LaneGroup> {
+fn propose(
+    kernels: &[&Kernel],
+    budget: &mut Budget,
+    caps: &BTreeMap<ValueId, u8>,
+) -> Option<LaneGroup> {
     let first = kernels.first()?;
     if kernels.iter().any(|k| {
         k.accumulator != first.accumulator
@@ -139,6 +161,7 @@ fn propose(kernels: &[&Kernel], budget: &mut Budget) -> Option<LaneGroup> {
         &kernels.iter().map(|k| &k.load_address).collect::<Vec<_>>(),
         &mut offsets,
         budget,
+        caps,
     )?;
     let update_expression = unify(
         &kernels
@@ -147,11 +170,13 @@ fn propose(kernels: &[&Kernel], budget: &mut Budget) -> Option<LaneGroup> {
             .collect::<Vec<_>>(),
         &mut offsets,
         budget,
+        caps,
     )?;
     let store_address = unify(
         &kernels.iter().map(|k| &k.store_address).collect::<Vec<_>>(),
         &mut offsets,
         budget,
+        caps,
     )?;
     let offsets = offsets?;
     let step = offsets[1].wrapping_sub(offsets[0]);
@@ -172,13 +197,17 @@ fn propose(kernels: &[&Kernel], budget: &mut Budget) -> Option<LaneGroup> {
     })
 }
 
-pub(super) fn discover(kernels: &[Kernel], budget: &mut Budget) -> Vec<LaneGroup> {
+pub(super) fn discover(
+    kernels: &[Kernel],
+    budget: &mut Budget,
+    caps: &BTreeMap<ValueId, u8>,
+) -> Vec<LaneGroup> {
     let mut clusters: Vec<Vec<&Kernel>> = Vec::new();
     for kernel in kernels {
         let mut placed = false;
         for cluster in &mut clusters {
             cluster.push(kernel);
-            if propose(cluster, budget).is_some() {
+            if propose(cluster, budget, caps).is_some() {
                 placed = true;
                 break;
             }
@@ -191,6 +220,6 @@ pub(super) fn discover(kernels: &[Kernel], budget: &mut Budget) -> Vec<LaneGroup
     clusters
         .into_iter()
         .filter(|group| group.len() >= MIN_LANES)
-        .filter_map(|group| propose(&group, budget))
+        .filter_map(|group| propose(&group, budget, caps))
         .collect()
 }

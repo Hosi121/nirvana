@@ -74,6 +74,142 @@ fn has_lane(term: &PatternExpr) -> bool {
 }
 
 #[test]
+fn advisory_caps_align_the_peeled_lane_without_changing_source_kernels() {
+    let acyclic = fixture(&[0, 1, 2, 3], false, true);
+    let mut code = acyclic.instructions().to_vec();
+    let last = code.last_mut().unwrap();
+    last.assignments.push(Assignment {
+        destination: Reg(0).into(),
+        value: Expr::binary(
+            BinaryOp::And,
+            Expr::binary(BinaryOp::Add, Expr::Register(Reg(0)), Expr::Const(1)),
+            Expr::Const(3),
+        ),
+    });
+    last.control = Control::Jump(10);
+    let source = Program::new(0, 6, code).unwrap();
+    let ordinary = discover(&source).unwrap();
+    assert_eq!(ordinary.groups()[0].offsets, [1, 2, 3]);
+    let hinted = ordinary
+        .with_advisory_entry_caps(10, &[(Reg(0), 2)])
+        .unwrap();
+    assert_eq!(hinted.advisory_header(), Some(10));
+    assert!(hinted.belongs_to(&source));
+    assert_eq!(hinted.kernels(), ordinary.kernels());
+    assert_eq!(hinted.groups()[0].offsets, [0, 1, 2, 3]);
+    assert_eq!(hinted.groups()[0].step, 1);
+    let raw = ordinary
+        .register_expression(ordinary.kernels()[0].load, Reg(0))
+        .unwrap();
+    let masked = PatternExpr::Binary(
+        BinaryOp::And,
+        Box::new(PatternExpr::Binary(
+            BinaryOp::Add,
+            Box::new(raw.clone()),
+            Box::new(PatternExpr::Constant(0)),
+        )),
+        Box::new(PatternExpr::Constant(3)),
+    );
+    assert!(!ordinary.proposal_match(&raw, &masked));
+    assert!(hinted.proposal_match(&raw, &masked));
+    assert_eq!(
+        hinted.register_expression(hinted.kernels()[0].load, Reg(0)),
+        Some(raw)
+    );
+    for caps in [[(Reg(0), 3)], [(Reg(2), 2)]] {
+        assert_eq!(
+            ordinary
+                .with_advisory_entry_caps(10, &caps)
+                .unwrap()
+                .groups()[0]
+                .offsets,
+            [1, 2, 3]
+        );
+    }
+    assert!(matches!(
+        ordinary.with_advisory_entry_caps(11, &[(Reg(0), 2)]),
+        Err(Error::SourceUnavailable)
+    ));
+    assert!(matches!(
+        ordinary.with_advisory_entry_caps(10, &[(Reg(6), 2)]),
+        Err(Error::SourceUnavailable)
+    ));
+    assert!(matches!(
+        ordinary.with_advisory_entry_caps(10, &[(Reg(0), 65)]),
+        Err(Error::SourceUnavailable)
+    ));
+}
+
+#[test]
+fn read_identities_follow_copies_and_keep_separate_load_snapshots() {
+    let source = Program::new(
+        0,
+        4,
+        vec![
+            IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![
+                    Assignment {
+                        destination: Reg(0).into(),
+                        value: Expr::load(Expr::Register(Reg(3)), Width::U64),
+                    },
+                    Assignment {
+                        destination: Reg(1).into(),
+                        value: Expr::Register(Reg(0)),
+                    },
+                ],
+                control: Control::Next,
+            },
+            IrInstruction {
+                address: 1,
+                size: 1,
+                assignments: vec![Assignment {
+                    destination: Reg(0).into(),
+                    value: Expr::load(Expr::Register(Reg(3)), Width::U64),
+                }],
+                control: Control::Return(Expr::binary(
+                    BinaryOp::Xor,
+                    Expr::Register(Reg(0)),
+                    Expr::Register(Reg(1)),
+                )),
+            },
+        ],
+    )
+    .unwrap();
+    let found = discover(&source).unwrap();
+    let captured = found
+        .read_identity(
+            Site {
+                instruction: 0,
+                assignment: Some(1),
+            },
+            Reg(0),
+        )
+        .unwrap();
+    assert_eq!(
+        found.read_identity(
+            Site {
+                instruction: 1,
+                assignment: None
+            },
+            Reg(1)
+        ),
+        Some(captured)
+    );
+    assert_ne!(
+        found.read_identity(
+            Site {
+                instruction: 1,
+                assignment: None
+            },
+            Reg(0)
+        ),
+        Some(captured)
+    );
+}
+
+#[test]
 fn discovers_varying_indices_while_preserving_the_invariant_xor_operand() {
     let source = fixture(&[0, 1, 2, 3], false, true);
     let found = discover(&source).unwrap();
@@ -291,7 +427,7 @@ fn resource_limits_decline_atomically_and_nested_memory_expressions_remain_unsup
         terms: 0,
         exhausted: false,
     };
-    assert!(group::discover(&[], &mut budget).is_empty());
+    assert!(group::discover(&[], &mut budget, &BTreeMap::new()).is_empty());
     assert_eq!(budget.node(), None);
     assert!(budget.exhausted);
 }

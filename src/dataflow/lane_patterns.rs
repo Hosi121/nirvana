@@ -10,6 +10,7 @@ use crate::model::ir::{
 use std::collections::BTreeMap;
 
 mod group;
+mod normalize;
 mod resolve;
 
 pub const MODEL_ID: &str = "source-bound-lane-pattern-proposals-v1";
@@ -77,8 +78,76 @@ pub struct Discovery {
     aliases: Vec<ValueId>,
     kernels: Vec<Kernel>,
     groups: Vec<LaneGroup>,
+    advisory_caps: BTreeMap<ValueId, u8>,
+    advisory_header: Option<u64>,
 }
 impl Discovery {
+    /// Regroup the same captured kernels with advisory bounds on header phis.
+    /// These hints affect proposals; semantic acceptance uses the source IR.
+    pub fn with_advisory_entry_caps(&self, header: u64, caps: &[(Reg, u8)]) -> Result<Self, Error> {
+        if caps.len() > self.source.register_count() {
+            return Err(Error::Limit);
+        }
+        let block = self
+            .ssa
+            .blocks
+            .iter()
+            .find(|block| block.start == header)
+            .ok_or(Error::SourceUnavailable)?;
+        let mut proposed = BTreeMap::new();
+        for &(reg, bits) in caps {
+            if reg.0 >= self.source.register_count() || bits > 64 {
+                return Err(Error::SourceUnavailable);
+            }
+            if bits == 64 {
+                continue;
+            }
+            for &id in &block.phis {
+                if matches!(self.ssa.values[id.0],Definition::Phi{register,..} if register==reg) {
+                    proposed
+                        .entry(self.aliases[id.0])
+                        .and_modify(|old: &mut u8| *old = (*old).min(bits))
+                        .or_insert(bits);
+                }
+            }
+        }
+        let mut budget = Budget::new();
+        let groups = group::discover(&self.kernels, &mut budget, &proposed);
+        if budget.exhausted {
+            return Err(Error::Limit);
+        }
+        let mut result = self.clone();
+        result.groups = groups;
+        result.advisory_caps = proposed;
+        result.advisory_header = Some(header);
+        Ok(result)
+    }
+    pub fn advisory_header(&self) -> Option<u64> {
+        self.advisory_header
+    }
+    /// Identity of a register read in this discovery's SSA namespace. Copies
+    /// share an identity; separate captured loads retain separate definitions.
+    pub fn read_identity(&self, site: Site, register: Reg) -> Option<ValueId> {
+        let value = self
+            .ssa
+            .point(site)?
+            .reads
+            .iter()
+            .find(|read| read.register == register)?
+            .value;
+        self.aliases.get(value.0).copied()
+    }
+    /// Bounded pure comparison for constructing a candidate index expression.
+    pub fn proposal_match(&self, a: &PatternExpr, b: &PatternExpr) -> bool {
+        let mut budget = Budget::new();
+        match (
+            normalize::fold(a, &self.advisory_caps, &mut budget, 0),
+            normalize::fold(b, &self.advisory_caps, &mut budget, 0),
+        ) {
+            (Some(a), Some(b)) => a == b && !budget.exhausted,
+            _ => false,
+        }
+    }
     pub fn kernels(&self) -> &[Kernel] {
         &self.kernels
     }
@@ -237,7 +306,7 @@ pub fn discover(source: &Program) -> Result<Discovery, Error> {
             }
         }
     }
-    let groups = group::discover(&kernels, &mut budget);
+    let groups = group::discover(&kernels, &mut budget, &BTreeMap::new());
     if budget.exhausted {
         return Err(Error::Limit);
     }
@@ -247,6 +316,8 @@ pub fn discover(source: &Program) -> Result<Discovery, Error> {
         aliases,
         kernels,
         groups,
+        advisory_caps: BTreeMap::new(),
+        advisory_header: None,
     })
 }
 
