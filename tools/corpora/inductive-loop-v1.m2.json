@@ -1365,6 +1365,111 @@
       "generated_pairs": 3072,
       "rerun": false,
       "scope": "Prior decomposition audit; it does not audit the new source-induction or local-SSA code universally."
+    },
+    "clean_checkpoint_replay": {
+      "completion": "unsat",
+      "entry_invariants": [
+        {
+          "phase": "base",
+          "status": "unsat"
+        },
+        {
+          "phase": "feedback",
+          "status": "unsat"
+        }
+      ],
+      "entry_invariants_all_unsat": true,
+      "obligations": [
+        {
+          "cut": 0,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 0,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 0,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 1,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 2,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 3,
+          "kind": "correspondence",
+          "status": "unsat"
+        },
+        {
+          "cut": 4,
+          "kind": "before_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 4,
+          "kind": "after_postconditions",
+          "status": "unsat"
+        },
+        {
+          "cut": 4,
+          "kind": "correspondence",
+          "status": "unsat"
+        }
+      ],
+      "total_obligations": 15,
+      "all_checkpoint_obligations_unsat": true,
+      "seconds": 2.1559092969982885,
+      "scope": "Saved source-bound decomposition under the original region contract. Rust regeneration also checks the constructor, proof seals and C behavior. SAT requires Rust replay and supplies no accepted certificate.",
+      "solver_version": "Z3 version 4.8.12 - 64 bit",
+      "solver_file_sha256": "9c99551e0cf1ceefdee55f7ae249fc6761257fb3cd1a62bfc0b00471b23a98ef",
+      "flat_partitions": [
+        "unknown"
+      ],
+      "flat_total": 1,
+      "rust_returncode": 0,
+      "rust_artifacts_match": true,
+      "revision": "dc7cd0de08ac8444c301062de70520a81416b8d5",
+      "artifacts_checked": 43
     }
   },
   "concrete_validation": {
@@ -2359,7 +2464,7 @@
   "reproduction": {
     "command": "NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- python3 tools/replay_loop_checkpoint.py --out '{out}' --checkpoint tools/corpora/inductive-loop-v1.m2.json --rust --flat",
     "expected": "Both entry queries, completion and all15local obligations UNSAT; regenerate all43artifacts exactly and run325inputs/650Cexecutions on each of three routes. The separate flat query can remain Unknown.",
-    "status": "Clean source-bound object and paired M0 gates passed. Full public checkpoint regeneration is recorded by the next documentation commit."
+    "status": "Public clean replay completed: both entry obligations, completion and all15local obligations UNSAT; Rust regenerated all43artifacts byte-identically and passed all three325-input/650-C-execution routes. The separate flat15second query remained Unknown."
   },
   "open_coverage": [
     "SMT encoders, solver and structural Rust checkers remain trusted. This is not a universal proof of their Rust implementation or the C backend.",
