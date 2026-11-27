@@ -59,9 +59,18 @@ fault時は正確なfaultと全メモリを比較します。SATモデルは小�
 
 [自動反復候補](../src/transform/rolled_loop.rs)は、単一ラッチ、3〜8個の等間隔lane、反復に対して不変の更新式・Store先を持つ領域から構築します。分岐と更新の実行順序を元の1反復から引き継ぎ、添字・脱出時の更新・反復上限を候補へ写します。関数のReturnは切出しの継続先として扱います。sourceは125レジスタ・128命令まで、比較DAGは従来の128レジスタ・128命令までを対象にします。
 
-`Proposal::verification_problem()`は、solver実行前に完了式・比較式・分割条件を取り出せます。`VerificationProblem::check()`は、完了検査に1呼出し5秒まで、比較の全分割と反例抽出に合計15秒を使います。全ケースのUNSATだけが`VerifiedRoll`を作り、SATの証拠は両方の実際の循環CFGへ再生して出口・必要値・全RAM・faultを照合します。`Unknown`と反復数不足は個別に記録し、既存出力を使います。
+`Proposal::verification_problem()`は、solver実行前に完了式・比較式・分割条件を取り出せます。`composition_problem()`は、元SSAの式、反復上限、私有カウンタの値から区間ごとの対応・事後条件を構築します。入口の式は純粋なレジスタ等式で、最初の入口は元の共有入力をそのまま使います。事後条件が次の入口の式を保証し、対応検査が出口と共有値を保証します。各問い合わせは全RAM・最初のfaultと元の正常出口の観測を保持します。上限は16区間、各式4MiB、全式16MiBです。
 
-[固定checkpoint](../tools/corpora/automatic-roll-v1.m2.json)では、合成例の正負対照と実Clangの候補を分けて記録します。実例の候補は325入力で元の機械語IRと一致し、O0/O2の生成Cを合計650回比較しました。15秒の等価性ゲートは`Unknown`で、通常CLIは従来の出力を維持しています。
+`VerificationProblem::check()`は完了検査に5秒まで、区間合成・従来の分割比較・反例抽出に共通15秒を使います。受理結果は`EquivalenceProof`で証明経路を保持します。局所の不成立後は残り予算で元の全体比較を行い、変換の反例を両方の循環CFGで再生します。未判定と反復数不足は個別に記録します。
+
+[区間合成のcheckpoint](../tools/corpora/compositional-roll-v1.m2.json)では、保存済みClang objectの12証明義務と完了検査が通り、元の領域契約で候補を受理しました。同じ候補Cについて325入力・O0/O2計650実行の全RAM・返り値・fault比較も一致します。3,072構成の生成Program監査は、受理512件、誤った入口条件による保留512件、意味改変の反例再生2,048件を、旧エンコーダの全体比較と照合しています。通常CLIは現行の描画方針を使います。
+
+保存したSMTは[再現ツール](../tools/replay_loop_checkpoint.py)で検査できます。objectをcheckpointから復元するため、Clangは不要です。`--rust`はソースhashを確認し、証明の再構築・生成C比較・全artifactの一致まで検査します。`--flat`は従来の全体比較を別の結果として記録します。
+
+```sh
+NIRVANA_Z3=/path/to/z3 python3 tools/dev.py run -- \
+  python3 tools/replay_loop_checkpoint.py --out '{out}' --rust --flat
+```
 
 [固定checkpoint](../tools/corpora/ir-dag-regions-v1.m1.json)は、任意のRAMと整数入力を持つ8組の同値判定、7組の反例再生、再生上限の対照1組を記録しています。検証プロファイルはsolver呼出しごとに5秒です。APIは渡されたsolver予算を使い、2秒で未判定となった結果もcheckpointへ残しています。 複数のSMT検査をまとめる固定profileは`--test-threads=1`で実行し、並列実行で5秒の未判定となった記録も保持します。自動候補の受理では、この領域検査と反復の完了検査を使います。
 

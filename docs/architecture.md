@@ -42,7 +42,9 @@ ELF / raw bytes
 
 compiler-awareなCFG回復は、実行IRと解析表現を使って辺・領域の候補を作ります。[反復の式パターン](../src/dataflow/lane_patterns.rs)は、元SSAの値とload位置を保持し、反復間で変化する位置と不変な演算を候補として示します。[出口別の観測](../src/verification/block_verify/region/extraction/live_out.rs)は、継続先で必要な値を元IRへ結び付けます。制御の変換は領域検証を通し、影響するSSA・MemorySSAを更新して構造化へ渡します。[ロードマップのM2](x86-64-roadmap.md#段階と到達基準)で扱い、元ソースへの構造的な近さはM0の評価で測ります。
 
-[反復復元](../src/transform/rolled_loop.rs)は、この候補と検証を `Proposal → VerificationProblem → VerifiedRoll` に分けます。Proposalは元Program・SSAの値・自然ループの境界を保持し、既存の1反復分から候補CFGを組みます。VerificationProblemは終了タグ・継続先の必要値・完了と比較のSMT式を公開し、未判定の問い合わせも再現できます。VerifiedRollの生成には、反復打切りへの到達不能と全分割のUNSATが必要です。反例は切出しDAGと元の循環CFGの両方で再生します。対象契約は全RAM・終了先・正常時の必要値・最初のfaultで、元の実行IRとそのPC・trace・命令予算の契約を別に保持します。通常の描画経路への採用は[固定評価と証明ゲート](../tools/corpora/automatic-roll-v1.m2.json)で判断します。
+[反復復元](../src/transform/rolled_loop.rs)は、候補と受理を `Proposal → VerificationProblem → VerifiedRoll` に分けます。Proposalは元Program・SSAの値・自然ループの境界を保持し、1反復分から候補CFGを組みます。VerificationProblemは終了タグ・継続先の必要値・完了と比較のSMT式を公開します。VerifiedRollは反復打切りへの到達不能に加え、全分割のUNSATまたは[区間合成の証明](../src/verification/block_verify/region/composition.rs)を保持します。対象契約は全RAM・終了先・正常時の必要値・最初のfaultです。元の実行IRとPC・trace・命令予算は、それぞれの契約を保持します。
+
+区間合成は、元の問い合わせを複数の入口・出口へ分けます。各区間で次の出口と共有値を照合し、両側の事後条件で次の入口の式を検査します。SSAから推測した式と受理根拠を分け、入口が満たす関係を前区間から接続します。局所反例は局所の検査結果として保持し、変換全体の反例には元の循環CFGでの再生を使います。[固定評価](../tools/corpora/compositional-roll-v1.m2.json)に、証明経路・生成C比較・構造指標を結んでいます。
 
 [経路条件の回復](../src/dataflow/predicates.rs)は、閉じたDAGのSSA値を使い、各block入口のゼロ・非ゼロの事実を求めます。別の検査器が元CFGの全流入辺から主張を確認し、純粋な条件分岐・代入・returnの変更を検査します。Loadは定義ごとに独立な値とし、メモリ効果・命令位置・予算を保ちます。契約は関数入口からの実行とそのprefixです。Middle IRの`recover_predicates()`は変更後のCFGからSSAと値IDを再構築し、readable Cは同じ引数契約で従来の出力と比較して候補を選びます。
 Loadは出現ごとに独立な結果値を持ち、正常に評価を終えた結果へ純粋なbit演算の恒等式を適用します。これにより、`KnownLoad`の戻し変換である`(read & 0) | known`からも条件へ定数性を伝えます。メモリを含む代入・条件・returnの式は元の位置に保持し、読込み順序・lazyな枝・最初のfaultを実行比較とSMTで検査します。
