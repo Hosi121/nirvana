@@ -100,7 +100,7 @@ mod native;
 #[test]
 #[ignore = "requires NIRVANA_REGION_OBJECT, NIRVANA_REGION_OUTPUT and NIRVANA_Z3"]
 fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
-    use nirvana::transform::rolled_loop::{self, Outcome as RollOutcome};
+    use nirvana::transform::rolled_loop::{self, EquivalenceProof, Outcome as RollOutcome};
     let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
     std::fs::create_dir_all(&directory).unwrap();
     let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
@@ -147,10 +147,11 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
     let start = std::time::Instant::now();
     let accepted = match problem.check(&solver) {
         RollOutcome::Verified(value) => {
-            println!(
-                "AUTOMATIC-GATE equivalent partitions={}",
-                value.checked_partitions()
-            );
+            let (method, checked) = match value.equivalence_proof() {
+                EquivalenceProof::ExhaustivePartitions { checked } => ("partitions", *checked),
+                EquivalenceProof::CutComposition(seal) => ("composition", seal.checked()),
+            };
+            println!("AUTOMATIC-GATE equivalent method={method} obligations={checked}");
             Some(value)
         }
         RollOutcome::Unknown(reason) => {
@@ -160,7 +161,7 @@ fn actual_compiler_loop_proposal_records_gate_and_concrete_memory_behavior() {
         other => panic!("candidate failed its semantic gate: {other:?}"),
     };
     println!(
-        "AUTOMATIC-ROLL adopted={} envelope={:?} selectors={:?} instructions={} proof_ms={}",
+        "AUTOMATIC-ROLL verified={} envelope={:?} selectors={:?} instructions={} proof_ms={}",
         accepted.is_some(),
         proposal.envelope(),
         proposal.selectors(),

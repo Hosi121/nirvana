@@ -252,10 +252,21 @@ fn accepts_only_completed_equivalent_proposals() {
     let proposal = propose(&source, &discovery, 0).unwrap();
     let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
         .with_timeout(std::time::Duration::from_secs(15));
+    let problem = proposal.verification_problem().unwrap();
+    let cases = problem.input_partitions().unwrap().unwrap();
+    let partitioned = cases.check(&solver, std::time::Duration::from_secs(15));
+    assert_eq!(partitioned.verdict, region::Verdict::EquivalentUnderModel);
+    assert_eq!(partitioned.total, 16);
+    assert_eq!(partitioned.checked, 16);
     let Outcome::Verified(accepted) = proposal.verify(&solver) else {
         panic!("positive proposal rejected")
     };
-    assert_eq!(accepted.checked_partitions(), 16);
+    let EquivalenceProof::CutComposition(seal) = accepted.equivalence_proof() else {
+        panic!("the source-derived local obligations should establish equivalence")
+    };
+    assert!(seal.matches(problem.query()));
+    assert_eq!(seal.checked(), 12);
+    assert_eq!(accepted.checked_partitions(), 0);
     assert!(
         accepted
             .outputs()

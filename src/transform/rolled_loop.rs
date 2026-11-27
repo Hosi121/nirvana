@@ -34,7 +34,7 @@ mod verify;
 
 pub use envelope::Envelope;
 pub use replay::{Counterexample, Replay, ReplayExit};
-pub use verify::{Outcome, VerificationProblem, VerifiedRoll};
+pub use verify::{EquivalenceProof, Outcome, VerificationProblem, VerifiedRoll};
 pub const MODEL_ID: &str = "source-bound-rolled-loop-proposal-v1";
 pub const MAX_LANES: usize = 8;
 

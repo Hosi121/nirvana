@@ -140,7 +140,7 @@ fn local_queries_keep_postconditions_effects_and_terminal_outputs() {
     let Outcome::Unproved(failure) = problem.check(&solver, Duration::ZERO) else {
         panic!("zero budget cannot construct a seal")
     };
-    assert_eq!(failure.checked, 1);
+    assert_eq!(failure.checked, 0);
     assert_eq!(
         failure.verdict,
         Verdict::Unknown(UnknownReason::SolverTimeout)
@@ -189,6 +189,17 @@ fn all_local_obligations_are_needed_before_a_bound_certificate_exists() {
         wrong.original().check(&solver),
         Verdict::Counterexample(_)
     ));
+    let same = query(&fixture(10, 2, 7), &fixture(20, 2, 7), &[Reg(0)], &[Reg(1)]).unwrap();
+    let spurious = Problem::new(&same, &cuts()).unwrap();
+    assert!(matches!(
+        spurious.check(&solver, Duration::from_secs(5)),
+        Outcome::Unproved(_)
+    ));
+    assert_eq!(
+        same.check(&solver),
+        Verdict::EquivalentUnderModel,
+        "a failed local relation need not be a global counterexample"
+    );
 
     // Sharing a value at a later cut requires proving its equality on arrival.
     let mut handoff = cuts();

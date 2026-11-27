@@ -99,7 +99,8 @@ impl Problem {
     pub fn check(&self, solver: &Solver, budget: Duration) -> Outcome {
         let deadline = Instant::now() + budget.min(Duration::from_secs(30));
         for (index, obligation) in self.obligations.iter().enumerate() {
-            let verdict = if Instant::now() >= deadline {
+            let expired = Instant::now() >= deadline;
+            let verdict = if expired {
                 Verdict::Unknown(UnknownReason::SolverTimeout)
             } else {
                 obligation
@@ -110,7 +111,7 @@ impl Problem {
                 return Outcome::Unproved(Box::new(Failure {
                     cut: obligation.cut,
                     kind: obligation.kind,
-                    checked: index + 1,
+                    checked: index + usize::from(!expired),
                     total: self.obligations.len(),
                     verdict,
                 }));

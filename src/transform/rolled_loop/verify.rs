@@ -3,7 +3,7 @@ use extraction::{
     live_out::{self, ContinuationOutputs},
     repeat::{self, Complete, Completion, Prefixed},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 pub enum Outcome {
@@ -29,7 +29,12 @@ pub struct VerificationProblem {
 pub struct VerifiedRoll {
     problem: VerificationProblem,
     complete: Complete,
-    checked: usize,
+    proof: EquivalenceProof,
+}
+#[derive(Clone, Debug)]
+pub enum EquivalenceProof {
+    ExhaustivePartitions { checked: usize },
+    CutComposition(Box<region::composition::Certificate>),
 }
 impl VerifiedRoll {
     pub fn program(&self) -> &Program {
@@ -50,8 +55,16 @@ impl VerifiedRoll {
     pub fn completion_query(&self) -> &region::Query {
         &self.problem.completion
     }
+    pub fn equivalence_proof(&self) -> &EquivalenceProof {
+        &self.proof
+    }
+    /// Number of checked input/return cases; compositional proofs use local
+    /// obligations instead, so this legacy case count is zero for that route.
     pub fn checked_partitions(&self) -> usize {
-        self.checked
+        match &self.proof {
+            EquivalenceProof::ExhaustivePartitions { checked } => *checked,
+            EquivalenceProof::CutComposition(_) => 0,
+        }
     }
 }
 fn query_error(error: region::Error) -> Error {
@@ -139,11 +152,27 @@ impl VerificationProblem {
             Completion::BoundExceeded(witness) => return Outcome::Incomplete(witness),
             Completion::Unknown(reason) => return Outcome::Unknown(reason),
         };
+        let deadline = Instant::now() + Duration::from_secs(15);
+        if let Ok(local) = self.composition_problem()
+            && let region::composition::Outcome::Verified(certificate) =
+                local.check(solver, deadline.saturating_duration_since(Instant::now()))
+        {
+            if !certificate.matches(&self.query) {
+                return Outcome::Unknown(UnknownReason::BoundaryMapping);
+            }
+            return Outcome::Verified(Box::new(VerifiedRoll {
+                problem: self.clone(),
+                complete,
+                proof: EquivalenceProof::CutComposition(certificate),
+            }));
+        }
+        // A local witness can violate an earlier path condition. Only the
+        // unchanged global query and cyclic replay supply a Counterexample.
+        // Both proof strategies consume the same comparison wall deadline.
+        let remaining = deadline.saturating_duration_since(Instant::now());
         let result = match self.input_partitions() {
-            Ok(Some(cases)) => cases.check(solver, Duration::from_secs(15)),
-            Ok(None) => self
-                .query
-                .check_partitioned(solver, Duration::from_secs(15)),
+            Ok(Some(cases)) => cases.check(solver, remaining),
+            Ok(None) => self.query.check_partitioned(solver, remaining),
             Err(region::Error::Limit) => return Outcome::Unknown(UnknownReason::ResourceLimit),
             Err(_) => return Outcome::Unknown(UnknownReason::BoundaryMapping),
         };
@@ -151,7 +180,9 @@ impl VerificationProblem {
             region::Verdict::EquivalentUnderModel => Outcome::Verified(Box::new(VerifiedRoll {
                 problem: self.clone(),
                 complete,
-                checked: result.checked,
+                proof: EquivalenceProof::ExhaustivePartitions {
+                    checked: result.checked,
+                },
             })),
             region::Verdict::Counterexample(witness) => {
                 match super::replay::check(&self.proposal, witness, &self.outputs) {
