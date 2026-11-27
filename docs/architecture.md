@@ -128,6 +128,10 @@ POSIXアダプタはゲスト構造体とホストABIを変換します。TLS gu
 
 [領域検証](../src/verification/block_verify/region.rs)は、閉じたDAGで分岐を跨ぐIR変換を比較します。共有する入口レジスタと正常終了時の必要値を明示し、返り値・全RAM・最初のfaultを照合します。内部の命令位置・trace・予算停止は実行用の対応検査で扱います。循環をDAGへ展開する際は、展開の完了条件を別に検査し、元Programに結び付いた入口の事実を使います。 [領域の切り出し](../src/verification/block_verify/region/extraction.rs)は、元Program・入口・継続先を保持し、命令と効果の投影を元CFGから検査します。入口のbit上限は同じProgramへ再検証し、実際の関数返り値は継続先タグと別のレジスタへ保存します。 循環候補は検査済みの1反復を接続し、最後の打切り印の到達不能をSMTで確認してから、完了した領域として比較できます。 初期化や入口分岐による関係は`Prefixed`で元のprefixを保持し、反復への到達状態をその実行から求めます。 [番号の投影](../src/verification/block_verify/region/registers.rs)で、疎なレジスタ空間を検査器の上限内へ写します。比較する二つのIRには、共有入力と終了値を含む同じ対応表を使います。 [保存先IR](../src/transform/allocated_storage.rs)は、独立検査した色分けを実際のレジスタbankへ下ろし、下ろした命令を元IRへ照合します。返り値・全RAM・fault・PC・trace・命令予算を保存する契約で、元の全レジスタの最終値は元IR側の観測として扱います。保存幅や生成Cは、このu64保存先対応から先の検査対象です。
 
+[適用経路](../src/transform/loop_recovery.rs)は、検査済み保存先・疎な番号の投影・領域証明・関数への適用条件・元の番号空間への復元を保持します。
+関数への適用では単一入口、領域外の命令、両側の継続先の必要値を確認し、追加の私有保存先を元の引数番号から分離します。
+`readable::loop_recovery::Emission`は基準Cと候補を保持し、M0で採否・費用・実行比較へ結びます。
+
 ## CFGの構造化
 
 [cfg](../src/control_flow/cfg.rs)・支配/後支配解析・自然ループ解析から、`If`・`Loop`・脱出を持つ[Node](../src/control_flow/structure.rs)を組み立てます。
