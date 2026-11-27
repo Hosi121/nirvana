@@ -87,6 +87,30 @@ fn known(expression: &Expr, values: &[Option<u64>]) -> Option<u64> {
     }
 }
 
+fn may_load(expression: &Expr) -> bool {
+    match expression {
+        Expr::Load { .. } => true,
+        Expr::Const(_) | Expr::Register(_) => false,
+        Expr::Unary(_, value) => may_load(value),
+        Expr::Binary(_, left, right) => may_load(left) || may_load(right),
+        Expr::Select {
+            condition,
+            taken,
+            not_taken,
+        } => may_load(condition) || may_load(taken) || may_load(not_taken),
+    }
+}
+
+fn may_fault(instruction: &IrInstruction) -> bool {
+    instruction.assignments.iter().any(|assignment| {
+        matches!(assignment.destination, Place::Memory { .. }) || may_load(&assignment.value)
+    }) || match &instruction.control {
+        Control::Branch { condition, .. } => may_load(condition),
+        Control::Return(value) => may_load(value),
+        Control::Next | Control::Jump(_) => false,
+    }
+}
+
 pub(super) fn dag(
     builder: &mut Builder,
     program: &Program,
@@ -114,7 +138,7 @@ fn dag_impl(
     order: &[u64],
     shared: &Registers,
     prefix: &str,
-    project_normal_values: bool,
+    compact: bool,
 ) -> Result<(State, String, Vec<String>), Error> {
     let instructions: BTreeMap<_, _> = program
         .instructions()
@@ -155,7 +179,12 @@ fn dag_impl(
         let mut state = merge(builder, &paths, &initial, Merge::All);
         state.alive = reach.clone();
         let instruction = instructions[&pc];
-        builder.instruction(instruction, &mut state)?;
+        let branch = if compact {
+            builder.instruction_with_branch(instruction, &mut state)?
+        } else {
+            builder.instruction(instruction, &mut state)?;
+            None
+        };
         // Keep expression evaluation and its faults in the symbolic primitive
         // kernel. Exact facts simplify only the resulting normal register values.
         for assignment in &instruction.assignments {
@@ -168,14 +197,16 @@ fn dag_impl(
                 state.registers[reg] = word(*value);
             }
         }
-        let fault = builder.bool(format!("(and {reach} (not {}))", state.alive));
-        exits.push(Path {
-            guard: fault,
-            state: state.clone(),
-            constants: vec![],
-        });
+        if !compact || may_fault(instruction) {
+            let fault = builder.bool(format!("(and {reach} (not {}))", state.alive));
+            exits.push(Path {
+                guard: fault,
+                state: state.clone(),
+                constants: vec![],
+            });
+        }
         if matches!(instruction.control, Control::Return(_)) {
-            if project_normal_values {
+            if compact {
                 returns.push(Path {
                     guard: state.alive.clone(),
                     state: state.clone(),
@@ -202,12 +233,31 @@ fn dag_impl(
                 Control::Return(_) => unreachable!(),
             };
             for to in targets {
-                let guard = builder.bool(format!(
-                    "(and {} (= {} {}))",
-                    state.alive,
-                    state.exit_value,
-                    word(to)
-                ));
+                let guard = if compact {
+                    // Routing a normal path needs the Boolean condition, rather
+                    // than a word-valued next PC followed by a PC comparison.
+                    // Same-target branches still evaluated their condition and
+                    // any faulting loads in instruction_with_branch above.
+                    match (&instruction.control, &branch) {
+                        (Control::Branch { target, .. }, Some(value)) if *target != fall => {
+                            let truth = format!("(distinct {value} {})", word(0));
+                            let condition = if to == *target {
+                                truth
+                            } else {
+                                format!("(not {truth})")
+                            };
+                            builder.bool(format!("(and {} {condition})", state.alive))
+                        }
+                        _ => state.alive.clone(),
+                    }
+                } else {
+                    builder.bool(format!(
+                        "(and {} (= {} {}))",
+                        state.alive,
+                        state.exit_value,
+                        word(to)
+                    ))
+                };
                 incoming.entry(to).or_default().push(Path {
                     guard,
                     state: state.clone(),
@@ -224,7 +274,7 @@ fn dag_impl(
             .collect::<Vec<_>>()
             .join(" ")
     ));
-    let state = if project_normal_values {
+    let state = if compact {
         // Registers and returned values are observed only after normal Return.
         // Fault paths retain all RAM, status and first-fault fields separately.
         let mut effects = merge(builder, &exits, &initial, Merge::Effects);

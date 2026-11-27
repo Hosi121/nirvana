@@ -226,6 +226,15 @@ impl Builder {
         instruction: &IrInstruction,
         state: &mut State,
     ) -> Result<(), UnknownReason> {
+        self.instruction_with_branch(instruction, state).map(|_| ())
+    }
+    // The DAG encoder can route the evaluated condition directly. Keep its
+    // evaluation in the primitive kernel so loads and first faults occur once.
+    fn instruction_with_branch(
+        &mut self,
+        instruction: &IrInstruction,
+        state: &mut State,
+    ) -> Result<Option<String>, UnknownReason> {
         for assignment in &instruction.assignments {
             match &assignment.destination {
                 Place::Register(Reg(index)) => {
@@ -257,24 +266,27 @@ impl Builder {
             }
         }
         state.exit_kind = word(0);
+        let mut branch = None;
         state.exit_value = match &instruction.control {
             Control::Next => word(instruction.address + u64::from(instruction.size)),
             Control::Jump(target) => word(*target),
             Control::Branch { condition, target } => {
                 let condition = self.expression(condition, state, "true", 0)?;
-                self.value(format!(
+                let next = self.value(format!(
                     "(ite (distinct {condition} {}) {} {})",
                     word(0),
                     word(*target),
                     word(instruction.address + u64::from(instruction.size))
-                ))
+                ));
+                branch = Some(condition);
+                next
             }
             Control::Return(value) => {
                 state.exit_kind = word(1);
                 self.expression(value, state, "true", 0)?
             }
         };
-        Ok(())
+        Ok(branch)
     }
     fn block(
         &mut self,
