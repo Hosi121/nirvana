@@ -115,6 +115,16 @@ impl Proposal {
             Err(_) => Outcome::Unknown(UnknownReason::BoundaryMapping),
         }
     }
+    pub(crate) fn verify_until(&self, solver: &Solver, deadline: Instant) -> Outcome {
+        if Instant::now() >= deadline {
+            return Outcome::Unknown(UnknownReason::SolverTimeout);
+        }
+        match self.verification_problem() {
+            Ok(problem) => problem.check_until(solver, deadline),
+            Err(Error::Limit) => Outcome::Unknown(UnknownReason::ResourceLimit),
+            Err(_) => Outcome::Unknown(UnknownReason::BoundaryMapping),
+        }
+    }
 }
 impl VerificationProblem {
     pub fn proposal(&self) -> &Proposal {
@@ -147,15 +157,34 @@ impl VerificationProblem {
         Ok(Some(cases))
     }
     pub fn check(&self, solver: &Solver) -> Outcome {
-        let complete = match self
-            .prefixed
-            .check_complete(&solver.limited_to(Duration::from_secs(5)))
-        {
+        self.check_inner(solver, None)
+    }
+    /// Share one absolute wall deadline across completion, local proofs and
+    /// global fallback, including counterexample extraction solver calls.
+    pub fn check_until(&self, solver: &Solver, deadline: Instant) -> Outcome {
+        self.check_inner(solver, Some(deadline))
+    }
+    fn check_inner(&self, solver: &Solver, outer: Option<Instant>) -> Outcome {
+        let completion_solver = solver.limited_to(Duration::from_secs(5));
+        let completion = match outer {
+            Some(deadline) => self.prefixed.check_complete_until(
+                &completion_solver,
+                deadline.min(Instant::now() + Duration::from_secs(5)),
+            ),
+            None => self.prefixed.check_complete(&completion_solver),
+        };
+        let complete = match completion {
             Completion::Complete(complete) => complete,
             Completion::BoundExceeded(witness) => return Outcome::Incomplete(witness),
             Completion::Unknown(reason) => return Outcome::Unknown(reason),
         };
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = outer.map_or_else(
+            || Instant::now() + Duration::from_secs(15),
+            |deadline| deadline.min(Instant::now() + Duration::from_secs(15)),
+        );
+        if Instant::now() >= deadline {
+            return Outcome::Unknown(UnknownReason::SolverTimeout);
+        }
         if let Ok(local) = self.composition_problem()
             && let region::composition::Outcome::Verified(certificate) =
                 local.check(solver, deadline.saturating_duration_since(Instant::now()))

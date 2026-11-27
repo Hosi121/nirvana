@@ -4,7 +4,7 @@
 //! are checked before rendering. C emission remains a separate M0 boundary.
 use super::{ReadableC, ReadableError, ReadableOptions, SignedStorageProvenance};
 use crate::model::{ir::Program, middle_ir::Function};
-use crate::transform::loop_recovery::{self, Recovered};
+use crate::transform::loop_recovery::{self, EntryAttempt, Recovered};
 use crate::verification::verify::Solver;
 use std::time::{Duration, Instant};
 
@@ -57,6 +57,7 @@ pub struct Emission {
     candidate: Option<Candidate>,
     retention: Option<Retention>,
     elapsed: Duration,
+    entry_attempt: Option<EntryAttempt>,
 }
 impl Emission {
     pub fn baseline(&self) -> &ReadableC {
@@ -70,6 +71,9 @@ impl Emission {
     }
     pub fn elapsed(&self) -> Duration {
         self.elapsed
+    }
+    pub fn entry_attempt(&self) -> Option<&EntryAttempt> {
+        self.entry_attempt.as_ref()
     }
     pub fn selected(&self) -> &ReadableC {
         match (&self.candidate, &self.retention) {
@@ -95,13 +99,18 @@ fn cost(output: &ReadableC) -> (bool, usize, usize, usize) {
     (output.fallback_reason.is_some(), locals, body, all)
 }
 
-fn recover(baseline: ReadableC, options: ReadableOptions, solver: &Solver) -> Emission {
-    let start = Instant::now();
+fn recover(
+    baseline: ReadableC,
+    options: ReadableOptions,
+    solver: &Solver,
+    start: Instant,
+) -> Emission {
     let mut emission = Emission {
         baseline,
         candidate: None,
         retention: None,
         elapsed: Duration::ZERO,
+        entry_attempt: None,
     };
     let retain = |emission: &mut Emission, reason| {
         emission.retention = Some(reason);
@@ -123,13 +132,19 @@ fn recover(baseline: ReadableC, options: ReadableOptions, solver: &Solver) -> Em
             return emission;
         }
     };
-    let recovery = match loop_recovery::recover(&source, &emission.baseline.parameters, solver) {
+    let recovery = match loop_recovery::recover_before(
+        &source,
+        &emission.baseline.parameters,
+        solver,
+        start + Duration::from_secs(10),
+    ) {
         loop_recovery::Outcome::Recovered(recovered) => recovered,
         loop_recovery::Outcome::Retained { reason, .. } => {
             retain(&mut emission, Retention::Recovery(reason));
             return emission;
         }
     };
+    emission.entry_attempt = Some(recovery.entry_attempt().clone());
     let output = match super::emit_readable_c_with_storage_provenance(recovery.program(), options) {
         Ok(output) => output,
         Err(error) => {
@@ -155,10 +170,12 @@ pub fn emit_readable_c(
     options: ReadableOptions,
     solver: &Solver,
 ) -> Result<Emission, ReadableError> {
+    let start = Instant::now();
     Ok(recover(
         super::emit_readable_c_with_storage_provenance(source, options)?,
         options,
         solver,
+        start,
     ))
 }
 pub fn emit_middle_c(
@@ -166,10 +183,12 @@ pub fn emit_middle_c(
     options: ReadableOptions,
     solver: &Solver,
 ) -> Result<Emission, ReadableError> {
+    let start = Instant::now();
     Ok(recover(
         super::emit_middle_c_with_storage_provenance(source, options)?,
         options,
         solver,
+        start,
     ))
 }
 

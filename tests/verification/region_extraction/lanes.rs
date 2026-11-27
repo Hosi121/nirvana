@@ -403,6 +403,21 @@ fn actual_compiler_loop_recovery_chain_keeps_original_parameter_ids() {
     .unwrap();
     assert!(emission.accepted(), "{:?}", emission.retention());
     let recovered = emission.candidate().unwrap().recovery();
+    assert_eq!(
+        emission.entry_attempt().unwrap().status,
+        nirvana::transform::loop_recovery::EntryStatus::UsedInIr
+    );
+    assert_eq!(recovered.entry_attempt().before_lanes, 3);
+    assert_eq!(recovered.entry_attempt().after_lanes, 4);
+    assert_eq!(
+        recovered
+            .contextual()
+            .verified_region()
+            .proposal()
+            .lane_group()
+            .offsets,
+        [0, 1, 2, 3]
+    );
     let source = recovered.source();
     let parameters = emission.baseline().parameters.clone();
     recovered.validate().unwrap();
@@ -506,6 +521,8 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
         .with_advisory_entry_caps(32, &[(Reg(7), 2)])
         .unwrap();
     assert_eq!(aligned.groups()[0].offsets, [0, 1, 2, 3]);
+    let advisory_only = nirvana::transform::rolled_loop::propose(&source, &aligned, 0).unwrap();
+    assert_eq!(advisory_only.source_region().input_bit_caps()[7], 64);
     println!("ENTRY-FACTS-LANES before=3 after=4 offsets=0,1,2,3");
     let proposal = nirvana::transform::rolled_loop::propose_with_invariants(
         &source,

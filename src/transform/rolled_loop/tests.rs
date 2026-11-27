@@ -324,6 +324,27 @@ fn recovered_chain_preserves_source_endpoints_with_arbitrary_private_storage() {
         panic!("the checked toy chain should recover")
     };
     recovered.validate().unwrap();
+    assert_eq!(
+        recovered.entry_attempt().status,
+        loop_recovery::EntryStatus::NotApplicable
+    );
+    let RecoveryOutcome::Recovered(retained) = loop_recovery::recover_before(
+        &source,
+        &[Reg(1), Reg(2), Reg(6), Reg(7)],
+        &solver,
+        std::time::Instant::now(),
+    ) else {
+        panic!("extension expiry must retain the proved base")
+    };
+    assert_eq!(
+        retained.entry_attempt().status,
+        loop_recovery::EntryStatus::SkippedBudget
+    );
+    assert_eq!(
+        retained.program().instructions(),
+        recovered.program().instructions()
+    );
+    assert_eq!(retained.parameters(), recovered.parameters());
     for bound in [0, 1, 2, 3, u64::MAX] {
         for pointer in [4096, 4095, u64::MAX] {
             for poison in [0, 0xdead_beef, u64::MAX] {
@@ -437,6 +458,21 @@ fn accepts_only_completed_equivalent_proposals() {
     assert!(matches!(short.verify(&solver), Outcome::Incomplete(_)));
     let missing = Solver::new("/nirvana/missing-solver");
     assert!(matches!(proposal.verify(&missing), Outcome::Unknown(_)));
+}
+
+#[test]
+fn an_expired_shared_deadline_stops_before_starting_the_solver() {
+    let source = fixture();
+    let discovery = lane_patterns::discover(&source).unwrap();
+    let problem = propose(&source, &discovery, 0)
+        .unwrap()
+        .verification_problem()
+        .unwrap();
+    let missing = Solver::new("/nirvana/missing-solver");
+    assert!(matches!(
+        problem.check_until(&missing, std::time::Instant::now()),
+        Outcome::Unknown(UnknownReason::SolverTimeout)
+    ));
 }
 
 fn staged_fixture() -> Program {

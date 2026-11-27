@@ -92,6 +92,9 @@ impl Proposal {
     pub fn lane_group(&self) -> &LaneGroup {
         &self.discovery.groups()[self.group]
     }
+    pub fn group_index(&self) -> usize {
+        self.group
+    }
     pub fn program(&self) -> &Program {
         &self.program
     }

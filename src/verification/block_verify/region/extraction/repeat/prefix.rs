@@ -125,6 +125,23 @@ impl Prefixed {
         )
     }
     pub fn check_complete(&self, solver: &Solver) -> Completion {
+        self.check_complete_inner(solver, None)
+    }
+    pub(crate) fn check_complete_until(
+        &self,
+        solver: &Solver,
+        deadline: std::time::Instant,
+    ) -> Completion {
+        self.check_complete_inner(solver, Some(deadline))
+    }
+    fn check_complete_inner(
+        &self,
+        solver: &Solver,
+        deadline: Option<std::time::Instant>,
+    ) -> Completion {
+        if deadline.is_some_and(|limit| std::time::Instant::now() >= limit) {
+            return Completion::Unknown(UnknownReason::SolverTimeout);
+        }
         let query = match self.completion_query() {
             Ok(query) => query,
             Err(ExtractionError::Region(Error::Limit)) => {
@@ -132,7 +149,7 @@ impl Prefixed {
             }
             Err(_) => return Completion::Unknown(UnknownReason::BoundaryMapping),
         };
-        match query.check(solver) {
+        match query.check_script(solver, query.smt2(), deadline) {
             Verdict::EquivalentUnderModel => {
                 Completion::Complete(Complete::new(&self.program, &self.prefix, self.rounds()))
             }

@@ -10,6 +10,10 @@ use crate::verification::{
     verify::{Solver, UnknownReason},
 };
 use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
+
+mod improvement;
+pub use improvement::{EntryAttempt, EntryStatus};
 
 pub const MODEL_ID: &str = "checked-loop-recovery-chain-v1";
 
@@ -128,6 +132,9 @@ impl PreparedStorage {
     /// Try one largest lane group. Completion and comparison keep their bounded
     /// proof budgets, and an unsuccessful attempt retains the source function.
     pub fn recover(self, solver: &Solver) -> Outcome {
+        self.recover_before(solver, Instant::now() + Duration::from_secs(10))
+    }
+    pub(crate) fn recover_before(self, solver: &Solver, improvement_deadline: Instant) -> Outcome {
         let discovery = match lane_patterns::discover(self.compact.program()) {
             Ok(found) => found,
             Err(reason) => {
@@ -178,11 +185,12 @@ impl PreparedStorage {
             contextual,
             expanded,
             group: index,
+            entry_attempt: EntryAttempt::new(proposal.lane_group().kernels.len()),
         };
         if recovered.validate().is_err() {
             return retained(Reason::Correspondence);
         }
-        Outcome::Recovered(Box::new(recovered))
+        Outcome::Recovered(Box::new(recovered.improve(solver, improvement_deadline)))
     }
 }
 
@@ -195,6 +203,7 @@ pub struct Recovered {
     contextual: rolled_loop::ContextualRoll,
     expanded: Expanded,
     group: usize,
+    entry_attempt: EntryAttempt,
 }
 impl Recovered {
     pub fn source(&self) -> &Program {
@@ -218,6 +227,9 @@ impl Recovered {
     pub fn group(&self) -> usize {
         self.group
     }
+    pub fn entry_attempt(&self) -> &EntryAttempt {
+        &self.entry_attempt
+    }
     pub fn extend_input(&self, input: &[u64], fresh: u64) -> Result<Vec<u64>, Error> {
         let input = self
             .prepared
@@ -234,7 +246,8 @@ impl Recovered {
         self.expanded.validate().map_err(Error::Projection)?;
         let compact = &self.prepared.compact;
         let base = compact.registers().len();
-        if !same(self.contextual.source(), compact.program())
+        if self.group != self.contextual.verified_region().proposal().group_index()
+            || !same(self.contextual.source(), compact.program())
             || !same(self.contextual.program(), self.expanded.source())
             || self.expanded.registers().get(..base) != Some(compact.registers())
             || self.expanded.registers()[base..]
@@ -249,8 +262,21 @@ impl Recovered {
 }
 
 pub fn recover(source: &Program, parameters: &[Reg], solver: &Solver) -> Outcome {
+    recover_before(
+        source,
+        parameters,
+        solver,
+        Instant::now() + Duration::from_secs(10),
+    )
+}
+pub(crate) fn recover_before(
+    source: &Program,
+    parameters: &[Reg],
+    solver: &Solver,
+    improvement_deadline: Instant,
+) -> Outcome {
     match PreparedStorage::new(source, parameters) {
-        Ok(prepared) => prepared.recover(solver),
+        Ok(prepared) => prepared.recover_before(solver, improvement_deadline),
         Err(error) => Outcome::Retained {
             group: None,
             reason: Reason::Preparation(error),
