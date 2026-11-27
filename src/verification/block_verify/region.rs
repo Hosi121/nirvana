@@ -7,6 +7,7 @@
 use super::*;
 use crate::model::ir::{RunReport, RunStatus};
 
+pub mod composition;
 mod encode;
 pub mod extraction;
 mod observations;
@@ -81,6 +82,7 @@ pub struct Query {
     input_names: Vec<String>,
     candidate_names: Vec<String>,
     partitions: Vec<String>,
+    shared: Vec<Reg>,
 }
 
 /// Check both entry-reachable DAGs under the declared shared/live-out mapping.
@@ -221,6 +223,7 @@ fn build_query_encoded(
         input_names,
         candidate_names,
         partitions,
+        shared: shared.iter().copied().map(Reg).collect(),
     })
 }
 

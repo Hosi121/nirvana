@@ -7,7 +7,7 @@ pub struct ReturnOutputs {
     pub registers: Vec<Reg>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum Observations {
     Uniform(Vec<Reg>),
     AtReturns {
