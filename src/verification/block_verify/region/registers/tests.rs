@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::ir::{Assignment, BinaryOp, Width};
 
-fn fixture() -> Program {
+pub(super) fn fixture() -> Program {
     let r = |n| Expr::Register(Reg(n));
     Program::new(
         10,

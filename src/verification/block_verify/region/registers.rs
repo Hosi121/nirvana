@@ -6,6 +6,8 @@ use crate::model::ir::{Control, Expr, IrInstruction, Place, Program, Reg};
 use std::collections::BTreeSet;
 
 mod check;
+mod expansion;
+pub use expansion::Expanded;
 #[cfg(test)]
 mod tests;
 
