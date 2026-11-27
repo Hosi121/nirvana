@@ -209,3 +209,6 @@ mod prefix;
 #[cfg(test)]
 #[path = "smt_cubes.rs"]
 mod cubes;
+
+#[path = "smt_identities.rs"]
+mod identities;

@@ -8,7 +8,7 @@
 
 use super::KnownBits;
 use crate::dataflow::ssa::{self, SsaError, SsaEvidence, SsaFunction};
-use crate::dataflow::ssa_facts::{self, Domain, FactEvidence, LoadInputs};
+use crate::dataflow::ssa_facts::{self, Domain, FactEvidence, LoadInputs, Operand};
 use crate::model::ir::{BinaryOp, Program, UnaryOp, Width};
 
 mod kernel;
@@ -126,6 +126,18 @@ impl Domain for CheckingDomain {
             BinaryOp::Shl | BinaryOp::Shr | BinaryOp::AShr if right.number().is_none() => 64,
             _ => 1,
         }
+    }
+    fn unary_identity(operation: UnaryOp, value: Self) -> bool {
+        matches!(value, Self::Facts(value) if kernel::unary_identity(operation,value))
+    }
+    fn uses_identities() -> bool {
+        true
+    }
+    fn binary_identity(operation: BinaryOp, left: Self, right: Self, kept: Operand) -> bool {
+        let (Self::Facts(a), Self::Facts(b)) = (left, right) else {
+            return false;
+        };
+        kernel::binary_identity(operation, a, b, kept == Operand::Left)
     }
 }
 

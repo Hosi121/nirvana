@@ -2,7 +2,7 @@
 //! independently of source-language types and signedness annotations. Exact
 //! reaching stores add scalar dependencies while loads retain their effects.
 use crate::dataflow::ssa::{self, SsaError, SsaEvidence, SsaFunction};
-use crate::dataflow::ssa_facts::{self, Domain, LoadInputs};
+use crate::dataflow::ssa_facts::{self, Domain, LoadInputs, Operand};
 use crate::model::ir::{BinaryOp as B, Program, UnaryOp, Width};
 mod check;
 mod transfer;
@@ -146,6 +146,18 @@ impl Domain for State {
             _ => 1,
         }
     }
+    fn unary_identity(op: UnaryOp, value: Self) -> bool {
+        matches!(value, Self::Facts(value) if transfer::unary_identity(op,value))
+    }
+    fn uses_identities() -> bool {
+        true
+    }
+    fn binary_identity(op: B, left: Self, right: Self, kept: Operand) -> bool {
+        match (left, right) {
+            (Self::Facts(a), Self::Facts(b)) => transfer::binary_identity(op, a, b, kept),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -179,8 +191,8 @@ impl BitPlan {
     pub fn values(&self) -> &[KnownBits] {
         &self.values
     }
-    /// Replace only proved constant, load-free fragments. Statement order,
-    /// lazy load arms, stores and branch destinations retain their source sites.
+    /// Replace proved constants and identity operations. Discarded subtrees
+    /// are load-free; retained loads and lazy arms keep their source sites.
     pub fn propose(&self, source: &Program) -> Option<(Program, BitEvidence)> {
         let states = self
             .values

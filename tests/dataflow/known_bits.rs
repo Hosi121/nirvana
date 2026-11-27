@@ -25,6 +25,8 @@ const OPS: [B; 19] = [
     B::SDiv,
     B::SRem,
 ];
+#[path = "known_bits/identities.rs"]
+mod identities;
 fn b(op: B, a: Expr, z: Expr) -> Expr {
     Expr::binary(op, a, z)
 }

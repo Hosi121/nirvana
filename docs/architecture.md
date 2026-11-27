@@ -159,7 +159,7 @@ core・effects・moduleは、分岐ごとの合流点・ループ出口と、複
 [parallel_copy](../src/dataflow/parallel_copy.rs)はφの同時代入を逐次化し、記号による検査で循環と他の保存先の保持を確認します。
 [ssa_destroy](../src/dataflow/ssa_destroy.rs)が実行可能IRへの配置を、[emit/ssa](../src/codegen/emit/ssa.rs)がCの宣言と保存先名の描画を担当します。
 
-[KnownBits](../src/dataflow/known_bits.rs)は、SSA値のzero/one maskから定数部分式を回復します。[数値検査器](../src/dataflow/known_bits/check.rs)は別の演算核で事実と実際の提案を検査し、Return・分岐条件・Storeアドレス内の置換にも適用します。加減算には下位prefixの極値からcarry/borrowを求め、推論側と同じ精度・作業量の判定を保ちます。元SSAの対応、式の走査・純粋性の照合、MemorySSAからのbyte再構成は共通の信頼境界です。[固定比較](../tools/corpora/ir-known-bits-v1.m1.json)に、数値検査の範囲と生成C・IRを維持した結果を記録しています。
+[KnownBits](../src/dataflow/known_bits.rs)は、SSA値のzero/one maskから定数部分式と恒等演算を回復します。[数値検査器](../src/dataflow/known_bits/check.rs)は別の演算核で事実と実際の提案を検査し、Return・分岐条件・Storeアドレス内の置換にも適用します。加減算には下位prefixの極値からcarry/borrowを求め、推論側と同じ精度・作業量の判定を保ちます。元SSAの対応、式の走査・純粋性の照合、MemorySSAからのbyte再構成は共通の信頼境界です。[固定比較](../tools/corpora/ir-known-bits-v1.m1.json)に、数値検査の範囲と生成C・IRを維持した結果を記録しています。
 
 アドレスの正確な恒等関係は[address_identity](../src/dataflow/address_identity.rs)が担当します。
 `offset + Σ(coefficient × SSA値) mod 2^64`を、型やオブジェクト形状の仮説から独立して扱います。
@@ -187,7 +187,7 @@ DIV/IDIVを含むcalleeも、正常復帰とreturn slotの保護を確認して�
 
 [reduce](../src/transform/reduce.rs)は補助値を整理し、[web](../src/dataflow/web.rs)はレジスタ定義を使用とのつながりで分割します。
 候補ごとの検査を経て、load-mask、SSA定数伝播、算術式選択、純粋な不要代入除去を表示IRへ適用します。
-[known_bits](../src/dataflow/known_bits.rs)は既知の0/1を別maskで持ち、φでは両経路に共通するbitを残します。定数伝播と[SSA fact基盤](../src/dataflow/ssa_facts.rs)を共有し、解いた固定点を閉じた不変条件として再検査します。表示IRへは、証明できたLoad-freeの定数部分式を採用します。
+[known_bits](../src/dataflow/known_bits.rs)は既知の0/1を別maskで持ち、φでは両経路に共通するbitを残します。定数伝播と[SSA fact基盤](../src/dataflow/ssa_facts.rs)を共有し、解いた固定点を閉じた不変条件として再検査します。表示IRへは、検査済みの定数部分式と、AND/OR・抽出・符号拡張の恒等変換を採用します。[対応検査](../src/dataflow/ssa_facts/identities.rs)は元SSAのreadをたどり、残すoperandを照合します。除去する側は純粋な式に限定し、残す側のLoadとlazyな枝を元の位置に保ちます。
 [メモリ入力](../src/dataflow/ssa_facts/memory.rs)はMemorySSAのbyte対応表を使い、StoreのSSA入力からLoad結果へ依存辺を加えます。幅の違う書込みもbyteごとに組み立て、φでは書込み元byteの候補を合流します。曖昧なアドレスのStoreにも、その値のbyteだけが届くという範囲を使います。初期メモリ・opaque効果が届くbyteは未知とし、Load自体を元の位置に保って固定点を検査します。
 [memory_values](../src/dataflow/memory_values.rs)は、書込み候補が同じ保存値の連続bit範囲を指すLoadの利用先を、その値のスナップショットへ結びます。SSA値の全bitを一度保存し、幅・位置の違うLoadや分割Storeの射影で共有します。シフト・mask・Extract・Insertの定義を遡り、別レジスタ経由のbyteも元のwordへ結びます。純粋なStore右辺は、そのStoreが成功した直後の値も保持できます。循環成分に属さない到達可能ブロックで確保し、ループ終了後の定義も扱います。
 

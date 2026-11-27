@@ -1,6 +1,32 @@
 //! Total modular transfer functions. Arithmetic carries and masked shift
 //! counts follow the executable IR, including zero-divisor bit-vector values.
 use super::*;
+
+pub(super) fn binary_identity(op: B, a: KnownBits, b: KnownBits, kept: Operand) -> bool {
+    let (a, b) = if kept == Operand::Left {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    match op {
+        B::And => a.maximum() & !b.one == 0,
+        B::Or => b.maximum() & !a.one == 0,
+        _ => false,
+    }
+}
+pub(super) fn unary_identity(op: UnaryOp, value: KnownBits) -> bool {
+    match op {
+        UnaryOp::Extract { start: 0, width } => value.maximum() & !width.mask() == 0,
+        UnaryOp::SignExtend(width) => {
+            let high = !width.mask();
+            let sign = 1u64 << (width.bits() - 1);
+            high == 0
+                || (value.zero & sign != 0 && value.zero & high == high)
+                || (value.one & sign != 0 && value.one & high == high)
+        }
+        _ => false,
+    }
+}
 fn low(bits: u32) -> u64 {
     if bits >= 64 {
         u64::MAX

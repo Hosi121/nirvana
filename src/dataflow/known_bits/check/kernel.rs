@@ -6,6 +6,31 @@ use crate::model::ir::{BinaryOp as B, UnaryOp};
 
 const WORD: u128 = 1u128 << 64;
 
+pub(super) fn binary_identity(op: B, a: KnownBits, b: KnownBits, keep_left: bool) -> bool {
+    let (kept, other) = if keep_left { (a, b) } else { (b, a) };
+    match op {
+        B::And => u128::from(!kept.zero()) | u128::from(other.one()) == u128::from(other.one()),
+        B::Or => u128::from(!other.zero()) | u128::from(kept.one()) == u128::from(kept.one()),
+        _ => false,
+    }
+}
+pub(super) fn unary_identity(op: UnaryOp, value: KnownBits) -> bool {
+    match op {
+        UnaryOp::Extract { start: 0, width } => u128::from(!value.zero()) >> width.bits() == 0,
+        UnaryOp::SignExtend(width) => {
+            let bits = width.bits();
+            let sign = 1u64 << (bits - 1);
+            if bits == 64 {
+                return true;
+            }
+            let high_ones = (WORD - 1) >> bits;
+            (value.zero() & sign != 0 && u128::from(!value.zero()) >> bits == 0)
+                || (value.one() & sign != 0 && u128::from(value.one()) >> bits == high_ones)
+        }
+        _ => false,
+    }
+}
+
 fn low(bits: u32) -> u64 {
     ((1u128 << bits.min(64)) - 1) as u64
 }

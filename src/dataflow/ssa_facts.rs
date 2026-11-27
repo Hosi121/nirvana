@@ -1,4 +1,4 @@
-//! Source-bound SSA fixed points and independently checked constant rewrites.
+//! Source-bound SSA fixed points and independently checked expression rewrites.
 //! Domains supply value-set joins and scalar transfer functions; this module
 //! owns source sites, phi edges, resource bounds and preservation of effects.
 use crate::dataflow::ssa::{
@@ -6,8 +6,15 @@ use crate::dataflow::ssa::{
 };
 use crate::model::ir::{BinaryOp as B, Control, Expr, Place, Program, UnaryOp, Width};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+mod identities;
 mod memory;
 pub(crate) use memory::{LoadInputs, Writer as ReachingWriter};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Operand {
+    Left,
+    Right,
+}
 
 pub(crate) trait Domain: Copy + Eq {
     fn bottom() -> Self;
@@ -27,6 +34,15 @@ pub(crate) trait Domain: Copy + Eq {
     }
     fn binary_cost(_op: B, _left: Self, _right: Self) -> usize {
         0
+    }
+    fn unary_identity(_op: UnaryOp, _value: Self) -> bool {
+        false
+    }
+    fn uses_identities() -> bool {
+        false
+    }
+    fn binary_identity(_op: B, _left: Self, _right: Self, _kept: Operand) -> bool {
+        false
     }
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -345,7 +361,12 @@ fn rewrite<D: Domain>(
     let (mapped, value, pure) = match expr {
         Expr::Unary(op, value) => {
             let (value, state, pure) = rewrite(value, point, values, cursor, budget)?;
-            (Expr::unary(*op, value), D::unary(*op, state), pure)
+            let expression = if D::unary_identity(*op, state) {
+                value
+            } else {
+                Expr::unary(*op, value)
+            };
+            (expression, D::unary(*op, state), pure)
         }
         Expr::Const(n) => (expr.clone(), D::constant(*n), true),
         Expr::Register(_) => (expr.clone(), read(expr, point, values, cursor)?, true),
@@ -358,7 +379,14 @@ fn rewrite<D: Domain>(
             let (b, bv, bp) = rewrite(b, point, values, cursor, budget)?;
             {
                 budget.spend(D::binary_cost(*op, av, bv))?;
-                (Expr::binary(*op, a, b), D::binary(*op, av, bv), ap && bp)
+                let expression = if bp && D::binary_identity(*op, av, bv, Operand::Left) {
+                    a
+                } else if ap && D::binary_identity(*op, av, bv, Operand::Right) {
+                    b
+                } else {
+                    Expr::binary(*op, a, b)
+                };
+                (expression, D::binary(*op, av, bv), ap && bp)
             }
         }
         Expr::Select {
@@ -514,12 +542,22 @@ fn check_expr<D: Domain>(
     budget: &mut Budget,
 ) -> Result<usize, SsaError> {
     budget.spend(1)?;
+    if D::uses_identities() && source == candidate {
+        identities::consume_reads(source, point, states, cursor, budget)?;
+        return Ok(0);
+    }
     if let Expr::Const(n) = candidate {
         let (value, pure) = evaluate(source, point, states, cursor, budget)?;
         if !pure || value.number() != Some(*n) {
             return Err(SsaError::Malformed("unproved constant replacement"));
         }
         return Ok(usize::from(source != candidate));
+    }
+    if D::uses_identities()
+        && let Some(replacements) =
+            identities::check(source, candidate, point, states, cursor, budget)?
+    {
+        return Ok(replacements);
     }
     match (source, candidate) {
         (Expr::Unary(a, x), Expr::Unary(b, y)) if a == b => {
