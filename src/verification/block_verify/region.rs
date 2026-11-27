@@ -149,6 +149,7 @@ fn build_query_encoded(
         samples: Vec::new(),
         visits: 0,
         interning: Some(BTreeMap::new()),
+        canonical_binary: false,
     };
     builder.declare("initial_memory", ARRAY);
     builder.declare("base", WORD);

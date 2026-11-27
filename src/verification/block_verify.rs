@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use crate::control_flow::cfg::Target;
 use crate::model::ir::{
-    BlockExit, BlockReport, Control, Expr, IrInstruction, Place, Program, Reg, Width,
+    BinaryOp, BlockExit, BlockReport, Control, Expr, IrInstruction, Place, Program, Reg, Width,
 };
 use crate::verification::verify::{
     Solver, UnknownReason, binary_term, parse_named_values, unary_term,
@@ -57,6 +57,7 @@ struct Builder {
     samples: Vec<(String, String)>,
     visits: usize,
     interning: Option<BTreeMap<(String, String), String>>,
+    canonical_binary: bool,
 }
 
 #[derive(Clone)]
@@ -186,7 +187,26 @@ impl Builder {
             Expr::Binary(op, left, right) => {
                 let left = self.expression(left, state, guard, depth + 1)?;
                 let right = self.expression(right, state, guard, depth + 1)?;
-                self.value(binary_term(op, &left, &right))
+                // Operand evaluation is ordered, including loads and faults.
+                // Only the resulting total bit-vector values commute.
+                let commutes = matches!(
+                    op,
+                    BinaryOp::Add
+                        | BinaryOp::Mul
+                        | BinaryOp::And
+                        | BinaryOp::Or
+                        | BinaryOp::Xor
+                        | BinaryOp::Eq
+                        | BinaryOp::Ne
+                        | BinaryOp::UMulHigh
+                        | BinaryOp::SMulHigh
+                );
+                let term = if self.canonical_binary && commutes && right < left {
+                    binary_term(op, &right, &left)
+                } else {
+                    binary_term(op, &left, &right)
+                };
+                self.value(term)
             }
             Expr::Select {
                 condition,
@@ -328,6 +348,7 @@ pub fn block_query(
         samples: Vec::new(),
         visits: 0,
         interning: None,
+        canonical_binary: false,
     };
     builder.declare("initial_memory", ARRAY);
     builder.declare("base", WORD);

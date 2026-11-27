@@ -140,6 +140,7 @@ fn dag_impl(
     prefix: &str,
     compact: bool,
 ) -> Result<(State, String, Vec<String>), Error> {
+    builder.canonical_binary = compact;
     let instructions: BTreeMap<_, _> = program
         .instructions()
         .iter()

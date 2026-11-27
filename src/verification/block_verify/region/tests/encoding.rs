@@ -155,3 +155,80 @@ fn reference_and_projected_exit_encodings_agree_for_arbitrary_words_and_ram() {
         "EXIT-PROJECTION old_new_unsat=32 encoding_mutants_sat=3 invalid_rust_replays_rejected=3 all_words=true all_ram=true"
     );
 }
+
+#[test]
+#[ignore = "requires NIRVANA_Z3; pure value normalization and first-fault replay"]
+fn canonical_values_preserve_ordered_loads_and_noncommutative_operations() {
+    let solver =
+        Solver::new(std::env::var("NIRVANA_Z3").unwrap()).with_timeout(Duration::from_secs(5));
+    let returned = |value| {
+        Program::new(
+            0,
+            2,
+            vec![IrInstruction {
+                address: 0,
+                size: 1,
+                assignments: vec![],
+                control: Control::Return(value),
+            }],
+        )
+        .unwrap()
+    };
+    let operations = [
+        BinaryOp::Add,
+        BinaryOp::Sub,
+        BinaryOp::Mul,
+        BinaryOp::And,
+        BinaryOp::Or,
+        BinaryOp::Xor,
+        BinaryOp::Shl,
+        BinaryOp::Shr,
+        BinaryOp::Eq,
+        BinaryOp::Ne,
+        BinaryOp::Ult,
+        BinaryOp::Ule,
+        BinaryOp::UMulHigh,
+        BinaryOp::SMulHigh,
+        BinaryOp::AShr,
+        BinaryOp::UDiv,
+        BinaryOp::URem,
+        BinaryOp::SDiv,
+        BinaryOp::SRem,
+        BinaryOp::Insert {
+            start: 8,
+            width: Width::U32,
+        },
+        BinaryOp::Insert {
+            start: 64,
+            width: Width::U64,
+        },
+    ];
+    for op in operations {
+        let source = returned(Expr::binary(
+            op,
+            Expr::Register(Reg(1)),
+            Expr::Register(Reg(0)),
+        ));
+        assert_eq!(
+            miter(&source, encode::dag).check(&solver),
+            Verdict::EquivalentUnderModel,
+            "operation={op:?}"
+        );
+    }
+    let load = |reg| Expr::load(Expr::Register(Reg(reg)), Width::U64);
+    let source = returned(Expr::binary(BinaryOp::Add, load(1), load(0)));
+    assert_eq!(
+        miter(&source, encode::dag).check(&solver),
+        Verdict::EquivalentUnderModel
+    );
+    // Commuting evaluation of the operands changes which load faults first.
+    let reordered = returned(Expr::binary(BinaryOp::Add, load(0), load(1)));
+    let Verdict::Counterexample(witness) = query(&source, &reordered, &[Reg(0), Reg(1)], &[])
+        .unwrap()
+        .check(&solver)
+    else {
+        panic!("reordered loads need a replayed fault counterexample");
+    };
+    assert_ne!(witness.before.status, witness.after.status);
+    println!("VALUE-NORMALIZATION old_new_unsat=22 reordered_load_faults_replayed=1");
+}

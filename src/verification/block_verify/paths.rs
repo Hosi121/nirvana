@@ -94,6 +94,7 @@ pub fn path_query(
         samples: Vec::new(),
         visits: 0,
         interning: None,
+        canonical_binary: false,
     };
     builder.declare("initial_memory", ARRAY);
     builder.declare("base", WORD);
