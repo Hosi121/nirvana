@@ -128,8 +128,38 @@ pub(super) fn problem(
     }
     // Consecutive counter values let the source equality exits establish the
     // lower bound at the next lane. Broader shapes retain the whole-query gate.
-    if group.step != 1 || group.offsets.first() != Some(&1) {
+    if group.step != 1 || group.offsets.first().is_none_or(|&offset| offset > 1) {
         return Err(Error::Pattern);
+    }
+    let mut inherited_caps = Vec::new();
+    if let Some(invariants) = proposal.before.entry_invariants() {
+        let caps = invariants
+            .bit_caps(&proposal.padded, proposal.envelope.header)
+            .map_err(|_| Error::Source)?;
+        let written: BTreeSet<_> = proposal
+            .padded
+            .instructions()
+            .iter()
+            .filter(|i| proposal.before.source_to_region().contains_key(&i.address))
+            .flat_map(|i| &i.assignments)
+            .filter_map(|a| match a.destination {
+                Place::Register(reg) => Some(reg.0),
+                _ => None,
+            })
+            .collect();
+        inherited_caps = caps
+            .into_iter()
+            .enumerate()
+            .filter(|(reg, bits)| *bits < 64 && !written.contains(reg))
+            .map(|(reg, bits)| Assignment {
+                destination: Reg(reg).into(),
+                value: Expr::binary(
+                    BinaryOp::And,
+                    Expr::Register(Reg(reg)),
+                    Expr::Const((1u64 << bits) - 1),
+                ),
+            })
+            .collect();
     }
     let &(bound, bits) = proposal.selectors.first().ok_or(Error::Pattern)?;
     if !(1..=4).contains(&bits) || group.offsets.iter().any(|&n| n >= 1u64 << bits) {
@@ -166,7 +196,10 @@ pub(super) fn problem(
         shared.extend(live_inputs(&proposal.program, proposal.feedback)?);
         shared.remove(&proposal.counter.0);
         shared.insert(proposal.before.return_register().0);
-        let mut before_invariants = equations(discovery, pc, proposal.counter);
+        // Normalize inherited bounds before dependent SSA equations. Every
+        // incoming postcondition still proves these proposed cut relations.
+        let mut before_invariants = inherited_caps.clone();
+        before_invariants.extend(equations(discovery, pc, proposal.counter));
         before_invariants.push(range(bound, bits, offset));
         let mut after_invariants = before_invariants.clone();
         after_invariants.push(Assignment {

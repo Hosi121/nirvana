@@ -442,7 +442,13 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
     let directory = std::path::PathBuf::from(std::env::var("NIRVANA_REGION_OUTPUT").unwrap());
     std::fs::create_dir_all(&directory).unwrap();
     let bytes = std::fs::read(std::env::var("NIRVANA_REGION_OBJECT").unwrap()).unwrap();
-    let (_, source, _) = checked_storage(&bytes);
+    let machine = nirvana::frontend::lift_elf_auto(&bytes, "fixture")
+        .unwrap()
+        .program;
+    let (display, parameters) = prepared_storage(&bytes);
+    let prepared =
+        nirvana::transform::loop_recovery::PreparedStorage::new(&display, &parameters).unwrap();
+    let source = prepared.compact().program().clone();
     // This fixed-input diagnostic supplies proposals explicitly. The verifier
     // proves their truth from the actual binary-derived Program, including RAM.
     let r = |n| Expr::Register(Reg(n));
@@ -491,9 +497,14 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
     );
     let certificate: std::sync::Arc<_> = certificate.into();
     let discovery = discover(&source).unwrap();
+    let aligned = discovery
+        .with_advisory_entry_caps(32, &[(Reg(7), 2)])
+        .unwrap();
+    assert_eq!(aligned.groups()[0].offsets, [0, 1, 2, 3]);
+    println!("ENTRY-FACTS-LANES before=3 after=4 offsets=0,1,2,3");
     let proposal = nirvana::transform::rolled_loop::propose_with_invariants(
         &source,
-        &discovery,
+        &aligned,
         0,
         &certificate,
     )
@@ -506,10 +517,81 @@ fn actual_compiler_loop_entry_induction_proves_the_peeled_index_bound() {
             .unwrap()
             .matches(&source, 32)
     );
-    let nirvana::transform::rolled_loop::Outcome::Verified(verified) = proposal.verify(&solver)
-    else {
-        panic!("sealed entry facts must survive loop verification")
+    let problem = proposal.verification_problem().unwrap();
+    std::fs::write(
+        directory.join("complete-lanes-comparison.smt2"),
+        problem.query().smt2(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("complete-lanes-completion.smt2"),
+        problem.completion_query().smt2(),
+    )
+    .unwrap();
+    let composition = problem.composition_problem().unwrap();
+    std::fs::write(
+        directory.join("complete-lanes-cuts.txt"),
+        format!("{:#?}\n", composition.cuts()),
+    )
+    .unwrap();
+    for (n, obligation) in composition.obligations().iter().enumerate() {
+        std::fs::write(
+            directory.join(format!("complete-lanes-{n}.smt2")),
+            obligation.query().smt2(),
+        )
+        .unwrap();
+    }
+    let outcome = problem.check(&solver);
+    let nirvana::transform::rolled_loop::Outcome::Verified(verified) = outcome else {
+        panic!("sealed entry facts must survive loop verification: {outcome:?}")
     };
-    verified.in_context().unwrap().validate().unwrap();
+    let method = match verified.equivalence_proof() {
+        nirvana::transform::rolled_loop::EquivalenceProof::CutComposition(c) => {
+            assert_eq!(c.checked(), 15);
+            "composition-15"
+        }
+        _ => panic!("four-lane candidate must retain its cut proof"),
+    };
+    let contextual = verified.in_context().unwrap();
+    contextual.validate().unwrap();
     println!("ENTRY-FACTS-CONTEXT verified=true source_bound=true index_bits=2");
+    let expanded = prepared
+        .compact()
+        .expand_candidate(contextual.program())
+        .unwrap();
+    expanded.validate().unwrap();
+    let output = nirvana::readable::emit_readable_c_with_options(
+        expanded.program(),
+        nirvana::readable::ReadableOptions {
+            stack_register: Some(Reg(4)),
+            recover_objects: true,
+            coalesce_locals: true,
+            compact_memory: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(output.parameters, parameters);
+    std::fs::write(directory.join("complete-lanes.c"), &output.code).unwrap();
+    println!(
+        "COMPLETE-LANES-C proof={method} source_registers={} candidate_registers={} instructions={} structured={} locals={} bytes={}",
+        source.register_count(),
+        expanded.program().register_count(),
+        expanded.program().instructions().len(),
+        output.fallback_reason.is_none(),
+        output.locals.len(),
+        output.code.len()
+    );
+    check_candidate_c(
+        &directory,
+        "complete-lanes",
+        &machine,
+        expanded.program(),
+        &output,
+        |input| {
+            let mut values = vec![u64::MAX; display.register_count()];
+            values[..input.len()].copy_from_slice(input);
+            let allocated = prepared.storage().extend_input(&values, u64::MAX).unwrap();
+            expanded.extend_input(&allocated, u64::MAX).unwrap()
+        },
+    );
 }

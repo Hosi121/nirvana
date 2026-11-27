@@ -167,7 +167,24 @@ pub(super) fn analyze(
         let index_reg = registers
             .into_iter()
             .map(Reg)
-            .find(|&reg| discovery.register_expression(site, reg) == Some(expected.clone()))
+            .find(|&reg| {
+                discovery
+                    .register_expression(site, reg)
+                    .is_some_and(|actual| discovery.proposal_match(&actual, &expected))
+            })
+            .ok_or(Error::Pattern)?;
+        let local = lane_patterns::discover(slice.program()).map_err(|_| Error::Pattern)?;
+        let local_site = |site: Site| -> Result<Site, Error> {
+            Ok(Site {
+                instruction: *slice
+                    .source_to_region()
+                    .get(&site.instruction)
+                    .ok_or(Error::Projection)?,
+                assignment: site.assignment,
+            })
+        };
+        let index_value = local
+            .read_identity(local_site(site)?, index_reg)
             .ok_or(Error::Pattern)?;
         let mut updates = Vec::new();
         for i in source
@@ -182,18 +199,25 @@ pub(super) fn analyze(
                 let Expr::Binary(BinaryOp::Xor, x, y) = &a.value else {
                     continue;
                 };
+                let site = Site {
+                    instruction: i.address,
+                    assignment: Some(assignment),
+                };
+                let other = if **x == Expr::Register(dest) {
+                    &**y
+                } else if **y == Expr::Register(dest) {
+                    &**x
+                } else {
+                    continue;
+                };
+                let Expr::Register(other) = other else {
+                    continue;
+                };
                 if dest != group.kernels[lane].accumulator
                     && dest != index_reg
-                    && ((**x == Expr::Register(dest) && **y == Expr::Register(index_reg))
-                        || (**y == Expr::Register(dest) && **x == Expr::Register(index_reg)))
+                    && local.read_identity(local_site(site)?, *other) == Some(index_value)
                 {
-                    updates.push((
-                        Site {
-                            instruction: i.address,
-                            assignment: Some(assignment),
-                        },
-                        dest,
-                    ));
+                    updates.push((site, dest));
                 }
             }
         }
