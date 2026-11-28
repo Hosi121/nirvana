@@ -88,6 +88,7 @@ fn limit(
     next: u64,
     latch: u64,
     offset: u64,
+    paired_next_offset: Option<u64>,
 ) -> Result<(Limit, bool), Error> {
     let selected = slice.source_to_region().keys().copied().collect();
     let mut found = None;
@@ -113,7 +114,29 @@ fn limit(
         } else {
             continue;
         };
-        let (lhs, equal) = comparison(condition, offset).ok_or(Error::Controls)?;
+        let (lhs, equal) = comparison(condition, offset)
+            .or_else(|| {
+                // A compiler may replace a two-trip bound with a direct
+                // truth test. Choose the current or next offset from that
+                // branch's direction; the original semantic gates decide
+                // whether reusing this predicate in a loop is valid.
+                paired_next_offset.map(|next_offset| {
+                    let (taken_end, fall_end) = if continues {
+                        (next_offset, offset)
+                    } else {
+                        (offset, next_offset)
+                    };
+                    (
+                        Expr::select(
+                            condition.clone(),
+                            Expr::Const(taken_end),
+                            Expr::Const(fall_end),
+                        ),
+                        !continues,
+                    )
+                })
+            })
+            .ok_or(Error::Controls)?;
         if found.is_some() {
             return Err(Error::Controls);
         }
@@ -239,6 +262,7 @@ pub(super) fn analyze(
         envelope.lane_entries[1],
         envelope.latch,
         group.offsets[0],
+        (envelope.lane_entries.len() == 2).then_some(group.offsets[1]),
     )?;
     if sense {
         return Err(Error::Controls);
@@ -253,6 +277,7 @@ pub(super) fn analyze(
             envelope.lane_entries[2],
             envelope.latch,
             group.offsets[1],
+            None,
         )?;
         if first.lhs != second.lhs || other_sense != sense {
             return Err(Error::Controls);

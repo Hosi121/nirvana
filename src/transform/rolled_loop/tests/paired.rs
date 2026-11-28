@@ -34,6 +34,24 @@ fn paired_fixture(mask: u64) -> Program {
     Program::new(0, 9, code).unwrap()
 }
 
+fn direct_truth_pair(bit: bool) -> Program {
+    let source = paired_fixture(if bit { u64::MAX } else { 1 });
+    let mut code = source.instructions().to_vec();
+    let branch = code.iter_mut().find(|i| i.address == 23).unwrap();
+    branch.control = Control::Branch {
+        condition: if bit {
+            Expr::binary(BinaryOp::And, Expr::Register(Reg(7)), Expr::Const(1))
+        } else {
+            Expr::Register(Reg(7))
+        },
+        target: if bit { 40 } else { 90 },
+    };
+    if bit {
+        code.iter_mut().find(|i| i.address == 24).unwrap().control = Control::Jump(90);
+    }
+    Program::new(0, source.register_count(), code).unwrap()
+}
+
 #[test]
 fn paired_proposals_keep_two_source_events_and_decline_acyclic_or_foreign_sources() {
     let source = paired_fixture(1);
@@ -60,13 +78,30 @@ fn paired_proposals_keep_two_source_events_and_decline_acyclic_or_foreign_source
         propose(&acyclic, &acyclic_found, 0).unwrap_err(),
         Error::Boundary
     );
+    compare_pair(&source, &candidate);
+}
+
+#[test]
+fn a_direct_truth_test_can_encode_the_remaining_trip_of_a_pair() {
+    for bit in [false, true] {
+        let source = direct_truth_pair(bit);
+        let found = lane_patterns::discover(&source)
+            .unwrap()
+            .with_pair_groups()
+            .unwrap();
+        let candidate = propose(&source, &found, 0).unwrap();
+        compare_pair(&source, &candidate);
+    }
+}
+
+fn compare_pair(source: &Program, candidate: &Proposal) {
     for seed in 0..32u64 {
         for pointer in [1023, 1040, 1136, 1152, u64::MAX] {
             let mut input = vec![0; 9];
             input[1] = pointer;
             input[2] = seed.wrapping_mul(19);
             input[6] = seed ^ 11;
-            input[7] = seed;
+            input[7] = seed | (seed << 60);
             let memory: Vec<_> = (0..128u64).map(|n| (n * 29 + seed) as u8).collect();
             let a = source.run_with_memory(&input, 1024, &memory, 1024).unwrap();
             input.push(u64::MAX);
@@ -88,22 +123,32 @@ fn paired_lane_source_contract_proofs_require_completion_and_keep_context() {
     let solver = Solver::new(std::env::var("NIRVANA_Z3").unwrap())
         .with_timeout(std::time::Duration::from_secs(15));
     let source = paired_fixture(1);
-    let found = lane_patterns::discover(&source)
-        .unwrap()
-        .with_pair_groups()
+    for (name, source) in [
+        ("pair", source.clone()),
+        ("truth-pair", direct_truth_pair(false)),
+        ("bit-pair", direct_truth_pair(true)),
+    ] {
+        let found = lane_patterns::discover(&source)
+            .unwrap()
+            .with_pair_groups()
+            .unwrap();
+        let proposal = propose(&source, &found, 0).unwrap();
+        let problem = proposal.verification_problem().unwrap();
+        std::fs::write(
+            out.join(format!("{name}-completion.smt2")),
+            problem.completion_query().smt2(),
+        )
         .unwrap();
-    let proposal = propose(&source, &found, 0).unwrap();
-    let problem = proposal.verification_problem().unwrap();
-    std::fs::write(
-        out.join("pair-completion.smt2"),
-        problem.completion_query().smt2(),
-    )
-    .unwrap();
-    std::fs::write(out.join("pair-comparison.smt2"), problem.query().smt2()).unwrap();
-    let Outcome::Verified(verified) = problem.check(&solver) else {
-        panic!("the bounded paired source must pass original acceptance")
-    };
-    verified.in_context().unwrap().validate().unwrap();
+        std::fs::write(
+            out.join(format!("{name}-comparison.smt2")),
+            problem.query().smt2(),
+        )
+        .unwrap();
+        let Outcome::Verified(verified) = problem.check(&solver) else {
+            panic!("{name} must preserve both source branch directions")
+        };
+        verified.in_context().unwrap().validate().unwrap();
+    }
     use crate::transform::loop_recovery::{self, Outcome as Whole};
     let Whole::Recovered(recovered) =
         loop_recovery::recover(&source, &[Reg(1), Reg(2), Reg(6), Reg(7)], &solver)

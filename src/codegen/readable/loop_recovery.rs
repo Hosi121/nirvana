@@ -92,11 +92,13 @@ impl Emission {
     }
 }
 
-/// Prefer a complete structured render, then the ordinary local/text ranking.
+/// Prefer a complete structured render, then a shorter function body. A
+/// recovered induction variable may add one local while removing whole copied
+/// lanes; the ordinary storage allocator still chooses names within each body.
 /// Existing emission APIs retain their original policy and solver-free path.
 fn cost(output: &ReadableC) -> (bool, usize, usize, usize) {
     let (locals, body, all) = super::pipeline::render_cost(output);
-    (output.fallback_reason.is_some(), locals, body, all)
+    (output.fallback_reason.is_some(), body, locals, all)
 }
 
 /// Checked control source before presentation folds, in the original

@@ -114,6 +114,81 @@ fn range(register: Reg, bits: u8, low: u64) -> Assignment {
     }
 }
 
+// A two-trip loop may use a truth test rather than an integer trip register.
+// Preserve the rest of the tested word when proposing its branch fact. The
+// incoming cut obligations prove the fact before either side may assume it.
+fn truth_relation(condition: &Expr, truth: bool) -> Option<Assignment> {
+    let (register, value) = match condition {
+        Expr::Register(register) => {
+            let value = if truth {
+                Expr::select(
+                    Expr::binary(BinaryOp::Eq, condition.clone(), Expr::Const(0)),
+                    Expr::Const(1),
+                    condition.clone(),
+                )
+            } else {
+                Expr::Const(0)
+            };
+            (*register, value)
+        }
+        Expr::Binary(BinaryOp::And, a, b) => {
+            let (Expr::Register(register), Expr::Const(mask)) = (&**a, &**b) else {
+                return None;
+            };
+            if !mask.is_power_of_two() {
+                return None;
+            }
+            (
+                *register,
+                Expr::binary(
+                    if truth { BinaryOp::Or } else { BinaryOp::And },
+                    Expr::Register(*register),
+                    Expr::Const(if truth { *mask } else { !mask }),
+                ),
+            )
+        }
+        _ => return None,
+    };
+    Some(Assignment {
+        destination: register.into(),
+        value,
+    })
+}
+
+fn trip_invariants(proposal: &Proposal, offset: u64) -> Result<Vec<Assignment>, Error> {
+    let group = proposal.lane_group();
+    if let Expr::Register(bound) = proposal.trip_limit {
+        let &(_, bits) = proposal
+            .selectors
+            .iter()
+            .find(|(reg, _)| *reg == bound)
+            .ok_or(Error::Pattern)?;
+        if !(1..=4).contains(&bits) || group.offsets.iter().any(|&n| n >= 1u64 << bits) {
+            return Err(Error::Pattern);
+        }
+        return Ok(vec![range(bound, bits, offset)]);
+    }
+    if group.offsets.len() != 2 || group.offsets != [0, 1] {
+        return Err(Error::Pattern);
+    }
+    if offset == 0 {
+        return Ok(vec![]);
+    }
+    let relation = match &proposal.trip_limit {
+        Expr::Select {
+            condition,
+            taken,
+            not_taken,
+        } => match (&**taken, &**not_taken) {
+            (Expr::Const(1), Expr::Const(0)) => truth_relation(condition, true),
+            (Expr::Const(0), Expr::Const(1)) => truth_relation(condition, false),
+            _ => None,
+        },
+        condition => truth_relation(condition, true),
+    };
+    Ok(vec![relation.ok_or(Error::Pattern)?])
+}
+
 pub(super) fn problem(
     proposal: &Proposal,
     prefixed: &extraction::repeat::Prefixed,
@@ -161,10 +236,6 @@ pub(super) fn problem(
             })
             .collect();
     }
-    let &(bound, bits) = proposal.selectors.first().ok_or(Error::Pattern)?;
-    if !(1..=4).contains(&bits) || group.offsets.iter().any(|&n| n >= 1u64 << bits) {
-        return Err(Error::Pattern);
-    }
     let after = prefixed.round_entries();
     if after.len() != proposal.envelope.lane_entries.len() || after.len() != group.offsets.len() {
         return Err(Error::Projection);
@@ -200,7 +271,7 @@ pub(super) fn problem(
         // incoming postcondition still proves these proposed cut relations.
         let mut before_invariants = inherited_caps.clone();
         before_invariants.extend(equations(discovery, pc, proposal.counter));
-        before_invariants.push(range(bound, bits, offset));
+        before_invariants.extend(trip_invariants(proposal, offset)?);
         let mut after_invariants = before_invariants.clone();
         after_invariants.push(Assignment {
             destination: proposal.counter.into(),

@@ -80,6 +80,7 @@ pub struct Proposal {
     feedback: u64,
     rounds: usize,
     selectors: Vec<(Reg, u8)>,
+    trip_limit: Expr,
 }
 impl Proposal {
     pub fn source(&self) -> &Program {
@@ -231,6 +232,7 @@ fn propose_inner(
         feedback,
         rounds: group.kernels.len(),
         selectors,
+        trip_limit: control.limit.lhs,
     })
 }
 
