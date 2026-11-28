@@ -233,11 +233,13 @@ fn prepare_selected(
     };
     // Preserve the semantic/control source; presentation folding has its own
     // checked pair and private-temporary contract, before final allocation.
-    let consumers =
-        crate::transform::load_consumer::lower(&program, parameters).and_then(|lowering| {
-            let lowering = Arc::new(lowering);
-            checked_display(lowering.program().clone(), structure.is_ok(), lowering)
-        });
+    let check = |lowering: crate::transform::load_consumer::Lowering| {
+        let lowering = Arc::new(lowering);
+        checked_display(lowering.program().clone(), structure.is_ok(), lowering)
+    };
+    let consumers = crate::transform::load_consumer::lower_with_stable_inputs(&program, parameters)
+        .and_then(&check)
+        .or_else(|| crate::transform::load_consumer::lower(&program, parameters).and_then(check));
     let (program, widths, structure, load_consumer_lowering) = match consumers {
         Some((p, w, s, e)) => (p, w, s, Some(e)),
         None => (program, widths, structure, None),

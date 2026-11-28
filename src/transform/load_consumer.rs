@@ -1,8 +1,10 @@
-//! Fuse strict, single-input computations at their original load site.
+//! Fuse single-use loaded values into strict computations at the load site.
 //!
 //! T=load(A); ...; D=f(T) becomes T=f(load(A)); ...; D=T. Only the
 //! uniquely private temporary changes contents. The contract is
 //! return, all RAM and first fault, with original load evaluation order.
+//! The stable-input API also admits register leaves with no intervening
+//! definitions. The constant-only API retains its original v1 contract.
 use super::load_order::*;
 use crate::model::ir::{Expr, Place, Program, Reg};
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,6 +15,13 @@ pub use super::load_order::{
     MAX_REGISTERS, MAX_WORK,
 };
 pub const MODEL_ID: &str = "checked-strict-load-consumer-v1";
+pub const STABLE_MODEL_ID: &str = "checked-stable-load-consumer-v2";
+pub const MAX_CONTEXT_INPUTS: usize = 64;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContextKind {
+    Constants,
+    StableInputs,
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fold {
     pub load_instruction: u64,
@@ -22,6 +31,7 @@ pub struct Fold {
     pub temporary: Reg,
     pub destination: Reg,
     pub expression: Expr,
+    pub inputs: Vec<Reg>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Evidence {
@@ -36,6 +46,7 @@ pub struct Lowering {
     program: Arc<Program>,
     parameters: Vec<Reg>,
     evidence: Evidence,
+    context: ContextKind,
 }
 impl Lowering {
     pub fn source(&self) -> &Program {
@@ -50,11 +61,22 @@ impl Lowering {
     pub fn evidence(&self) -> &Evidence {
         &self.evidence
     }
+    pub fn model_id(&self) -> &'static str {
+        match self.context {
+            ContextKind::Constants => MODEL_ID,
+            ContextKind::StableInputs => STABLE_MODEL_ID,
+        }
+    }
     pub(crate) fn shared_source(&self) -> Arc<Program> {
         Arc::clone(&self.source)
     }
     pub fn validate(&self) -> Result<(), Error> {
-        let actual = validate(&self.source, &self.program, &self.parameters)?;
+        let actual = match self.context {
+            ContextKind::Constants => validate(&self.source, &self.program, &self.parameters)?,
+            ContextKind::StableInputs => {
+                validate_with_stable_inputs(&self.source, &self.program, &self.parameters)?
+            }
+        };
         if actual != self.evidence {
             return Err(Error::UnsupportedChange);
         }
@@ -62,14 +84,32 @@ impl Lowering {
     }
 }
 pub fn lower(source: &Program, parameters: &[Reg]) -> Option<Lowering> {
-    let candidate = propose(source, parameters)?;
-    let evidence = validate(source, &candidate, parameters).ok()?;
+    lower_kind(source, parameters, ContextKind::Constants)
+}
+pub fn lower_with_stable_inputs(source: &Program, parameters: &[Reg]) -> Option<Lowering> {
+    lower_kind(source, parameters, ContextKind::StableInputs)
+}
+fn lower_kind(source: &Program, parameters: &[Reg], context: ContextKind) -> Option<Lowering> {
+    let candidate = propose_kind(source, parameters, context)?;
+    let evidence = validate_kind(source, &candidate, parameters, context).ok()?;
+    let context = if evidence.folds.iter().all(|f| f.inputs.is_empty()) {
+        ContextKind::Constants
+    } else {
+        context
+    };
     Some(Lowering {
         source: Arc::new(source.clone()),
         program: Arc::new(candidate),
         parameters: parameters.to_vec(),
         evidence,
+        context,
     })
+}
+
+#[derive(Default)]
+struct ProposedContext {
+    holes: usize,
+    inputs: BTreeSet<usize>,
 }
 
 // Strict operators always evaluate the unique hole. Select outside the raw
@@ -80,7 +120,8 @@ fn substitute(
     load: &Expr,
     work: &mut Work,
     depth: usize,
-    holes: &mut usize,
+    kind: ContextKind,
+    context: &mut ProposedContext,
 ) -> Result<Expr, Error> {
     work.charge(1)?;
     if depth > MAX_DEPTH {
@@ -89,22 +130,73 @@ fn substitute(
     Ok(match e {
         Expr::Const(n) => Expr::Const(*n),
         Expr::Register(r) if *r == temp => {
-            *holes += 1;
-            if *holes > 1 {
+            context.holes += 1;
+            if context.holes > 1 {
                 return Err(Error::InvalidTemporary);
             }
             load.clone()
         }
-        Expr::Unary(op, x) => Expr::unary(*op, substitute(x, temp, load, work, depth + 1, holes)?),
+        Expr::Register(r) if kind == ContextKind::StableInputs => {
+            context.inputs.insert(r.0);
+            if context.inputs.len() > MAX_CONTEXT_INPUTS {
+                return Err(Error::ResourceLimit);
+            }
+            Expr::Register(*r)
+        }
+        Expr::Unary(op, x) => Expr::unary(
+            *op,
+            substitute(x, temp, load, work, depth + 1, kind, context)?,
+        ),
         Expr::Binary(op, a, b) => Expr::binary(
             *op,
-            substitute(a, temp, load, work, depth + 1, holes)?,
-            substitute(b, temp, load, work, depth + 1, holes)?,
+            substitute(a, temp, load, work, depth + 1, kind, context)?,
+            substitute(b, temp, load, work, depth + 1, kind, context)?,
         ),
         _ => return Err(Error::UnsupportedChange),
     })
 }
+
+// Proposer scans forward from the load, excluding both endpoint assignments.
+// Memory effects keep their exact place and never modify scalar registers.
+fn proposed_stability(
+    source: &Program,
+    load: Point,
+    consumer: Point,
+    inputs: &BTreeSet<usize>,
+    work: &mut Work,
+) -> Result<bool, Error> {
+    if inputs.is_empty() {
+        return Ok(true);
+    }
+    for i in load.instruction..=consumer.instruction {
+        work.charge(1)?;
+        let assignments = &source.instructions()[i].assignments;
+        let begin = if i == load.instruction {
+            load.assignment + 1
+        } else {
+            0
+        };
+        let end = if i == consumer.instruction {
+            consumer.assignment
+        } else {
+            assignments.len()
+        };
+        for a in &assignments[begin..end] {
+            work.charge(1)?;
+            if matches!(a.destination, Place::Register(r) if inputs.contains(&r.0)) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
 pub fn propose(source: &Program, parameters: &[Reg]) -> Option<Program> {
+    propose_kind(source, parameters, ContextKind::Constants)
+}
+pub fn propose_with_stable_inputs(source: &Program, parameters: &[Reg]) -> Option<Program> {
+    propose_kind(source, parameters, ContextKind::StableInputs)
+}
+fn propose_kind(source: &Program, parameters: &[Reg], kind: ContextKind) -> Option<Program> {
     let mut work = Work(MAX_WORK);
     let clone_cost = bounded(source, parameters, &mut work).ok()?;
     let uses = collect_uses(source, &mut work).ok()?;
@@ -144,20 +236,24 @@ pub fn propose(source: &Program, parameters: &[Reg]) -> Option<Program> {
                 if destination == temp || use_assignment.value == Expr::Register(temp) {
                     continue;
                 }
-                let mut holes = 0;
+                let mut context = ProposedContext::default();
                 let expression = match substitute(
                     &use_assignment.value,
                     temp,
                     &assignment.value,
                     &mut work,
                     1,
-                    &mut holes,
+                    kind,
+                    &mut context,
                 ) {
                     Ok(value) => value,
                     Err(Error::ResourceLimit) => return None,
                     Err(_) => continue,
                 };
-                if holes != 1 {
+                if context.holes != 1
+                    || !proposed_stability(source, load, consumer, &context.inputs, &mut work)
+                        .ok()?
+                {
                     continue;
                 }
                 if folds.len() == MAX_FOLDS {
@@ -188,42 +284,110 @@ pub fn propose(source: &Program, parameters: &[Reg]) -> Option<Program> {
     Some(candidate)
 }
 
+#[derive(Default)]
+struct CheckedContext {
+    holes: usize,
+    inputs: BTreeSet<usize>,
+}
+
 // Verifier-owned context reconstruction: the one exact original load subtree
-// is the hole; all other leaves are literal constants. This does not call the
-// proposer's substitution walker or consume its occurrence map.
+// is the hole. Other leaves are literals or separately checked stable input
+// registers. This does not call the proposer's substitution walker or use map.
 fn context(
     original_load: &Expr,
     actual: &Expr,
     temp: Reg,
     work: &mut Work,
-    holes: &mut usize,
+    kind: ContextKind,
+    context_inputs: &mut CheckedContext,
 ) -> Result<Expr, Error> {
     work.charge(1)?;
     if matches!(actual, Expr::Load { .. }) {
         if !same(original_load, actual, work)? {
             return Err(Error::UnsupportedChange);
         }
-        *holes += 1;
-        if *holes > 1 {
+        context_inputs.holes += 1;
+        if context_inputs.holes > 1 {
             return Err(Error::InvalidTemporary);
         }
         return Ok(Expr::Register(temp));
     }
     Ok(match actual {
         Expr::Const(n) => Expr::Const(*n),
-        Expr::Unary(op, x) => Expr::unary(*op, context(original_load, x, temp, work, holes)?),
+        Expr::Register(r) if kind == ContextKind::StableInputs && *r != temp => {
+            context_inputs.inputs.insert(r.0);
+            if context_inputs.inputs.len() > MAX_CONTEXT_INPUTS {
+                return Err(Error::ResourceLimit);
+            }
+            Expr::Register(*r)
+        }
+        Expr::Unary(op, x) => Expr::unary(
+            *op,
+            context(original_load, x, temp, work, kind, context_inputs)?,
+        ),
         Expr::Binary(op, a, b) => Expr::binary(
             *op,
-            context(original_load, a, temp, work, holes)?,
-            context(original_load, b, temp, work, holes)?,
+            context(original_load, a, temp, work, kind, context_inputs)?,
+            context(original_load, b, temp, work, kind, context_inputs)?,
         ),
         _ => return Err(Error::UnsupportedChange),
     })
+}
+
+// Verifier scans original assignments backwards. No proposer use map, input
+// set or forward-frame result is accepted as evidence.
+fn check_stability(
+    source: &Program,
+    load: Point,
+    consumer: Point,
+    inputs: &BTreeSet<usize>,
+    work: &mut Work,
+) -> Result<(), Error> {
+    if inputs.is_empty() {
+        return Ok(());
+    }
+    for i in (load.instruction..=consumer.instruction).rev() {
+        work.charge(1)?;
+        for (a, assignment) in source.instructions()[i]
+            .assignments
+            .iter()
+            .enumerate()
+            .rev()
+        {
+            work.charge(1)?;
+            if (i, a) <= (load.instruction, load.assignment)
+                || (i, a) >= (consumer.instruction, consumer.assignment)
+            {
+                continue;
+            }
+            if let Place::Register(r) = assignment.destination
+                && inputs.contains(&r.0)
+            {
+                return Err(Error::UnsupportedChange);
+            }
+        }
+    }
+    Ok(())
 }
 pub fn validate(
     source: &Program,
     candidate: &Program,
     parameters: &[Reg],
+) -> Result<Evidence, Error> {
+    validate_kind(source, candidate, parameters, ContextKind::Constants)
+}
+pub fn validate_with_stable_inputs(
+    source: &Program,
+    candidate: &Program,
+    parameters: &[Reg],
+) -> Result<Evidence, Error> {
+    validate_kind(source, candidate, parameters, ContextKind::StableInputs)
+}
+fn validate_kind(
+    source: &Program,
+    candidate: &Program,
+    parameters: &[Reg],
+    kind: ContextKind,
 ) -> Result<Evidence, Error> {
     let mut work = Work(MAX_WORK);
     bounded(source, parameters, &mut work)?;
@@ -233,11 +397,11 @@ pub fn validate(
     let mut consumers = BTreeMap::new();
     for (point, destination, old, new) in changes {
         if matches!(old, Expr::Load { .. }) {
-            let mut holes = 0;
-            let expression = context(old, new, destination, &mut work, &mut holes)?;
-            if holes != 1
+            let mut checked = CheckedContext::default();
+            let expression = context(old, new, destination, &mut work, kind, &mut checked)?;
+            if checked.holes != 1
                 || producers
-                    .insert(destination.0, (point, expression))
+                    .insert(destination.0, (point, expression, checked.inputs))
                     .is_some()
             {
                 return Err(Error::InvalidTemporary);
@@ -263,13 +427,17 @@ pub fn validate(
     }
     let parameters: BTreeSet<_> = parameters.iter().map(|r| r.0).collect();
     let mut folds = Vec::new();
-    for (temp, (load, expression)) in &producers {
+    for (temp, (load, expression, inputs)) in &producers {
         let (consumer, destination, original) =
             consumers.get(temp).ok_or(Error::UnsupportedChange)?;
         if !load.precedes(*consumer)
             || parameters.contains(temp)
             || !same(expression, original, &mut work)?
         {
+            return Err(Error::InvalidTemporary);
+        }
+        check_stability(source, *load, *consumer, inputs, &mut work)?;
+        if inputs.iter().any(|reg| producers.contains_key(reg)) {
             return Err(Error::InvalidTemporary);
         }
         folds.push(Fold {
@@ -280,6 +448,7 @@ pub fn validate(
             temporary: Reg(*temp),
             destination: *destination,
             expression: expression.clone(),
+            inputs: inputs.iter().copied().map(Reg).collect(),
         });
     }
     unique_private(source, producers.keys().copied(), &mut work)?;

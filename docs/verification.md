@@ -107,6 +107,7 @@ NIRVANA_Z3=/path/to/z3 NIRVANA_REGION_SECONDS=5 python3 tools/dev.py cargo test 
 [隣接Storeの順序検査](../tests/verification/store_order.rs)は、両範囲への先行Loadと非重複を前提に、純粋な二つのStoreを入れ替えて比較します。1/2/4/8-byte幅、任意の相対offsetと64-bit折返しを含む36問い合わせでUNSATを得ました。先行読込みの欠如、条件付き読込み、重複、右辺のLoad、アドレス変更、異なる入力のaliasでは、6件のSATを具体IR実行で再現します。生成Cでは[採用条件とfaultの比較](../tests/codegen/c_evaluation.rs)をO0/O2・メモリviewの有無で確認します。適用範囲はflat RWの単一関数Cで、moduleの権限・外部効果・途中再開は元の順序を保ちます。
 
 [Loadと単一使用の計算](../tests/verification/load_consumer.rs)は、元の読込み位置・幅・部分木と、後続の消費式を独立に照合します。同じblock内の私有値に限定し、全体の定義・read回数を別の走査で確認します。任意のRAM・整数入力を持つ4組の同値検査と、読込みの削除・順序変更を壊した2組の反例再生を通しています。[具体比較](../tests/transform/load_consumer.rs)は、alias・途中のfault・lazyなアドレス・語演算・資源上限を含み、私有値以外の状態と各命令予算も照合します。
+[不変な入力を含むv2](../tests/verification/load_consumer/stable.rs)は、64-bit全域の入力とRAMを使う5組の同値検査を通し、入力の途中更新を壊した2組の反例をIRで再生します。[変換の比較](../tests/transform/load_consumer/stable.rs)は同一命令内の代入順、更新先の旧値、複数Loadの共有先、64入力の上限を確認します。[Cの比較](../tests/codegen/c_evaluation/load_consumer.rs)では、更新前の値を使うStore、重複する領域、途中のfaultをO0/O2と4種類の表示設定で照合します。
 [固定比較](../tools/corpora/ir-load-consumer-v1.m3.json)では、Clangの4lane復元で構造距離4・goto 1個を保ち、局所変数9→8個、C本文5,412→5,382 bytesとなりました。同じ32+2構成で意味・構造・解析の回帰は0件です。制御復元には計算をまとめる前のIRを保持し、入口・領域・投影の証跡を維持します。[v9の段階比較](../tools/corpora/ir-load-consumer-observations-v1.m0.json)は、各出力方針で15,960状態対を再生し、比較範囲と生の私有値の差を記録しています。
 同じモデルで、Storeが読むC保存先と独立な純粋更新の移動も照合します。加算・AND・OR・XORと1/2/4/8-byte幅の16問い合わせがUNSAT、格納値・アドレス・右辺Loadの依存を壊した3問い合わせが具体実行で再現するSATです。正常終了の全レジスタも比較します。生成器の依存は割当て後のC変数名で照合し、仮想レジスタが異なる同一保存先も[回帰検査](../tests/codegen/c_evaluation.rs)に含めます。
 

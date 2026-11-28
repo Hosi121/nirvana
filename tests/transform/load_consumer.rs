@@ -5,6 +5,9 @@ use nirvana::ir::{
 };
 use nirvana::transform::load_consumer::{self, Error};
 
+#[path = "load_consumer/stable.rs"]
+mod stable;
+
 fn b(op: B, a: Expr, z: Expr) -> Expr {
     Expr::binary(op, a, z)
 }

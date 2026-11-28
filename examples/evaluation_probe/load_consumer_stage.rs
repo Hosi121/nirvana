@@ -150,9 +150,20 @@ impl Stage {
                 out.join("load-consumer-states.jsonl"),
                 self.records.as_str(),
             )?;
+            let model = lowering.model_id();
+            let stable = model == nirvana::load_consumer::STABLE_MODEL_ID;
+            let checker = if stable {
+                "load_consumer::validate_with_stable_inputs+readable::loop_recovery::source"
+            } else {
+                "load_consumer::validate+readable::loop_recovery::source"
+            };
             let folds = lowering.evidence().folds.iter().map(|f| {
+                let inputs = if stable {
+                    let inputs = f.inputs.iter().map(|r|r.0).collect::<Vec<_>>();
+                    format!(",\"inputs\":{inputs:?}")
+                } else { String::new() };
                 format!(
-                    "{{\"load_pc\":{},\"load_assignment\":{},\"consumer_pc\":{},\"consumer_assignment\":{},\"temporary\":{},\"destination\":{}}}",
+                    "{{\"load_pc\":{},\"load_assignment\":{},\"consumer_pc\":{},\"consumer_assignment\":{},\"temporary\":{},\"destination\":{}{inputs}}}",
                     f.load_instruction, f.load_assignment, f.consumer_instruction,
                     f.consumer_assignment, f.temporary.0, f.destination.0
                 )
@@ -164,7 +175,7 @@ impl Stage {
                 .map(|r| r.0)
                 .collect::<Vec<_>>();
             format!(
-                "{{\"model\":\"checked-strict-load-consumer-v1\",\"checker\":\"load_consumer::validate+readable::loop_recovery::source\",\"registers\":{},\"entry\":{},\"parameters\":{parameters:?},\"private_registers\":{private:?},\"folds\":[{folds}],\"input_ir\":\"load-consumer-input.ir.txt\",\"lowered_ir\":\"load-consumer-lowered.ir.txt\",\"state_pairs\":{{\"model\":\"load-consumer-state-pairs-v1\",\"file\":\"load-consumer-states.jsonl\",\"encoding\":\"{}\",\"decoded_bytes\":{}}}}}",
+                "{{\"model\":\"{model}\",\"checker\":\"{checker}\",\"registers\":{},\"entry\":{},\"parameters\":{parameters:?},\"private_registers\":{private:?},\"folds\":[{folds}],\"input_ir\":\"load-consumer-input.ir.txt\",\"lowered_ir\":\"load-consumer-lowered.ir.txt\",\"state_pairs\":{{\"model\":\"load-consumer-state-pairs-v1\",\"file\":\"load-consumer-states.jsonl\",\"encoding\":\"{}\",\"decoded_bytes\":{}}}}}",
                 lowering.source().register_count(),
                 lowering
                     .source()

@@ -11,6 +11,9 @@ use std::fmt::Write as _;
 
 use crate::support::ir::c;
 use crate::support::ir::r;
+
+#[path = "c_evaluation/load_consumer.rs"]
+mod load_consumer;
 fn b(op: BinaryOp, a: Expr, b: Expr) -> Expr {
     Expr::binary(op, a, b)
 }
