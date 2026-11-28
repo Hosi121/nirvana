@@ -1,0 +1,826 @@
+{
+  "schema": "nirvana-paired-lanes-m2-v1",
+  "milestone": "M2",
+  "goal": "Restore compiler-expanded two-trip loops as readable nested C; preserve previously supported inputs.",
+  "baseline_revision": "c35270ede77b3ce76845586df6a5564b3f50288f",
+  "implementation_revision": "c0123040c50f27071914fd5aed917ff9e15ef876",
+  "git_trees": {
+    "src": "1a6253c930aab63f859a17eee5b4a17ed6ef4e47",
+    "tests": "ad717bf10126bc0a0c812fc610e0ba4cb42e089c",
+    "examples": "763b0eb61ab028b64075c7634416ea38e99d78b1",
+    "tools": "be29aad8ae60886e6f80e0b10d0eb1807d623e8b"
+  },
+  "changes": [
+    "Use explicit paired proposals only when ordinary >=3-lane groups are absent.",
+    "Recover direct truth tests as two-trip bounds, with the actual trip predicate kept separate from address masks.",
+    "Prefer a shorter structured C body before counting locals; an induction variable can remove copied code."
+  ],
+  "acceptance": {
+    "contract": "return-all-ram-first-fault-v1",
+    "same_inputs_observers_and_budgets": true,
+    "quality": "Compare source control topology and C complexity; local count and goto count remain separate costs.",
+    "sealed_holdout": "Cohort totals and hashes only; individual heldout contents were not inspected."
+  },
+  "cases": {
+    "old_fixed": "tools/corpora/structure-initial-v2.json",
+    "old_nested": "tools/corpora/structure-nested-v1.json",
+    "added_development": "tools/corpora/structure-two-lane-v1.json"
+  },
+  "tools": {
+    "before": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "01691fd7ce2147fbaeaa23402951eda9b20c502969070b9d30a7d600ca9ac9d5"
+      },
+      "candidate_revision": "c35270ede77b3ce76845586df6a5564b3f50288f",
+      "nested2_default": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "bc41038491187a596280a9fe1c661be8a82eca79a733c52676c4853e940fdb7f"
+      },
+      "nested2_selected": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "bc41038491187a596280a9fe1c661be8a82eca79a733c52676c4853e940fdb7f"
+      },
+      "fresh32_default": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "bc41038491187a596280a9fe1c661be8a82eca79a733c52676c4853e940fdb7f"
+      },
+      "fresh32_selected": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "bc41038491187a596280a9fe1c661be8a82eca79a733c52676c4853e940fdb7f"
+      },
+      "pair2_default": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "bc41038491187a596280a9fe1c661be8a82eca79a733c52676c4853e940fdb7f"
+      },
+      "pair2_selected": {
+        "version": "nirvana 0.1.0 git=c35270ede77b3ce76845586df6a5564b3f50288f source_dirty=false",
+        "sha256": "bc41038491187a596280a9fe1c661be8a82eca79a733c52676c4853e940fdb7f"
+      }
+    },
+    "after": {
+      "decompiler": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "6b8d89228c6177fd1f0b1348d1b09349aa8357343e0babdf9475276a1db52168"
+      },
+      "candidate_revision": "c0123040c50f27071914fd5aed917ff9e15ef876",
+      "pair2_default": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "920d467764cb0361c7bb6bcd1ac016a936d4cf413413fb210495846192023eb3"
+      },
+      "pair2_selected": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "920d467764cb0361c7bb6bcd1ac016a936d4cf413413fb210495846192023eb3"
+      },
+      "nested2_default": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "920d467764cb0361c7bb6bcd1ac016a936d4cf413413fb210495846192023eb3"
+      },
+      "nested2_selected": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "920d467764cb0361c7bb6bcd1ac016a936d4cf413413fb210495846192023eb3"
+      },
+      "fresh32_default": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "920d467764cb0361c7bb6bcd1ac016a936d4cf413413fb210495846192023eb3"
+      },
+      "fresh32_selected": {
+        "version": "nirvana 0.1.0 git=c0123040c50f27071914fd5aed917ff9e15ef876 source_dirty=false",
+        "sha256": "920d467764cb0361c7bb6bcd1ac016a936d4cf413413fb210495846192023eb3"
+      }
+    }
+  },
+  "results": {
+    "fresh32": {
+      "default": {
+        "profiles": 32,
+        "identical_c": 32,
+        "total_c": 32,
+        "cohorts": {
+          "development": {
+            "profiles": 24,
+            "structure": {
+              "equal": 24
+            },
+            "before": {
+              "locals": 79,
+              "gotos": 72,
+              "expression_nodes": 3272,
+              "condition_expression_nodes": 375,
+              "c_bytes": 102752
+            },
+            "after": {
+              "locals": 79,
+              "gotos": 72,
+              "expression_nodes": 3272,
+              "condition_expression_nodes": 375,
+              "c_bytes": 102752
+            }
+          },
+          "holdout": {
+            "profiles": 8,
+            "structure": {
+              "equal": 8
+            },
+            "before": {
+              "locals": 53,
+              "gotos": 22,
+              "expression_nodes": 2016,
+              "condition_expression_nodes": 442,
+              "c_bytes": 43286
+            },
+            "after": {
+              "locals": 53,
+              "gotos": 22,
+              "expression_nodes": 2016,
+              "condition_expression_nodes": 442,
+              "c_bytes": 43286
+            }
+          }
+        },
+        "development_changes": [],
+        "candidate_semantics": {
+          "passed": 32
+        },
+        "candidate_state_values": {
+          "equivalent_under_model": 17,
+          "unsupported": 11,
+          "unknown": 4
+        },
+        "comparison_sha256": "7ffcaff34bf45e7d59fc5713de6102bb603f4745bdb6bcc863d09f536ed15c52",
+        "reports": {
+          "before_sha256": "6f970de6af6fb7b1fb507b0b6471a3318daf62127164e34afcbc79705966f0ce",
+          "after_sha256": "c6c9db6b645e79f0e1dbf343ab2999393375d0c8b4fa2784565c8a13de71e394"
+        }
+      },
+      "selected": {
+        "profiles": 32,
+        "identical_c": 32,
+        "total_c": 32,
+        "cohorts": {
+          "development": {
+            "profiles": 24,
+            "structure": {
+              "equal": 24
+            },
+            "before": {
+              "locals": 79,
+              "gotos": 72,
+              "expression_nodes": 3272,
+              "condition_expression_nodes": 375,
+              "c_bytes": 102752
+            },
+            "after": {
+              "locals": 79,
+              "gotos": 72,
+              "expression_nodes": 3272,
+              "condition_expression_nodes": 375,
+              "c_bytes": 102752
+            }
+          },
+          "holdout": {
+            "profiles": 8,
+            "structure": {
+              "equal": 8
+            },
+            "before": {
+              "locals": 53,
+              "gotos": 22,
+              "expression_nodes": 2016,
+              "condition_expression_nodes": 442,
+              "c_bytes": 43286
+            },
+            "after": {
+              "locals": 53,
+              "gotos": 22,
+              "expression_nodes": 2016,
+              "condition_expression_nodes": 442,
+              "c_bytes": 43286
+            }
+          }
+        },
+        "development_changes": [],
+        "candidate_semantics": {
+          "passed": 32
+        },
+        "candidate_state_values": {
+          "equivalent_under_model": 17,
+          "unsupported": 11,
+          "unknown": 4
+        },
+        "comparison_sha256": "f31c4702da41e64f8991ca363d22aa0a12dfe17b8ded9b9831c7eff1a19ff487",
+        "reports": {
+          "before_sha256": "7fa935149859f5cb7e3ccb076889df30eaa6487acb7bd0afb1ec7a8f945b19da",
+          "after_sha256": "1018d952b950e1efb56e3aa3fadae1e9517565c9b429d57dda71cce08f505ab3"
+        }
+      },
+      "execution_counts": {
+        "native": 544,
+        "generated_O0": 1632,
+        "generated_O2": 1632,
+        "stage_comparisons": 58140,
+        "loop_endpoint_observations": 0
+      },
+      "selected_vs_default": {
+        "development": {
+          "before": {
+            "gotos": 72,
+            "locals": 79,
+            "expression_nodes": 3272,
+            "condition_expression_nodes": 375,
+            "static_state_writes": 74
+          },
+          "after": {
+            "gotos": 72,
+            "locals": 79,
+            "expression_nodes": 3272,
+            "condition_expression_nodes": 375,
+            "static_state_writes": 74
+          }
+        },
+        "holdout": {
+          "before": {
+            "gotos": 22,
+            "locals": 53,
+            "expression_nodes": 2016,
+            "condition_expression_nodes": 442,
+            "static_state_writes": 32
+          },
+          "after": {
+            "gotos": 22,
+            "locals": 53,
+            "expression_nodes": 2016,
+            "condition_expression_nodes": 442,
+            "static_state_writes": 32
+          }
+        }
+      },
+      "loop_selection": {
+        "development": {
+          "selected": 0,
+          "retention": {
+            "no_groups": 23,
+            "recovery_unavailable": 1
+          },
+          "endpoint": {
+            "not_applied": 24
+          },
+          "attempt_seconds": 6.054132497
+        },
+        "holdout": {
+          "selected": 0,
+          "retention": {
+            "no_groups": 8
+          },
+          "endpoint": {
+            "not_applied": 8
+          },
+          "attempt_seconds": 1.9836331720000002
+        }
+      }
+    },
+    "nested2": {
+      "default": {
+        "profiles": 2,
+        "identical_c": 2,
+        "total_c": 2,
+        "cohorts": {
+          "development": {
+            "profiles": 2,
+            "structure": {
+              "equal": 2
+            },
+            "before": {
+              "locals": 16,
+              "gotos": 18,
+              "expression_nodes": 692,
+              "condition_expression_nodes": 108,
+              "c_bytes": 12230
+            },
+            "after": {
+              "locals": 16,
+              "gotos": 18,
+              "expression_nodes": 692,
+              "condition_expression_nodes": 108,
+              "c_bytes": 12230
+            }
+          }
+        },
+        "development_changes": [],
+        "candidate_semantics": {
+          "passed": 2
+        },
+        "candidate_state_values": {
+          "unknown": 1,
+          "unsupported": 1
+        },
+        "comparison_sha256": "7f69a5a815191e1864f646baac387f038e4d8c245b0d8093f30c13fc223bbe42",
+        "reports": {
+          "before_sha256": "7e5737e3d046ed79e223f2c26f926e270a8f1bc764c515fb41fe74cba10fb22d",
+          "after_sha256": "5bb55b6dd3e5792c8a4a5207a0a3e32943400e64ba85e4da0a3f319a21e8ac88"
+        }
+      },
+      "selected": {
+        "profiles": 2,
+        "identical_c": 2,
+        "total_c": 2,
+        "cohorts": {
+          "development": {
+            "profiles": 2,
+            "structure": {
+              "equal": 2
+            },
+            "before": {
+              "locals": 16,
+              "gotos": 4,
+              "expression_nodes": 487,
+              "condition_expression_nodes": 45,
+              "c_bytes": 11213
+            },
+            "after": {
+              "locals": 16,
+              "gotos": 4,
+              "expression_nodes": 487,
+              "condition_expression_nodes": 45,
+              "c_bytes": 11213
+            }
+          }
+        },
+        "development_changes": [],
+        "candidate_semantics": {
+          "passed": 2
+        },
+        "candidate_state_values": {
+          "unknown": 1,
+          "unsupported": 1
+        },
+        "comparison_sha256": "9e6c3cbfdde6dcc90dd445b42329e8c7c62d4b4ff58e6a3dc6c42a3a892bf08f",
+        "reports": {
+          "before_sha256": "653b481c80a0f1226be44411c1efe6996a845ef129f3fda32c0b29ba26af4d97",
+          "after_sha256": "f0f92a7df1a72654cd7ac199a3d198acd878a5207edc6ece425a1b5c7a583cfc"
+        }
+      },
+      "execution_counts": {
+        "native": 130,
+        "generated_O0": 390,
+        "generated_O2": 390,
+        "stage_comparisons": 15600,
+        "loop_endpoint_observations": 780
+      },
+      "selected_vs_default": {
+        "development": {
+          "before": {
+            "gotos": 18,
+            "locals": 16,
+            "expression_nodes": 692,
+            "condition_expression_nodes": 108,
+            "static_state_writes": 13
+          },
+          "after": {
+            "gotos": 4,
+            "locals": 16,
+            "expression_nodes": 487,
+            "condition_expression_nodes": 45,
+            "static_state_writes": 10
+          }
+        },
+        "holdout": {
+          "before": {
+            "gotos": 0,
+            "locals": 0,
+            "expression_nodes": 0,
+            "condition_expression_nodes": 0,
+            "static_state_writes": 0
+          },
+          "after": {
+            "gotos": 0,
+            "locals": 0,
+            "expression_nodes": 0,
+            "condition_expression_nodes": 0,
+            "static_state_writes": 0
+          }
+        }
+      },
+      "loop_selection": {
+        "development": {
+          "selected": 1,
+          "retention": {
+            "no_groups": 1,
+            "None": 1
+          },
+          "endpoint": {
+            "not_applied": 1,
+            "passed": 1
+          },
+          "attempt_seconds": 7.708555213
+        },
+        "holdout": {
+          "selected": 0,
+          "retention": {},
+          "endpoint": {},
+          "attempt_seconds": 0.0
+        }
+      }
+    },
+    "pair2": {
+      "default": {
+        "profiles": 2,
+        "identical_c": 2,
+        "total_c": 2,
+        "cohorts": {
+          "development": {
+            "profiles": 2,
+            "structure": {
+              "equal": 2
+            },
+            "before": {
+              "locals": 17,
+              "gotos": 1,
+              "expression_nodes": 559,
+              "condition_expression_nodes": 64,
+              "c_bytes": 11886
+            },
+            "after": {
+              "locals": 17,
+              "gotos": 1,
+              "expression_nodes": 559,
+              "condition_expression_nodes": 64,
+              "c_bytes": 11886
+            }
+          }
+        },
+        "development_changes": [],
+        "candidate_semantics": {
+          "passed": 2
+        },
+        "candidate_state_values": {
+          "unsupported": 1,
+          "unknown": 1
+        },
+        "comparison_sha256": "a96b939eaa67f940aba4ef914dad7b35b0787b46b8b3520ec95c0845601f0309",
+        "reports": {
+          "before_sha256": "e829cede87a4d164542b80609fb1e6fcbecd0ed038d7923806213b4ebdb26cb8",
+          "after_sha256": "234509b3e822c1c7376e0c5e0ea4801e3a5573f9eaa196e9346d39406d59d434"
+        }
+      },
+      "selected": {
+        "profiles": 2,
+        "identical_c": 1,
+        "total_c": 2,
+        "cohorts": {
+          "development": {
+            "profiles": 2,
+            "structure": {
+              "equal": 1,
+              "improved": 1
+            },
+            "before": {
+              "locals": 17,
+              "gotos": 1,
+              "expression_nodes": 559,
+              "condition_expression_nodes": 64,
+              "c_bytes": 11886
+            },
+            "after": {
+              "locals": 18,
+              "gotos": 2,
+              "expression_nodes": 466,
+              "condition_expression_nodes": 45,
+              "c_bytes": 11191
+            }
+          }
+        },
+        "development_changes": [
+          {
+            "id": "two-lane-nested-clang18-O2",
+            "distance": "improved",
+            "before_interval": [
+              15,
+              15
+            ],
+            "after_interval": [
+              4,
+              4
+            ],
+            "locals": {
+              "before": 7,
+              "after": 8
+            },
+            "gotos": {
+              "before": 0,
+              "after": 1
+            },
+            "c_syntax_delta": {
+              "expression_nodes": -93,
+              "condition_expression_nodes": -19
+            }
+          }
+        ],
+        "candidate_semantics": {
+          "passed": 2
+        },
+        "candidate_state_values": {
+          "unsupported": 2
+        },
+        "comparison_sha256": "fd4c2e80988c7d1af03acbe72f9411eeeaa4315c2d12b4d2ae9cecfaf2b2b785",
+        "reports": {
+          "before_sha256": "81fb873876d8cfc9596949927a5de0c45d643c0157409fd429707760454748d9",
+          "after_sha256": "3f0ea75b57562a1f9ad25a6bdcddc64b288ccc95f68f6b2a69d1dd7c640d3947"
+        }
+      },
+      "execution_counts": {
+        "native": 130,
+        "generated_O0": 390,
+        "generated_O2": 390,
+        "stage_comparisons": 15600,
+        "loop_endpoint_observations": 780
+      },
+      "selected_vs_default": {
+        "development": {
+          "before": {
+            "gotos": 1,
+            "locals": 17,
+            "expression_nodes": 559,
+            "condition_expression_nodes": 64,
+            "static_state_writes": 11
+          },
+          "after": {
+            "gotos": 2,
+            "locals": 18,
+            "expression_nodes": 466,
+            "condition_expression_nodes": 45,
+            "static_state_writes": 9
+          }
+        },
+        "holdout": {
+          "before": {
+            "gotos": 0,
+            "locals": 0,
+            "expression_nodes": 0,
+            "condition_expression_nodes": 0,
+            "static_state_writes": 0
+          },
+          "after": {
+            "gotos": 0,
+            "locals": 0,
+            "expression_nodes": 0,
+            "condition_expression_nodes": 0,
+            "static_state_writes": 0
+          }
+        }
+      },
+      "loop_selection": {
+        "development": {
+          "selected": 1,
+          "retention": {
+            "no_groups": 1,
+            "None": 1
+          },
+          "endpoint": {
+            "not_applied": 1,
+            "passed": 1
+          },
+          "attempt_seconds": 3.243025683
+        },
+        "holdout": {
+          "selected": 0,
+          "retention": {},
+          "endpoint": {},
+          "attempt_seconds": 0.0
+        }
+      }
+    }
+  },
+  "example": {
+    "input_source": "tests/fixtures/evaluation/two-lane-nested.c",
+    "profile": "Clang18 O2",
+    "loop_recovery": {
+      "schema": "nirvana-loop-recovery-evaluation-v2",
+      "model": "checked-readable-loop-selection-v1",
+      "contract": "return-all-ram-first-fault-v1",
+      "selected": true,
+      "retention": null,
+      "attempt_seconds": 2.851499774,
+      "entry_attempt": {
+        "status": "not_applicable",
+        "phase": null,
+        "header": null,
+        "normalizers": 0,
+        "before_lanes": 2,
+        "after_lanes": 2,
+        "seconds": 0.000202924,
+        "origin": "paired_base"
+      },
+      "baseline": {
+        "structured": true,
+        "locals": 7
+      },
+      "candidate": {
+        "entry_invariants": null,
+        "source_registers": 431,
+        "program_registers": 439,
+        "parameters": [
+          7
+        ],
+        "group": 0,
+        "structured": true,
+        "locals": 8,
+        "completion": "unsat",
+        "proof_method": "cut_composition",
+        "checked": 9,
+        "context_model": "checked-rolled-function-context-v1",
+        "outside_instructions": 22,
+        "original_region_instructions": 48,
+        "candidate_region_instructions": 7,
+        "future_reads_checked": 10,
+        "source_ir": "loop-source.ir.txt",
+        "program_ir": "loop-recovered.ir.txt",
+        "baseline_c": "loop-baseline.c",
+        "candidate_c": "loop-candidate.c",
+        "states": "loop-endpoints.jsonl",
+        "artifact_sha256": {
+          "loop-source.ir.txt": "5d698c6dbd075d8f9e55fa852cd79f39d36761096141b85b6b20d3ab4db68b83",
+          "loop-recovered.ir.txt": "a4135729a9a7d1441a5dfbc2194116247bd75a6067f781258a5459a93877a5ce",
+          "loop-baseline.c": "ffabc38cce48e612300dd495dd982ba7da952dda2034e821976daf72fd1d764b",
+          "loop-candidate.c": "dbdf32d5a7253649dcb24618fbb2d04e27ae3654025d089e6a288f7bf111ab71",
+          "loop-endpoints.jsonl": "b2ad6eaaf1888d30e38c67afe1305d49327b74963824ffecb578670b4c2917ab",
+          "loop-completion.smt2": "6cf1561fa7a8b65e4c0b6a0c3ba93366960bb44d4cf18cd88398d06c03ffa1dc",
+          "loop-comparison.smt2": "60d4af562c1495757d7d250ad2b4e470ad16878c786a81d7cd0ff979d4983202",
+          "loop-cut-0.smt2": "7c5eb833ea29819b1c3fdd7cd517b2a816daee1a633fb1e87827266d1116c248",
+          "loop-cut-1.smt2": "15664d6c1a63b0ee9082ab88765f35a9bcd94290fe678f1e2b4633bf57bee736",
+          "loop-cut-2.smt2": "cce3411895a1f5d8a468d536a7a9e356dbebebcbce39886809230a1151fec449",
+          "loop-cut-3.smt2": "1680be4b1afccad19a0c34a674373a564bf1ab21798b098cc7afbbcc86e5b622",
+          "loop-cut-4.smt2": "be26582692500db2cfa421e8d37b977e2cf036e56b9a54059673820a6411134e",
+          "loop-cut-5.smt2": "b3da8d79c76644a5ce4d7552f5f0559ce011b5069d12d5148b422de8cb920242",
+          "loop-cut-6.smt2": "554b19d79aa36637dc644b5cd27d884cd3edd0dc141e2e7ea7ef7700453e1874",
+          "loop-cut-7.smt2": "cfdc469fed6f9fdda4e04a27ee9cc81fbb4fd4a5f6abe00c981b890a5e77f8b3",
+          "loop-cut-8.smt2": "c1ce05c3c05017c709e0b10211bdfcdc251af5d8ad94644be57525675c2cd7fb"
+        }
+      },
+      "endpoint": {
+        "status": "passed",
+        "cases": 195,
+        "observations": 780,
+        "step_limit": 4096,
+        "private_initializers": [
+          0,
+          18446744073709551615
+        ],
+        "comparisons": [
+          "display_zero",
+          "recovered_zero",
+          "display_ones",
+          "recovered_ones"
+        ],
+        "witness": null
+      },
+      "status": "passed"
+    },
+    "readable_c": {
+      "before": {
+        "sha256": "ffabc38cce48e612300dd495dd982ba7da952dda2034e821976daf72fd1d764b",
+        "bytes": 5764,
+        "text": "#include <stdint.h>\n/* input_address: input machine register 7 */\n\n#include <stdlib.h>\nstruct nirvana_memory { uint8_t *bytes; uint64_t base, size; };\nstatic inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) {\n    if (width == 0 || address > UINT64_MAX - (width - 1) || address < m->base || width > m->size || address - m->base > m->size - width) abort();\n    return address - m->base;\n}\nstatic inline uint64_t nirvana_load(struct nirvana_memory *m, uint64_t address, unsigned width) {\n    uint64_t offset = nirvana_offset(m, address, width), value = 0;\n    for (unsigned i = 0; i < width; ++i) value |= (uint64_t)m->bytes[offset + i] << (i * 8);\n    return value;\n}\nstatic inline void nirvana_store(struct nirvana_memory *m, uint64_t address, unsigned width, uint64_t value) {\n    uint64_t offset = nirvana_offset(m, address, width);\n    for (unsigned i = 0; i < width; ++i) m->bytes[offset + i] = (uint8_t)(value >> (i * 8));\n}\n\n/* Views retain checked guest-memory accesses and may overlap or alias. */\nstruct nirvana_view { uint64_t address; };\nstatic inline struct nirvana_view nirvana_view_index(struct nirvana_view base, uint64_t index, uint64_t stride, uint64_t offset) {\n    struct nirvana_view result = {base.address + offset + index * stride};\n    return result;\n}\nstatic inline uint64_t nirvana_view_load(struct nirvana_memory *m, struct nirvana_view view, unsigned width) {\n    return nirvana_load(m, view.address, width);\n}\nstatic inline void nirvana_view_store(struct nirvana_memory *m, struct nirvana_view view, unsigned width, uint64_t value) {\n    nirvana_store(m, view.address, width, value);\n}\n\nstatic inline struct nirvana_view nirvana_location_address(uint64_t address) {\n    struct nirvana_view result = {address}; return result;\n}\nstatic inline struct nirvana_view nirvana_location_view(struct nirvana_view view) { return view; }\n#define NIRVANA_LOCATION(location) _Generic((location), struct nirvana_view: nirvana_location_view, default: nirvana_location_address)((location))\n#define read8(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 1)\n#define read16(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 2)\n#define read32(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 4)\n#define read64(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 8)\n#define write8(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 1, (value))\n#define write16(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 2, (value))\n#define write32(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 4, (value))\n#define write64(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 8, (value))\n#define element(base, index, stride) nirvana_view_index(NIRVANA_LOCATION(base), (index), (stride), UINT64_C(0))\n#define field(base, offset) nirvana_view_index(NIRVANA_LOCATION(base), UINT64_C(0), UINT64_C(1), (offset))\n\nuint64_t nirvana_readable(uint64_t input_address, uint8_t *memory, uint64_t base, uint64_t size) {\n    struct nirvana_memory m = {memory, base, size};\n    /* input register 7: address views, potentially aliased */\n    const struct {\n        struct nirvana_view base;\n        struct nirvana_view field_0;\n        struct nirvana_view field_8;\n        struct nirvana_view field_16;\n        struct nirvana_view field_24;\n    } input = {\n        {input_address},\n        {input_address},\n        {input_address + 8},\n        {input_address + 16},\n        {input_address + 24},\n    };\n    uint64_t value3;\n    uint64_t value5;\n    uint8_t value6 = (read64(input.field_0) & 7) + 1;\n    uint64_t value0 = read64(input.field_8);\n    uint64_t accumulator = read64(input.field_16);\n    uint64_t value1 = read64(input.field_24);\n    uint64_t value2 = 0;\n    for (;;) {\n        value3 = value2 + 1;\n        accumulator = (read64(element(input.base, value2 & 3, 8)) ^ value3) + accumulator;\n        write64(input.field_16, accumulator);\n        value5 = accumulator ^ value1;\n        if ((value5 & 7) == 0) {\n            break;\n        }\n        if ((((accumulator & 3) - 1) & UINT64_C(0xffffffff)) != 0) {\n            value1 += accumulator & 15;\n            if (value0 & 1) {\n                accumulator = (read64(element(input.base, value3 & 3, 8)) ^ value3) + accumulator;\n                write64(input.field_16, accumulator);\n                value5 = accumulator ^ value1;\n                if ((value5 & 7) == 0) {\n                    break;\n                }\n                if ((((accumulator & 3) - 1) & UINT64_C(0xffffffff)) != 0) {\n                    value5 = (accumulator & 15) + value1;\n                    value1 = value5 + value2 + 1;\n                    write64(input.field_24, value1);\n                    value2 = value3;\n                    if (value6 != value3) {\n                        continue;\n                    }\n                    value1 = value5 + value3;\n                    value5 = value1 ^ accumulator;\n                    break;\n                }\n                value5 = value3;\n                value1 ^= value5;\n            } else {\n            }\n        } else {\n            value5 = value2;\n            value1 ^= value5;\n        }\n        value5 = value1;\n        value1 = value5 + value2 + 1;\n        write64(input.field_24, value1);\n        value2 = value3;\n        if (value6 != value3) {\n            continue;\n        }\n        value1 = value5 + value3;\n        value5 = value1 ^ accumulator;\n        break;\n    }\n    write64(input.field_16, accumulator);\n    write64(input.field_24, value1);\n    return value5;\n}\n\n#undef read8\n#undef read16\n#undef read32\n#undef read64\n#undef write8\n#undef write16\n#undef write32\n#undef write64\n#undef element\n#undef field\n#undef NIRVANA_LOCATION\n"
+      },
+      "after": {
+        "sha256": "dbdf32d5a7253649dcb24618fbb2d04e27ae3654025d089e6a288f7bf111ab71",
+        "bytes": 5069,
+        "text": "#include <stdint.h>\n/* input_address: input machine register 7 */\n\n#include <stdlib.h>\nstruct nirvana_memory { uint8_t *bytes; uint64_t base, size; };\nstatic inline uint64_t nirvana_offset(struct nirvana_memory *m, uint64_t address, uint64_t width) {\n    if (width == 0 || address > UINT64_MAX - (width - 1) || address < m->base || width > m->size || address - m->base > m->size - width) abort();\n    return address - m->base;\n}\nstatic inline uint64_t nirvana_load(struct nirvana_memory *m, uint64_t address, unsigned width) {\n    uint64_t offset = nirvana_offset(m, address, width), value = 0;\n    for (unsigned i = 0; i < width; ++i) value |= (uint64_t)m->bytes[offset + i] << (i * 8);\n    return value;\n}\nstatic inline void nirvana_store(struct nirvana_memory *m, uint64_t address, unsigned width, uint64_t value) {\n    uint64_t offset = nirvana_offset(m, address, width);\n    for (unsigned i = 0; i < width; ++i) m->bytes[offset + i] = (uint8_t)(value >> (i * 8));\n}\n\n/* Views retain checked guest-memory accesses and may overlap or alias. */\nstruct nirvana_view { uint64_t address; };\nstatic inline struct nirvana_view nirvana_view_index(struct nirvana_view base, uint64_t index, uint64_t stride, uint64_t offset) {\n    struct nirvana_view result = {base.address + offset + index * stride};\n    return result;\n}\nstatic inline uint64_t nirvana_view_load(struct nirvana_memory *m, struct nirvana_view view, unsigned width) {\n    return nirvana_load(m, view.address, width);\n}\nstatic inline void nirvana_view_store(struct nirvana_memory *m, struct nirvana_view view, unsigned width, uint64_t value) {\n    nirvana_store(m, view.address, width, value);\n}\n\nstatic inline struct nirvana_view nirvana_location_address(uint64_t address) {\n    struct nirvana_view result = {address}; return result;\n}\nstatic inline struct nirvana_view nirvana_location_view(struct nirvana_view view) { return view; }\n#define NIRVANA_LOCATION(location) _Generic((location), struct nirvana_view: nirvana_location_view, default: nirvana_location_address)((location))\n#define read8(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 1)\n#define read16(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 2)\n#define read32(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 4)\n#define read64(location) nirvana_view_load(&m, NIRVANA_LOCATION(location), 8)\n#define write8(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 1, (value))\n#define write16(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 2, (value))\n#define write32(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 4, (value))\n#define write64(location, value) nirvana_view_store(&m, NIRVANA_LOCATION(location), 8, (value))\n#define element(base, index, stride) nirvana_view_index(NIRVANA_LOCATION(base), (index), (stride), UINT64_C(0))\n#define field(base, offset) nirvana_view_index(NIRVANA_LOCATION(base), UINT64_C(0), UINT64_C(1), (offset))\n\nuint64_t nirvana_readable(uint64_t input_address, uint8_t *memory, uint64_t base, uint64_t size) {\n    struct nirvana_memory m = {memory, base, size};\n    /* input register 7: address views, potentially aliased */\n    const struct {\n        struct nirvana_view base;\n        struct nirvana_view field_0;\n        struct nirvana_view field_8;\n        struct nirvana_view field_16;\n        struct nirvana_view field_24;\n    } input = {\n        {input_address},\n        {input_address},\n        {input_address + 8},\n        {input_address + 16},\n        {input_address + 24},\n    };\n    uint64_t counter;\n    uint64_t value5;\n    uint64_t value6;\n    uint8_t value7 = (read64(input.field_0) & 7) + 1;\n    uint64_t value0 = read64(input.field_8);\n    uint64_t accumulator = read64(input.field_16);\n    uint64_t value1 = read64(input.field_24);\n    uint64_t value2 = 0;\n    for (;;) {\n        counter = 0;\n        for (;;) {\n            value5 = value2 + 1;\n            accumulator += read64(element(input.base, (value2 + counter) & 3, 8)) ^ value5;\n            write64(input.field_16, accumulator);\n            value6 = accumulator ^ value1;\n            if ((value6 & 7) == 0) {\n                goto nirvana_loop_0_break;\n            }\n            if ((accumulator & 3) == 1) {\n                value6 = value1 ^ (value2 + counter);\n                break;\n            }\n            value6 = value1 + (accumulator & 15);\n            if (counter == (value0 & 1)) {\n                break;\n            }\n            value1 = value6;\n            ++counter;\n        }\n        value1 = value6 + value2 + 1;\n        write64(input.field_24, value1);\n        value2 = value5;\n        if (value7 != value5) {\n            continue;\n        }\n        value1 = value6 + value5;\n        value6 = value1 ^ accumulator;\n        break;\n    }\n    nirvana_loop_0_break: ;\n    write64(input.field_16, accumulator);\n    write64(input.field_24, value1);\n    return value6;\n}\n\n#undef read8\n#undef read16\n#undef read32\n#undef read64\n#undef write8\n#undef write16\n#undef write32\n#undef write64\n#undef element\n#undef field\n#undef NIRVANA_LOCATION\n"
+      }
+    },
+    "proof_artifacts": {
+      "loop-comparison.smt2": {
+        "sha256": "60d4af562c1495757d7d250ad2b4e470ad16878c786a81d7cd0ff979d4983202",
+        "bytes": 40196
+      },
+      "loop-cut-2.smt2": {
+        "sha256": "cce3411895a1f5d8a468d536a7a9e356dbebebcbce39886809230a1151fec449",
+        "bytes": 3954
+      },
+      "loop-cut-6.smt2": {
+        "sha256": "554b19d79aa36637dc644b5cd27d884cd3edd0dc141e2e7ea7ef7700453e1874",
+        "bytes": 12380
+      },
+      "loop-cut-7.smt2": {
+        "sha256": "cfdc469fed6f9fdda4e04a27ee9cc81fbb4fd4a5f6abe00c981b890a5e77f8b3",
+        "bytes": 12094
+      },
+      "loop-cut-0.smt2": {
+        "sha256": "7c5eb833ea29819b1c3fdd7cd517b2a816daee1a633fb1e87827266d1116c248",
+        "bytes": 1683
+      },
+      "loop-cut-1.smt2": {
+        "sha256": "15664d6c1a63b0ee9082ab88765f35a9bcd94290fe678f1e2b4633bf57bee736",
+        "bytes": 2226
+      },
+      "loop-cut-5.smt2": {
+        "sha256": "b3da8d79c76644a5ce4d7552f5f0559ce011b5069d12d5148b422de8cb920242",
+        "bytes": 24683
+      },
+      "loop-cut-4.smt2": {
+        "sha256": "be26582692500db2cfa421e8d37b977e2cf036e56b9a54059673820a6411134e",
+        "bytes": 12833
+      },
+      "loop-completion.smt2": {
+        "sha256": "6cf1561fa7a8b65e4c0b6a0c3ba93366960bb44d4cf18cd88398d06c03ffa1dc",
+        "bytes": 21343
+      },
+      "loop-cut-3.smt2": {
+        "sha256": "1680be4b1afccad19a0c34a674373a564bf1ab21798b098cc7afbbcc86e5b622",
+        "bytes": 14452
+      },
+      "loop-cut-8.smt2": {
+        "sha256": "c1ce05c3c05017c709e0b10211bdfcdc251af5d8ad94644be57525675c2cd7fb",
+        "bytes": 19857
+      }
+    },
+    "input_object": {
+      "sha256": "70f453a5955d17d273cec69ed7409285c6d6f4f0b0b7594a1dce9fa69419fabd",
+      "base64": "f0VMRgIBAQAAAAAAAAAAAAEAPgABAAAAAAAAAAAAAAAAAAAAAAAAAFgCAAAAAAAAAAAAAEAAAAAAAEAACQABAEiLD0iLVwiD4QdMi1cQSIt3GEj/wUUxwA8fhAAAAAAATY1IAUSJwIPgA0yLHMdNMctNAdNMiV8QTInYSDHwqAcPhIQAAABEidiD4AOD+AF1D0yJwE2J2kgxxusVDx9AAESJ2IPgD0gBxvbCAXUiTYnaSYnzS400A0j/xkiJdxhNichMOcl1metGDx+AAAAAAESJyIPgA0yLFMdNMcpNAdpMiVcQTInQSDHwqAd0LUSJ0IPgA4P4AXUFTInI65lFidNBg+MPSQHz66pNidrrDE0By0yJ2Ewx0EyJ3kyJVxBIiXcYwwBVYnVudHUgY2xhbmcgdmVyc2lvbiAxOC4xLjMgKDF1YnVudHUxKQAAAAAAFAAAAAAAAAABelIAAXgQARsMBwiQAQAAFAAAABwAAAAAAAAA5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAQA8f8AAAAAAAAAAAAAAAAAAAAAAAAAAAMAAgAAAAAAAAAAAAAAAAAAAAAANwAAABIAAgAAAAAAAAAAAOQAAAAAAAAAIAAAAAAAAAACAAAAAgAAAAAAAAAAAAAAAC50ZXh0AC5jb21tZW50AC5ub3RlLkdOVS1zdGFjawBzb3VyY2UuaQAubGx2bV9hZGRyc2lnAGZpeHR1cmUALnJlbGEuZWhfZnJhbWUALnN0cnRhYgAuc3ltdGFiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE4AAAADAAAAAAAAAAAAAAAAAAAAAAAAAPgBAAAAAAAAXgAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAQAAAAYAAAAAAAAAAAAAAAAAAABAAAAAAAAAAOQAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAABwAAAAEAAAAwAAAAAAAAAAAAAAAAAAAAJAEAAAAAAAAoAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAABAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAEwBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAABEAAAAAQAAcAIAAAAAAAAAAAAAAAAAAABQAQAAAAAAADAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAPwAAAAQAAABAAAAAAAAAAAAAAAAAAAAA4AEAAAAAAAAYAAAAAAAAAAgAAAAFAAAACAAAAAAAAAAYAAAAAAAAACkAAAADTP9vAAAAgAAAAAAAAAAAAAAAAPgBAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAEAAAAAAAAAAAAAAAAAAABWAAAAAgAAAAAAAAAAAAAAAAAAAAAAAACAAQAAAAAAAGAAAAAAAAAAAQAAAAMAAAAIAAAAAAAAABgAAAAAAAAA"
+    }
+  },
+  "limitations": [
+    "GCC two-trip fixture retains its original C and source distance10.",
+    "The new Clang example uses8 locals versus7 and one nonlocal goto versus0, while topology distance falls15 to4.",
+    "All-input C value-model status is unsupported (node budget), previously unknown; concrete native/IR/O0/O2 C comparisons pass, and IR recovery has completion plus9 compositional obligations.",
+    "The ordinary single-function frontend still rejects SSE memory bundles in the optimized BST example; linked-module support is a separate profile.",
+    "One unrelated Python numeric-range SMT test retains a20second timeout; the full Python suite is not reported as green."
+  ],
+  "decision": "Adopt for opt-in loop recovery; keep default solver-free emission. Next work must improve generated C or recover an unsupported input, using these fixed images as the comparison.",
+  "validation": {
+    "rust_library": {
+      "passed": 350,
+      "ignored": 30,
+      "log_sha256": "1ff677ef36f1f8b2439742770e463dbe36b0f083c028755577c2e1f69c547fba"
+    },
+    "paired_source_contracts": {
+      "passed": 6,
+      "scope": "Normal trip bound, direct truth and one-bit tests with arbitrary high words; bounded completion, whole-function context and over-wide-bound negative control.",
+      "log_sha256": "b66a8c49b782cf257c22919ca8e1844ea38250e33430e78e8ffc2e0836fdd076"
+    },
+    "clippy_all_targets": "passed",
+    "python_suite": {
+      "run": 255,
+      "passed": 251,
+      "skipped": 3,
+      "errors": 1,
+      "error": "Unmodified test_state_value_ranges.CheckedRanges.test_informative_ranges_contain_all_smt_values_for_arbitrary_input_words timed out at20seconds, including isolated replay.",
+      "log_sha256": "75ef712976661d7704b7c23c7e2bf378d133387183bc7752e74165c000766081"
+    },
+    "m0": "All36 profiles compared in both solver-free and opt-in policies; all semantic and quality regression counters0.",
+    "loop_evaluation_protocol": "passed (tools/tests/test_loop_recovery.py)"
+  },
+  "reproduce": {
+    "build": [
+      "python3",
+      "tools/dev.py",
+      "cargo",
+      "build",
+      "--locked",
+      "--bin",
+      "nirvana",
+      "--example",
+      "evaluation_probe"
+    ],
+    "development_comparison": [
+      "python3",
+      "tools/dev.py",
+      "run",
+      "--",
+      "python3",
+      "tools/evaluate_structure.py",
+      "--cases",
+      "tools/corpora/structure-two-lane-v1.json",
+      "--decompiler",
+      "target/debug/nirvana",
+      "--clang",
+      "CLANG18",
+      "--compiler",
+      "gcc=cc",
+      "--compiler",
+      "clang18=CLANG18",
+      "--c-compiler",
+      "cc",
+      "--semantic-cases",
+      "65",
+      "--semantic-inputs",
+      "tools/corpora/structure-nested-v1.inputs.txt",
+      "--semantic-seed",
+      "7956016069493023024",
+      "--semantic-steps",
+      "4096",
+      "--semantic-probe",
+      "target/debug/examples/evaluation_probe",
+      "--loop-solver",
+      "Z3",
+      "--c-footprint",
+      "--state-memory-sites",
+      "--measure-rss",
+      "--optimization",
+      "O2",
+      "--out",
+      "{out}"
+    ],
+    "tool_placeholders": "Use the recorded Clang18 and Z3 builds. Omit--loop-solver for the default-policy comparison;--state-values uses the recorded3second budget."
+  }
+}

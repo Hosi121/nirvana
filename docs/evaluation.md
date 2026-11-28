@@ -114,6 +114,8 @@ CLIとprobeへ同じ設定を渡し、選んだCの本文一致、実際に使�
 
 `nirvana-loop-recovery-evaluation-v2`は、入口条件の提案・帰納検査・lane拡張の段階と所要時間も記録します。採用した入口条件には、コンパクトな元IR、条件式、初回到達と一巡後のSMTを対応付けます。`loop_entry_invariants`は未試行・予算切れ・未判定も含む全構成の集計です。従来のv1記録も同じ終端契約で再検査できます。
 
+[2laneの比較](../tools/corpora/paired-lanes-v1.m2.json)では、Clang O2が展開した処理を二重ループへ戻し、元ソースとの構造距離15→4、条件式node数37→18、C全体5,764→5,069 bytesとなりました。カウンタを追加して局所変数は7→8個、非局所脱出のgotoは0→1個です。既存32+2構成は両出力方針でCを維持し、追加2構成も同じ入力のnative・IR・O0/O2生成C比較を通しました。採用理由は処理と条件の重複削減です。全入力のC値モデルはnode予算で未対応となり、IRの検査と具体実行の範囲を分けて記録しています。
+
 ## 追加入力
 
 [追加入力の探索](../examples/evaluation_witnesses.rs)は、元の非debug objectと入力集合から未観測のCFG遷移を求めます。`checked-memory-path-inputs-v1`は512-byteのRAM、RDI/RSP、他レジスタを固定し、4状態ワードだけを任意値とします。生成Cのprobeと[同じ初期化](../examples/evaluation/fixture.rs)を使います。SAT入力は元IRで命令prefixと次のPCを再現し、正常returnまで実行できたものを`inputs.txt`へ加えます。途中停止やfaultへ至った候補も根拠を残します。
