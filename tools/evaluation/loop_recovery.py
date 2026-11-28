@@ -61,7 +61,9 @@ def entry_attempt(value, attempt_seconds):
         return
     require(isinstance(value, dict) and set(value) == {
         'status', 'phase', 'header', 'normalizers', 'before_lanes', 'after_lanes', 'seconds'
-    }, 'entry attempt fields')
+    } | ({'origin'} if 'origin' in value else set()), 'entry attempt fields')
+    paired = 'origin' in value
+    require(not paired or value['origin'] == 'paired_base', 'entry proposal origin')
     status = value['status']
     require(status in ['not_applicable', 'skipped_budget', 'build_unavailable', 'fact_unknown',
             'fact_counterexample', 'proved_unused', 'proposal_unavailable', 'candidate_unproved',
@@ -69,7 +71,8 @@ def entry_attempt(value, attempt_seconds):
     require(type(value['seconds']) in [int, float] and math.isfinite(value['seconds'])
             and 0 <= value['seconds'] <= attempt_seconds, 'entry attempt time')
     require(all(type(value[k]) is int for k in ['normalizers', 'before_lanes', 'after_lanes'])
-            and 3 <= value['before_lanes'] <= value['after_lanes'] <= 8
+            and (2 if paired else 3) <= value['before_lanes'] <= value['after_lanes'] <= 8
+            and (not paired or value['before_lanes'] == 2)
             and (value['after_lanes'] > value['before_lanes']) == (status == 'used_in_ir'),
             'entry lane coverage')
     has_predicate = status not in ['not_applicable', 'skipped_budget', 'build_unavailable']

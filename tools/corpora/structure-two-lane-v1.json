@@ -1,0 +1,22 @@
+{
+  "schema": "nirvana-structure-corpus-v1",
+  "corpus_id": "nirvana-structure-two-lane-v1",
+  "profile": "nirvana-fixture-state4-checked-v1",
+  "compiler_profiles": [
+    "gcc-O2",
+    "clang18-O2"
+  ],
+  "cohort_policy": "Development-only paired expansion study. The original 32+2 and sealed holdout remain distinct regression denominators.",
+  "cases": [
+    {
+      "id": "two-lane-nested",
+      "family": "m2-paired-modular-lanes",
+      "cohort": "development",
+      "source": "tests/fixtures/evaluation/two-lane-nested.c",
+      "source_sha256": "2ce8617872df6525ec3f04664d9616c726a966a736a2abd6a6ba31b378b8f113",
+      "function": "fixture",
+      "shape": "Bounded 1..8 outer and 1..2 inner iterations with ordered state reads/writes and shared abrupt exits",
+      "origin": "Repository-authored development variant selected by recorded Clang 18 source scout; original nested-transfers outer mask 3 and inner mask 3 remain unchanged."
+    }
+  ]
+}

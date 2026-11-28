@@ -12,6 +12,34 @@ from evaluation.semantics import ProtocolError
 
 
 class LoopRecoveryTests(unittest.TestCase):
+    def test_paired_base_origin_is_explicit_without_relaxing_legacy_entry_records(self):
+        base = dict(status='not_applicable', phase=None, header=None, normalizers=0,
+                    before_lanes=2, after_lanes=2, seconds=0.0, origin='paired_base')
+        lr.entry_attempt(base, 1.0)
+        for mutate in [
+            lambda e: e.pop('origin'),
+            lambda e: e.update(origin='unproved'),
+            lambda e: e.update(origin=[]),
+            lambda e: e.update(before_lanes=True),
+            lambda e: e.update(before_lanes=1),
+            lambda e: e.update(before_lanes=3, after_lanes=3),
+            lambda e: e.update(after_lanes=1),
+            lambda e: e.update(after_lanes=9),
+            lambda e: e.update(status='used_in_ir'),
+        ]:
+            e = copy.deepcopy(base)
+            mutate(e)
+            with self.subTest(record=e), self.assertRaises(ProtocolError):
+                lr.entry_attempt(e, 1.0)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, _ = self.fixture(Path(temporary))
+            self.inductive(directory, value)
+            value['entry_attempt'].update(before_lanes=2, origin='paired_base')
+            self.validate(value, directory)
+            value['candidate']['entry_invariants'] = None
+            with self.assertRaises(ProtocolError):
+                self.validate(value, directory)
+
     def fixture(self, root):
         directory = root / 'semantics'
         directory.mkdir()
