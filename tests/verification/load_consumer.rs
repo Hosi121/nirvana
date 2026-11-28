@@ -7,6 +7,9 @@ use nirvana::ir::{
 use nirvana::transform::load_consumer;
 use nirvana::verify::Solver;
 
+#[path = "load_consumer/memory.rs"]
+mod memory;
+
 #[path = "load_consumer/stable.rs"]
 mod stable;
 

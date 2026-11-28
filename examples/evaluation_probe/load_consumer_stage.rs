@@ -151,8 +151,11 @@ impl Stage {
                 self.records.as_str(),
             )?;
             let model = lowering.model_id();
-            let stable = model == nirvana::load_consumer::STABLE_MODEL_ID;
-            let checker = if stable {
+            let stable = model != nirvana::load_consumer::MODEL_ID;
+            let memory = model == nirvana::load_consumer::MEMORY_MODEL_ID;
+            let checker = if memory {
+                "load_consumer::validate_memory_values+readable::loop_recovery::source"
+            } else if stable {
                 "load_consumer::validate_with_stable_inputs+readable::loop_recovery::source"
             } else {
                 "load_consumer::validate+readable::loop_recovery::source"
@@ -162,8 +165,9 @@ impl Stage {
                     let inputs = f.inputs.iter().map(|r|r.0).collect::<Vec<_>>();
                     format!(",\"inputs\":{inputs:?}")
                 } else { String::new() };
+                let producer = if memory { format!(",\"producer_kind\":\"{}\"", f.producer_kind.as_str()) } else { String::new() };
                 format!(
-                    "{{\"load_pc\":{},\"load_assignment\":{},\"consumer_pc\":{},\"consumer_assignment\":{},\"temporary\":{},\"destination\":{}{inputs}}}",
+                    "{{\"load_pc\":{},\"load_assignment\":{},\"consumer_pc\":{},\"consumer_assignment\":{},\"temporary\":{},\"destination\":{}{inputs}{producer}}}",
                     f.load_instruction, f.load_assignment, f.consumer_instruction,
                     f.consumer_assignment, f.temporary.0, f.destination.0
                 )

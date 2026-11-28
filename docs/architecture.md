@@ -229,6 +229,8 @@ Cの保存先は、共有する全値が範囲内に収まり、アドレス用�
 
 [読込み後の計算の集約](../src/transform/load_consumer.rs)は、単一使用の私有値について`T = load(A); D = f(T)`を元のLoad位置で`T = f(load(A)); D = T`へ写します。定数だけのv1に加え、v2は同じblock内でLoadから使用まで再定義されない入力レジスタを扱います。候補側の前向き走査と、検査側の独立した後向き走査で代入順を確認し、各foldの入力集合を保持します。`f`は一個の捕捉値に対する厳密評価の整数演算です。`Lowering`が元IR・変換後IR・引数・対応検査を保持し、制御復元は元IR、Cの割当ては変換後IRを使います。最終表示へのDCEも照合し、返り値・全RAM・最初のfaultを保ちます。中間状態では、内容が変わる私有値だけを比較範囲から射影します。
 
+v3の`lower_memory_values`は、メモリを読む元の式`g`を丸ごと捕捉し、`T = g; D = f(T, X)`を`T = f(g, X); D = T`へ写します。`g`の内部にある複数のLoad、アドレスのLoad、lazyな分岐をそのまま保ち、外側の`f`には厳密評価の整数演算と不変な入力だけを置きます。[候補生成](../src/transform/load_consumer/propose.rs)と[対応検査](../src/transform/load_consumer/verify.rs)を分離し、検査器は外側の演算をたどる前に元の`g`全体との一致を確認します。各foldにproducerの形状を記録し、直接Loadだけの結果は従来のv1/v2へ分類します。
+
 複数関数では[module_outline](../src/codegen/module_outline.rs)が全Stepからの再入を検査し、[module_readable](../src/codegen/module_readable.rs)が名前付き関数を描画します。
 間接移転の局所化は[module_tail_dispatch](../src/codegen/module_tail_dispatch.rs)・[module_switch_keys](../src/codegen/module_switch_keys.rs)が計画し、保存したkeyと実targetを照合して局所ラベルを選びます。
 残るtargetはdispatcherへ渡します。通常CALLはCの呼出しを使い、深い再帰や想定外の戻り先ではゲストPCから再開します。

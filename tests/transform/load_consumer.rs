@@ -5,6 +5,9 @@ use nirvana::ir::{
 };
 use nirvana::transform::load_consumer::{self, Error};
 
+#[path = "load_consumer/memory.rs"]
+mod memory;
+
 #[path = "load_consumer/stable.rs"]
 mod stable;
 

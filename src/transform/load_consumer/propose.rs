@@ -33,7 +33,7 @@ fn substitute(
             }
             load.clone()
         }
-        Expr::Register(r) if kind == ContextKind::StableInputs => {
+        Expr::Register(r) if kind != ContextKind::Constants => {
             context.inputs.insert(r.0);
             if context.inputs.len() > MAX_CONTEXT_INPUTS {
                 return Err(Error::ResourceLimit);
@@ -87,6 +87,34 @@ fn proposed_stability(
     }
     Ok(true)
 }
+// Proposal-only effect scan. The verifier inspects the source independently.
+fn proposed_producer(e: &Expr, kind: ContextKind, work: &mut Work) -> Result<bool, Error> {
+    if matches!(e, Expr::Load { .. }) {
+        return Ok(true);
+    }
+    if kind != ContextKind::MemoryValues {
+        return Ok(false);
+    }
+    let mut pending = vec![e];
+    while let Some(e) = pending.pop() {
+        work.charge(1)?;
+        match e {
+            Expr::Load { .. } => return Ok(true),
+            Expr::Unary(_, x) => pending.push(x),
+            Expr::Binary(_, a, b) => pending.extend([&**a, &**b]),
+            Expr::Select {
+                condition,
+                taken,
+                not_taken,
+            } => pending.extend([&**condition, &**taken, &**not_taken]),
+            _ => {}
+        }
+    }
+    Ok(false)
+}
+pub fn propose_memory_values(source: &Program, parameters: &[Reg]) -> Option<Program> {
+    with_kind(source, parameters, ContextKind::MemoryValues)
+}
 pub fn propose(source: &Program, parameters: &[Reg]) -> Option<Program> {
     with_kind(source, parameters, ContextKind::Constants)
 }
@@ -111,7 +139,9 @@ pub(super) fn with_kind(
                 let Place::Register(temp) = assignment.destination else {
                     continue;
                 };
-                if !matches!(assignment.value, Expr::Load { .. }) || parameters.contains(&temp.0) {
+                if !proposed_producer(&assignment.value, kind, &mut work).ok()?
+                    || parameters.contains(&temp.0)
+                {
                     continue;
                 }
                 let use_info = uses.get(&temp.0)?;

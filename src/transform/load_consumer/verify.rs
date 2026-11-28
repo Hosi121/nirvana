@@ -21,10 +21,11 @@ fn context(
     context_inputs: &mut CheckedContext,
 ) -> Result<Expr, Error> {
     work.charge(1)?;
-    if matches!(actual, Expr::Load { .. }) {
-        if !same(original_load, actual, work)? {
-            return Err(Error::UnsupportedChange);
-        }
+    // Match the WHOLE producer before descending through the strict context.
+    // In v3 the producer may itself have the same unary/binary root as f.
+    if (kind == ContextKind::MemoryValues || matches!(actual, Expr::Load { .. }))
+        && same(original_load, actual, work)?
+    {
         context_inputs.holes += 1;
         if context_inputs.holes > 1 {
             return Err(Error::InvalidTemporary);
@@ -33,7 +34,7 @@ fn context(
     }
     Ok(match actual {
         Expr::Const(n) => Expr::Const(*n),
-        Expr::Register(r) if kind == ContextKind::StableInputs && *r != temp => {
+        Expr::Register(r) if kind != ContextKind::Constants && *r != temp => {
             context_inputs.inputs.insert(r.0);
             if context_inputs.inputs.len() > MAX_CONTEXT_INPUTS {
                 return Err(Error::ResourceLimit);
@@ -88,6 +89,32 @@ fn check_stability(
     }
     Ok(())
 }
+// Verifier-owned recursive source effect scan. No proposal summary is trusted.
+fn checked_memory(e: &Expr, work: &mut Work) -> Result<bool, Error> {
+    work.charge(1)?;
+    Ok(match e {
+        Expr::Load { .. } => true,
+        Expr::Unary(_, x) => checked_memory(x, work)?,
+        Expr::Binary(_, a, b) => checked_memory(a, work)? | checked_memory(b, work)?,
+        Expr::Select {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            checked_memory(condition, work)?
+                | checked_memory(taken, work)?
+                | checked_memory(not_taken, work)?
+        }
+        _ => false,
+    })
+}
+pub fn validate_memory_values(
+    source: &Program,
+    candidate: &Program,
+    parameters: &[Reg],
+) -> Result<Evidence, Error> {
+    with_kind(source, candidate, parameters, ContextKind::MemoryValues)
+}
 pub fn validate(
     source: &Program,
     candidate: &Program,
@@ -115,12 +142,22 @@ pub(super) fn with_kind(
     let mut producers = BTreeMap::new();
     let mut consumers = BTreeMap::new();
     for (point, destination, old, new) in changes {
-        if matches!(old, Expr::Load { .. }) {
+        let producer_kind = if matches!(old, Expr::Load { .. }) {
+            Some(ProducerKind::RootLoad)
+        } else if kind == ContextKind::MemoryValues && checked_memory(old, &mut work)? {
+            Some(ProducerKind::MemoryExpression)
+        } else {
+            None
+        };
+        if let Some(producer_kind) = producer_kind {
             let mut checked = CheckedContext::default();
             let expression = context(old, new, destination, &mut work, kind, &mut checked)?;
             if checked.holes != 1
                 || producers
-                    .insert(destination.0, (point, expression, checked.inputs))
+                    .insert(
+                        destination.0,
+                        (point, expression, checked.inputs, producer_kind),
+                    )
                     .is_some()
             {
                 return Err(Error::InvalidTemporary);
@@ -146,7 +183,7 @@ pub(super) fn with_kind(
     }
     let parameters: BTreeSet<_> = parameters.iter().map(|r| r.0).collect();
     let mut folds = Vec::new();
-    for (temp, (load, expression, inputs)) in &producers {
+    for (temp, (load, expression, inputs, producer_kind)) in &producers {
         let (consumer, destination, original) =
             consumers.get(temp).ok_or(Error::UnsupportedChange)?;
         if !load.precedes(*consumer)
@@ -168,6 +205,7 @@ pub(super) fn with_kind(
             destination: *destination,
             expression: expression.clone(),
             inputs: inputs.iter().copied().map(Reg).collect(),
+            producer_kind: *producer_kind,
         });
     }
     unique_private(source, producers.keys().copied(), &mut work)?;

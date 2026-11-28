@@ -237,8 +237,12 @@ fn prepare_selected(
         let lowering = Arc::new(lowering);
         checked_display(lowering.program().clone(), structure.is_ok(), lowering)
     };
-    let consumers = crate::transform::load_consumer::lower_with_stable_inputs(&program, parameters)
+    let consumers = crate::transform::load_consumer::lower_memory_values(&program, parameters)
         .and_then(&check)
+        .or_else(|| {
+            crate::transform::load_consumer::lower_with_stable_inputs(&program, parameters)
+                .and_then(&check)
+        })
         .or_else(|| crate::transform::load_consumer::lower(&program, parameters).and_then(check));
     let (program, widths, structure, load_consumer_lowering) = match consumers {
         Some((p, w, s, e)) => (p, w, s, Some(e)),
