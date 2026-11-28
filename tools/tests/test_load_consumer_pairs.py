@@ -234,6 +234,44 @@ class LoadConsumerPairs(unittest.TestCase):
             self.assertEqual(comparison["architecture_regressions"], 1)
             self.assertEqual(comparison["rows"][0]["architecture_checks_lost"], [])
 
+    def test_downgrading_to_v8_keeps_the_new_observer_in_the_comparison_denominator(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as temporary:
+            roots = [Path(temporary) / side for side in ["before", "after"]]
+            for n, root in enumerate(roots):
+                report = bound_report(root)
+                row = report["rows"][0]
+                directory = root / row["artifacts"] / "semantics"
+                if n == 0:
+                    entry, budgets, rows = fixture(directory)
+                    replay(directory, entry, budgets, rows)
+                    value = row["stage_checks"]
+                    value.update(
+                        schema="nirvana-evaluation-stages-v9",
+                        contract="nirvana-stage-input-state-v9",
+                    )
+                    value["selected_c"]["parameter_registers"] = [4, 7]
+                    value["execution"].append(entry)
+                    stages.validate(value, 4, directory, 3, 32)
+                    row["semantics"]["prepare_stdout_sha256"] = save(
+                        directory.parent,
+                        "semantic_prepare.stdout.txt",
+                        json.dumps(
+                            {**row["semantics"]["profile"], "stage_checks": value}
+                        ),
+                    )
+                    report["summary"]["architecture_execution"] = (
+                        stages.execution_summary(report["rows"])
+                    )
+                save(root, "report.json", json.dumps(report))
+            comparison = reports.compare(*(root / "report.json" for root in roots))
+            self.assertEqual(comparison["architecture_regressions"], 1)
+            self.assertEqual(
+                comparison["candidate_execution"]["selected_load_consumer"],
+                {"not_run": 1},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
