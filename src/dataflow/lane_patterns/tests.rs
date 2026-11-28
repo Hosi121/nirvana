@@ -1,3 +1,6 @@
+#[path = "tests/paired.rs"]
+mod paired;
+
 use super::*;
 use crate::model::ir::{BlockExit, Control};
 
@@ -427,7 +430,7 @@ fn resource_limits_decline_atomically_and_nested_memory_expressions_remain_unsup
         terms: 0,
         exhausted: false,
     };
-    assert!(group::discover(&[], &mut budget, &BTreeMap::new()).is_empty());
+    assert!(group::discover(&[], &mut budget, &BTreeMap::new(), MIN_LANES).is_empty());
     assert_eq!(budget.node(), None);
     assert!(budget.exhausted);
 }

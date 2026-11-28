@@ -53,14 +53,14 @@ pub(super) fn align<'a>(
     budget: &mut Budget,
 ) -> Option<Vec<Cow<'a, PatternExpr>>> {
     let (value, _, mask) = terms.iter().find_map(|term| modular(term))?;
-    if !fits(value, mask, caps) {
-        return None;
-    }
+    // Already masked terms admit (x & m) == ((x + 0) & m) for all
+    // words. Only a raw unmasked value needs the advisory fit predicate.
+    let allow_unmasked = fits(value, mask, caps);
     budget.spend(terms.len())?;
     let mut result = Vec::new();
     let mut changed = false;
     for &term in terms {
-        let offset = if *term == PatternExpr::Value(value) {
+        let offset = if allow_unmasked && *term == PatternExpr::Value(value) {
             0
         } else {
             let (next, offset, next_mask) = modular(term)?;

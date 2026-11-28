@@ -1,3 +1,6 @@
+#[path = "tests/paired.rs"]
+mod paired;
+
 use super::*;
 
 #[test]

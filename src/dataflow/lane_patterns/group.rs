@@ -9,11 +9,7 @@ fn unify(
 ) -> Option<PatternExpr> {
     budget.spend(terms.len() + 1)?;
     budget.node()?;
-    let aligned = if caps.is_empty() {
-        None
-    } else {
-        normalize::align(terms, caps, budget)
-    };
+    let aligned = normalize::align(terms, caps, budget);
     let references: Vec<_> = aligned
         .as_ref()
         .map(|values| values.iter().map(|value| value.as_ref()).collect())
@@ -201,6 +197,7 @@ pub(super) fn discover(
     kernels: &[Kernel],
     budget: &mut Budget,
     caps: &BTreeMap<ValueId, u8>,
+    minimum_lanes: usize,
 ) -> Vec<LaneGroup> {
     let mut clusters: Vec<Vec<&Kernel>> = Vec::new();
     for kernel in kernels {
@@ -219,7 +216,7 @@ pub(super) fn discover(
     }
     clusters
         .into_iter()
-        .filter(|group| group.len() >= MIN_LANES)
+        .filter(|group| group.len() >= minimum_lanes)
         .filter_map(|group| propose(&group, budget, caps))
         .collect()
 }

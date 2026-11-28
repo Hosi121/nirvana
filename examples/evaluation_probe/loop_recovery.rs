@@ -210,8 +210,13 @@ fn entry_attempt_json(emission: &Emission) -> String {
     let header = attempt
         .header
         .map_or("null".into(), |header| header.to_string());
+    let origin = if attempt.before_lanes == 2 {
+        ",\"origin\":\"paired_base\""
+    } else {
+        ""
+    };
     format!(
-        "{{\"status\":\"{}\",\"phase\":{phase},\"header\":{header},\"normalizers\":{},\"before_lanes\":{},\"after_lanes\":{},\"seconds\":{}}}",
+        "{{\"status\":\"{}\",\"phase\":{phase},\"header\":{header},\"normalizers\":{},\"before_lanes\":{},\"after_lanes\":{},\"seconds\":{}{origin}}}",
         attempt.status.kind(),
         attempt.normalizers,
         attempt.before_lanes,

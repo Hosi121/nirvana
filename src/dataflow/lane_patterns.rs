@@ -21,6 +21,7 @@ pub const MAX_TERMS: usize = 65_536;
 pub const MAX_DEPTH: usize = 32;
 pub const MAX_WORK: usize = 2_000_000;
 pub const MIN_LANES: usize = 3;
+pub const MIN_PAIR_LANES: usize = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -78,10 +79,33 @@ pub struct Discovery {
     aliases: Vec<ValueId>,
     kernels: Vec<Kernel>,
     groups: Vec<LaneGroup>,
+    minimum_lanes: usize,
     advisory_caps: BTreeMap<ValueId, u8>,
     advisory_header: Option<u64>,
 }
 impl Discovery {
+    /// Original discovery requires three lanes. A pair is an additional
+    /// proposal profile; it still needs the complete semantic acceptance path.
+    pub fn with_pair_groups(&self) -> Result<Self, Error> {
+        let mut budget = Budget::new();
+        let groups = group::discover(
+            &self.kernels,
+            &mut budget,
+            &self.advisory_caps,
+            MIN_PAIR_LANES,
+        );
+        if budget.exhausted {
+            return Err(Error::Limit);
+        }
+        let mut result = self.clone();
+        result.groups = groups;
+        result.minimum_lanes = MIN_PAIR_LANES;
+        Ok(result)
+    }
+    pub fn minimum_lanes(&self) -> usize {
+        self.minimum_lanes
+    }
+
     /// Regroup the same captured kernels with advisory bounds on header phis.
     /// These hints affect proposals; semantic acceptance uses the source IR.
     pub fn with_advisory_entry_caps(&self, header: u64, caps: &[(Reg, u8)]) -> Result<Self, Error> {
@@ -112,7 +136,7 @@ impl Discovery {
             }
         }
         let mut budget = Budget::new();
-        let groups = group::discover(&self.kernels, &mut budget, &proposed);
+        let groups = group::discover(&self.kernels, &mut budget, &proposed, self.minimum_lanes);
         if budget.exhausted {
             return Err(Error::Limit);
         }
@@ -310,7 +334,7 @@ pub fn discover(source: &Program) -> Result<Discovery, Error> {
             }
         }
     }
-    let groups = group::discover(&kernels, &mut budget, &BTreeMap::new());
+    let groups = group::discover(&kernels, &mut budget, &BTreeMap::new(), MIN_LANES);
     if budget.exhausted {
         return Err(Error::Limit);
     }
@@ -320,6 +344,7 @@ pub fn discover(source: &Program) -> Result<Discovery, Error> {
         aliases,
         kernels,
         groups,
+        minimum_lanes: MIN_LANES,
         advisory_caps: BTreeMap::new(),
         advisory_header: None,
     })

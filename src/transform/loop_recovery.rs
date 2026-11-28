@@ -135,7 +135,7 @@ impl PreparedStorage {
         self.recover_before(solver, Instant::now() + Duration::from_secs(10))
     }
     pub(crate) fn recover_before(self, solver: &Solver, improvement_deadline: Instant) -> Outcome {
-        let discovery = match lane_patterns::discover(self.compact.program()) {
+        let mut discovery = match lane_patterns::discover(self.compact.program()) {
             Ok(found) => found,
             Err(reason) => {
                 return Outcome::Retained {
@@ -144,6 +144,21 @@ impl PreparedStorage {
                 };
             }
         };
+        // Preserve all existing >=3 choices. Only a missing ordinary group
+        // enables the paired proposal profile under the same proof deadline.
+        if discovery.groups().is_empty()
+            && discovery.kernels().len() >= lane_patterns::MIN_PAIR_LANES
+        {
+            discovery = match discovery.with_pair_groups() {
+                Ok(found) => found,
+                Err(reason) => {
+                    return Outcome::Retained {
+                        group: None,
+                        reason: Reason::Discovery(reason),
+                    };
+                }
+            };
+        }
         let mut selected = None;
         for (index, group) in discovery.groups().iter().enumerate() {
             if selected.is_none_or(|old: usize| {

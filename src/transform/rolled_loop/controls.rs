@@ -240,15 +240,23 @@ pub(super) fn analyze(
         envelope.latch,
         group.offsets[0],
     )?;
-    let (second, other_sense) = limit(
-        source,
-        &slices[1],
-        envelope.lane_entries[2],
-        envelope.latch,
-        group.offsets[1],
-    )?;
-    if first.lhs != second.lhs || sense != other_sense || sense {
+    if sense {
         return Err(Error::Controls);
+    }
+    // Three or more lanes confirm the same limit at a second inter-lane
+    // branch. A pair has only one such branch, so it proposes from that one;
+    // completion and full source equivalence remain mandatory before use.
+    if envelope.lane_entries.len() >= 3 {
+        let (second, other_sense) = limit(
+            source,
+            &slices[1],
+            envelope.lane_entries[2],
+            envelope.latch,
+            group.offsets[1],
+        )?;
+        if first.lhs != second.lhs || other_sense != sense {
+            return Err(Error::Controls);
+        }
     }
     let staging = breaks[0].and_then(|(_, mark)| {
         super::storage::staging(source, &slices[0], &first, mark, envelope.latch)

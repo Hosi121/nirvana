@@ -161,7 +161,7 @@ fn propose_inner(
         return Err(Error::Source);
     }
     let group = discovery.groups().get(group_index).ok_or(Error::Pattern)?;
-    if group.kernels.len() < lane_patterns::MIN_LANES || group.kernels.len() > MAX_LANES {
+    if group.kernels.len() < discovery.minimum_lanes() || group.kernels.len() > MAX_LANES {
         return Err(Error::Limit);
     }
     if expressions::has_lane(&group.update_expression)
