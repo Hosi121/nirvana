@@ -16,6 +16,10 @@ STABLE_MODEL = "checked-stable-load-consumer-v2"
 STABLE_CHECKER = (
     "load_consumer::validate_with_stable_inputs+readable::loop_recovery::source"
 )
+MEMORY_MODEL = "checked-memory-value-consumer-v3"
+MEMORY_CHECKER = (
+    "load_consumer::validate_memory_values+readable::loop_recovery::source"
+)
 MAX_CONTEXT_INPUTS = 64
 MAX_IR = 16 * 1024 * 1024
 ARTIFACTS = {
@@ -59,8 +63,11 @@ def validate(
     )
     require(
         type(e["model"]) is str
-        and e["model"] in [MODEL, STABLE_MODEL]
-        and e["checker"] == (STABLE_CHECKER if e["model"] == STABLE_MODEL else CHECKER)
+        and e["model"] in [MODEL, STABLE_MODEL, MEMORY_MODEL]
+        and e["checker"]
+        == {MODEL: CHECKER, STABLE_MODEL: STABLE_CHECKER, MEMORY_MODEL: MEMORY_CHECKER}[
+            e["model"]
+        ]
         and type(e["registers"]) is int
         and machine_registers <= e["registers"] <= 65536
         and semantic_pairs.u64(e["entry"]),
@@ -80,8 +87,10 @@ def validate(
     temps = []
     loads = set()
     consumers = set()
-    stable = e["model"] == STABLE_MODEL
+    stable = e["model"] in [STABLE_MODEL, MEMORY_MODEL]
+    memory = e["model"] == MEMORY_MODEL
     contextual = False
+    memory_expression = False
     for fold in folds:
         require(
             isinstance(fold, dict)
@@ -95,6 +104,7 @@ def validate(
                 "destination",
             }
             | ({"inputs"} if stable else set())
+            | ({"producer_kind"} if memory else set())
             and all(semantic_pairs.u64(fold[k]) for k in ["load_pc", "consumer_pc"])
             and all(
                 type(fold[k]) is int and 0 <= fold[k] < 32768
@@ -116,6 +126,13 @@ def validate(
         loads.add(load)
         consumers.add(consumer)
         temps.append(fold["temporary"])
+        if memory:
+            require(
+                type(fold["producer_kind"]) is str
+                and fold["producer_kind"] in ["root_load", "memory_expression"],
+                "load-consumer exact producer kind",
+            )
+            memory_expression |= fold["producer_kind"] == "memory_expression"
         if stable:
             inputs = register_list(fold["inputs"], registers)
             require(
@@ -131,7 +148,14 @@ def validate(
         and not loads.intersection(consumers),
         "load-consumer exact private fold projection",
     )
-    require(not stable or contextual, "load-consumer stable model needs context inputs")
+    require(
+        not stable or memory or contextual,
+        "load-consumer stable model needs context inputs",
+    )
+    require(
+        not memory or memory_expression,
+        "load-consumer memory model needs a memory expression",
+    )
     for key, name in ARTIFACTS.items():
         require(e[key] == name, "load-consumer IR artifact name")
         path = directory / name

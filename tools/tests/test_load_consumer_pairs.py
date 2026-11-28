@@ -60,6 +60,44 @@ def replay(root, entry, budgets, rows, *, retained=False):
 
 
 class LoadConsumerPairs(unittest.TestCase):
+    def test_memory_expression_schema_keeps_projection_and_older_models_narrow(self):
+        for variant in [
+            "valid", "constant_context", "missing", "checker", "kind", "all_root",
+            "private", "v2", "v1",
+        ]:
+            with tempfile.TemporaryDirectory() as temporary, self.subTest(variant=variant):
+                root = Path(temporary)
+                entry, budgets, rows = fixture(root)
+                e = entry["transition"]
+                e.update(model=folds.MEMORY_MODEL, checker=folds.MEMORY_CHECKER)
+                f = e["folds"][0]
+                f.update(inputs=[0, 33], producer_kind="memory_expression")
+                if variant == "constant_context":
+                    f["inputs"] = []
+                elif variant == "missing":
+                    f.pop("producer_kind")
+                elif variant == "checker":
+                    e["checker"] = folds.STABLE_CHECKER
+                elif variant == "kind":
+                    f["producer_kind"] = ["memory_expression"]
+                elif variant == "all_root":
+                    f["producer_kind"] = "root_load"
+                elif variant == "private":
+                    f["inputs"] = [32]
+                elif variant == "v2":
+                    e.update(model=folds.STABLE_MODEL, checker=folds.STABLE_CHECKER)
+                elif variant == "v1":
+                    e.update(model=folds.MODEL, checker=folds.CHECKER)
+                if variant in ["valid", "constant_context"]:
+                    result = replay(root, entry, budgets, rows)
+                    self.assertEqual((result["mismatches"], result["private_difference_rows"]), (0, 12))
+                    rows[-1]["actual"]["registers"][33] ^= 1
+                    with self.assertRaises(ProtocolError):
+                        replay(root, entry, budgets, rows)
+                else:
+                    with self.assertRaises(ProtocolError):
+                        replay(root, entry, budgets, rows)
+
     def test_stable_context_schema_is_explicit_and_does_not_expand_the_projection(self):
         for variant in [
             "valid",
