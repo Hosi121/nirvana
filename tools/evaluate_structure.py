@@ -340,6 +340,7 @@ def run(args):
                              'semantics_sha256': digest(semantics.__file__),
                              'stages_sha256': digest(Path(semantics.__file__).with_name('stages.py')),
                              'semantic_pairs_sha256': digest(Path(semantics.__file__).with_name('semantic_pairs.py')),
+                             'load_consumer_pairs_sha256': digest(Path(semantics.__file__).with_name('load_consumer_pairs.py')),
                              'state_record_codec_sha256': digest(Path(semantics.__file__).with_name('state_record_codec.py')),
                              'middle_pairs_sha256': digest(Path(semantics.__file__).with_name('middle_pairs.py'))},
               'requested_profiles': len(cases) * len(compilers) * len(opts),

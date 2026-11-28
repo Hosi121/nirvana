@@ -12,7 +12,7 @@ V5_NAMES = NAMES + ('memory_addresses', 'unsigned_bounds')
 V6_NAMES = V5_NAMES + ('storage_widths',)
 V7_NAMES = V6_NAMES + ('selected_storage',)
 V8_NAMES = V7_NAMES + ('selected_signed_storage',)
-VERSION_NAMES = {4: NAMES, 5: V5_NAMES, 6: V6_NAMES, 7: V7_NAMES, 8: V8_NAMES}
+VERSION_NAMES = {4: NAMES, 5: V5_NAMES, 6: V6_NAMES, 7: V7_NAMES, 8: V8_NAMES, 9: V8_NAMES}
 SCHEMA_NAMES = {f'nirvana-evaluation-stages-v{version}': names for version, names in VERSION_NAMES.items()}
 MODELS = ('nirvana-memory-ssa-graph-v1', 'nirvana-memory-ssa-coverage-v1',
           'nirvana-modular-address-v1', 'nirvana-unsigned-bounds-v1', 'nirvana-storage-widths-v1')

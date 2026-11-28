@@ -1,18 +1,30 @@
 """Source-entry architecture checks and Low IR coverage, independent of C ABI."""
 from .semantics import ProtocolError, sha
 from collections import Counter
-from . import semantic_pairs, middle_pairs, analysis_checks
+from . import semantic_pairs, middle_pairs, analysis_checks, load_consumer_pairs
 
 LEGACY_NAMES = ('low_middle', 'middle_predicates', 'selected_semantic')
 EXECUTION_NAMES = ('low_middle', 'middle_predicates', 'middle_memory', 'middle_saved', 'selected_semantic')
+V9_EXECUTION_NAMES = EXECUTION_NAMES + ('selected_load_consumer',)
 COMPARISONS = {name: ['direct_middle', 'lowered'] for name in EXECUTION_NAMES}
 COMPARISONS['middle_saved'] = ['direct_middle', 'saved_zero', 'saved_ones']
 COMPARISONS['selected_semantic'] = ['lowered_zero', 'lowered_ones']
+COMPARISONS['selected_load_consumer'] = ['lowered_zero', 'lowered_ones']
 ANALYSIS_SCHEMAS = tuple(analysis_checks.SCHEMA_NAMES)
 MEMORY_SCHEMAS = ('nirvana-evaluation-stages-v3',) + ANALYSIS_SCHEMAS
 
 
-def execution_summary(rows, names=EXECUTION_NAMES):
+def execution_names(schema):
+    return V9_EXECUTION_NAMES if schema == 'nirvana-evaluation-stages-v9' else EXECUTION_NAMES
+
+
+def execution_names_for_rows(rows):
+    return max((execution_names(row.get('stage_checks', {}).get('schema')) for row in rows),
+               key=len, default=EXECUTION_NAMES)
+
+
+def execution_summary(rows, names=None):
+    names = execution_names_for_rows(rows) if names is None else names
     return {name: dict(Counter(next((e['status'] for e in row.get('stage_checks', {}).get('execution', [])
                                      if e['name'] == name), 'not_run') for row in rows))
             for name in names}
@@ -29,7 +41,8 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
                 ('nirvana-evaluation-stages-v5', 'nirvana-stage-input-state-v5'),
                 ('nirvana-evaluation-stages-v6', 'nirvana-stage-input-state-v6'),
                 ('nirvana-evaluation-stages-v7', 'nirvana-stage-input-state-v7'),
-                ('nirvana-evaluation-stages-v8', 'nirvana-stage-input-state-v8')]
+                ('nirvana-evaluation-stages-v8', 'nirvana-stage-input-state-v8'),
+                ('nirvana-evaluation-stages-v9', 'nirvana-stage-input-state-v9')]
     require(isinstance(value, dict)
             and (value.get('schema'), value.get('contract')) in versions, 'stage check schema or contract')
     extended = value['schema'] != versions[0][0]
@@ -45,7 +58,7 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
             and budgets == sorted(set(budgets)) and budgets[0] == 0 and budgets[-1] == step_limit,
             'stage prefix budgets')
     execution = value['execution']
-    names = list(EXECUTION_NAMES if memory_stages else LEGACY_NAMES if extended else LEGACY_NAMES[:2])
+    names = list(execution_names(value['schema']) if memory_stages else LEGACY_NAMES if extended else LEGACY_NAMES[:2])
     require([entry['name'] for entry in execution] == names, 'stage execution names')
     statuses = []
     for entry in execution:
@@ -60,6 +73,13 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
                 and (status != 'passed' or entry['observations'] == count)
                 and (status != 'not_applied' or entry['observations'] == 0), 'stage observation count')
         require(entry['name'] != 'low_middle' or status != 'not_applied', 'missing base Middle IR check')
+        if entry['name'] == 'selected_load_consumer':
+            require((status not in ['passed', 'counterexample'] or entry['transition'] is not None)
+                    and (status != 'not_applied' or entry['transition'] is None),
+                    'load-consumer transition evidence')
+            if entry['transition'] is not None:
+                load_consumer_pairs.validate(entry, budgets, requested_cases, directory,
+                                             original_registers, retained=retained)
         if entry['name'] in ['middle_memory', 'middle_saved']:
             evidence = entry['transition']
             require((status not in ['passed', 'counterexample'] or evidence is not None)
@@ -161,6 +181,11 @@ def validate(value, step_limit, directory, requested_cases, original_registers=N
         require(isinstance(parameters, list) and len(parameters) <= 1024
                 and all(type(n) is int and 0 <= n < 2**32 for n in parameters)
                 and len(parameters) == len(set(parameters)), 'selected C parameter registers')
+    if value['schema'] == 'nirvana-evaluation-stages-v9':
+        transition = execution[-1]['transition']
+        require('parameter_registers' in c and (transition is None
+                or transition['parameters'] == c['parameter_registers']),
+                'load-consumer selected parameter binding')
     if c['predicates'] is not None:
         require(isinstance(c['predicates'], dict)
                 and set(c['predicates']) == {'pruned_branches', 'constant_assignments', 'blocks_before', 'blocks_after'}

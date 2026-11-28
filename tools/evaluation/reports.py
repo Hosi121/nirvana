@@ -68,9 +68,9 @@ def index(report):
             'missing architecture execution denominator')
     if 'architecture_execution' in report['summary']:
         observed = report['summary']['architecture_execution']
-        require(isinstance(observed, dict) and set(observed) <= set(stages.EXECUTION_NAMES)
+        require(isinstance(observed, dict) and set(observed) <= set(stages.V9_EXECUTION_NAMES)
                 and set(stages.LEGACY_NAMES) <= set(observed)
-                and (not memory_stages or set(observed) == set(stages.EXECUTION_NAMES))
+                and (not memory_stages or set(observed) == set(stages.execution_names_for_rows(rows)))
                 and observed == stages.execution_summary(rows, names=observed)
                 and all(type(n) is int for counts in observed.values() for n in counts.values()),
                 'architecture execution denominator')
@@ -435,7 +435,9 @@ def compare(before_path, after_path):
                      'analysis_checks_added': added_analysis,
                      'analysis_regression': bool(lost_analysis),
                      'loop_recovery_regression': loop_regression,
-                     'architecture_regression': bool(lost_checks) or ar['architecture'] == 'passed' and br['architecture'] != 'passed',
+                     'architecture_regression': bool(lost_checks)
+                        or br['architecture'] in ['counterexample', 'rejected']
+                        or ar['architecture'] == 'passed' and br['architecture'] != 'passed',
                      'semantic_regression': sa['status'] == 'passed' and sb['status'] != 'passed',
                      'before_replay': ar, 'after_replay': br})
     return {'schema': 'nirvana-structure-comparison-v2', 'metric': cg.METRIC,

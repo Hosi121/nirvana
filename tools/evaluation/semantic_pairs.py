@@ -57,13 +57,35 @@ def unique_object(pairs):
 
 
 def validate(metadata, entry, evidence, budgets, requested, directory, machine_registers, *, retained=False):
+    return validate_projected(metadata, entry, evidence, budgets, requested, directory,
+                              machine_registers, model=MODEL, filename=FILENAME,
+                              private=(), retained=retained)
+
+
+def equal_public(left, right, private):
+    """Compare raw snapshots, projecting only the explicitly checked private words."""
+    return (all(left[k] == right[k] for k in left if k != 'registers')
+            and len(left['registers']) == len(right['registers'])
+            and all(a == b for n, (a, b) in enumerate(zip(left['registers'], right['registers']))
+                    if n not in private))
+
+
+def validate_projected(metadata, entry, evidence, budgets, requested, directory, machine_registers,
+                       *, model, filename, private, retained=False):
+    # The semantic wrapper always uses full register equality. Only the load
+    # observer supplies a private set, after checking its exact fold evidence.
+    require((model, filename) == (MODEL, FILENAME) and not private
+            or (model, filename) == ('load-consumer-state-pairs-v1', 'load-consumer-states.jsonl')
+            and bool(private), 'state-pair observation profile')
+    projection = frozenset(private)
     require(isinstance(metadata, dict) and set(metadata) <= {
                 'model', 'file', 'sha256', 'rows', 'mismatches', 'input_binding'} | EXTRA_FIELDS
-            and metadata.get('model') == MODEL and metadata.get('file') == FILENAME,
+                | ({'private_difference_rows'} if projection else set())
+            and metadata.get('model') == model and metadata.get('file') == filename,
             'semantic state-pair model or filename')
     require(machine_registers == 32 and type(requested) is int and 0 < requested <= 768
             and requested % 3 == 0, 'semantic state-pair ABI profile')
-    path = directory / FILENAME
+    path = directory / filename
     require(path.stat().st_size <= MAX_BYTES, 'semantic state-pair file budget')
     with (directory / evidence['input_ir']).open() as stream:
         header = re.fullmatch(r'entry=(\d+) registers=(\d+)\n', stream.readline(1024))
@@ -80,7 +102,7 @@ def validate(metadata, entry, evidence, budgets, requested, directory, machine_r
     require(all(len(words) == 4 and all(map(u64, words)) for words in vectors), 'semantic native input shape')
     bound = len(vectors) * 3 == requested
     order = iter(itertools.product(range(requested), budgets, [0, MAX_U64]))
-    rows = mismatches = 0
+    rows = mismatches = private_differences = 0
     with path.open('rb') as stream:
         while True:
             raw = stream.readline(MAX_LINE_BYTES + 1)
@@ -105,9 +127,13 @@ def validate(metadata, entry, evidence, budgets, requested, directory, machine_r
                 require(state['registers'] == initial + [fresh] * (evidence['source_registers'] - 32)
                         and state['status'] == [2, 0, 0, 0] and not state['trace']
                         and state['instruction'] == int(header[1]), 'semantic initial input state')
+                require(not projection or row['actual'] == state,
+                        'load-consumer initial raw state')
                 if bound:
                     require(state['memory'] == memory(vectors[case // 3], pointer), 'semantic initial RAM binding')
-            mismatches += row['expected'] != row['actual']
+            mismatches += not equal_public(row['expected'], row['actual'], projection)
+            private_differences += any(row['expected']['registers'][r] != row['actual']['registers'][r]
+                                       for r in projection)
             rows += 1
             require(mismatches == 0 or entry['status'] == 'counterexample' and mismatches == 1,
                     'semantic state-pair mismatch contradicts stage status')
@@ -116,8 +142,10 @@ def validate(metadata, entry, evidence, budgets, requested, directory, machine_r
     require(rows == entry['observations']
             and (entry['status'] != 'passed' or rows == requested * len(budgets) * 2)
             and (entry['status'] != 'counterexample' or mismatches == 1), 'semantic state-pair count or status')
-    observed = {'model': MODEL, 'file': FILENAME, **codec.summary(), 'rows': rows,
+    observed = {'model': model, 'file': filename, **codec.summary(), 'rows': rows,
                 'mismatches': mismatches, 'input_binding': 'native-vectors' if bound else 'stage-profile'}
+    if projection:
+        observed['private_difference_rows'] = private_differences
     require(all(metadata[k] == v and type(metadata[k]) is type(v)
                 for k, v in observed.items() if k in metadata), 'semantic state-pair retained summary')
     return observed
