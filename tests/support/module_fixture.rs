@@ -2,6 +2,7 @@ use super::native;
 use nirvana::ir::AccessKind;
 use nirvana::module_ir::{self, Limits, Module, RejectImports, Status};
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::Path;
 use std::process::Command;
 
@@ -300,8 +301,8 @@ fn check_generated_options(
     assert!(!depths.is_empty());
     assert_eq!(cases.len(), expected_rows.len());
     let mut generated_cases = 0;
-    let mut text = String::new();
-    for (index, case) in cases.iter().enumerate() {
+    let encode = |index: usize, text: &mut String| {
+        let case = &cases[index];
         let (address, value, width) = case.patch.unwrap_or((0, 0, 0));
         writeln!(
             text,
@@ -325,7 +326,7 @@ fn check_generated_options(
             }
             text.push('\n');
         }
-    }
+    };
     let modes = [
         ("core", nirvana::module_emit::emit_c(module).unwrap()),
         (
@@ -359,21 +360,59 @@ fn check_generated_options(
                 }
                 command.arg(format!("-DNV_HOST_DEPTH_LIMIT={depth}"));
                 compile(command.arg(&source).arg("-o").arg(&binary));
-                let observed = native::run_fields(&binary, &text, 94);
-                let retained = observed
-                    .iter()
-                    .map(|row| row.iter().map(u64::to_string).collect::<Vec<_>>().join(" ") + "\n")
-                    .collect::<String>();
-                std::fs::write(
-                    directory.join(format!("{mode}{generated_opt}-{depth}.observed.tsv")),
-                    retained,
-                )
-                .unwrap();
-                assert_eq!(
-                    observed, expected_rows,
-                    "{mode} {generated_opt} depth{depth}: all registers,PC,budgets,fault,RAM digest"
+                let mut retained = std::io::BufWriter::new(
+                    std::fs::File::create(
+                        directory.join(format!("{mode}{generated_opt}-{depth}.observed.tsv")),
+                    )
+                    .unwrap(),
                 );
-                generated_cases += cases.len();
+                // The harness creates a fresh nv_module for every case. Bound
+                // transport batches, preserving every input, full-memory check
+                // and execution budget, plus the native runner's 5-second guard.
+                // A large corpus must not need one giant input/output buffer or
+                // finish all cases within that single process timeout.
+                let mut start = 0usize;
+                let mut batches = 0;
+                loop {
+                    let mut text = String::new();
+                    let mut end = start;
+                    for index in start..cases.len().min(start.saturating_add(256)) {
+                        let mut row = String::new();
+                        encode(index, &mut row);
+                        if end > start && text.len().saturating_add(row.len()) > 1024 * 1024 {
+                            break;
+                        }
+                        text.push_str(&row);
+                        end = index + 1;
+                    }
+                    let observed = native::run_fields(&binary, &text, 94);
+                    assert_eq!(
+                        observed,
+                        expected_rows[start..end],
+                        "{mode} {generated_opt} depth{depth} cases{start}..{end}: all registers,PC,budgets,fault,RAM digest"
+                    );
+                    for row in &observed {
+                        writeln!(
+                            retained,
+                            "{}",
+                            row.iter().map(u64::to_string).collect::<Vec<_>>().join(" ")
+                        )
+                        .unwrap();
+                    }
+                    generated_cases += observed.len();
+                    batches += 1;
+                    start = end;
+                    if end == cases.len() {
+                        break;
+                    }
+                }
+                retained.flush().unwrap();
+                if batches > 1 {
+                    println!(
+                        "{mode} {generated_opt} depth{depth}: {} complete cases in {batches} bounded batches",
+                        cases.len()
+                    );
+                }
             }
         }
     }

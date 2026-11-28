@@ -162,6 +162,8 @@ NIRVANA_MIDDLE_OBJECTS=target/structure-baseline cargo test --locked --test mode
 
 ## Native Cと生成C
 
+[moduleの比較ハーネス](../tests/support/module_fixture.rs)は、入力ごとにレジスタとメモリを初期化し、全レジスタ・PC・命令予算・faultとRAM digestを照合します。全メモリ比較を指定した場合は、生成C内でRAMの全byteも確認します。大量の入力は256件または入力1 MiBを目安にバッチ化し、完全なケースの境界で実行を区切ります。1件だけで容量目安を超える場合は、そのケースを単独で実行します。各プロセスの5秒制限を保ち、全ケースを元の順序で比較して結果を保存します。途中再開の28,392件は、3 backendのO0/O2で170,352件の完全なC状態比較に対応します。
+
 [状態値のCモデル](../tools/evaluation/state_values/)は、Clang ASTをC局所変数のsnapshotと32個の状態byteへ対応付けます。[native対照](../tools/tests/test_state_value_ast.py)はcast・alias・条件・旧値の保存を実際のCと照合し、[SMT対照](../tools/tests/test_state_value_solver.py)は稀な分岐の反例を元C・生成Cで再現します。[保存結果の検査](../tools/tests/test_state_value_protocol.py)は、graph・query・solver出力をhashごと書き換えた場合や、ABI・数値型の変更も検出します。モデルはx86-64 LP64のC整数と既知helper契約を信頼基盤に含みます。[整数helperの対照](../tools/tests/test_state_value_helpers.py)は実際のC定義をO0/O2・UBSanで実行し、評価器・SMTと照合します。除数ゼロ、最小負数、語幅を超える64-bit除数、シフト数の折返しを含みます。変換・演算の境界は[C11草案 §6.3.1.3・§6.5](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf)を参照します。
 
 [SSE2レーンの検査](../tests/verification/vector_lanes.rs)は実際のdecode結果を、独立したbyte並替え・整数除算・減算と照合します。全256種のPSHUFD、シフトの境界、PADDQ、XMM→GPRの349問い合わせがUNSAT、シフト数64を誤ってmaskする対照がIRで再現するSATです。初期の全64 architecturalレジスタを任意値とし、privateな一時値を射影します。[native対照](../tests/binary/x86_vector.rs)は実機assemblyを使います。
