@@ -12,6 +12,11 @@ MODEL = "checked-strict-load-consumer-v1"
 PAIR_MODEL = "load-consumer-state-pairs-v1"
 PAIR_FILE = "load-consumer-states.jsonl"
 CHECKER = "load_consumer::validate+readable::loop_recovery::source"
+STABLE_MODEL = "checked-stable-load-consumer-v2"
+STABLE_CHECKER = (
+    "load_consumer::validate_with_stable_inputs+readable::loop_recovery::source"
+)
+MAX_CONTEXT_INPUTS = 64
 MAX_IR = 16 * 1024 * 1024
 ARTIFACTS = {
     "input_ir": "load-consumer-input.ir.txt",
@@ -53,8 +58,9 @@ def validate(
         "load-consumer transition fields",
     )
     require(
-        e["model"] == MODEL
-        and e["checker"] == CHECKER
+        type(e["model"]) is str
+        and e["model"] in [MODEL, STABLE_MODEL]
+        and e["checker"] == (STABLE_CHECKER if e["model"] == STABLE_MODEL else CHECKER)
         and type(e["registers"]) is int
         and machine_registers <= e["registers"] <= 65536
         and semantic_pairs.u64(e["entry"]),
@@ -74,6 +80,8 @@ def validate(
     temps = []
     loads = set()
     consumers = set()
+    stable = e["model"] == STABLE_MODEL
+    contextual = False
     for fold in folds:
         require(
             isinstance(fold, dict)
@@ -86,6 +94,7 @@ def validate(
                 "temporary",
                 "destination",
             }
+            | ({"inputs"} if stable else set())
             and all(semantic_pairs.u64(fold[k]) for k in ["load_pc", "consumer_pc"])
             and all(
                 type(fold[k]) is int and 0 <= fold[k] < 32768
@@ -107,12 +116,22 @@ def validate(
         loads.add(load)
         consumers.add(consumer)
         temps.append(fold["temporary"])
+        if stable:
+            inputs = register_list(fold["inputs"], registers)
+            require(
+                len(inputs) <= MAX_CONTEXT_INPUTS
+                and inputs == sorted(inputs)
+                and not set(inputs).intersection(private),
+                "load-consumer stable context inputs",
+            )
+            contextual |= bool(inputs)
     require(
         len(set(temps)) == len(temps)
         and sorted(temps) == private
         and not loads.intersection(consumers),
         "load-consumer exact private fold projection",
     )
+    require(not stable or contextual, "load-consumer stable model needs context inputs")
     for key, name in ARTIFACTS.items():
         require(e[key] == name, "load-consumer IR artifact name")
         path = directory / name

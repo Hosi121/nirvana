@@ -60,6 +60,57 @@ def replay(root, entry, budgets, rows, *, retained=False):
 
 
 class LoadConsumerPairs(unittest.TestCase):
+    def test_stable_context_schema_is_explicit_and_does_not_expand_the_projection(self):
+        for variant in [
+            "valid",
+            "missing",
+            "checker",
+            "empty",
+            "private",
+            "boolean",
+            "ordering",
+            "limit",
+            "v1",
+        ]:
+            with (
+                tempfile.TemporaryDirectory() as temporary,
+                self.subTest(variant=variant),
+            ):
+                root = Path(temporary)
+                entry, budgets, rows = fixture(root)
+                e = entry["transition"]
+                e.update(model=folds.STABLE_MODEL, checker=folds.STABLE_CHECKER)
+                e["folds"][0]["inputs"] = [0, 33]
+                if variant == "missing":
+                    e["folds"][0].pop("inputs")
+                elif variant == "checker":
+                    e["checker"] = folds.CHECKER
+                elif variant == "empty":
+                    e["folds"][0]["inputs"] = []
+                elif variant == "private":
+                    e["folds"][0]["inputs"] = [32]
+                elif variant == "boolean":
+                    e["folds"][0]["inputs"] = [True]
+                elif variant == "ordering":
+                    e["folds"][0]["inputs"] = [33, 0]
+                elif variant == "limit":
+                    e["registers"] = 100
+                    e["folds"][0]["inputs"] = [n for n in range(66) if n != 32]
+                elif variant == "v1":
+                    e.update(model=folds.MODEL, checker=folds.CHECKER)
+                if variant == "valid":
+                    result = replay(root, entry, budgets, rows)
+                    self.assertEqual(
+                        (result["mismatches"], result["private_difference_rows"]),
+                        (0, 12),
+                    )
+                    rows[-1]["actual"]["registers"][33] ^= 1
+                    with self.assertRaises(ProtocolError):
+                        replay(root, entry, budgets, rows)
+                else:
+                    with self.assertRaises(ProtocolError):
+                        replay(root, entry, budgets, rows)
+
     def test_private_values_are_preserved_raw_and_only_the_checked_projection_is_compared(
         self,
     ):
